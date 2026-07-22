@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 6 verification: Tab/Enter autocomplete + Input Incoming Goods 'Masuk Stok?' default. Backend 86/86 pytest green (no changes). Frontend Playwright verified 11 of 13 autocomplete assertions: SO datalist on /store/issue exists with 4 options; SO Tab autocomplete works on /store/issue, /store/manual-receive, /input, /deliveries; vendor + item + project_no Tab autocomplete works on /input; destination + driver + item so_no autocomplete works on /deliveries; ig-stock-0 default UNCHECKED and newly added row (ig-stock-1) also defaults UNCHECKED as required. ONE REGRESSION: item_name (issue-item-0) on /store/issue does NOT autocomplete on Tab OR Enter — 'ba' remained 'ba' instead of completing to 'Baja Plate 10mm'.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "StoreIssuePage.jsx (line 157-166)",
+        "issue": "issue-item-0 input onKeyDown is `(e) => onRowKeyDown(e, i, 'issue-item')` — missing tryAutocomplete chain. Tab/Enter on prefix 'ba' does not complete to 'Baja Plate 10mm'. Contradicts review request which lists 'StoreIssuePage: item_name (stock list) + so_number'. so_number is wired (line 187) but item_name is not. Fix: wrap with `onKeyDown={(e) => { if (tryAutocomplete(e, stockOptions, (v) => setRow(i, 'item_name', v))) return; onRowKeyDown(e, i, 'issue-item'); }}` (mirror of the so_number pattern; stockOptions is already declared on line 40).",
+        "selector": "[data-testid=\"issue-item-0\"]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_iter4.py",
+    "/app/test_reports/pytest/pytest_iter6.xml"
+  ],
+  "action_items": [
+    "Wire tryAutocomplete on StoreIssuePage.jsx issue-item-0 input (item_name) using the same pattern already applied to issue-so-0 (line 187). Use stockOptions (already memoized on line 40) as the options list. This is the ONLY functional miss in iter 6 — everything else works as specified.",
+    "After fix, SUBMIT INTEGRITY test (POST /api/store/issue/bulk with Tab-autocompleted item + SO) should be re-verified; it was blocked because item_name autocomplete did not fire."
+  ],
+  "critical_code_review_comments": [
+    "tryAutocomplete helper at /app/frontend/src/lib/autocomplete.js is well-scoped (exact-match short-circuit, preventDefault only for Enter, returns bool so callers can `if(...) return;`). Good pattern.",
+    "One inconsistency in caller sites: on /input the vendor input (line 271 of InputTransactionPage.jsx) uses `onKeyDown={(e) => tryAutocomplete(...)}` with no chained handler — fine because vendor row has no next-field-advance, but be aware: return value is discarded (no `if(...) return;`). Non-blocking since there's no subsequent logic.",
+    "Same pattern OK for del-destination/del-driver (unchained onKeyDown, single-purpose)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (86/86)", "frontend": "85% (11/13 autocomplete assertions passing; 2 failures both due to same missing wiring on issue-item-0)"},
+  "test_credentials": "susanto/admin123 — verified working. Login button label is 'Masuk' (not 'Login').",
+  "seed_data_creation": "None — reused existing seed: stock item 'Baja Plate 10mm', SOs SO-2026-001..004, vendor 'CV Maju Jaya', item master 'Baut M12', delivery destination 'TEST_Cust', driver 'TEST Driver'.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The fix required is a one-line onKeyDown swap on StoreIssuePage.jsx line 164 to add tryAutocomplete(e, stockOptions, setter) chaining before onRowKeyDown. Verify with Playwright: goto /store/issue, fill [data-testid=issue-item-0] with 'ba', press Tab, then assert input_value == 'Baja Plate 10mm'. Also re-run the submit-integrity test (POST /api/store/issue/bulk) after fix. Login button is 'Masuk' not 'Login'.",
+  "rca of the issue": "StoreIssuePage.jsx line 164 defines the item_name input's onKeyDown as `(e) => onRowKeyDown(e, i, 'issue-item')`. `onRowKeyDown` (lines 65-83) only handles Enter for row-advance navigation; it never calls tryAutocomplete. The iter-6 implementation added the tryAutocomplete import (line 4) and correctly wired it into so_number (line 187) and other pages, but the item_name Input was missed. As a result, Tab/Enter on prefix 'ba' does not autocomplete to 'Baja Plate 10mm'; the value simply stays 'ba' (Enter blurs/next-focuses per onRowKeyDown; Tab natively moves focus)."
+}

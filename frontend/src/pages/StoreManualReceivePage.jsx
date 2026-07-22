@@ -7,12 +7,14 @@ import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { FloppyDisk, Plus, Trash } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import { tryAutocomplete } from "../lib/autocomplete";
 
 const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-sky-600 text-sm";
 const today = () => new Date().toISOString().slice(0, 10);
 const UNIT_OPTIONS = ["Ea", "Pcs", "Set", "Lot", "Kg", "Ltr", "Mtr", "Box", "Roll"];
 
-const emptyItem = () => ({ item_name: "", qty: "", unit: "Ea", so_no: "", add_to_stock: true, remark: "" });
+// Default "Masuk stok?" UNCHECKED — user must consciously opt-in.
+const emptyItem = () => ({ item_name: "", qty: "", unit: "Ea", so_no: "", add_to_stock: false, remark: "" });
 
 export default function IncomingGoodsPage() {
   const [header, setHeader] = useState({
@@ -180,7 +182,7 @@ export default function IncomingGoodsPage() {
                       </select>
                     </td>
                     <td className="p-2">
-                      <Input data-testid={`ig-so-${i}`} list="ig-so-list" autoComplete="off" className={inputCls} value={it.so_no} onChange={(e) => setItem(i, "so_no", e.target.value)} onKeyDown={(e) => onKeyDown(e, i, "ig-so")} placeholder="mis. 4413" />
+                      <Input data-testid={`ig-so-${i}`} list="ig-so-list" autoComplete="off" className={inputCls} value={it.so_no} onChange={(e) => setItem(i, "so_no", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, sos.map((s) => s.so_no), (v) => setItem(i, "so_no", v))) return; onKeyDown(e, i, "ig-so"); }} placeholder="mis. 4413" />
                     </td>
                     <td className="p-2 text-center">
                       <input type="checkbox" data-testid={`ig-stock-${i}`} className="w-4 h-4 accent-emerald-600 cursor-pointer" checked={!!it.add_to_stock} onChange={(e) => setItem(i, "add_to_stock", e.target.checked)} />

@@ -8,6 +8,7 @@ import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { Plus, Trash, Truck, FloppyDisk, Eye } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import { tryAutocomplete } from "../lib/autocomplete";
 
 const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-sky-600 text-sm";
 const today = () => new Date().toISOString().slice(0, 10);
@@ -224,12 +225,12 @@ function AddDeliveryDialog({ open, onClose, onSaved, sos }) {
               <Input data-testid="del-do" className={`${inputCls} font-mono`} value={form.do_no} onChange={(e) => setForm({ ...form, do_no: e.target.value })} />
             </div>
             <div className="md:col-span-2">
-              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Tujuan / Perusahaan * <span className="text-slate-400 text-[10px] font-normal">(autocomplete)</span></Label>
-              <Input data-testid="del-destination" list="del-destinations" autoComplete="off" className={inputCls} value={form.destination} onChange={(e) => setForm({ ...form, destination: e.target.value })} placeholder="mis. PT ABC Manufacturing" />
+              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Tujuan / Perusahaan * <span className="text-slate-400 text-[10px] font-normal">(Tab/Enter untuk autofill)</span></Label>
+              <Input data-testid="del-destination" list="del-destinations" autoComplete="off" className={inputCls} value={form.destination} onChange={(e) => setForm({ ...form, destination: e.target.value })} onKeyDown={(e) => tryAutocomplete(e, auto.destinations, (v) => setForm({ ...form, destination: v }))} placeholder="mis. PT ABC Manufacturing" />
             </div>
             <div>
-              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nama Supir <span className="text-slate-400 text-[10px] font-normal">(autocomplete)</span></Label>
-              <Input data-testid="del-driver" list="del-drivers" autoComplete="off" className={inputCls} value={form.driver_name} onChange={(e) => setForm({ ...form, driver_name: e.target.value })} placeholder="mis. Pak Budi" />
+              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nama Supir <span className="text-slate-400 text-[10px] font-normal">(Tab/Enter untuk autofill)</span></Label>
+              <Input data-testid="del-driver" list="del-drivers" autoComplete="off" className={inputCls} value={form.driver_name} onChange={(e) => setForm({ ...form, driver_name: e.target.value })} onKeyDown={(e) => tryAutocomplete(e, auto.drivers, (v) => setForm({ ...form, driver_name: v }))} placeholder="mis. Pak Budi" />
             </div>
           </div>
 
@@ -278,7 +279,7 @@ function AddDeliveryDialog({ open, onClose, onSaved, sos }) {
                         </select>
                       </td>
                       <td className="p-2">
-                        <Input data-testid={`del-so-${i}`} list="del-so-list" autoComplete="off" className={inputCls} value={it.so_no} onChange={(e) => setItem(i, "so_no", e.target.value)} onKeyDown={(e) => onKeyDown(e, i, "del-so")} placeholder="mis. 4413" />
+                        <Input data-testid={`del-so-${i}`} list="del-so-list" autoComplete="off" className={inputCls} value={it.so_no} onChange={(e) => setItem(i, "so_no", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, (sos || []).map((s) => s.so_no), (v) => setItem(i, "so_no", v))) return; onKeyDown(e, i, "del-so"); }} placeholder="mis. 4413" />
                       </td>
                       <td className="p-2 text-center">
                         <button type="button" onClick={() => removeRow(i)} disabled={items.length === 1} className="p-1 text-slate-400 hover:text-red-600 disabled:opacity-30"><Trash size={14} weight="bold" /></button>

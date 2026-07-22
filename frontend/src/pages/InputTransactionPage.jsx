@@ -5,6 +5,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { toast } from "sonner";
+import { tryAutocomplete } from "../lib/autocomplete";
 import { Plus, Trash, FloppyDisk, ArrowUp, Sparkle } from "@phosphor-icons/react";
 
 const UNIT_OPTIONS = ["Ea", "Pcs", "Set", "Lot", "Kg", "Ltr", "Mtr", "Box", "Roll"];
@@ -267,7 +268,7 @@ export default function InputTransactionPage() {
           </div>
           <div>
             <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nama Toko / Vendor *</Label>
-            <Input data-testid="input-vendor" required list="vendors-list" autoComplete="off" className={inputCls} value={header.vendor_name} onChange={(e) => setH("vendor_name", e.target.value)} placeholder="mis. Wiratama Sukses, PT" />
+            <Input data-testid="input-vendor" required list="vendors-list" autoComplete="off" className={inputCls} value={header.vendor_name} onChange={(e) => setH("vendor_name", e.target.value)} onKeyDown={(e) => tryAutocomplete(e, vendors, (v) => setH("vendor_name", v))} placeholder="mis. Wiratama Sukses, PT" />
           </div>
           <div>
             <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nomor PO</Label>
@@ -344,10 +345,10 @@ export default function InputTransactionPage() {
                   <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="p-2 text-slate-400 tabular-nums">{i + 1}</td>
                     <td className="p-2">
-                      <Input data-testid={`item-so-${i}`} list="so-list" autoComplete="off" className={inputCls} value={it.project_no} onChange={(e) => setItem(i, "project_no", e.target.value)} onKeyDown={(e) => onRowKeyDown(e, i, "item-so")} placeholder="mis. 4413" />
+                      <Input data-testid={`item-so-${i}`} list="so-list" autoComplete="off" className={inputCls} value={it.project_no} onChange={(e) => setItem(i, "project_no", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, sos.map((s) => s.so_no), (v) => setItem(i, "project_no", v))) return; onRowKeyDown(e, i, "item-so"); }} placeholder="mis. 4413" />
                     </td>
                     <td className="p-2">
-                      <Input data-testid={`item-name-${i}`} list="items-list" autoComplete="off" className={inputCls} value={it.item_name} onChange={(e) => setItem(i, "item_name", e.target.value)} onKeyDown={(e) => onRowKeyDown(e, i, "item-name")} placeholder="mis. NUT BAUT M14 X 2.0" />
+                      <Input data-testid={`item-name-${i}`} list="items-list" autoComplete="off" className={inputCls} value={it.item_name} onChange={(e) => setItem(i, "item_name", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, itemsMaster.map((x) => x.item_name), (v) => setItem(i, "item_name", v))) return; onRowKeyDown(e, i, "item-name"); }} placeholder="mis. NUT BAUT M14 X 2.0" />
                     </td>
                     <td className="p-2">
                       <Input data-testid={`item-qty-${i}`} type="number" step="any" min="0" className={`${inputCls} text-right tabular-nums`} value={it.qty} onChange={(e) => setItem(i, "qty", e.target.value)} onKeyDown={(e) => onRowKeyDown(e, i, "item-qty")} />

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import api, { formatDateID } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { tryAutocomplete } from "../lib/autocomplete";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -22,6 +23,7 @@ export default function StoreIssuePage() {
   const [rows, setRows] = useState([emptyRow()]);
   const [stock, setStock] = useState([]);
   const [recent, setRecent] = useState([]);
+  const [sos, setSos] = useState([]);
   const [saving, setSaving] = useState(false);
 
   const loadStock = useCallback(async () => {
@@ -32,6 +34,10 @@ export default function StoreIssuePage() {
     try { const { data } = await api.get("/store/issuances", { params: { page: 1, page_size: 10 } }); setRecent(data.items || []); } catch {}
   }, []);
   useEffect(() => { loadStock(); loadRecent(); }, [loadStock, loadRecent]);
+  useEffect(() => { api.get("/sales-orders").then((r) => setSos(r.data || [])).catch(() => {}); }, []);
+
+  const soOptions = useMemo(() => sos.map((s) => s.so_no), [sos]);
+  const stockOptions = useMemo(() => stock.map((s) => s.item_name), [stock]);
 
   const stockIndex = useMemo(() => {
     const m = new Map();
@@ -178,7 +184,7 @@ export default function StoreIssuePage() {
                         {over && <div className="text-[10px] text-red-600 mt-0.5">Melebihi stok</div>}
                       </td>
                       <td className="p-2">
-                        <Input data-testid={`issue-so-${i}`} className={inputCls} value={r.so_number} onChange={(e) => setRow(i, "so_number", e.target.value)} onKeyDown={(e) => onRowKeyDown(e, i, "issue-so")} placeholder="mis. 4413" />
+                        <Input data-testid={`issue-so-${i}`} list="issue-so-list" autoComplete="off" className={inputCls} value={r.so_number} onChange={(e) => setRow(i, "so_number", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, soOptions, (v) => setRow(i, "so_number", v))) return; onRowKeyDown(e, i, "issue-so"); }} placeholder="mis. 4413" />
                       </td>
                       <td className="p-2">
                         <Input data-testid={`issue-taker-${i}`} className={inputCls} value={r.taker_name} onChange={(e) => setRow(i, "taker_name", e.target.value)} onKeyDown={(e) => onRowKeyDown(e, i, "issue-taker")} placeholder="mis. Sahab" />
@@ -212,6 +218,9 @@ export default function StoreIssuePage() {
 
         <datalist id="issue-stock-list">
           {stock.map((s) => (<option key={s.item_name} value={s.item_name}>{`Stok: ${s.qty} ${s.unit || ""}`}</option>))}
+        </datalist>
+        <datalist id="issue-so-list">
+          {sos.map((s) => (<option key={s.id} value={s.so_no}>{`${s.customer} — ${s.description || ""}`}</option>))}
         </datalist>
 
         <div className="flex items-center justify-between gap-3">
