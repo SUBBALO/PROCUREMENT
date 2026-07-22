@@ -7,7 +7,7 @@ import {
 } from "./ui/dropdown-menu";
 import {
   ChartBar, Plus, MagnifyingGlass, SignOut, Package, ChartLineUp, ShieldStar, Warehouse, ArrowDown, ArrowUp,
-  ClipboardText, CaretDown, ShoppingCart, Storefront, Factory, Truck,
+  ClipboardText, CaretDown, ShoppingCart, Storefront, Truck,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
@@ -21,10 +21,10 @@ const PURCHASE_ITEMS = [
 
 const STORE_ITEMS = [
   { to: "/store/stock", label: "Stok", icon: Warehouse, testid: "nav-store-stock" },
-  { to: "/store/receive", label: "Terima (dari PO)", icon: ArrowDown, testid: "nav-store-receive" },
-  { to: "/store/manual-receive", label: "Manual Receiving", icon: ArrowDown, testid: "nav-store-manual" },
+  { to: "/store/receive", label: "Terima dari PO", icon: ArrowDown, testid: "nav-store-receive" },
+  { to: "/store/manual-receive", label: "Input Incoming Goods", icon: ArrowDown, testid: "nav-store-manual" },
+  { to: "/store/incoming-report", label: "Laporan Incoming Goods", icon: ClipboardText, testid: "nav-store-incoming-report" },
   { to: "/store/issue", label: "Keluar Barang", icon: ArrowUp, testid: "nav-store-issue" },
-  { to: "/store/production-issue", label: "Ke Produksi (Cust.)", icon: Factory, testid: "nav-store-prod" },
   { to: "/deliveries", label: "Pengiriman", icon: Truck, testid: "nav-deliveries" },
 ];
 

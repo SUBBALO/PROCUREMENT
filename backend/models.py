@@ -45,6 +45,11 @@ class TransactionBase(BaseModel):
     unit: Optional[str] = "Ea"
     unit_price: float
     total_price: float
+    # Multi-currency: unit_price & total_price are in this currency.
+    # total_price_idr is total_price * exchange_rate (server-computed).
+    currency: Optional[str] = "IDR"  # IDR | SGD | USD
+    exchange_rate: Optional[float] = 1.0  # multiplier to convert to IDR
+    total_price_idr: Optional[float] = 0.0
     invoice_no: Optional[str] = ""
     po_date: Optional[str] = None
     receive_date: Optional[str] = None
@@ -66,6 +71,10 @@ class Transaction(TransactionBase):
 
 class BulkCreateRequest(BaseModel):
     transactions: List[TransactionCreate]
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: List[str]
 
 
 # ---------------- Store ----------------
@@ -90,12 +99,34 @@ class BulkReceiveItem(BaseModel):
     transaction_id: str
     qty_received: float
     note: Optional[str] = ""
+    add_to_stock: Optional[bool] = True  # if False → qty_remaining set to 0 (habis pakai)
 
 
 class BulkReceiveRequest(BaseModel):
     do_number: Optional[str] = ""
+    invoice_no: Optional[str] = ""  # will update source transaction if provided
     receive_date: str
     items: List[BulkReceiveItem]
+
+
+# ---------------- Input Incoming Goods (multi-item manual receipt) ----------------
+class IncomingItem(BaseModel):
+    item_name: str
+    qty: float
+    unit: Optional[str] = "Ea"
+    so_no: Optional[str] = ""
+    add_to_stock: Optional[bool] = True
+    unit_price: Optional[float] = 0.0
+    remark: Optional[str] = ""
+
+
+class IncomingGoodsRequest(BaseModel):
+    receive_date: str
+    source_type: str  # 'customer' | 'supplier'
+    source_name: str
+    do_no: Optional[str] = ""
+    po_no: Optional[str] = ""
+    items: List[IncomingItem]
 
 
 class BulkIssueItem(BaseModel):

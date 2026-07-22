@@ -21,6 +21,7 @@ from deps import (
 from models import (
     BulkIssueRequest,
     BulkReceiveRequest,
+    IncomingGoodsRequest,
     ManualReceiveRequest,
     ProductionIssueRequest,
     StoreIssueRequest,
@@ -100,6 +101,7 @@ async def store_receive_bulk(payload: BulkReceiveRequest, current: dict = Depend
     if not payload.items:
         raise HTTPException(status_code=400, detail="Tidak ada item")
     received_docs = []
+    touched_tx_ids: set = set()
     for item in payload.items:
         if item.qty_received <= 0:
             continue
@@ -113,31 +115,48 @@ async def store_receive_bulk(payload: BulkReceiveRequest, current: dict = Depend
                 status_code=400,
                 detail=f"{tx.get('item_name')}: qty terima ({item.qty_received}) > sisa ({remaining})"
             )
+        add_to_stock = True if item.add_to_stock is None else bool(item.add_to_stock)
         doc = {
             "id": str(uuid.uuid4()),
             "transaction_id": item.transaction_id,
             "po_no": tx.get("po_no", ""),
-            "invoice_no": tx.get("invoice_no", ""),
+            "invoice_no": payload.invoice_no or tx.get("invoice_no", ""),
             "vendor_name": tx.get("vendor_name", ""),
             "item_name": tx.get("item_name", ""),
             "unit": tx.get("unit", "Ea"),
             "unit_price": float(tx.get("unit_price", 0)),
             "do_number": payload.do_number or "",
             "qty_received": float(item.qty_received),
-            "qty_remaining": float(item.qty_received),
+            # If not added to stock, qty_remaining = 0 (barang langsung habis pakai)
+            "qty_remaining": float(item.qty_received) if add_to_stock else 0.0,
+            "add_to_stock": add_to_stock,
             "receive_date": payload.receive_date,
             "note": item.note or "",
+            "source": "po",
             "created_by": current["id"],
             "created_by_username": current.get("username", ""),
             "created_at": _now_iso(),
         }
         received_docs.append(doc)
+        touched_tx_ids.add(item.transaction_id)
     if not received_docs:
         raise HTTPException(status_code=400, detail="Semua qty kosong / 0")
     await db.store_receipts.insert_many([d.copy() for d in received_docs])
+
+    # Auto-update source transactions with invoice_no + receive_date so purchasing masterlist reflects real receive
+    tx_updates: dict = {"receive_date": payload.receive_date}
+    if payload.invoice_no:
+        tx_updates["invoice_no"] = payload.invoice_no
+    if touched_tx_ids:
+        await db.transactions.update_many(
+            {"id": {"$in": list(touched_tx_ids)}},
+            {"$set": tx_updates},
+        )
+
     await log_action(current, "store_receive", "store_receipt", "-", {
         "count": len(received_docs), "po_no": received_docs[0].get("po_no"),
-        "do_number": payload.do_number, "vendor": received_docs[0].get("vendor_name"),
+        "do_number": payload.do_number, "invoice_no": payload.invoice_no,
+        "vendor": received_docs[0].get("vendor_name"),
     })
     return {"received": len(received_docs)}
 
@@ -227,6 +246,8 @@ async def store_receive(payload: StoreReceiveRequest, current: dict = Depends(re
         "do_number": payload.do_number or "",
         "qty_received": float(payload.qty_received),
         "qty_remaining": float(payload.qty_received),
+        "add_to_stock": True,
+        "source": "po",
         "receive_date": payload.receive_date,
         "note": payload.note or "",
         "created_by": current["id"],
@@ -619,10 +640,116 @@ async def update_receipt_flags(rid: str, payload: dict, current: dict = Depends(
         upd["mcl_done"] = bool(payload["mcl_done"])
     if "mif_done" in payload:
         upd["mif_done"] = bool(payload["mif_done"])
+    # Admin/store can toggle add_to_stock directly (no request/approval).
+    if "add_to_stock" in payload:
+        new_val = bool(payload["add_to_stock"])
+        consumed = float(rec.get("qty_received", 0)) - float(rec.get("qty_remaining", 0))
+        if not new_val:
+            # Turning OFF: only allowed if nothing has been consumed (else stock has been used)
+            if consumed > 1e-9:
+                raise HTTPException(status_code=400, detail=f"Tidak bisa hilangkan dari stok: {consumed} unit sudah dipakai (issuance).")
+            upd["add_to_stock"] = False
+            upd["qty_remaining"] = 0.0
+        else:
+            upd["add_to_stock"] = True
+            upd["qty_remaining"] = float(rec.get("qty_received", 0))
     if upd:
         await db.store_receipts.update_one({"id": rid}, {"$set": upd})
         await log_action(current, "update_receipt_flags", "store_receipt", rid, upd)
     return {"ok": True, "flags": upd}
+
+
+# ---------------- Input Incoming Goods (multi-item manual receipt) ----------------
+@router.post("/store/incoming")
+async def store_incoming(payload: IncomingGoodsRequest, current: dict = Depends(require_store_write)):
+    """Multi-item manual receiving. Replaces single-item /store/receive/manual.
+    Each item can be flagged add_to_stock=True (masuk stok, tracked via qty_remaining)
+    or False (habis pakai, qty_remaining=0 but still logged for Incoming Goods report)."""
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="Tidak ada item")
+    if payload.source_type not in ("customer", "supplier"):
+        raise HTTPException(status_code=400, detail="source_type harus 'customer' atau 'supplier'")
+    if not payload.source_name.strip():
+        raise HTTPException(status_code=400, detail="Nama customer/supplier wajib")
+    is_customer = payload.source_type == "customer"
+    docs = []
+    for it in payload.items:
+        if it.qty <= 0 or not it.item_name.strip():
+            continue
+        add_stock = True if it.add_to_stock is None else bool(it.add_to_stock)
+        docs.append({
+            "id": str(uuid.uuid4()),
+            "transaction_id": None,
+            "source": "manual",
+            "source_type": payload.source_type,
+            "is_customer_material": is_customer,
+            "po_no": payload.po_no or "",
+            "invoice_no": "",
+            "vendor_name": payload.source_name.strip(),
+            "customer_name": payload.source_name.strip() if is_customer else "",
+            "item_name": it.item_name.strip(),
+            "unit": it.unit or "Ea",
+            "unit_price": float(it.unit_price or 0),
+            "do_number": payload.do_no or "",
+            "so_no": it.so_no or "",
+            "qty_received": float(it.qty),
+            "qty_remaining": float(it.qty) if add_stock else 0.0,
+            "add_to_stock": add_stock,
+            "receive_date": payload.receive_date,
+            "mcl_done": False,  # set later via /flags (in Incoming Goods report)
+            "mif_done": False,
+            "note": it.remark or "",
+            "created_by": current["id"],
+            "created_by_username": current.get("username", ""),
+            "created_at": _now_iso(),
+        })
+    if not docs:
+        raise HTTPException(status_code=400, detail="Tidak ada item valid")
+    await db.store_receipts.insert_many([d.copy() for d in docs])
+    await log_action(current, "store_incoming", "store_receipt", "-", {
+        "count": len(docs), "source": payload.source_type,
+        "source_name": docs[0]["vendor_name"],
+    })
+    return {"received": len(docs)}
+
+
+# ---------------- Incoming Goods Report ----------------
+@router.get("/store/incoming-report")
+async def incoming_report(
+    current: dict = Depends(require_store_access),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    source: Optional[str] = None,  # 'po' | 'manual'
+    q: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 100,
+):
+    """Unified report of ALL incoming goods (from PO purchasing + manual)."""
+    filt: dict = {}
+    if source in ("po", "manual"):
+        filt["source"] = source
+    if start_date or end_date:
+        rng: dict = {}
+        if start_date:
+            rng["$gte"] = start_date
+        if end_date:
+            rng["$lte"] = end_date
+        filt["receive_date"] = rng
+    if q:
+        filt["$or"] = [
+            {"item_name": {"$regex": q, "$options": "i"}},
+            {"vendor_name": {"$regex": q, "$options": "i"}},
+            {"po_no": {"$regex": q, "$options": "i"}},
+            {"invoice_no": {"$regex": q, "$options": "i"}},
+            {"do_number": {"$regex": q, "$options": "i"}},
+        ]
+    total = await db.store_receipts.count_documents(filt)
+    cursor = db.store_receipts.find(filt, {"_id": 0}).sort("receive_date", -1).skip((page - 1) * page_size).limit(page_size)
+    items = await cursor.to_list(length=page_size)
+    if not can_see_prices(current):
+        for d in items:
+            d.pop("unit_price", None)
+    return {"total": total, "page": page, "page_size": page_size, "items": items}
 
 
 # ---------------- Production Issue (Customer material → Produksi) ----------------

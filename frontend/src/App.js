@@ -15,7 +15,7 @@ import StoreIssuePage from "./pages/StoreIssuePage";
 import StoreStockPage from "./pages/StoreStockPage";
 import StoreReportPage from "./pages/StoreReportPage";
 import StoreManualReceivePage from "./pages/StoreManualReceivePage";
-import StoreProductionIssuePage from "./pages/StoreProductionIssuePage";
+import IncomingReportPage from "./pages/IncomingReportPage";
 import DeliveryPage from "./pages/DeliveryPage";
 import SOMasterPage from "./pages/SOMasterPage";
 import "./App.css";
@@ -66,7 +66,7 @@ function AppRoutes() {
       <Route path="/store/stock" element={<ProtectedRoute><StoreStockPage /></ProtectedRoute>} />
       <Route path="/store/report" element={<ProtectedRoute blockStore={true}><StoreReportPage /></ProtectedRoute>} />
       <Route path="/store/manual-receive" element={<ProtectedRoute><StoreManualReceivePage /></ProtectedRoute>} />
-      <Route path="/store/production-issue" element={<ProtectedRoute><StoreProductionIssuePage /></ProtectedRoute>} />
+      <Route path="/store/incoming-report" element={<ProtectedRoute><IncomingReportPage /></ProtectedRoute>} />
       <Route path="/deliveries" element={<ProtectedRoute><DeliveryPage /></ProtectedRoute>} />
       <Route path="/so-master" element={<ProtectedRoute><SOMasterPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />

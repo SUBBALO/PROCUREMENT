@@ -23,7 +23,12 @@ def _login(username, password):
 
 @pytest.fixture(scope="session")
 def admin():
-    return _login("admin", "admin123")
+    return _login("susanto", "admin123")
+
+
+@pytest.fixture(scope="session")
+def erwin():
+    return _login("erwin", "erwin123")
 
 
 @pytest.fixture(scope="session")
@@ -44,17 +49,17 @@ def staff():
 # ---------------- Auth ----------------
 class TestAuth:
     def test_login_wrong_password(self):
-        r = requests.post(f"{API}/auth/login", json={"username": "admin", "password": "wrong"})
+        r = requests.post(f"{API}/auth/login", json={"username": "susanto", "password": "wrong"})
         assert r.status_code == 401
 
     def test_login_success_sets_cookies(self):
         s = requests.Session()
-        r = s.post(f"{API}/auth/login", json={"username": "admin", "password": "admin123"})
+        r = s.post(f"{API}/auth/login", json={"username": "susanto", "password": "admin123"})
         assert r.status_code == 200
         assert "access_token" in s.cookies
         assert "refresh_token" in s.cookies
         d = r.json()
-        assert d["username"] == "admin"
+        assert d["username"] == "susanto"
         assert d["role"] == "admin"
 
     def test_me_requires_auth(self):
@@ -77,7 +82,7 @@ class TestAuth:
         assert r.json()["role"] == "finance"
 
     def test_logout_clears(self):
-        s = _login("admin", "admin123")
+        s = _login("susanto", "admin123")
         r = s.post(f"{API}/auth/logout")
         assert r.status_code == 200
         r2 = s.get(f"{API}/auth/me")
@@ -177,7 +182,7 @@ class TestAdminUsers:
         users = r.json()
         assert isinstance(users, list)
         usernames = [u["username"] for u in users]
-        for u in ("admin", "staff01", "store01", "finance01"):
+        for u in ("susanto", "erwin", "staff01", "store01", "finance01"):
             assert u in usernames, f"seed user {u} missing"
 
     def test_create_and_toggle_user(self, admin):
@@ -428,6 +433,331 @@ class TestDeliveries:
         assert r.status_code in (200, 201), r.text
         d = r.json()
         assert d["destination"] == "TEST_Cust"
+
+
+# ==================== ITERATION 3: Multi-currency, Bulk-delete, Incoming Goods, GRN ====================
+
+def _tx_payload_curr(currency="IDR", rate=1.0, qty=2, unit_price=100.0):
+    return {
+        "invoice_date": "2025-02-10",
+        "project_no": "TEST_ITER3",
+        "po_no": f"TEST_PO_{uuid.uuid4().hex[:6]}",
+        "vendor_name": "TEST_Vendor_Curr",
+        "item_name": "TEST_Item_Curr",
+        "qty": qty, "unit": "Ea",
+        "unit_price": unit_price, "total_price": qty * unit_price,
+        "currency": currency, "exchange_rate": rate,
+        "invoice_no": f"TEST_INV_{uuid.uuid4().hex[:6]}",
+    }
+
+
+class TestMultiCurrency:
+    def test_create_sgd_sets_total_price_idr(self, admin):
+        p = _tx_payload_curr("SGD", 12000.0, qty=2, unit_price=100.0)  # total 200 SGD => 2_400_000 IDR
+        r = admin.post(f"{API}/transactions", json=p)
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["currency"] == "SGD"
+        assert d["exchange_rate"] == 12000.0
+        assert abs(d["total_price_idr"] - 2_400_000.0) < 1e-6
+        # persist check
+        g = admin.get(f"{API}/transactions/{d['id']}").json()
+        assert abs(g["total_price_idr"] - 2_400_000.0) < 1e-6
+        admin.delete(f"{API}/transactions/{d['id']}")
+
+    def test_idr_defaults_rate_1(self, admin):
+        p = _tx_payload_curr("IDR", 5.0, qty=3, unit_price=1000.0)  # rate should be forced to 1
+        r = admin.post(f"{API}/transactions", json=p)
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["currency"] == "IDR"
+        assert d["exchange_rate"] == 1.0
+        assert d["total_price_idr"] == 3000.0
+        admin.delete(f"{API}/transactions/{d['id']}")
+
+    def test_put_recomputes_total_price_idr(self, admin):
+        p = _tx_payload_curr("USD", 16000.0, qty=1, unit_price=50.0)  # 800_000 IDR
+        r = admin.post(f"{API}/transactions", json=p)
+        assert r.status_code == 200
+        tid = r.json()["id"]
+        # update: change rate to 17000, qty to 2 -> total 100 USD -> 1_700_000
+        cur = admin.get(f"{API}/transactions/{tid}").json()
+        cur["qty"] = 2
+        cur["total_price"] = 100.0
+        cur["exchange_rate"] = 17000.0
+        u = admin.put(f"{API}/transactions/{tid}", json=cur)
+        assert u.status_code == 200, u.text
+        g = admin.get(f"{API}/transactions/{tid}").json()
+        assert abs(g["total_price_idr"] - 1_700_000.0) < 1e-6
+        admin.delete(f"{API}/transactions/{tid}")
+
+    def test_bulk_create_mixed_currency(self, admin):
+        payload = {"transactions": [
+            _tx_payload_curr("IDR", 1.0, qty=2, unit_price=1000.0),   # 2000
+            _tx_payload_curr("SGD", 12000.0, qty=1, unit_price=10.0), # 10*12000 = 120000
+            _tx_payload_curr("USD", 16000.0, qty=1, unit_price=5.0),  # 5*16000 = 80000
+        ]}
+        r = admin.post(f"{API}/transactions/bulk", json=payload)
+        assert r.status_code == 200, r.text
+        # locate them by project_no
+        lst = admin.get(f"{API}/transactions", params={"q": "TEST_ITER3", "page_size": 200}).json()["items"]
+        by_curr = {t["currency"]: t for t in lst if t["project_no"] == "TEST_ITER3"}
+        # find those we just made (there may be prior fixtures — filter by exact totals)
+        idrs = [t for t in lst if t["currency"] == "IDR" and t["total_price"] == 2000]
+        sgds = [t for t in lst if t["currency"] == "SGD" and t["total_price"] == 10.0]
+        usds = [t for t in lst if t["currency"] == "USD" and t["total_price"] == 5.0]
+        assert idrs and abs(idrs[0]["total_price_idr"] - 2000) < 1e-6
+        assert sgds and abs(sgds[0]["total_price_idr"] - 120000) < 1e-6
+        assert usds and abs(usds[0]["total_price_idr"] - 80000) < 1e-6
+        # cleanup
+        for t in idrs + sgds + usds:
+            admin.delete(f"{API}/transactions/{t['id']}")
+
+    def test_seed_has_sgd_and_usd_with_idr_populated(self, admin):
+        lst = admin.get(f"{API}/transactions", params={"page_size": 500}).json()["items"]
+        sgd = [t for t in lst if t.get("currency") == "SGD"]
+        usd = [t for t in lst if t.get("currency") == "USD"]
+        assert len(sgd) >= 1, "Expected at least one SGD seeded transaction"
+        assert len(usd) >= 1, "Expected at least one USD seeded transaction"
+        for t in sgd + usd:
+            assert t.get("total_price_idr", 0) > 0, f"total_price_idr should be populated for {t.get('po_no')}"
+            # sanity: total_price_idr == total_price * exchange_rate
+            expected = float(t["total_price"]) * float(t["exchange_rate"])
+            assert abs(t["total_price_idr"] - expected) < 1e-3
+
+
+class TestBulkDelete:
+    def _seed(self, sess, n=3):
+        ids = []
+        for _ in range(n):
+            r = sess.post(f"{API}/transactions", json=_tx_payload_curr("IDR"))
+            assert r.status_code == 200, r.text
+            ids.append(r.json()["id"])
+        return ids
+
+    def test_admin_bulk_delete(self, admin):
+        ids = self._seed(admin, 3)
+        r = admin.post(f"{API}/transactions/bulk-delete", json={"ids": ids})
+        assert r.status_code == 200, r.text
+        assert r.json()["deleted"] == 3
+        # verify gone
+        for tid in ids:
+            g = admin.get(f"{API}/transactions/{tid}")
+            assert g.status_code == 404
+
+    def test_staff_bulk_delete_allowed(self, admin, staff):
+        ids = self._seed(admin, 2)
+        r = staff.post(f"{API}/transactions/bulk-delete", json={"ids": ids})
+        assert r.status_code == 200, r.text
+        assert r.json()["deleted"] == 2
+
+    def test_finance_bulk_delete_403(self, admin, finance):
+        ids = self._seed(admin, 1)
+        r = finance.post(f"{API}/transactions/bulk-delete", json={"ids": ids})
+        assert r.status_code == 403
+        admin.post(f"{API}/transactions/bulk-delete", json={"ids": ids})
+
+    def test_store_bulk_delete_403(self, admin, store):
+        ids = self._seed(admin, 1)
+        r = store.post(f"{API}/transactions/bulk-delete", json={"ids": ids})
+        assert r.status_code == 403
+        admin.post(f"{API}/transactions/bulk-delete", json={"ids": ids})
+
+    def test_empty_ids_400(self, admin):
+        r = admin.post(f"{API}/transactions/bulk-delete", json={"ids": []})
+        assert r.status_code == 400
+
+
+class TestImportForcesPostToStoreFalse:
+    def test_import_xlsx_forces_post_to_store_false(self, admin):
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["Tanggal Invoice", "Nama Barang", "Nama Toko", "Qty", "Unit Price", "Total Price", "Nomor Invoice"])
+        inv_no = f"TEST_IMP_{uuid.uuid4().hex[:6]}"
+        ws.append(["2025-03-01", "TEST_Import_Item", "TEST_Import_Vendor", 5, 100, 500, inv_no])
+        buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+        files = {"file": ("test.xlsx", buf.getvalue(),
+                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+        # remove content-type header for multipart
+        s = requests.Session()
+        s.cookies.update(admin.cookies)
+        r = s.post(f"{API}/transactions/import/xlsx", files=files)
+        assert r.status_code == 200, r.text
+        assert r.json()["inserted"] >= 1
+        # verify post_to_store=False
+        lst = admin.get(f"{API}/transactions", params={"invoice_no": inv_no}).json()["items"]
+        assert lst, "Imported row not found"
+        for t in lst:
+            assert t.get("post_to_store") is False, f"post_to_store should be False after import, got {t.get('post_to_store')}"
+            admin.delete(f"{API}/transactions/{t['id']}")
+
+
+class TestIncomingGoods:
+    def _payload(self, add_flags=(True, False)):
+        return {
+            "receive_date": "2025-03-15",
+            "source_type": "supplier",
+            "source_name": "TEST_Supplier_IG",
+            "do_no": f"TEST_DO_{uuid.uuid4().hex[:6]}",
+            "po_no": "",
+            "items": [
+                {"item_name": "TEST_IG_Item_A", "qty": 10, "unit": "Ea",
+                 "add_to_stock": add_flags[0], "unit_price": 5.0, "remark": "in-stock"},
+                {"item_name": "TEST_IG_Item_B", "qty": 4, "unit": "Ea",
+                 "add_to_stock": add_flags[1], "unit_price": 3.0, "remark": "habis-pakai"},
+            ],
+        }
+
+    def test_admin_post_incoming_multi_item(self, admin):
+        r = admin.post(f"{API}/store/incoming", json=self._payload())
+        assert r.status_code == 200, r.text
+        assert r.json()["received"] == 2
+        # verify persisted with correct qty_remaining behavior
+        rep = admin.get(f"{API}/store/incoming-report",
+                        params={"source": "manual", "q": "TEST_IG"}).json()
+        by_item = {i["item_name"]: i for i in rep["items"]}
+        a = by_item.get("TEST_IG_Item_A")
+        b = by_item.get("TEST_IG_Item_B")
+        assert a and a["qty_remaining"] == 10.0 and a["add_to_stock"] is True
+        assert b and b["qty_remaining"] == 0.0 and b["add_to_stock"] is False
+        assert a["source"] == "manual" and b["source"] == "manual"
+
+    def test_store_can_post_incoming(self, store):
+        r = store.post(f"{API}/store/incoming", json=self._payload((True, True)))
+        assert r.status_code == 200, r.text
+
+    def test_finance_cannot_post_incoming(self, finance):
+        r = finance.post(f"{API}/store/incoming", json=self._payload())
+        assert r.status_code == 403
+
+    def test_incoming_report_filter_by_source(self, admin):
+        r_manual = admin.get(f"{API}/store/incoming-report", params={"source": "manual"})
+        assert r_manual.status_code == 200
+        for it in r_manual.json()["items"]:
+            assert it.get("source") == "manual"
+        r_po = admin.get(f"{API}/store/incoming-report", params={"source": "po"})
+        assert r_po.status_code == 200
+        for it in r_po.json()["items"]:
+            assert it.get("source") == "po"
+
+    def test_incoming_report_finance_access(self, finance):
+        # store-access allows finance
+        r = finance.get(f"{API}/store/incoming-report")
+        assert r.status_code == 200
+
+
+class TestGRNAutoUpdate:
+    """POST /store/receive/bulk with invoice_no + receive_date updates source transaction."""
+
+    def _seed_post_to_store_tx(self, admin):
+        p = _tx_payload_curr("IDR")
+        p["post_to_store"] = True
+        p["qty"] = 10
+        p["total_price"] = 10 * p["unit_price"]
+        p["invoice_no"] = ""  # empty so we can watch it get filled
+        r = admin.post(f"{API}/transactions", json=p)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def test_bulk_receive_updates_source_transaction(self, admin, store):
+        tx = self._seed_post_to_store_tx(admin)
+        new_inv = f"TEST_GRN_INV_{uuid.uuid4().hex[:6]}"
+        new_date = "2025-04-01"
+        payload = {
+            "do_number": f"TEST_DO_{uuid.uuid4().hex[:6]}",
+            "invoice_no": new_inv,
+            "receive_date": new_date,
+            "items": [{"transaction_id": tx["id"], "qty_received": 5, "add_to_stock": True}],
+        }
+        r = store.post(f"{API}/store/receive/bulk", json=payload)
+        assert r.status_code == 200, r.text
+        # verify source tx now has invoice_no + receive_date
+        g = admin.get(f"{API}/transactions/{tx['id']}").json()
+        assert g["invoice_no"] == new_inv
+        assert g["receive_date"] == new_date
+        admin.delete(f"{API}/transactions/{tx['id']}")
+
+    def test_bulk_receive_add_to_stock_false_sets_qty_remaining_0(self, admin, store):
+        tx = self._seed_post_to_store_tx(admin)
+        payload = {
+            "do_number": "DO_HABIS",
+            "invoice_no": f"TEST_HABIS_{uuid.uuid4().hex[:6]}",
+            "receive_date": "2025-04-02",
+            "items": [{"transaction_id": tx["id"], "qty_received": 3, "add_to_stock": False}],
+        }
+        r = store.post(f"{API}/store/receive/bulk", json=payload)
+        assert r.status_code == 200, r.text
+        # find that receipt
+        recs = admin.get(f"{API}/store/receipts", params={"transaction_id": tx["id"]}).json()
+        assert recs and any(rec["qty_remaining"] == 0.0 and rec["add_to_stock"] is False for rec in recs), \
+            f"Expected qty_remaining=0 & add_to_stock=False; got {recs}"
+        admin.delete(f"{API}/transactions/{tx['id']}")
+
+
+class TestAdminDirectToggleAddToStock:
+    def test_toggle_off_and_on(self, admin, store):
+        # create incoming (add_to_stock=True) and toggle it off/on
+        payload = {
+            "receive_date": "2025-04-10",
+            "source_type": "supplier",
+            "source_name": "TEST_Toggle_Sup",
+            "items": [{"item_name": "TEST_Toggle_Item", "qty": 7, "add_to_stock": True, "unit_price": 1.0}],
+        }
+        r = admin.post(f"{API}/store/incoming", json=payload)
+        assert r.status_code == 200
+        # fetch receipt id
+        rep = admin.get(f"{API}/store/incoming-report", params={"q": "TEST_Toggle_Item"}).json()
+        rec = next(i for i in rep["items"] if i["item_name"] == "TEST_Toggle_Item")
+        rid = rec["id"]
+        assert rec["qty_remaining"] == 7.0
+
+        # turn OFF
+        r_off = admin.patch(f"{API}/store/receipts/{rid}/flags", json={"add_to_stock": False})
+        assert r_off.status_code == 200, r_off.text
+        rep2 = admin.get(f"{API}/store/incoming-report", params={"q": "TEST_Toggle_Item"}).json()
+        r2 = next(i for i in rep2["items"] if i["id"] == rid)
+        assert r2["qty_remaining"] == 0.0 and r2["add_to_stock"] is False
+
+        # turn ON — restored to qty_received
+        r_on = admin.patch(f"{API}/store/receipts/{rid}/flags", json={"add_to_stock": True})
+        assert r_on.status_code == 200
+        rep3 = admin.get(f"{API}/store/incoming-report", params={"q": "TEST_Toggle_Item"}).json()
+        r3 = next(i for i in rep3["items"] if i["id"] == rid)
+        assert r3["qty_remaining"] == 7.0 and r3["add_to_stock"] is True
+
+    def test_toggle_off_blocked_after_consumption(self, admin, store):
+        # create incoming with add_to_stock=True, issue some, then try to toggle off
+        item = f"TEST_Consumed_{uuid.uuid4().hex[:6]}"
+        payload = {
+            "receive_date": "2025-04-11",
+            "source_type": "supplier",
+            "source_name": "TEST_Cons_Sup",
+            "items": [{"item_name": item, "qty": 5, "add_to_stock": True, "unit_price": 2.0}],
+        }
+        r = admin.post(f"{API}/store/incoming", json=payload)
+        assert r.status_code == 200
+        # issue 2 out
+        issue = {"items": [{"item_name": item, "qty": 2, "taker_name": "TEST_Taker",
+                            "issue_date": "2025-04-12", "so_number": "TEST_SO"}]}
+        ir = store.post(f"{API}/store/issue/bulk", json=issue)
+        assert ir.status_code == 200, ir.text
+        rep = admin.get(f"{API}/store/incoming-report", params={"q": item}).json()
+        rec = next(i for i in rep["items"] if i["item_name"] == item)
+        rid = rec["id"]
+        # attempt to turn off
+        r_off = admin.patch(f"{API}/store/receipts/{rid}/flags", json={"add_to_stock": False})
+        assert r_off.status_code == 400, f"Expected 400 after consumption, got {r_off.status_code} {r_off.text}"
+
+
+class TestErwinAdmin:
+    def test_erwin_login(self, erwin):
+        r = erwin.get(f"{API}/auth/me")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["username"] == "erwin"
+        assert d["role"] == "admin"
+
 
 
 # ---------------- Cleanup transactions ----------------

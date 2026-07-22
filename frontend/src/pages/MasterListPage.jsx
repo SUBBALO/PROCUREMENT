@@ -43,6 +43,8 @@ export default function MasterListPage() {
   const [page, setPage] = useState(1);
   const [editTx, setEditTx] = useState(null);
   const [deleteTx, setDeleteTx] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [confirmBulk, setConfirmBulk] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -161,6 +163,19 @@ export default function MasterListPage() {
     }
   };
 
+  const onConfirmBulkDelete = async () => {
+    try {
+      const ids = Array.from(selectedIds);
+      const { data } = await api.post("/transactions/bulk-delete", { ids });
+      toast.success(`${data.deleted} transaksi dihapus`);
+      setSelectedIds(new Set());
+      setConfirmBulk(false);
+      load(page, filters);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal hapus");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -228,10 +243,53 @@ export default function MasterListPage() {
       </Card>
 
       <Card className="rounded-none border-slate-200 shadow-none bg-white overflow-hidden">
+        {selectedIds.size > 0 && (
+          <div className="flex items-center justify-between p-3 border-b border-slate-200 bg-amber-50" data-testid="bulk-bar">
+            <div className="text-sm text-slate-700">
+              <b className="tabular-nums text-slate-900">{selectedIds.size}</b> baris dipilih
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="bulk-clear-btn"
+                onClick={() => setSelectedIds(new Set())}
+                className="rounded-none h-8 border-slate-300 text-xs uppercase tracking-[0.1em] font-semibold"
+              >
+                Batal Pilih
+              </Button>
+              <Button
+                size="sm"
+                data-testid="bulk-delete-btn"
+                onClick={() => setConfirmBulk(true)}
+                className="rounded-none h-8 bg-red-600 hover:bg-red-700 text-white text-xs uppercase tracking-[0.1em] font-semibold"
+              >
+                <Trash size={12} weight="bold" className="mr-1" /> Hapus {selectedIds.size} Baris
+              </Button>
+            </div>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-sm border-collapse">
             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
               <tr className="text-xs uppercase tracking-[0.1em] font-bold text-slate-500">
+                <th className="p-3 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    data-testid="select-all-checkbox"
+                    className="w-4 h-4 accent-sky-600 cursor-pointer"
+                    checked={data.items.length > 0 && data.items.every((t) => selectedIds.has(t.id))}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedIds(new Set([...selectedIds, ...data.items.map((t) => t.id)]));
+                      } else {
+                        const next = new Set(selectedIds);
+                        data.items.forEach((t) => next.delete(t.id));
+                        setSelectedIds(next);
+                      }
+                    }}
+                  />
+                </th>
                 <th className="text-left p-3">Tanggal</th>
                 <th className="text-left p-3">Invoice</th>
                 <th className="text-left p-3">Toko</th>
@@ -239,28 +297,44 @@ export default function MasterListPage() {
                 <th className="text-left p-3">SO / PO</th>
                 <th className="text-right p-3">Qty</th>
                 <th className="text-right p-3">Harga</th>
-                <th className="text-right p-3">Total</th>
+                <th className="text-right p-3">Total (IDR)</th>
                 <th className="text-center p-3 w-20">Aksi</th>
               </tr>
             </thead>
             <tbody data-testid="transactions-table">
               {loading && (
                 <tr>
-                  <td colSpan={9} className="text-center p-8 text-slate-400 text-sm">
+                  <td colSpan={10} className="text-center p-8 text-slate-400 text-sm">
                     Memuat data...
                   </td>
                 </tr>
               )}
               {!loading && data.items.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-center p-8 text-slate-400 text-sm" data-testid="empty-state">
+                  <td colSpan={10} className="text-center p-8 text-slate-400 text-sm" data-testid="empty-state">
                     Tidak ada data. Klik "Input Transaksi" atau "Import Excel" untuk mulai.
                   </td>
                 </tr>
               )}
               {!loading &&
-                data.items.map((t) => (
-                  <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50" data-testid={`tx-row-${t.id}`}>
+                data.items.map((t) => {
+                  const isForeign = t.currency && t.currency !== "IDR";
+                  const idrTotal = t.total_price_idr ?? t.total_price;
+                  return (
+                  <tr key={t.id} className={`border-b border-slate-100 hover:bg-slate-50 ${selectedIds.has(t.id) ? "bg-sky-50" : ""}`} data-testid={`tx-row-${t.id}`}>
+                    <td className="p-3 text-center">
+                      <input
+                        type="checkbox"
+                        data-testid={`select-${t.id}`}
+                        className="w-4 h-4 accent-sky-600 cursor-pointer"
+                        checked={selectedIds.has(t.id)}
+                        onChange={(e) => {
+                          const next = new Set(selectedIds);
+                          if (e.target.checked) next.add(t.id); else next.delete(t.id);
+                          setSelectedIds(next);
+                        }}
+                      />
+                    </td>
                     <td className="p-3 whitespace-nowrap text-slate-700">{formatDateID(t.invoice_date)}</td>
                     <td className="p-3 whitespace-nowrap text-slate-700 font-mono text-xs">{t.invoice_no || "-"}</td>
                     <td className="p-3 text-slate-900">{t.vendor_name}</td>
@@ -271,8 +345,18 @@ export default function MasterListPage() {
                     <td className="p-3 text-right tabular-nums">
                       {t.qty} <span className="text-slate-400 text-xs">{t.unit}</span>
                     </td>
-                    <td className="p-3 text-right tabular-nums text-slate-700">{formatRupiah(t.unit_price)}</td>
-                    <td className="p-3 text-right tabular-nums font-semibold text-slate-900">{formatRupiah(t.total_price)}</td>
+                    <td className="p-3 text-right tabular-nums text-slate-700">
+                      <span className="text-[10px] uppercase tracking-[0.05em] font-bold text-slate-400 mr-1">{t.currency || "IDR"}</span>
+                      {Number(t.unit_price || 0).toLocaleString("id-ID", { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="p-3 text-right tabular-nums font-semibold text-slate-900">
+                      {formatRupiah(idrTotal)}
+                      {isForeign && (
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          {t.currency} {Number(t.total_price).toLocaleString("id-ID", { maximumFractionDigits: 2 })} @ {Number(t.exchange_rate || 1).toLocaleString("id-ID")}
+                        </div>
+                      )}
+                    </td>
                     <td className="p-3">
                       <div className="flex items-center justify-center gap-1">
                         <button data-testid={`edit-${t.id}`} onClick={() => setEditTx({ ...t })} className="p-1.5 text-slate-400 hover:text-sky-600" title="Edit">
@@ -284,7 +368,8 @@ export default function MasterListPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
             </tbody>
           </table>
         </div>
@@ -431,6 +516,9 @@ export default function MasterListPage() {
             <DialogTitle>Import Excel</DialogTitle>
             <DialogDescription>
               Upload file Excel (.xlsx). Format kolom mengikuti template ekspor. Kolom minimal: Tanggal, Toko, Nama Barang, Qty, Harga.
+              <div className="mt-2 text-amber-700 text-xs bg-amber-50 border border-amber-200 px-2 py-1.5">
+                <b>Catatan:</b> Data hasil import <b>tidak</b> otomatis masuk ke Store. Set flag "Ke Store" per baris manual jika perlu.
+              </div>
             </DialogDescription>
           </DialogHeader>
           <div>
@@ -447,6 +535,24 @@ export default function MasterListPage() {
             <Button variant="outline" onClick={() => setImportOpen(false)} className="rounded-none">Batal</Button>
             <Button onClick={onImport} disabled={importing || !importFile} data-testid="confirm-import-btn" className="rounded-none bg-slate-900 hover:bg-slate-800">
               {importing ? "Mengimpor..." : "Upload & Import"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Dialog */}
+      <Dialog open={confirmBulk} onOpenChange={setConfirmBulk}>
+        <DialogContent className="rounded-none" data-testid="bulk-delete-dialog">
+          <DialogHeader>
+            <DialogTitle>Hapus {selectedIds.size} Transaksi?</DialogTitle>
+            <DialogDescription>
+              Yakin ingin menghapus <b>{selectedIds.size}</b> baris transaksi yang dipilih? Aksi ini tidak dapat dibatalkan.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmBulk(false)} className="rounded-none">Batal</Button>
+            <Button data-testid="confirm-bulk-delete-btn" onClick={onConfirmBulkDelete} className="rounded-none bg-red-600 hover:bg-red-700 text-white">
+              Hapus {selectedIds.size} Baris
             </Button>
           </DialogFooter>
         </DialogContent>

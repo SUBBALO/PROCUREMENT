@@ -8,6 +8,8 @@ import { toast } from "sonner";
 import { Plus, Trash, FloppyDisk, ArrowUp } from "@phosphor-icons/react";
 
 const UNIT_OPTIONS = ["Ea", "Pcs", "Set", "Lot", "Kg", "Ltr", "Mtr", "Box", "Roll"];
+const CURRENCIES = ["IDR", "SGD", "USD"];
+const DEFAULT_RATES = { IDR: 1, SGD: 12000, USD: 16000 };
 
 const emptyItem = () => ({ project_no: "", item_name: "", qty: 1, unit: "Ea", unit_price: 0, notes: "", post_to_store: false });
 
@@ -22,6 +24,8 @@ export default function InputTransactionPage() {
     invoice_no: "",
     po_date: today,
     receive_date: today,
+    currency: "IDR",
+    exchange_rate: 1,
   });
   const [items, setItems] = useState([emptyItem()]);
   const [submitting, setSubmitting] = useState(false);
@@ -40,7 +44,14 @@ export default function InputTransactionPage() {
     return m;
   }, [itemsMaster]);
 
-  const setH = (k, v) => setHeader((s) => ({ ...s, [k]: v }));
+  const setH = (k, v) => setHeader((s) => {
+    const next = { ...s, [k]: v };
+    // When switching currency, populate a default exchange rate (user can adjust)
+    if (k === "currency") {
+      next.exchange_rate = DEFAULT_RATES[v] ?? 1;
+    }
+    return next;
+  });
   const setItem = (i, k, v) =>
     setItems((prev) =>
       prev.map((it, idx) => {
@@ -93,15 +104,23 @@ export default function InputTransactionPage() {
   };
 
   const grandTotal = items.reduce((sum, it) => sum + Number(it.qty || 0) * Number(it.unit_price || 0), 0);
+  const rate = header.currency === "IDR" ? 1 : Number(header.exchange_rate) || 0;
+  const grandTotalIDR = grandTotal * rate;
+  const currSymbol = header.currency === "IDR" ? "Rp" : header.currency;
 
   const onSubmit = async (e) => {
     e.preventDefault();
     if (!header.vendor_name.trim()) return toast.error("Nama Toko wajib diisi");
     const valid = items.filter((it) => it.item_name.trim());
     if (valid.length === 0) return toast.error("Minimal 1 item barang wajib diisi");
+    if (header.currency !== "IDR" && !(Number(header.exchange_rate) > 0)) {
+      return toast.error("Nilai Exchange Rate wajib > 0 untuk mata uang selain IDR");
+    }
 
     setSubmitting(true);
     try {
+      const currency = header.currency || "IDR";
+      const rate = currency === "IDR" ? 1 : Number(header.exchange_rate) || 1;
       const payload = {
         transactions: valid.map((it) => ({
           invoice_date: header.invoice_date,
@@ -116,6 +135,8 @@ export default function InputTransactionPage() {
           unit: it.unit || "Ea",
           unit_price: Number(it.unit_price) || 0,
           total_price: (Number(it.qty) || 0) * (Number(it.unit_price) || 0),
+          currency,
+          exchange_rate: rate,
           notes: it.notes || "",
           post_to_store: !!it.post_to_store,
         })),
@@ -129,6 +150,8 @@ export default function InputTransactionPage() {
         invoice_no: "",
         po_date: today,
         receive_date: today,
+        currency: "IDR",
+        exchange_rate: 1,
       });
       setItems([emptyItem()]);
       // Refresh master lists so newly-added names show up in autocomplete
@@ -153,15 +176,20 @@ export default function InputTransactionPage() {
           <p className="text-sm text-slate-500 mt-1">Isi header sekali, lalu tambah item ke bawah. Tekan <kbd className="px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-700 text-[10px] rounded">Enter</kbd> untuk lompat kolom berikutnya; Enter di kolom terakhir akan menambah baris baru.</p>
         </div>
         <div className="text-right">
-          <div className="text-[11px] uppercase tracking-[0.15em] font-bold text-slate-500">Grand Total</div>
+          <div className="text-[11px] uppercase tracking-[0.15em] font-bold text-slate-500">Grand Total ({header.currency})</div>
           <div className="text-3xl font-semibold tabular-nums text-sky-700" data-testid="grand-total" style={{ fontFamily: "Chivo, sans-serif" }}>
-            Rp {grandTotal.toLocaleString("id-ID")}
+            {currSymbol} {grandTotal.toLocaleString("id-ID", { maximumFractionDigits: 2 })}
           </div>
+          {header.currency !== "IDR" && (
+            <div className="text-xs text-slate-500 tabular-nums mt-1" data-testid="grand-total-idr">
+              ≈ Rp {grandTotalIDR.toLocaleString("id-ID", { maximumFractionDigits: 0 })}
+            </div>
+          )}
         </div>
       </div>
 
       <Card className="rounded-none border-slate-200 shadow-none p-6 bg-white">
-        <h3 className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500 mb-4">Info Invoice</h3>
+        <h3 className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500 mb-4">Info Invoice & Mata Uang</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <Label className="text-xs font-semibold text-slate-600 mb-1 block">Tanggal Invoice *</Label>
@@ -187,6 +215,35 @@ export default function InputTransactionPage() {
             <div>
               <Label className="text-xs font-semibold text-slate-600 mb-1 block">Tanggal Terima</Label>
               <Input type="date" data-testid="input-receive-date" className={inputCls} value={header.receive_date} onChange={(e) => setH("receive_date", e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:col-span-1">
+            <div>
+              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Mata Uang *</Label>
+              <select
+                data-testid="input-currency"
+                value={header.currency}
+                onChange={(e) => setH("currency", e.target.value)}
+                className="h-9 w-full border border-slate-300 rounded-none px-2 text-sm bg-white focus:ring-2 focus:ring-sky-600 focus:outline-none"
+              >
+                {CURRENCIES.map((c) => (<option key={c}>{c}</option>))}
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-slate-600 mb-1 block">
+                Exchange Rate {header.currency !== "IDR" && <span className="text-red-600">*</span>}
+              </Label>
+              <Input
+                type="number"
+                step="any"
+                min="0"
+                data-testid="input-exchange-rate"
+                disabled={header.currency === "IDR"}
+                className={`${inputCls} tabular-nums text-right ${header.currency === "IDR" ? "bg-slate-50 text-slate-400" : ""}`}
+                value={header.exchange_rate}
+                onChange={(e) => setH("exchange_rate", e.target.value)}
+                placeholder={header.currency === "IDR" ? "1" : "mis. 12000"}
+              />
             </div>
           </div>
         </div>
@@ -245,7 +302,7 @@ export default function InputTransactionPage() {
                       <Input data-testid={`item-price-${i}`} type="number" step="any" min="0" className={`${inputCls} text-right tabular-nums`} value={it.unit_price} onChange={(e) => setItem(i, "unit_price", e.target.value)} onKeyDown={(e) => onRowKeyDown(e, i, "item-price")} />
                     </td>
                     <td className="p-2 text-right tabular-nums font-semibold text-slate-900" data-testid={`item-total-${i}`}>
-                      Rp {total.toLocaleString("id-ID")}
+                      {currSymbol} {total.toLocaleString("id-ID", { maximumFractionDigits: 2 })}
                     </td>
                     <td className="p-2 text-center">
                       <input
@@ -274,11 +331,20 @@ export default function InputTransactionPage() {
             <tfoot>
               <tr className="border-t-2 border-slate-900 bg-slate-50">
                 <td colSpan={6} className="p-3 text-right text-xs uppercase tracking-[0.1em] font-bold text-slate-600">
-                  Grand Total
+                  Grand Total ({header.currency})
                 </td>
-                <td className="p-3 text-right tabular-nums font-bold text-slate-900 text-base">Rp {grandTotal.toLocaleString("id-ID")}</td>
+                <td className="p-3 text-right tabular-nums font-bold text-slate-900 text-base">{currSymbol} {grandTotal.toLocaleString("id-ID", { maximumFractionDigits: 2 })}</td>
                 <td colSpan={2}></td>
               </tr>
+              {header.currency !== "IDR" && (
+                <tr className="bg-slate-50">
+                  <td colSpan={6} className="p-3 text-right text-[11px] uppercase tracking-[0.1em] font-semibold text-slate-500">
+                    ≈ IDR (rate {Number(header.exchange_rate).toLocaleString("id-ID")})
+                  </td>
+                  <td className="p-3 text-right tabular-nums font-semibold text-sky-700 text-sm" data-testid="grand-total-idr-footer">Rp {grandTotalIDR.toLocaleString("id-ID", { maximumFractionDigits: 0 })}</td>
+                  <td colSpan={2}></td>
+                </tr>
+              )}
             </tfoot>
           </table>
         </div>

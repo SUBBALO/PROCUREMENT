@@ -11,7 +11,7 @@ from openpyxl import Workbook, load_workbook
 
 from db import db
 from deps import _now_iso, get_current_user, log_action, require_write
-from models import BulkCreateRequest, Transaction, TransactionCreate
+from models import BulkCreateRequest, BulkDeleteRequest, Transaction, TransactionCreate
 
 router = APIRouter(tags=["transactions"])
 
@@ -19,6 +19,18 @@ router = APIRouter(tags=["transactions"])
 def _clean_doc(doc: dict) -> dict:
     doc.pop("_id", None)
     return doc
+
+
+def _compute_idr(doc: dict) -> None:
+    """Compute total_price_idr from total_price × exchange_rate.
+    Ensures currency + exchange_rate defaults are present."""
+    curr = (doc.get("currency") or "IDR").upper()
+    rate = float(doc.get("exchange_rate") or 1.0)
+    if curr == "IDR":
+        rate = 1.0
+    doc["currency"] = curr
+    doc["exchange_rate"] = rate
+    doc["total_price_idr"] = float(doc.get("total_price") or 0) * rate
 
 
 # ---------------- Transactions ----------------
@@ -29,10 +41,12 @@ async def create_transaction(payload: TransactionCreate, current: dict = Depends
     tx["id"] = str(uuid.uuid4())
     tx["created_at"] = now
     tx["updated_at"] = now
+    _compute_idr(tx)
     await db.transactions.insert_one(tx.copy())
     await log_action(current, "create_transaction", "transaction", tx["id"], {
         "vendor": tx.get("vendor_name"), "item": tx.get("item_name"),
-        "invoice_no": tx.get("invoice_no"), "total": tx.get("total_price")
+        "invoice_no": tx.get("invoice_no"), "total": tx.get("total_price"),
+        "currency": tx.get("currency"), "total_idr": tx.get("total_price_idr"),
     })
     return _clean_doc(tx)
 
@@ -46,15 +60,27 @@ async def bulk_create(payload: BulkCreateRequest, current: dict = Depends(requir
         d["id"] = str(uuid.uuid4())
         d["created_at"] = now
         d["updated_at"] = now
+        _compute_idr(d)
         docs.append(d)
     if docs:
         await db.transactions.insert_many([d.copy() for d in docs])
         first = docs[0]
         await log_action(current, "bulk_create_transaction", "transaction", "-", {
             "count": len(docs), "vendor": first.get("vendor_name"),
-            "invoice_no": first.get("invoice_no"),
+            "invoice_no": first.get("invoice_no"), "currency": first.get("currency"),
         })
     return {"inserted": len(docs)}
+
+
+@router.post("/transactions/bulk-delete")
+async def bulk_delete_transactions(payload: BulkDeleteRequest, current: dict = Depends(require_write)):
+    if not payload.ids:
+        raise HTTPException(status_code=400, detail="Tidak ada ID yang dipilih")
+    res = await db.transactions.delete_many({"id": {"$in": payload.ids}})
+    await log_action(current, "bulk_delete_transaction", "transaction", "-", {
+        "count": res.deleted_count, "requested": len(payload.ids),
+    })
+    return {"deleted": res.deleted_count}
 
 
 @router.get("/transactions")
@@ -119,11 +145,13 @@ async def update_transaction(tx_id: str, payload: TransactionCreate, current: di
         raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan")
     upd = payload.model_dump()
     upd["updated_at"] = _now_iso()
+    _compute_idr(upd)
     await db.transactions.update_one({"id": tx_id}, {"$set": upd})
     doc = await db.transactions.find_one({"id": tx_id}, {"_id": 0})
     await log_action(current, "update_transaction", "transaction", tx_id, {
         "vendor": upd.get("vendor_name"), "item": upd.get("item_name"),
         "invoice_no": upd.get("invoice_no"), "total": upd.get("total_price"),
+        "currency": upd.get("currency"),
     })
     return doc
 
@@ -458,15 +486,22 @@ async def import_xlsx(file: UploadFile = File(...), current: dict = Depends(get_
                     "unit": str(row[col_unit]).strip() if col_unit is not None and col_unit < len(row) and row[col_unit] else "Ea",
                     "unit_price": _to_float(row[col_price]) if col_price is not None and col_price < len(row) else 0,
                     "total_price": _to_float(row[col_total]) if col_total is not None and col_total < len(row) else 0,
+                    "currency": "IDR",
+                    "exchange_rate": 1.0,
                     "invoice_no": str(row[col_inv]) if col_inv is not None and col_inv < len(row) and row[col_inv] not in (None, "") else "",
                     "po_date": _to_date_str(row[col_podate]) if col_podate is not None and col_podate < len(row) else None,
                     "receive_date": _to_date_str(row[col_recv]) if col_recv is not None and col_recv < len(row) else None,
                     "notes": "",
+                    # Import from Excel: NEVER auto-post to store (staff decides later per row)
+                    "post_to_store": False,
+                    "is_compliant": True,
+                    "is_completed": True,
                     "created_at": now,
                     "updated_at": now,
                 }
                 if d["total_price"] == 0 and d["qty"] and d["unit_price"]:
                     d["total_price"] = d["qty"] * d["unit_price"]
+                d["total_price_idr"] = d["total_price"]  # IDR default
                 if not d["invoice_date"]:
                     continue
                 docs.append(d)

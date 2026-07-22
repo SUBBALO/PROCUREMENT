@@ -10,7 +10,7 @@ import { toast } from "sonner";
 
 export default function LoginPage() {
   const { user, login } = useAuth();
-  const [username, setUsername] = useState("admin");
+  const [username, setUsername] = useState("susanto");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState("");
@@ -123,7 +123,7 @@ export default function LoginPage() {
               </Button>
 
               <div className="text-xs text-slate-400 pt-4 border-t border-slate-200">
-                Default: <span className="font-mono text-slate-600">admin / admin123</span>
+                Default: <span className="font-mono text-slate-600">susanto / admin123</span>
               </div>
             </form>
           </CardContent>

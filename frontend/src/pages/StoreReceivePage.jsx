@@ -33,10 +33,10 @@ export default function StoreReceivePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
-          Terima Barang (GRN)
+          Terima Barang dari PO Purchasing
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Daftar PO yang menunggu diterima. Klik satu PO untuk melihat semua item dan isi qty diterima.
+          Daftar PO yang menunggu diterima. Klik satu PO untuk isi qty diterima. Isi <b>Nomor Invoice</b> dan <b>Tanggal Terima</b> — nanti otomatis update Master List Purchasing.
         </p>
       </div>
 
@@ -91,17 +91,18 @@ export default function StoreReceivePage() {
 
 function ReceiveDialog({ group, onClose, onSaved }) {
   const [doNo, setDoNo] = useState("");
+  const [invNo, setInvNo] = useState("");
   const [date, setDate] = useState(today());
-  const [itemInputs, setItemInputs] = useState({}); // { transaction_id: {qty, note} }
+  const [itemInputs, setItemInputs] = useState({}); // { transaction_id: {qty, note, add_to_stock} }
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (group) {
       setDoNo("");
+      setInvNo(group.invoice_no || "");
       setDate(today());
-      // Prefill each item's qty = qty_remaining (user can zero-out or reduce)
       const init = {};
-      group.items.forEach((it) => { init[it.transaction_id] = { qty: it.qty_remaining, note: "" }; });
+      group.items.forEach((it) => { init[it.transaction_id] = { qty: it.qty_remaining, note: "", add_to_stock: true }; });
       setItemInputs(init);
     }
   }, [group]);
@@ -111,12 +112,11 @@ function ReceiveDialog({ group, onClose, onSaved }) {
   const setItemInput = (tx_id, k, v) => setItemInputs((p) => ({ ...p, [tx_id]: { ...p[tx_id], [k]: v } }));
 
   const validItems = Object.entries(itemInputs)
-    .map(([tx_id, v]) => ({ transaction_id: tx_id, qty_received: Number(v.qty) || 0, note: v.note || "" }))
+    .map(([tx_id, v]) => ({ transaction_id: tx_id, qty_received: Number(v.qty) || 0, note: v.note || "", add_to_stock: !!v.add_to_stock }))
     .filter((x) => x.qty_received > 0);
 
   const save = async () => {
     if (validItems.length === 0) return toast.error("Isi qty di minimal 1 item");
-    // client-side validation vs qty_remaining
     for (const v of validItems) {
       const it = group.items.find((x) => x.transaction_id === v.transaction_id);
       if (v.qty_received > it.qty_remaining) return toast.error(`${it.item_name}: qty melebihi sisa (${it.qty_remaining})`);
@@ -125,6 +125,7 @@ function ReceiveDialog({ group, onClose, onSaved }) {
     try {
       await api.post("/store/receive/bulk", {
         do_number: doNo,
+        invoice_no: invNo,
         receive_date: date,
         items: validItems,
       });
@@ -137,7 +138,7 @@ function ReceiveDialog({ group, onClose, onSaved }) {
 
   return (
     <Dialog open={!!group} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="rounded-none max-w-3xl" data-testid="receive-dialog">
+      <DialogContent className="rounded-none max-w-4xl" data-testid="receive-dialog">
         <DialogHeader>
           <DialogTitle className="text-lg" style={{ fontFamily: "Chivo, sans-serif" }}>
             Terima Barang — <span className="font-mono">{group.po_no || group.invoice_no}</span>
@@ -152,7 +153,11 @@ function ReceiveDialog({ group, onClose, onSaved }) {
         </DialogHeader>
 
         {/* Header info once */}
-        <div className="grid grid-cols-2 gap-3 border-t border-slate-200 pt-3">
+        <div className="grid grid-cols-3 gap-3 border-t border-slate-200 pt-3">
+          <div>
+            <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nomor Invoice</Label>
+            <Input data-testid="receive-invoice" className={`${inputCls} font-mono`} value={invNo} onChange={(e) => setInvNo(e.target.value)} placeholder="Update ke Masterlist Purchasing" />
+          </div>
           <div>
             <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nomor DO / Nota Terima</Label>
             <Input data-testid="receive-do" className={`${inputCls} font-mono`} value={doNo} onChange={(e) => setDoNo(e.target.value)} placeholder="mis. DO-2026-0123" />
@@ -174,12 +179,13 @@ function ReceiveDialog({ group, onClose, onSaved }) {
                   <th className="text-right p-2 w-20">Qty PO</th>
                   <th className="text-right p-2 w-24">Sisa</th>
                   <th className="text-right p-2 w-28">Qty Diterima</th>
+                  <th className="text-center p-2 w-24" title="Uncheck jika barang langsung habis pakai / tidak masuk stok">Ke Stok?</th>
                   <th className="text-left p-2 w-40">Catatan</th>
                 </tr>
               </thead>
               <tbody data-testid="dialog-items">
                 {group.items.map((it) => {
-                  const v = itemInputs[it.transaction_id] || { qty: 0, note: "" };
+                  const v = itemInputs[it.transaction_id] || { qty: 0, note: "", add_to_stock: true };
                   const over = Number(v.qty) > it.qty_remaining;
                   return (
                     <tr key={it.transaction_id} className={`border-b border-slate-100 ${over ? "bg-red-50" : ""}`}>
@@ -193,6 +199,15 @@ function ReceiveDialog({ group, onClose, onSaved }) {
                           className={`${inputCls} text-right tabular-nums h-8`}
                           value={v.qty}
                           onChange={(e) => setItemInput(it.transaction_id, "qty", e.target.value)}
+                        />
+                      </td>
+                      <td className="p-2 text-center">
+                        <input
+                          type="checkbox"
+                          data-testid={`item-stock-${it.transaction_id}`}
+                          className="w-4 h-4 accent-emerald-600 cursor-pointer"
+                          checked={!!v.add_to_stock}
+                          onChange={(e) => setItemInput(it.transaction_id, "add_to_stock", e.target.checked)}
                         />
                       </td>
                       <td className="p-2">
@@ -211,7 +226,7 @@ function ReceiveDialog({ group, onClose, onSaved }) {
             </table>
           </div>
           <div className="mt-2 text-xs text-slate-500">
-            Set qty <b>0</b> untuk item yang belum diterima kali ini. Item bisa diterima bertahap.
+            Set qty <b>0</b> untuk item yang belum diterima. Uncheck <b>Ke Stok?</b> jika barang langsung habis pakai (tidak tracking stok).
           </div>
         </div>
 
