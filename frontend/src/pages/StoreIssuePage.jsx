@@ -161,7 +161,10 @@ export default function StoreIssuePage() {
                           className={inputCls}
                           value={r.item_name}
                           onChange={(e) => setRow(i, "item_name", e.target.value)}
-                          onKeyDown={(e) => onRowKeyDown(e, i, "issue-item")}
+                          onKeyDown={(e) => {
+                            if (tryAutocomplete(e, stockOptions, (v) => setRow(i, "item_name", v))) return;
+                            onRowKeyDown(e, i, "issue-item");
+                          }}
                           placeholder="Ketik / pilih nama barang..."
                         />
                         {s && (
