@@ -3,59 +3,147 @@ import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import api from "../lib/api";
 import { Button } from "./ui/button";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
+} from "./ui/dropdown-menu";
 import { toast } from "sonner";
 import {
   ChartBar, Plus, MagnifyingGlass, SignOut, Package, ChartLineUp, ShieldStar, Warehouse, ArrowDown, ArrowUp,
-  ClipboardText, ShoppingCart, Storefront, Truck, CheckSquare, ClockCounterClockwise, Bell,
+  ClipboardText, CaretDown, ShoppingCart, Storefront, Truck, ClockCounterClockwise, Bell,
 } from "@phosphor-icons/react";
 
+// ─── PURCHASING ─────────────────────────────────────────
 const PURCHASE_ITEMS = [
   { to: "/", label: "Dashboard", icon: ChartBar, testid: "nav-dashboard" },
   { to: "/input", label: "Input Transaksi", icon: Plus, testid: "nav-input" },
   { to: "/master", label: "Master List", icon: MagnifyingGlass, testid: "nav-master" },
   { to: "/items", label: "Master Barang", icon: Package, testid: "nav-items" },
   { to: "/kpi", label: "KPI Purchasing", icon: ChartLineUp, testid: "nav-kpi" },
+  { to: "/so-master", label: "Master SO", icon: ClipboardText, testid: "nav-so-master" },
 ];
 
-const STORE_ITEMS = [
-  { to: "/store/stock", label: "Stok", icon: Warehouse, testid: "nav-store-stock" },
-  { to: "/store/receive", label: "Terima dari PO", icon: ArrowDown, testid: "nav-store-receive" },
+// ─── STORE — grouped Incoming vs Outgoing ───────────────
+const STORE_STOCK = { to: "/store/stock", label: "Stok", icon: Warehouse, testid: "nav-store-stock" };
+
+const STORE_INCOMING = [
+  { to: "/store/receive", label: "Terima dari PO Purchasing", icon: ArrowDown, testid: "nav-store-receive" },
   { to: "/store/manual-receive", label: "Input Incoming Goods", icon: ArrowDown, testid: "nav-store-manual" },
   { to: "/store/incoming-report", label: "Laporan Incoming Goods", icon: ClipboardText, testid: "nav-store-incoming-report" },
+];
+
+const STORE_OUTGOING = [
   { to: "/store/issue", label: "Keluar Barang", icon: ArrowUp, testid: "nav-store-issue" },
   { to: "/deliveries", label: "Pengiriman", icon: Truck, testid: "nav-deliveries" },
 ];
 
-const STORE_REPORT_ITEM = { to: "/store/report", label: "Costing Store", icon: ClipboardText, testid: "nav-store-report" };
-const SO_MASTER_ITEM = { to: "/so-master", label: "Master SO", icon: ClipboardText, testid: "nav-so-master" };
+const STORE_REPORT = { to: "/store/report", label: "Costing Store", icon: ClipboardText, testid: "nav-store-report" };
 
-// Admin row now only has user + logs (Persetujuan Store is pulled OUT into its own always-visible bar).
-const ADMIN_ROW = [
-  { to: "/admin?tab=logs", label: "Log Aktivitas", icon: ClockCounterClockwise, testid: "nav-logs" },
+// ─── ADMIN ──────────────────────────────────────────────
+const ADMIN_ITEMS = [
   { to: "/admin", label: "Kelola User", icon: ShieldStar, testid: "nav-admin" },
+  { to: "/admin?tab=logs", label: "Log Aktivitas", icon: ClockCounterClockwise, testid: "nav-logs" },
 ];
-
-function NavPill({ to, label, icon: Icon, testid, active, badge }) {
-  const cls = `relative flex items-center gap-1.5 px-3 h-8 text-[11px] uppercase tracking-[0.1em] font-semibold border-b-2 transition-colors ${
-    active ? "border-sky-600 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-900"
-  }`;
-  return (
-    <NavLink to={to} end={to === "/"} data-testid={testid} className={({ isActive }) => (isActive || active ? cls.replace("border-transparent text-slate-500 hover:text-slate-900", "border-sky-600 text-slate-900") : cls)}>
-      <Icon size={14} weight="duotone" />
-      {label}
-      {badge != null && badge > 0 && (
-        <span data-testid={`${testid}-badge`} className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold tabular-nums">
-          {badge > 99 ? "99+" : badge}
-        </span>
-      )}
-    </NavLink>
-  );
-}
 
 function isPathMatch(current, target) {
   const t = target.split("?")[0];
   if (t === "/") return current === "/";
   return current === t || current.startsWith(t + "/");
+}
+
+function DeptDropdown({ label, icon: Icon, testid, items, activePath, incoming, outgoing, includeStock, includeReport, canViewReport }) {
+  // Determine if any of this dept's routes is active
+  const allRoutes = [
+    ...(items || []),
+    ...(incoming || []),
+    ...(outgoing || []),
+    ...(includeStock ? [STORE_STOCK] : []),
+    ...(includeReport && canViewReport ? [STORE_REPORT] : []),
+  ];
+  const isActive = allRoutes.some((r) => r && isPathMatch(activePath, r.to));
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          data-testid={testid}
+          className={`flex items-center gap-1.5 px-3 h-9 text-[11px] uppercase tracking-[0.1em] font-semibold border-b-2 transition-colors ${
+            isActive ? "border-sky-600 text-slate-900 bg-slate-50" : "border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+          }`}
+        >
+          <Icon size={14} weight="duotone" />
+          {label}
+          <CaretDown size={10} weight="bold" className="ml-0.5 text-slate-400" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="rounded-none w-64 border-slate-200">
+        {items && items.map((it) => (
+          <DropdownMenuItem key={it.to} asChild>
+            <NavLink to={it.to} data-testid={it.testid} className="flex items-center gap-2 text-sm cursor-pointer">
+              <it.icon size={14} weight="duotone" className="text-slate-500" />
+              {it.label}
+            </NavLink>
+          </DropdownMenuItem>
+        ))}
+
+        {includeStock && (
+          <>
+            <DropdownMenuItem asChild>
+              <NavLink to={STORE_STOCK.to} data-testid={STORE_STOCK.testid} className="flex items-center gap-2 text-sm cursor-pointer">
+                <STORE_STOCK.icon size={14} weight="duotone" className="text-slate-500" />
+                {STORE_STOCK.label}
+              </NavLink>
+            </DropdownMenuItem>
+          </>
+        )}
+
+        {incoming && incoming.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.15em] font-bold text-emerald-700">
+              Incoming
+            </DropdownMenuLabel>
+            {incoming.map((it) => (
+              <DropdownMenuItem key={it.to} asChild>
+                <NavLink to={it.to} data-testid={it.testid} className="flex items-center gap-2 text-sm cursor-pointer pl-4">
+                  <it.icon size={14} weight="duotone" className="text-emerald-600" />
+                  {it.label}
+                </NavLink>
+              </DropdownMenuItem>
+            ))}
+          </>
+        )}
+
+        {outgoing && outgoing.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.15em] font-bold text-amber-700">
+              Outgoing
+            </DropdownMenuLabel>
+            {outgoing.map((it) => (
+              <DropdownMenuItem key={it.to} asChild>
+                <NavLink to={it.to} data-testid={it.testid} className="flex items-center gap-2 text-sm cursor-pointer pl-4">
+                  <it.icon size={14} weight="duotone" className="text-amber-600" />
+                  {it.label}
+                </NavLink>
+              </DropdownMenuItem>
+            ))}
+          </>
+        )}
+
+        {includeReport && canViewReport && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <NavLink to={STORE_REPORT.to} data-testid={STORE_REPORT.testid} className="flex items-center gap-2 text-sm cursor-pointer">
+                <STORE_REPORT.icon size={14} weight="duotone" className="text-slate-500" />
+                {STORE_REPORT.label}
+              </NavLink>
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 export default function AppShell({ children }) {
@@ -71,48 +159,10 @@ export default function AppShell({ children }) {
   const role = user?.role;
   const perms = user?.perms || [];
   const canViewStoreReport = role === "admin" || (role !== "store" && perms.includes("view_store_report"));
-
-  // Build rows per role
-  const rowsForRole = () => {
-    if (!user) return [];
-    if (role === "admin") {
-      const storeItems = [...STORE_ITEMS];
-      if (canViewStoreReport) storeItems.push(STORE_REPORT_ITEM);
-      return [
-        { key: "purchasing", label: "Purchasing", icon: ShoppingCart, items: [...PURCHASE_ITEMS, SO_MASTER_ITEM] },
-        { key: "store", label: "Store", icon: Storefront, items: storeItems },
-        { key: "admin", label: "Admin", icon: ShieldStar, items: ADMIN_ROW },
-      ];
-    }
-    if (role === "store") {
-      // Store: sees store items + SO Master (read-only). No dashboard/purchasing.
-      return [{ key: "store", label: "Store", icon: Storefront, items: [...STORE_ITEMS, SO_MASTER_ITEM] }];
-    }
-    if (role === "finance") {
-      // Finance: read-only across
-      return [
-        { key: "purchasing", label: "Purchasing", icon: ShoppingCart, items: [
-          { to: "/", label: "Dashboard", icon: ChartBar, testid: "nav-dashboard" },
-          ...PURCHASE_ITEMS.filter((x) => x.to !== "/" && x.to !== "/input"),
-          SO_MASTER_ITEM,
-        ] },
-        { key: "store", label: "Store", icon: Storefront, items: [
-          ...(canViewStoreReport ? [STORE_REPORT_ITEM] : []),
-          { to: "/store/incoming-report", label: "Laporan Incoming Goods", icon: ClipboardText, testid: "nav-store-incoming-report" },
-        ] },
-      ];
-    }
-    // staff (default): purchasing + limited store view
-    return [
-      { key: "purchasing", label: "Purchasing", icon: ShoppingCart, items: [...PURCHASE_ITEMS, SO_MASTER_ITEM] },
-    ];
-  };
-
-  const rows = rowsForRole();
-
-  // Poll pending Persetujuan Store count (admin only) — every 30s
-  const [pendingCount, setPendingCount] = useState(0);
   const canApprove = role === "admin" && perms.includes("approve_store_requests");
+
+  // Poll pending Persetujuan Store count (admin only)
+  const [pendingCount, setPendingCount] = useState(0);
   useEffect(() => {
     if (!canApprove) { setPendingCount(0); return; }
     let cancelled = false;
@@ -126,26 +176,85 @@ export default function AppShell({ children }) {
     return () => { cancelled = true; clearInterval(id); };
   }, [canApprove]);
 
+  // Filter dept visibility per role
+  const showPurchasing = role === "admin" || role === "staff" || role === "finance";
+  const showStore = role === "admin" || role === "store" || role === "finance";
+  const showAdmin = role === "admin";
+
+  // Purchasing items per role
+  const purchasingItems = () => {
+    if (role === "finance") {
+      // finance sees dashboard + reports, not "Input Transaksi"
+      return PURCHASE_ITEMS.filter((x) => x.to !== "/input");
+    }
+    return PURCHASE_ITEMS;
+  };
+
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-slate-900 flex flex-col">
       <header className="sticky top-0 z-20 bg-white border-b border-slate-200">
-        {/* Top bar: brand + Persetujuan Store notification (admin) + user + logout */}
-        <div className="px-6 h-12 flex items-center justify-between gap-6 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <img src="/assets/logo-mks.png" alt="MKS" className="w-8 h-8 object-contain" />
-            <div className="font-bold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
-              Purchasing Department
+        <div className="px-6 h-14 flex items-center justify-between gap-4">
+          {/* Left: brand + main nav dropdowns */}
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2.5">
+              <img src="/assets/logo-mks.png" alt="MKS" className="w-8 h-8 object-contain" />
+              <div>
+                <div className="font-bold text-sm tracking-tight text-slate-900 leading-tight" style={{ fontFamily: "Chivo, sans-serif" }}>
+                  Purchasing Department
+                </div>
+                <div className="text-[9px] uppercase tracking-[0.2em] text-slate-400 leading-tight">
+                  PT. Mitra Karya Sarana
+                </div>
+              </div>
             </div>
+
+            <nav className="flex items-center gap-1">
+              {showPurchasing && (
+                <DeptDropdown
+                  label="Purchasing"
+                  icon={ShoppingCart}
+                  testid="dept-purchasing"
+                  items={purchasingItems()}
+                  activePath={location.pathname}
+                />
+              )}
+              {showStore && (
+                <DeptDropdown
+                  label="Store"
+                  icon={Storefront}
+                  testid="dept-store"
+                  includeStock={role !== "finance"}
+                  incoming={role === "finance"
+                    ? [STORE_INCOMING[2]]  // finance: only Laporan Incoming Goods
+                    : STORE_INCOMING}
+                  outgoing={role === "finance" ? [] : STORE_OUTGOING}
+                  includeReport={true}
+                  canViewReport={canViewStoreReport}
+                  activePath={location.pathname}
+                />
+              )}
+              {showAdmin && (
+                <DeptDropdown
+                  label="Admin"
+                  icon={ShieldStar}
+                  testid="dept-admin"
+                  items={ADMIN_ITEMS}
+                  activePath={location.pathname}
+                />
+              )}
+            </nav>
           </div>
-          <div className="flex items-center gap-3">
+
+          {/* Right: approvals notif + user + logout */}
+          <div className="flex items-center gap-2">
             {canApprove && (
               <NavLink
                 to="/admin?tab=requests"
                 data-testid="nav-approvals-top"
-                className={({ isActive }) => `relative flex items-center gap-1.5 px-3 h-8 text-[11px] uppercase tracking-[0.1em] font-bold border transition-colors ${
+                className={`relative flex items-center gap-1.5 px-3 h-9 text-[11px] uppercase tracking-[0.1em] font-bold border transition-colors ${
                   pendingCount > 0
                     ? "border-red-300 text-red-700 bg-red-50 hover:bg-red-100 animate-pulse"
-                    : (isActive ? "border-sky-600 text-sky-700 bg-sky-50" : "border-slate-300 text-slate-600 hover:bg-slate-50")
+                    : "border-slate-300 text-slate-600 hover:bg-slate-50"
                 }`}
               >
                 <Bell size={14} weight={pendingCount > 0 ? "fill" : "duotone"} />
@@ -173,25 +282,6 @@ export default function AppShell({ children }) {
             </Button>
           </div>
         </div>
-
-        {/* Multi-row nav */}
-        {rows.map((row) => (
-          <div key={row.key} className="px-6 flex items-center gap-2 border-b border-slate-100 overflow-x-auto" data-testid={`nav-row-${row.key}`}>
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.15em] font-bold text-slate-400 min-w-[100px]">
-              <row.icon size={12} weight="bold" />
-              {row.label}
-            </div>
-            <div className="flex items-center flex-wrap">
-              {row.items.map((it) => (
-                <NavPill
-                  key={`${row.key}-${it.to}`}
-                  {...it}
-                  active={isPathMatch(location.pathname, it.to)}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
       </header>
 
       <main className="flex-1 px-6 py-6 max-w-[1600px] w-full mx-auto">{children}</main>
