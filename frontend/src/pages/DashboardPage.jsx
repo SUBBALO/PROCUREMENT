@@ -42,15 +42,15 @@ const StatCard = ({ label, value, icon: Icon, tone = "sky", testid }) => (
 export default function DashboardPage() {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [stats, setStats] = useState(null);
+  const [monthly, setMonthly] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    api
-      .get(`/stats/summary?year=${year}`)
-      .then((r) => setStats(r.data))
-      .catch(() => setStats(null))
-      .finally(() => setLoading(false));
+    Promise.all([
+      api.get(`/stats/summary?year=${year}`).then((r) => setStats(r.data)).catch(() => setStats(null)),
+      api.get(`/stats/monthly`).then((r) => setMonthly(r.data)).catch(() => setMonthly(null)),
+    ]).finally(() => setLoading(false));
   }, [year]);
 
   const monthlyData =
@@ -85,6 +85,39 @@ export default function DashboardPage() {
           </Select>
         </div>
       </div>
+
+      {monthly && (
+        <Card data-testid="monthly-summary" className="rounded-none border-slate-200 shadow-none p-4 bg-gradient-to-r from-sky-50 to-white border-l-4 border-l-sky-600">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.15em] font-bold text-sky-700">Bulan Ini — {monthly.period?.month}</div>
+              <div className="mt-1 flex items-baseline gap-6">
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.1em] font-semibold text-slate-500">Total Pembelian (IDR)</div>
+                  <div className="text-2xl font-semibold text-slate-900 tabular-nums" style={{ fontFamily: "Chivo, sans-serif" }} data-testid="monthly-total">
+                    {formatRupiah(monthly.total_amount_idr || 0)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.1em] font-semibold text-slate-500">Transaksi</div>
+                  <div className="text-2xl font-semibold text-slate-900 tabular-nums" data-testid="monthly-tx-count">
+                    {(monthly.transactions || 0).toLocaleString("id-ID")}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.1em] font-semibold text-slate-500">Jumlah PO Unik</div>
+                  <div className="text-2xl font-semibold text-slate-900 tabular-nums" data-testid="monthly-po-count">
+                    {(monthly.po_count || 0).toLocaleString("id-ID")}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="text-xs text-slate-500">
+              Periode: <b className="tabular-nums text-slate-700">{monthly.period?.start}</b> s.d. <b className="tabular-nums text-slate-700">{monthly.period?.end}</b>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard

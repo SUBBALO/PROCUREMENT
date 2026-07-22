@@ -189,6 +189,7 @@ class DeliveryItem(BaseModel):
     item_name: str
     qty: float
     unit: Optional[str] = "Ea"
+    so_no: Optional[str] = ""
 
 
 class DeliveryCreate(BaseModel):

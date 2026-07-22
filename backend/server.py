@@ -17,6 +17,7 @@ from db import db, mongo_client
 from deps import _now_iso
 from security import hash_password, verify_password
 from routers import auth as auth_router
+from routers import ai as ai_router
 from routers import orders as orders_router
 from routers import store as store_router
 from routers import transactions as transactions_router
@@ -32,6 +33,7 @@ api_router.include_router(auth_router.router)
 api_router.include_router(transactions_router.router)
 api_router.include_router(store_router.router)
 api_router.include_router(orders_router.router)
+api_router.include_router(ai_router.router)
 
 
 @api_router.get("/")

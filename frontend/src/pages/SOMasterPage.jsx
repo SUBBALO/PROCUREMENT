@@ -20,6 +20,9 @@ export default function SOMasterPage() {
   const [q, setQ] = useState("");
   const [dlg, setDlg] = useState(null); // form data or null
   const [del, setDel] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,6 +49,19 @@ export default function SOMasterPage() {
     catch (e) { toast.error(e.response?.data?.detail || "Gagal"); }
   };
 
+  const doImport = async () => {
+    if (!importFile) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", importFile);
+      const { data } = await api.post("/sales-orders/import/xlsx", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success(`${data.inserted} SO diimport (${data.skipped_duplicates || 0} duplikat dilewati)`);
+      setImportOpen(false); setImportFile(null); load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal import"); }
+    finally { setImporting(false); }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -56,9 +72,14 @@ export default function SOMasterPage() {
           <p className="text-sm text-slate-500 mt-1">Daftar nomor project — {list.length.toLocaleString("id-ID")} SO.</p>
         </div>
         {canWrite && (
-          <Button data-testid="add-so-btn" onClick={openCreate} className="rounded-none h-9 bg-slate-900 hover:bg-slate-800 text-white text-xs uppercase tracking-[0.1em] font-semibold">
-            <Plus size={14} weight="bold" className="mr-1.5" /> Tambah SO
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button data-testid="import-so-btn" onClick={() => setImportOpen(true)} variant="outline" className="rounded-none h-9 border-slate-300 text-xs uppercase tracking-[0.1em] font-semibold">
+              <Upload size={14} weight="bold" className="mr-1.5" /> Import Excel
+            </Button>
+            <Button data-testid="add-so-btn" onClick={openCreate} className="rounded-none h-9 bg-slate-900 hover:bg-slate-800 text-white text-xs uppercase tracking-[0.1em] font-semibold">
+              <Plus size={14} weight="bold" className="mr-1.5" /> Tambah SO
+            </Button>
+          </div>
         )}
       </div>
 
@@ -135,6 +156,32 @@ export default function SOMasterPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDel(null)} className="rounded-none">Batal</Button>
             <Button onClick={doDelete} className="rounded-none bg-red-600 hover:bg-red-700 text-white">Hapus</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="rounded-none">
+          <DialogHeader>
+            <DialogTitle>Import SO dari Excel</DialogTitle>
+            <DialogDescription>
+              Upload file Excel (.xlsx) dengan kolom: <b>Nomor SO</b>, <b>Tanggal</b>, <b>Customer</b>, <b>Description</b>.
+              Duplikat (nomor SO sudah ada) akan dilewati otomatis.
+            </DialogDescription>
+          </DialogHeader>
+          <input
+            type="file"
+            accept=".xlsx"
+            data-testid="so-import-file"
+            onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+            className="block w-full text-sm text-slate-700 file:mr-3 file:py-2 file:px-4 file:rounded-none file:border file:border-slate-300 file:bg-white file:text-slate-700 file:text-xs file:uppercase file:tracking-[0.1em] file:font-semibold hover:file:bg-slate-50"
+          />
+          {importFile && <div className="mt-2 text-xs text-slate-500">File: <b>{importFile.name}</b></div>}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportOpen(false)} className="rounded-none">Batal</Button>
+            <Button data-testid="confirm-so-import" onClick={doImport} disabled={importing || !importFile} className="rounded-none bg-slate-900 hover:bg-slate-800">
+              {importing ? "Mengimpor..." : "Upload & Import"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

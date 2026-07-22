@@ -56,7 +56,7 @@ export default function LoginPage() {
         </div>
       </div>
 
-      <div className="flex items-center justify-center p-6 sm:p-12">
+      <div className="flex items-start justify-center p-6 sm:p-12 sm:pt-20">
         <Card className="w-full max-w-md rounded-none border-slate-200 shadow-none">
           <CardContent className="p-8">
             <div className="mb-8">

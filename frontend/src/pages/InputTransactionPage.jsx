@@ -5,7 +5,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { toast } from "sonner";
-import { Plus, Trash, FloppyDisk, ArrowUp } from "@phosphor-icons/react";
+import { Plus, Trash, FloppyDisk, ArrowUp, Sparkle } from "@phosphor-icons/react";
 
 const UNIT_OPTIONS = ["Ea", "Pcs", "Set", "Lot", "Kg", "Ltr", "Mtr", "Box", "Roll"];
 const CURRENCIES = ["IDR", "SGD", "USD"];
@@ -174,6 +174,29 @@ export default function InputTransactionPage() {
             Input Transaksi Pembelian
           </h1>
           <p className="text-sm text-slate-500 mt-1">Isi header sekali, lalu tambah item ke bawah. Tekan <kbd className="px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-700 text-[10px] rounded">Enter</kbd> untuk lompat kolom berikutnya; Enter di kolom terakhir akan menambah baris baru.</p>
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".jpg,.jpeg,.png,.webp,.pdf"
+              onChange={onParsePO}
+              className="hidden"
+              data-testid="po-upload-input"
+            />
+            <Button
+              type="button"
+              data-testid="parse-po-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={parsing}
+              variant="outline"
+              size="sm"
+              className="rounded-none h-8 border-sky-300 text-sky-700 hover:bg-sky-50 text-xs uppercase tracking-[0.1em] font-semibold"
+            >
+              <Sparkle size={14} weight="fill" className="mr-1.5 text-sky-600" />
+              {parsing ? "Membaca PO..." : "Auto-Read PO (JPG/PDF)"}
+            </Button>
+            <span className="text-[10px] text-slate-500">Upload foto/scan/PDF PO — AI akan mengisi form otomatis (Gemini 3 Flash)</span>
+          </div>
         </div>
         <div className="text-right">
           <div className="text-[11px] uppercase tracking-[0.15em] font-bold text-slate-500">Grand Total ({header.currency})</div>
@@ -278,7 +301,7 @@ export default function InputTransactionPage() {
                   <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="p-2 text-slate-400 tabular-nums">{i + 1}</td>
                     <td className="p-2">
-                      <Input data-testid={`item-so-${i}`} className={inputCls} value={it.project_no} onChange={(e) => setItem(i, "project_no", e.target.value)} onKeyDown={(e) => onRowKeyDown(e, i, "item-so")} placeholder="mis. 4413" />
+                      <Input data-testid={`item-so-${i}`} list="so-list" autoComplete="off" className={inputCls} value={it.project_no} onChange={(e) => setItem(i, "project_no", e.target.value)} onKeyDown={(e) => onRowKeyDown(e, i, "item-so")} placeholder="mis. 4413" />
                     </td>
                     <td className="p-2">
                       <Input data-testid={`item-name-${i}`} list="items-list" autoComplete="off" className={inputCls} value={it.item_name} onChange={(e) => setItem(i, "item_name", e.target.value)} onKeyDown={(e) => onRowKeyDown(e, i, "item-name")} placeholder="mis. NUT BAUT M14 X 2.0" />
@@ -375,6 +398,9 @@ export default function InputTransactionPage() {
         {itemsMaster.map((it) => (
           <option key={it.item_name} value={it.item_name}>{`${it.last_vendor || ""} — Rp ${Number(it.last_price || 0).toLocaleString("id-ID")}`}</option>
         ))}
+      </datalist>
+      <datalist id="so-list">
+        {sos.map((s) => (<option key={s.id} value={s.so_no}>{`${s.customer} — ${s.description || ""}`}</option>))}
       </datalist>
     </form>
   );

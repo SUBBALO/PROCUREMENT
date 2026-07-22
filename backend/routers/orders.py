@@ -1,8 +1,8 @@
 """Deliveries + Sales Orders routes."""
 import uuid
-from typing import Optional
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from db import db
 from deps import _now_iso, get_current_user, log_action, require_store_write, require_write
@@ -140,3 +140,112 @@ async def delete_so(sid: str, current: dict = Depends(require_write)):
         raise HTTPException(status_code=404, detail="SO tidak ditemukan")
     await log_action(current, "delete_so", "sales_order", sid, {})
     return {"ok": True}
+
+
+# ---------------- SO Excel Upload ----------------
+@router.post("/sales-orders/import/xlsx")
+async def import_sos_xlsx(file: UploadFile = File(...), current: dict = Depends(require_write)):
+    """Bulk create SOs from Excel. Expected columns: so_no, so_date, customer, description
+    (case-insensitive, flexible header matching)."""
+    import io
+    from datetime import date, datetime
+    from openpyxl import load_workbook
+
+    content = await file.read()
+    try:
+        wb = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"File Excel tidak valid: {e}")
+
+    def _to_date(v):
+        if v is None or v == "":
+            return None
+        if isinstance(v, datetime):
+            return v.date().isoformat()
+        if isinstance(v, date):
+            return v.isoformat()
+        s = str(v).strip()
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+            try:
+                return datetime.strptime(s, fmt).date().isoformat()
+            except Exception:
+                pass
+        return s
+
+    inserted = 0
+    skipped = 0
+    errors: List[str] = []
+    now = _now_iso()
+
+    for sn in wb.sheetnames:
+        ws = wb[sn]
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            continue
+        header_map: dict = {}
+        header_row_idx = None
+        for i, row in enumerate(rows[:5]):
+            row_str = [str(c).strip().lower() if c is not None else "" for c in row]
+            if any("so" in c or "sales order" in c or "nomor" in c for c in row_str):
+                header_row_idx = i
+                for idx, cell in enumerate(row_str):
+                    header_map[idx] = cell
+                break
+        if header_row_idx is None:
+            continue
+
+        def find_col(*kws):
+            for idx, cell in header_map.items():
+                for kw in kws:
+                    if kw in cell:
+                        return idx
+            return None
+
+        col_so = find_col("nomor so", "so_no", "so no", "sales order", "nomor")
+        col_date = find_col("tanggal", "date", "so_date")
+        col_cust = find_col("customer", "pelanggan")
+        col_desc = find_col("description", "deskripsi", "keterangan", "desc")
+
+        docs = []
+        for row in rows[header_row_idx + 1:]:
+            if row is None or all(c is None or c == "" for c in row):
+                continue
+            try:
+                so_no_raw = row[col_so] if col_so is not None and col_so < len(row) else None
+                if not so_no_raw:
+                    continue
+                so_no = str(so_no_raw).strip()
+                # skip duplicates
+                if await db.sales_orders.find_one({"so_no": so_no}):
+                    skipped += 1
+                    continue
+                docs.append({
+                    "id": str(uuid.uuid4()),
+                    "so_no": so_no,
+                    "so_date": _to_date(row[col_date]) if col_date is not None and col_date < len(row) else "",
+                    "customer": str(row[col_cust]).strip() if col_cust is not None and col_cust < len(row) and row[col_cust] else "",
+                    "description": str(row[col_desc]).strip() if col_desc is not None and col_desc < len(row) and row[col_desc] else "",
+                    "created_by": current["id"],
+                    "created_by_username": current.get("username", ""),
+                    "created_at": now,
+                })
+            except Exception as e:
+                errors.append(f"Sheet {sn}: {e}")
+        if docs:
+            await db.sales_orders.insert_many([d.copy() for d in docs])
+            inserted += len(docs)
+
+    await log_action(current, "import_sos", "sales_order", "-", {"inserted": inserted, "skipped": skipped})
+    return {"inserted": inserted, "skipped_duplicates": skipped, "errors": errors[:20]}
+
+
+# ---------------- Delivery Autocomplete ----------------
+@router.get("/deliveries/autocomplete")
+async def delivery_autocomplete(current: dict = Depends(get_current_user)):
+    """Distinct destinations and driver names from historical deliveries."""
+    destinations = await db.deliveries.distinct("destination")
+    drivers = await db.deliveries.distinct("driver_name")
+    return {
+        "destinations": sorted([d for d in destinations if d]),
+        "drivers": sorted([d for d in drivers if d]),
+    }

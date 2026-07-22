@@ -199,6 +199,36 @@ async def master_items(current: dict = Depends(get_current_user)):
 
 
 # ---------------- Dashboard Stats ----------------
+@router.get("/stats/monthly")
+async def stats_monthly(current: dict = Depends(get_current_user)):
+    """Current-month total (from 1st of month to today) + PO count.
+    Returns IDR totals so multi-currency is normalized."""
+    now = datetime.now()
+    first_day = now.replace(day=1).date().isoformat()
+    today_str = now.date().isoformat()
+
+    match = {"invoice_date": {"$gte": first_day, "$lte": today_str}}
+
+    agg = await db.transactions.aggregate([
+        {"$match": match},
+        {"$group": {
+            "_id": None,
+            "total_idr": {"$sum": {"$ifNull": ["$total_price_idr", "$total_price"]}},
+            "tx_count": {"$sum": 1},
+        }}
+    ]).to_list(length=1)
+
+    po_nos = await db.transactions.distinct("po_no", match)
+    po_count = len([p for p in po_nos if p])
+
+    return {
+        "period": {"start": first_day, "end": today_str, "month": now.strftime("%B %Y")},
+        "total_amount_idr": agg[0]["total_idr"] if agg else 0,
+        "transactions": agg[0]["tx_count"] if agg else 0,
+        "po_count": po_count,
+    }
+
+
 @router.get("/stats/summary")
 async def stats_summary(current: dict = Depends(get_current_user), year: Optional[int] = None):
     match: dict = {}
