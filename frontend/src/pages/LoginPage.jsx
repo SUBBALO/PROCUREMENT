@@ -5,7 +5,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Card, CardContent } from "../components/ui/card";
-import { Receipt, SignIn } from "@phosphor-icons/react";
+import { SignIn } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 export default function LoginPage() {
@@ -33,30 +33,26 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen w-full grid lg:grid-cols-2 bg-[#F8F9FA]">
-      <div className="hidden lg:flex relative overflow-hidden">
-        <img
-          src="https://images.unsplash.com/photo-1741806914412-340ca16e9175?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwxfHxtaW5pbWFsaXN0JTIwYXJjaGl0ZWN0dXJlJTIwYWJzdHJhY3QlMjB3aGl0ZXxlbnwwfHx8fDE3ODQ2OTczNjV8MA&ixlib=rb-4.1.0&q=85"
-          alt="bg"
-          className="object-cover w-full h-full"
-        />
-        <div className="absolute inset-0 bg-gradient-to-tr from-slate-900/50 via-slate-900/10 to-transparent" />
-        <div className="absolute bottom-10 left-10 right-10 text-white">
-          <div className="inline-flex items-center gap-2 rounded-none border border-white/40 backdrop-blur px-3 py-1 text-xs uppercase tracking-[0.2em]">
-            <Receipt size={16} weight="duotone" />
-            Sistem Laporan
+      <div className="hidden lg:flex flex-col relative overflow-hidden">
+        <div className="flex-1 relative">
+          <img
+            src="/assets/building.webp"
+            alt="MKS Facility"
+            className="object-cover w-full h-full"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-white/60" />
+        </div>
+        <div className="bg-white/95 backdrop-blur px-10 py-6 border-t border-slate-200">
+          <div className="text-[11px] uppercase tracking-[0.25em] font-bold text-sky-700">
+            Engineering Excellence · Steel Fabrication · Marine Contractor · General Construction
           </div>
-          <h2 className="mt-4 font-semibold text-4xl leading-tight" style={{ fontFamily: "Chivo, sans-serif" }}>
-            Kelola Transaksi Pembelian Anda
-            <br />
-            <span className="text-sky-300">Tanpa Excel Manual.</span>
-          </h2>
-          <p className="mt-3 text-sm text-white/80 max-w-md">
-            Input, cari, dan analisa data transaksi pembelian dari satu tempat. Cepat, terstruktur, dan siap ekspor.
-          </p>
+          <div className="mt-2 text-sm text-slate-600" style={{ fontFamily: "Chivo, sans-serif" }}>
+            Taiwan International Park — Batam — Indonesia
+          </div>
         </div>
       </div>
 
-      <div className="flex items-start justify-center p-6 sm:p-12 sm:pt-20">
+      <div className="flex items-start justify-center p-6 sm:p-12 sm:pt-24">
         <Card className="w-full max-w-md rounded-none border-slate-200 shadow-none">
           <CardContent className="p-8">
             <div className="mb-8">

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
+import { useLocation } from "react-router-dom";
 import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
@@ -46,8 +47,18 @@ const fmtDT = (iso) => {
 
 export default function AdminPage() {
   const { user: me } = useAuth();
+  const location = useLocation();
   const canApprove = me && me.role === "admin" && (me.perms || []).includes("approve_store_requests");
-  const [tab, setTab] = useState(canApprove ? "users" : "users");
+  // Read initial tab from URL query (?tab=requests|logs|users)
+  const initialTab = React.useMemo(() => {
+    const p = new URLSearchParams(location.search);
+    const t = p.get("tab");
+    if (t === "requests" && canApprove) return "approvals";
+    if (t === "logs") return "logs";
+    return "users";
+  }, [location.search, canApprove]);
+  const [tab, setTab] = useState(initialTab);
+  useEffect(() => { setTab(initialTab); }, [initialTab]);
   const [pendingCount, setPendingCount] = useState(0);
 
   const refreshPending = React.useCallback(async () => {

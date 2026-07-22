@@ -1,0 +1,30 @@
+{
+  "summary": "Iter-9 header + login redesign VALIDATED end-to-end. Backend 108/108 pytest green (102 pre-existing + 6 new iter-9 covering /store/requests/pending-count RBAC + full request→review flow). Frontend Playwright verified: (1) login page shows /assets/building.webp with new captions 'Engineering Excellence · Steel Fabrication · Marine Contractor · General Construction' + 'Taiwan International Park — Batam — Indonesia' (visible in screenshot); OLD login text ('Kelola Transaksi Pembelian', 'Tanpa Excel Manual', 'Sistem Laporan') fully removed. (2) Admin (susanto) top-bar Persetujuan Store pill data-testid=nav-approvals-top present with badge=0 (slate) at baseline. (3) Admin nav row now contains ONLY 'Log Aktivitas' + 'Kelola User' — 'Persetujuan Store' correctly removed from admin row. (4) Created a pending request via API (store01 manual receipt + POST /store/requests) → pill turned red (border-red-300, bg-red-50, animate-pulse) with badge='1' bg-red-600. (5) Clicking pill navigates to /admin?tab=requests with data-testid=tab-approvals data-state=active. (6) Non-admin roles (store01, staff01, finance01) confirmed to NOT see the pill. (7) Iter-8 regressions: 'Costing Store' nav present, 'Laporan Store' absent; iter-8 XLSX exports + SO sort tests all still green.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter9.py",
+    "/app/backend/tests/test_iter8.py",
+    "/app/backend/tests/test_iter4.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_iter9.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AppShell.jsx correctly gates nav-approvals-top on `role === 'admin' && perms.includes('approve_store_requests')` — matches backend require_approve_perm dependency in store.py.",
+    "AdminPage.jsx useMemo(initialTab) correctly reads ?tab= query param and only opens 'approvals' when canApprove is true — safe fallback to 'users' otherwise.",
+    "Poll interval of 30s on pending-count is reasonable; both AppShell and AdminPage each have their own interval — minor: duplicate polling when on /admin page. Not a bug, low-priority optimization.",
+    "LoginPage.jsx: /assets/building.webp served correctly from public/ (200 OK, cached). Caption block uses white/95 backdrop and tracks-widest styling per design."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter9.py (new, 6 tests)",
+    "/app/test_reports/pytest/pytest_iter9.xml"
+  ],
+  "success_rate": {"backend": "100% (108/108 including 6 new iter-9)", "frontend": "100% (login visual + captions + old-text-absent + approvals-pill visible/red/pulse/badge + navigation to admin?tab=requests + admin-row-reduced + other-roles-no-pill all verified)"},
+  "test_credentials": "susanto/admin123, erwin/erwin123, staff01/staff123, finance01/finance123, store01/store123 — all match /app/memory/test_credentials.md",
+  "seed_data_creation": "Created 1 TEST_iter9_UI_Item receipt + 1 store_request during UI validation; approved via admin and cleaned up (pending-count back to 0). Also 2 TEST_iter9_* receipts + requests via pytest — pytest test_store_cannot_review leaves one 'rejected' request in DB (harmless, closed status).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter-9 header pill + login redesign all working. /store/requests/pending-count is guarded by require_approve_perm (admin+approve_store_requests perm only). AppShell polls this every 30s and shows a red pulsing pill when count>0. AdminPage supports ?tab=requests|logs|users query param. LoginPage uses /assets/building.webp (must exist in frontend/public/assets/). Master items endpoint is /api/master/items (returns list of {item_name,last_price,...}, NOT with id). To create a manual receipt for approval-flow tests, POST /api/store/incoming with {receive_date, source_type='supplier', source_name, do_no, po_no, items:[{item_name,qty,unit,add_to_stock,unit_price,remark}]} then GET /api/store/incoming-report?q=<item_name> to fetch the receipt id.",
+  "rca of the issue": "N/A — no bugs found. Playwright script had 2 spurious 'FAIL' markers on Test 1 & Test 2 that were script casing issues (page.inner_text() returns CSS-uppercased text so 'Engineering Excellence' becomes 'ENGINEERING EXCELLENCE' in the string); the actual elements + captions are correctly rendered as confirmed by the screenshot. All other assertions (element existence, class checks, navigation, badge count/color) passed."
+}

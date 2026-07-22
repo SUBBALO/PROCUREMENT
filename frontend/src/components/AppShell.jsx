@@ -1,11 +1,12 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
+import api from "../lib/api";
 import { Button } from "./ui/button";
 import { toast } from "sonner";
 import {
   ChartBar, Plus, MagnifyingGlass, SignOut, Package, ChartLineUp, ShieldStar, Warehouse, ArrowDown, ArrowUp,
-  ClipboardText, ShoppingCart, Storefront, Truck, CheckSquare, ClockCounterClockwise,
+  ClipboardText, ShoppingCart, Storefront, Truck, CheckSquare, ClockCounterClockwise, Bell,
 } from "@phosphor-icons/react";
 
 const PURCHASE_ITEMS = [
@@ -28,21 +29,25 @@ const STORE_ITEMS = [
 const STORE_REPORT_ITEM = { to: "/store/report", label: "Costing Store", icon: ClipboardText, testid: "nav-store-report" };
 const SO_MASTER_ITEM = { to: "/so-master", label: "Master SO", icon: ClipboardText, testid: "nav-so-master" };
 
-// Admin row 3 — approval + activity log
+// Admin row now only has user + logs (Persetujuan Store is pulled OUT into its own always-visible bar).
 const ADMIN_ROW = [
-  { to: "/admin?tab=requests", label: "Persetujuan Store", icon: CheckSquare, testid: "nav-approvals" },
   { to: "/admin?tab=logs", label: "Log Aktivitas", icon: ClockCounterClockwise, testid: "nav-logs" },
   { to: "/admin", label: "Kelola User", icon: ShieldStar, testid: "nav-admin" },
 ];
 
-function NavPill({ to, label, icon: Icon, testid, active }) {
-  const cls = `flex items-center gap-1.5 px-3 h-8 text-[11px] uppercase tracking-[0.1em] font-semibold border-b-2 transition-colors ${
+function NavPill({ to, label, icon: Icon, testid, active, badge }) {
+  const cls = `relative flex items-center gap-1.5 px-3 h-8 text-[11px] uppercase tracking-[0.1em] font-semibold border-b-2 transition-colors ${
     active ? "border-sky-600 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-900"
   }`;
   return (
     <NavLink to={to} end={to === "/"} data-testid={testid} className={({ isActive }) => (isActive || active ? cls.replace("border-transparent text-slate-500 hover:text-slate-900", "border-sky-600 text-slate-900") : cls)}>
       <Icon size={14} weight="duotone" />
       {label}
+      {badge != null && badge > 0 && (
+        <span data-testid={`${testid}-badge`} className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold tabular-nums">
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
     </NavLink>
   );
 }
@@ -105,10 +110,26 @@ export default function AppShell({ children }) {
 
   const rows = rowsForRole();
 
+  // Poll pending Persetujuan Store count (admin only) — every 30s
+  const [pendingCount, setPendingCount] = useState(0);
+  const canApprove = role === "admin" && perms.includes("approve_store_requests");
+  useEffect(() => {
+    if (!canApprove) { setPendingCount(0); return; }
+    let cancelled = false;
+    const tick = () => {
+      api.get("/store/requests/pending-count")
+        .then((r) => { if (!cancelled) setPendingCount(r.data?.count || 0); })
+        .catch(() => {});
+    };
+    tick();
+    const id = setInterval(tick, 30000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [canApprove]);
+
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-slate-900 flex flex-col">
       <header className="sticky top-0 z-20 bg-white border-b border-slate-200">
-        {/* Top bar: brand + user + logout */}
+        {/* Top bar: brand + Persetujuan Store notification (admin) + user + logout */}
         <div className="px-6 h-12 flex items-center justify-between gap-6 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <img src="/assets/logo-mks.png" alt="MKS" className="w-8 h-8 object-contain" />
@@ -117,6 +138,23 @@ export default function AppShell({ children }) {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {canApprove && (
+              <NavLink
+                to="/admin?tab=requests"
+                data-testid="nav-approvals-top"
+                className={({ isActive }) => `relative flex items-center gap-1.5 px-3 h-8 text-[11px] uppercase tracking-[0.1em] font-bold border transition-colors ${
+                  pendingCount > 0
+                    ? "border-red-300 text-red-700 bg-red-50 hover:bg-red-100 animate-pulse"
+                    : (isActive ? "border-sky-600 text-sky-700 bg-sky-50" : "border-slate-300 text-slate-600 hover:bg-slate-50")
+                }`}
+              >
+                <Bell size={14} weight={pendingCount > 0 ? "fill" : "duotone"} />
+                Persetujuan Store
+                <span data-testid="nav-approvals-top-badge" className={`ml-1 inline-flex items-center justify-center min-w-[20px] h-[20px] px-1.5 rounded-full text-[10px] font-bold tabular-nums ${pendingCount > 0 ? "bg-red-600 text-white" : "bg-slate-200 text-slate-600"}`}>
+                  {pendingCount > 99 ? "99+" : pendingCount}
+                </span>
+              </NavLink>
+            )}
             <div className="hidden sm:block text-right">
               <div className="text-xs font-medium text-slate-900" data-testid="current-user">
                 {user?.name || user?.username}
