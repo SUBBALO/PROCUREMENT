@@ -13,7 +13,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from deps import get_current_user
+from deps import require_write
 
 router = APIRouter(tags=["ai"])
 logger = logging.getLogger(__name__)
@@ -85,9 +85,10 @@ async def _pdf_to_image_bytes(pdf_bytes: bytes) -> bytes:
 
 
 @router.post("/transactions/parse-po")
-async def parse_po(file: UploadFile = File(...), current: dict = Depends(get_current_user)):
+async def parse_po(file: UploadFile = File(...), current: dict = Depends(require_write)):
     """Parse a PO image or PDF via Gemini 3 Flash. Returns extracted transaction data.
-    Frontend shows the result for user to review before saving."""
+    Frontend shows the result for user to review before saving.
+    Access: admin + staff only (finance and store cannot spend LLM quota)."""
     api_key = os.environ.get("EMERGENT_LLM_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY tidak di-set di env")
