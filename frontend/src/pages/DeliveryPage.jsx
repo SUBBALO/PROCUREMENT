@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useCallback } from "react";
-import api, { formatDateID } from "../lib/api";
+import api, { formatDateID, downloadXlsx } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
-import { Plus, Trash, Truck, FloppyDisk, Eye } from "@phosphor-icons/react";
+import { Plus, Trash, Truck, FloppyDisk, Eye, FileXls } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { tryAutocomplete } from "../lib/autocomplete";
 
@@ -71,8 +71,42 @@ export default function DeliveryPage() {
           <p className="text-sm text-slate-500 mt-1">Log pengiriman keluar (Gate Pass / DO). {data.total.toLocaleString("id-ID")} pengiriman, {flatRows.length} baris item.</p>
         </div>
         {canWrite && (
-          <Button data-testid="add-delivery-btn" onClick={() => setAddOpen(true)} className="rounded-none h-9 bg-slate-900 hover:bg-slate-800 text-white text-xs uppercase tracking-[0.1em] font-semibold">
-            <Plus size={14} weight="bold" className="mr-1.5" /> Tambah Pengiriman
+          <div className="flex items-center gap-2">
+            <Button
+              data-testid="delivery-export-btn"
+              onClick={async () => {
+                try {
+                  await downloadXlsx("/deliveries/xlsx", {
+                    q: filter.q, start_date: filter.start_date, end_date: filter.end_date,
+                  }, `pengiriman_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                  toast.success("Excel di-download");
+                } catch (e) { toast.error(e.message || "Gagal export"); }
+              }}
+              variant="outline"
+              className="rounded-none h-9 border-emerald-300 text-emerald-700 hover:bg-emerald-50 text-xs uppercase tracking-[0.1em] font-semibold"
+            >
+              <FileXls size={14} weight="bold" className="mr-1.5" /> Export Excel
+            </Button>
+            <Button data-testid="add-delivery-btn" onClick={() => setAddOpen(true)} className="rounded-none h-9 bg-slate-900 hover:bg-slate-800 text-white text-xs uppercase tracking-[0.1em] font-semibold">
+              <Plus size={14} weight="bold" className="mr-1.5" /> Tambah Pengiriman
+            </Button>
+          </div>
+        )}
+        {!canWrite && (
+          <Button
+            data-testid="delivery-export-btn"
+            onClick={async () => {
+              try {
+                await downloadXlsx("/deliveries/xlsx", {
+                  q: filter.q, start_date: filter.start_date, end_date: filter.end_date,
+                }, `pengiriman_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                toast.success("Excel di-download");
+              } catch (e) { toast.error(e.message || "Gagal export"); }
+            }}
+            variant="outline"
+            className="rounded-none h-9 border-emerald-300 text-emerald-700 hover:bg-emerald-50 text-xs uppercase tracking-[0.1em] font-semibold"
+          >
+            <FileXls size={14} weight="bold" className="mr-1.5" /> Export Excel
           </Button>
         )}
       </div>

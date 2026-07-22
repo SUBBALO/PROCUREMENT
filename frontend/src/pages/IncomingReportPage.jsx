@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from "react";
-import api, { formatDateID } from "../lib/api";
+import api, { formatDateID, downloadXlsx } from "../lib/api";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Button } from "../components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { MagnifyingGlass, Package, Truck, Users } from "@phosphor-icons/react";
+import { MagnifyingGlass, Package, Truck, Users, FileXls } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-sky-600 text-sm";
@@ -88,6 +88,22 @@ export default function IncomingReportPage() {
           </div>
           <Button data-testid="ig-apply-btn" onClick={load} className="h-9 rounded-none bg-slate-900 hover:bg-slate-800 text-white text-xs uppercase tracking-[0.1em] font-semibold">
             <MagnifyingGlass size={14} weight="bold" className="mr-1.5" /> Cari
+          </Button>
+          <Button
+            data-testid="ig-export-btn"
+            onClick={async () => {
+              try {
+                await downloadXlsx("/store/incoming-report/xlsx", {
+                  start_date: filters.start_date, end_date: filters.end_date,
+                  source: filters.source, q: filters.q,
+                }, `incoming_goods_${filters.start_date || "all"}_${filters.end_date || "today"}.xlsx`);
+                toast.success("Excel di-download");
+              } catch (e) { toast.error(e.message || "Gagal export"); }
+            }}
+            variant="outline"
+            className="h-9 rounded-none border-emerald-300 text-emerald-700 hover:bg-emerald-50 text-xs uppercase tracking-[0.1em] font-semibold"
+          >
+            <FileXls size={14} weight="bold" className="mr-1.5" /> Export Excel
           </Button>
         </div>
       </Card>

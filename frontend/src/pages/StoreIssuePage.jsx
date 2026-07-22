@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
-import api, { formatDateID } from "../lib/api";
+import api, { formatDateID, downloadXlsx } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { tryAutocomplete } from "../lib/autocomplete";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { Plus, Trash, ArrowUp, FloppyDisk, ChatCircleDots } from "@phosphor-icons/react";
+import { Plus, Trash, ArrowUp, FloppyDisk, ChatCircleDots, FileXls } from "@phosphor-icons/react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "../components/ui/dialog";
@@ -244,7 +244,23 @@ export default function StoreIssuePage() {
       <Card className="rounded-none border-slate-200 shadow-none p-5 bg-white">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500">Pengeluaran Terakhir</h3>
-          <ArrowUp size={16} weight="duotone" className="text-slate-400" />
+          <div className="flex items-center gap-2">
+            <Button
+              data-testid="issue-export-btn"
+              onClick={async () => {
+                try {
+                  await downloadXlsx("/store/issuances/xlsx", {}, `keluar_barang_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                  toast.success("Excel di-download");
+                } catch (e) { toast.error(e.message || "Gagal export"); }
+              }}
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-none border-emerald-300 text-emerald-700 hover:bg-emerald-50 text-xs uppercase tracking-[0.1em] font-semibold"
+            >
+              <FileXls size={12} weight="bold" className="mr-1" /> Export Excel
+            </Button>
+            <ArrowUp size={16} weight="duotone" className="text-slate-400" />
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
