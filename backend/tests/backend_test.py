@@ -261,6 +261,116 @@ class TestFinanceRole:
         }
         r = finance.post(f"{API}/transactions", json=payload)
         assert r.status_code == 403, f"Expected 403, got {r.status_code} {r.text}"
+        # message must specifically mention finance
+        assert "Finance" in r.text, f"Expected finance-specific message, got {r.text}"
+
+
+# ---------------- AuthZ (iteration 2 tightening) ----------------
+def _tx_payload():
+    return {
+        "invoice_date": "2025-01-15",
+        "project_no": "TEST_AUTHZ", "po_no": f"TEST_PO_{uuid.uuid4().hex[:6]}",
+        "vendor_name": "TEST_V", "item_name": "TEST_I",
+        "qty": 1, "unit": "Ea", "unit_price": 1, "total_price": 1,
+        "invoice_no": f"TEST_INV_{uuid.uuid4().hex[:6]}",
+    }
+
+
+def _so_payload():
+    return {"so_no": f"TEST_SO_{uuid.uuid4().hex[:6]}", "customer": "TEST_C",
+            "so_date": "2025-01-15", "notes": "authz"}
+
+
+def _delivery_payload():
+    return {
+        "delivery_date": "2025-01-20",
+        "gate_pass_no": f"TEST_GP_{uuid.uuid4().hex[:6]}",
+        "do_no": f"TEST_DO_{uuid.uuid4().hex[:6]}",
+        "destination": "TEST_C", "driver_name": "TEST",
+        "items": [{"item_name": "TEST_I", "qty": 1, "unit": "Ea"}], "remark": "authz",
+    }
+
+
+class TestAuthZTransactions:
+    def test_store_cannot_post_transaction(self, store):
+        r = store.post(f"{API}/transactions", json=_tx_payload())
+        assert r.status_code == 403, f"Expected 403, got {r.status_code} {r.text}"
+        assert "Store" in r.text
+
+    def test_store_cannot_put_transaction(self, store, admin):
+        # need an existing tx id
+        lst = admin.get(f"{API}/transactions", params={"page_size": 1}).json()
+        assert lst["items"], "No transactions to test PUT against"
+        tid = lst["items"][0]["id"]
+        r = store.put(f"{API}/transactions/{tid}", json=_tx_payload())
+        assert r.status_code == 403
+
+    def test_store_cannot_delete_transaction(self, store, admin):
+        lst = admin.get(f"{API}/transactions", params={"page_size": 1}).json()
+        tid = lst["items"][0]["id"]
+        r = store.delete(f"{API}/transactions/{tid}")
+        assert r.status_code == 403
+
+    def test_staff_can_post_transaction(self, staff):
+        r = staff.post(f"{API}/transactions", json=_tx_payload())
+        assert r.status_code == 200, f"Staff should be allowed, got {r.status_code} {r.text}"
+        tid = r.json()["id"]
+        # cleanup
+        d = staff.delete(f"{API}/transactions/{tid}")
+        assert d.status_code == 200
+
+
+class TestAuthZSalesOrders:
+    def test_store_cannot_post_so(self, store):
+        r = store.post(f"{API}/sales-orders", json=_so_payload())
+        assert r.status_code == 403, f"Expected 403, got {r.status_code} {r.text}"
+        assert "Store" in r.text
+
+    def test_store_cannot_delete_so(self, store, admin):
+        # create via admin, try delete via store
+        created = admin.post(f"{API}/sales-orders", json=_so_payload()).json()
+        sid = created["id"]
+        r = store.delete(f"{API}/sales-orders/{sid}")
+        assert r.status_code == 403
+        # cleanup
+        admin.delete(f"{API}/sales-orders/{sid}")
+
+    def test_staff_can_post_so(self, staff):
+        payload = _so_payload()
+        r = staff.post(f"{API}/sales-orders", json=payload)
+        assert r.status_code == 200, f"Staff should be allowed, got {r.status_code} {r.text}"
+        sid = r.json()["id"]
+        # staff should also be able to delete
+        d = staff.delete(f"{API}/sales-orders/{sid}")
+        assert d.status_code == 200
+
+    def test_finance_cannot_post_so(self, finance):
+        r = finance.post(f"{API}/sales-orders", json=_so_payload())
+        assert r.status_code == 403
+        assert "Finance" in r.text
+
+
+class TestAuthZDeliveries:
+    def test_store_can_post_delivery(self, store):
+        r = store.post(f"{API}/deliveries", json=_delivery_payload())
+        assert r.status_code in (200, 201), f"Store should be allowed to POST delivery, got {r.status_code} {r.text}"
+        did = r.json()["id"]
+        # store can delete too
+        d = store.delete(f"{API}/deliveries/{did}")
+        assert d.status_code == 200, f"Store should be allowed to DELETE delivery, got {d.status_code} {d.text}"
+
+    def test_staff_cannot_delete_delivery(self, admin, staff):
+        # admin creates, staff attempts delete
+        created = admin.post(f"{API}/deliveries", json=_delivery_payload()).json()
+        did = created["id"]
+        r = staff.delete(f"{API}/deliveries/{did}")
+        assert r.status_code == 403, f"Staff should NOT be allowed to DELETE delivery, got {r.status_code} {r.text}"
+        # cleanup
+        admin.delete(f"{API}/deliveries/{did}")
+
+    def test_finance_cannot_post_delivery(self, finance):
+        r = finance.post(f"{API}/deliveries", json=_delivery_payload())
+        assert r.status_code == 403
 
 
 # ---------------- Sales Orders ----------------
