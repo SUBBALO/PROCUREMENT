@@ -44,4 +44,25 @@ export const formatDateID = (iso) => {
   return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 };
 
+/** Trigger Excel download from a backend endpoint that returns application/vnd...spreadsheetml.sheet.
+ *  Uses fetch with credentials to include the auth cookie. */
+export async function downloadXlsx(path, params = {}, filename = "export.xlsx") {
+  const url = new URL(`${API}${path}`);
+  Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v); });
+  const res = await fetch(url.toString(), { credentials: "include" });
+  if (!res.ok) {
+    let msg = "Gagal export";
+    try { const j = await res.json(); msg = j.detail || msg; } catch {}
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+}
+
 export default api;

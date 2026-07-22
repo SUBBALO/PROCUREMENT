@@ -78,6 +78,66 @@ async def delete_delivery(did: str, current: dict = Depends(require_store_write)
     return {"ok": True}
 
 
+@router.get("/deliveries/xlsx")
+async def deliveries_xlsx(
+    current: dict = Depends(get_current_user),
+    q: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+):
+    """Excel export of Pengiriman Barang — flattened, 1 row per item."""
+    import io
+    from datetime import datetime
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+
+    filt: dict = {}
+    if q:
+        filt["$or"] = [
+            {"destination": {"$regex": q, "$options": "i"}},
+            {"gate_pass_no": {"$regex": q, "$options": "i"}},
+            {"do_no": {"$regex": q, "$options": "i"}},
+            {"driver_name": {"$regex": q, "$options": "i"}},
+        ]
+    if start_date or end_date:
+        rng: dict = {}
+        if start_date:
+            rng["$gte"] = start_date
+        if end_date:
+            rng["$lte"] = end_date
+        filt["delivery_date"] = rng
+    docs = await db.deliveries.find(filt, {"_id": 0}).sort("delivery_date", -1).to_list(length=100000)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Pengiriman Barang"
+    headers = ["Tgl", "No Gatepass", "No DO", "Nama Tujuan", "Nomor SO", "Nama Barang", "Qty", "Unit", "Supir", "Remark"]
+    ws.append(headers)
+    for d in docs:
+        items = d.get("items") or []
+        if not items:
+            ws.append([d.get("delivery_date", ""), d.get("gate_pass_no", ""), d.get("do_no", ""),
+                       d.get("destination", ""), "", "", 0, "", d.get("driver_name", ""), d.get("remark", "")])
+        else:
+            for it in items:
+                ws.append([d.get("delivery_date", ""), d.get("gate_pass_no", ""), d.get("do_no", ""),
+                           d.get("destination", ""), it.get("so_no", ""), it.get("item_name", ""),
+                           float(it.get("qty", 0)), it.get("unit", ""),
+                           d.get("driver_name", ""), d.get("remark", "")])
+    for i in range(1, len(headers) + 1):
+        ws.column_dimensions[chr(64 + i)].width = 18
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"pengiriman_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 # ---------------- Master Sales Order ----------------
 @router.get("/sales-orders")
 async def list_sales_orders(current: dict = Depends(get_current_user), q: Optional[str] = None):
@@ -88,7 +148,7 @@ async def list_sales_orders(current: dict = Depends(get_current_user), q: Option
             {"customer": {"$regex": q, "$options": "i"}},
             {"description": {"$regex": q, "$options": "i"}},
         ]
-    docs = await db.sales_orders.find(filt, {"_id": 0}).sort("so_date", -1).to_list(length=5000)
+    docs = await db.sales_orders.find(filt, {"_id": 0}).sort("so_no", 1).to_list(length=5000)
     return docs
 
 

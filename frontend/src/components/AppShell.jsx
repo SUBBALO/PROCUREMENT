@@ -25,7 +25,7 @@ const STORE_ITEMS = [
   { to: "/deliveries", label: "Pengiriman", icon: Truck, testid: "nav-deliveries" },
 ];
 
-const STORE_REPORT_ITEM = { to: "/store/report", label: "Laporan Store", icon: ClipboardText, testid: "nav-store-report" };
+const STORE_REPORT_ITEM = { to: "/store/report", label: "Costing Store", icon: ClipboardText, testid: "nav-store-report" };
 const SO_MASTER_ITEM = { to: "/so-master", label: "Master SO", icon: ClipboardText, testid: "nav-so-master" };
 
 // Admin row 3 — approval + activity log

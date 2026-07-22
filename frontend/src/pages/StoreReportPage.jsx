@@ -58,7 +58,7 @@ export default function StoreReportPage() {
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
-            Laporan Pengeluaran Stok
+            Costing Store
           </h1>
           <p className="text-sm text-slate-500 mt-1">
             Total <span className="tabular-nums font-semibold text-slate-900">{data.total.toLocaleString("id-ID")}</span> transaksi pengeluaran{" "}

@@ -752,6 +752,128 @@ async def incoming_report(
     return {"total": total, "page": page, "page_size": page_size, "items": items}
 
 
+@router.get("/store/incoming-report/xlsx")
+async def incoming_report_xlsx(
+    current: dict = Depends(require_store_access),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    source: Optional[str] = None,
+    q: Optional[str] = None,
+):
+    """Excel export of Incoming Goods report."""
+    filt: dict = {}
+    if source in ("po", "manual"):
+        filt["source"] = source
+    if start_date or end_date:
+        rng: dict = {}
+        if start_date:
+            rng["$gte"] = start_date
+        if end_date:
+            rng["$lte"] = end_date
+        filt["receive_date"] = rng
+    if q:
+        filt["$or"] = [
+            {"item_name": {"$regex": q, "$options": "i"}},
+            {"vendor_name": {"$regex": q, "$options": "i"}},
+            {"po_no": {"$regex": q, "$options": "i"}},
+            {"invoice_no": {"$regex": q, "$options": "i"}},
+            {"do_number": {"$regex": q, "$options": "i"}},
+        ]
+    docs = await db.store_receipts.find(filt, {"_id": 0}).sort("receive_date", -1).to_list(length=100000)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Incoming Goods"
+    headers = ["Tgl Terima", "Sumber", "Vendor/Customer", "Nama Barang", "Qty", "Unit",
+               "PO No", "DO No", "Invoice No", "Ke Stok?", "MCL", "MIF", "Catatan"]
+    ws.append(headers)
+    for d in docs:
+        src_label = "PO" if d.get("source") == "po" else ("Customer" if d.get("is_customer_material") else "Supplier")
+        ws.append([
+            d.get("receive_date", ""), src_label, d.get("vendor_name", ""),
+            d.get("item_name", ""), float(d.get("qty_received", 0)), d.get("unit", ""),
+            d.get("po_no", ""), d.get("do_number", ""), d.get("invoice_no", ""),
+            "Ya" if d.get("add_to_stock", True) else "Tidak",
+            "Ya" if d.get("mcl_done") else "Tidak",
+            "Ya" if d.get("mif_done") else "Tidak",
+            d.get("note", ""),
+        ])
+    for i in range(1, len(headers) + 1):
+        ws.column_dimensions[chr(64 + i)].width = 18
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"incoming_goods_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@router.get("/store/issuances/xlsx")
+async def issuances_xlsx(
+    current: dict = Depends(require_store_access),
+    q: Optional[str] = None,
+    so_number: Optional[str] = None,
+    taker: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+):
+    """Excel export of Keluar Barang (issuances). Store role: no prices; admin/finance: with FIFO cost."""
+    filt: dict = {}
+    if q:
+        filt["$or"] = [
+            {"item_name": {"$regex": q, "$options": "i"}},
+            {"taker_name": {"$regex": q, "$options": "i"}},
+            {"so_number": {"$regex": q, "$options": "i"}},
+        ]
+    if so_number:
+        filt["so_number"] = {"$regex": so_number, "$options": "i"}
+    if taker:
+        filt["taker_name"] = {"$regex": taker, "$options": "i"}
+    if start_date or end_date:
+        rng: dict = {}
+        if start_date:
+            rng["$gte"] = start_date
+        if end_date:
+            rng["$lte"] = end_date
+        filt["issue_date"] = rng
+    docs = await db.store_issuances.find(filt, {"_id": 0}).sort("issue_date", -1).to_list(length=100000)
+
+    show_prices = can_see_prices(current)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Keluar Barang"
+    headers = ["Tgl Keluar", "Nama Barang", "Qty", "Unit", "Nomor SO", "Pengambil", "Catatan"]
+    if show_prices:
+        headers += ["Avg Unit Price (FIFO)", "Total Cost"]
+    ws.append(headers)
+    for d in docs:
+        row = [
+            d.get("issue_date", ""), d.get("item_name", ""),
+            float(d.get("qty", 0)), d.get("unit", ""),
+            d.get("so_number", ""), d.get("taker_name", ""),
+            d.get("note", ""),
+        ]
+        if show_prices:
+            row += [float(d.get("avg_unit_price", 0)), float(d.get("total_cost", 0))]
+        ws.append(row)
+    for i in range(1, len(headers) + 1):
+        ws.column_dimensions[chr(64 + i)].width = 18
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"keluar_barang_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 # ---------------- Production Issue (Customer material → Produksi) ----------------
 @router.post("/store/issue/production")
 async def store_issue_production(payload: ProductionIssueRequest, current: dict = Depends(require_store_write)):
