@@ -166,6 +166,49 @@ export default function InputTransactionPage() {
 
   const scrollTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
 
+  // PO auto-read via Gemini 3 Flash
+  const fileInputRef = useRef(null);
+  const [parsing, setParsing] = useState(false);
+  const [sos, setSos] = useState([]);
+  useEffect(() => { api.get("/sales-orders").then((r) => setSos(r.data || [])).catch(() => {}); }, []);
+
+  const onParsePO = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setParsing(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post("/transactions/parse-po", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      setHeader((s) => ({
+        ...s,
+        vendor_name: data.vendor_name || s.vendor_name,
+        po_no: data.po_no || s.po_no,
+        po_date: data.po_date || s.po_date,
+        invoice_no: data.invoice_no || s.invoice_no,
+        invoice_date: data.invoice_date || s.invoice_date,
+        currency: data.currency || "IDR",
+        exchange_rate: data.exchange_rate || 1,
+      }));
+      const parsed = (data.items || []).map((it) => ({
+        project_no: "",
+        item_name: it.item_name || "",
+        qty: it.qty || 1,
+        unit: it.unit || "Ea",
+        unit_price: it.unit_price || 0,
+        notes: "",
+        post_to_store: false,
+      }));
+      if (parsed.length > 0) setItems(parsed);
+      toast.success(`PO terbaca: ${parsed.length} item — silakan koreksi lalu klik Simpan`);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Gagal baca PO");
+    } finally {
+      setParsing(false);
+      e.target.value = "";
+    }
+  };
+
   return (
     <form onSubmit={onSubmit} className="space-y-6" data-testid="input-transaction-form">
       <div className="flex items-end justify-between gap-4 flex-wrap">
