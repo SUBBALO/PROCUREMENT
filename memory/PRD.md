@@ -1,59 +1,66 @@
 # Procurement App — PRD & Status
 
 ## Original Problem Statement
-Import & jalankan repo PROCUREMENT (SUBBALO/PROCUREMENT). Stack asli sudah React + FastAPI + MongoDB, jadi tidak perlu porting — hanya import + install + jalankan.
+Import & jalankan repo PROCUREMENT (SUBBALO/PROCUREMENT). Kemudian iterate 13 fitur besar dari user (batched into 3 batches).
 
 ## Architecture
-- **Backend**: FastAPI (Python) with async Motor MongoDB driver, JWT cookie-based auth (HttpOnly)
-- **Frontend**: React 19 + CRA/Craco + Tailwind + Shadcn UI + React Router 7
-- **Database**: MongoDB (single collection per entity: users, transactions, activity_logs, store_receipts, store_issuances, store_requests, deliveries, sales_orders)
-- **Language**: Indonesian (UI + error messages)
+- **Backend**: FastAPI (Python) + Motor MongoDB + cookie-based JWT auth. Split into `db.py`, `security.py`, `deps.py`, `models.py`, `routers/{auth,transactions,store,orders}.py`. `server.py` is a 122-line bootstrap.
+- **Frontend**: React 19 + Craco + Tailwind + Shadcn + React Router 7
+- **Database**: MongoDB
+- **Language**: Indonesian UI + errors
 
-## User Personas / Roles
-1. **admin** — full access; can approve store requests
-2. **staff** — input transaksi + view dashboard; blocked from admin pages
-3. **store** — store operations only (receive/issue/stock); no price visibility; blocked from purchasing pages
-4. **finance** — view-only, sees prices; blocked from write endpoints (403)
+## Roles
+1. **admin** (susanto=primary, erwin=secondary) — full access + approve store requests + direct toggle add_to_stock on receipts
+2. **staff** — purchasing writes (transactions + SO); no admin/store operations
+3. **store** — store ops only; no purchasing writes; no price visibility
+4. **finance** — read-only including prices; can view Incoming Report
 
-## Core Features (Implemented — imported from repo)
-- Auth: login/logout/refresh, cookie-based JWT, role & perms enforcement
-- Transactions (Purchase Records): CRUD + bulk create + filter/search/pagination
-- Master data: distinct vendors, items (with last price / last vendor)
-- KPI Report: On Time Delivery (40%), Compliance Quality (35%), PO Completion Rate (25%) with graded category
+## Multi-Currency (iter 3)
+Transactions carry `currency` (IDR|SGD|USD) + `exchange_rate` (multiplier to IDR). Server auto-computes `total_price_idr = total_price × exchange_rate`. IDR is default & rate forced to 1. Master List shows `unit_price` with currency label + IDR total.
+
+## Modules Implemented
+- Auth (login/logout/refresh/me), Users CRUD + Activity Log (admin only)
+- Transactions CRUD + bulk create + **bulk delete** + Excel import/export
+- Master data (distinct vendors, items with last price/vendor)
+- KPI Purchasing (On Time 40%, Compliance 35%, Completion 25%)
 - Store Module:
-  - Pending PO (post_to_store flagged) with per-item + grouped views
-  - Receive (single + bulk) with over-receive protection
-  - Manual receive (customer/supplier without PO) with customer material flag
-  - Issue (FIFO by receive_date) with allocation tracking
-  - Production issue (customer material only)
-  - Stock aggregation (customer_only / exclude_customer filters)
-  - Edit/Delete Request workflow with admin approval + rollback for FIFO
-  - Excel export (Laporan Pengeluaran Stok)
-- Sales Orders master: CRUD
-- Deliveries log: create + list + delete
-- Excel import/export for Transactions
-- Activity Log / Audit Trail (admin-visible)
-- Users management (admin only)
+  - Pending PO + grouped view
+  - **Terima dari PO Purchasing** (GRN) — bulk + per-item add_to_stock + auto-update source transaction with invoice_no & receive_date
+  - **Input Incoming Goods** (multi-item, replaces single Manual Receive) — per-item add_to_stock toggle
+  - **Laporan Incoming Goods** — unified report (PO + manual sources) with MCL/MIF toggle
+  - FIFO Issue (bulk + single), Stock aggregate, Production issue (endpoint retained, menu removed)
+  - Edit/Delete Request workflow + rollback on approve
+  - Excel export Laporan Store
+- Sales Orders CRUD
+- Deliveries create/list/delete
 
-## Seed Data (as of 2026-02-22)
-- 1 admin + 3 role-specific users (staff01, store01, finance01)
-- 8 transactions across 3 vendors, spanning 30 days
-- 4 sales orders
-- 6 transactions flagged `post_to_store=true` (pending receive at Store module)
-
-## What's Been Implemented (dated log)
-- **2026-02-22**: Imported repo from GitHub, added JWT_SECRET / ADMIN_USERNAME / ADMIN_PASSWORD to backend .env, installed openpyxl + PyJWT, ran yarn install, seeded dummy data, verified via testing_agent — 33/33 backend tests passing, all frontend flows working.
-
-## Backlog / Next Actions (P0/P1/P2)
-- **P2**: Split `server.py` (1856 lines) into domain modules (auth, transactions, store, sales-orders, deliveries) — code health only, no functional impact.
-- **P2**: Silence expected 401 from `/auth/me` probe in axios interceptor for unauthenticated pages.
-- **P2**: Decide if `store` role should be blocked from POST /api/transactions (currently only `finance` is blocked by `require_write`).
-- **P2**: Add integration tests for Excel import/export and FIFO rollback (delete request approval).
+## Seed Data (2026-07-22)
+- Users: susanto (admin), erwin (admin), staff01, store01, finance01
+- 8 mixed-currency transactions (6 IDR, 1 SGD, 1 USD)
+- 4 Sales Orders
 
 ## Test Credentials
-See `/app/memory/test_credentials.md`.
+See `/app/memory/test_credentials.md`. Primary admin: **susanto / admin123**.
 
-## Env Vars (backend)
-- MONGO_URL, DB_NAME (preserved)
-- CORS_ORIGINS (preserved)
-- JWT_SECRET, ADMIN_USERNAME, ADMIN_PASSWORD (added)
+## Progress Log
+- 2026-07-22: Imported repo, seeded, tests 33/33
+- 2026-07-22: Refactored server.py (1856→122 lines) + fixed store-role authz gap. Tests 44/44
+- 2026-07-22: **Batch 1 complete** — #4 remove production menu, #12 multi-currency, #1 Input Incoming Goods, #5 GRN auto-update, #8 bulk delete + import fix. Tests 65/65.
+
+## Backlog
+
+### Batch 2 (report + UX)
+- #2 Laporan Incoming Goods page (backend DONE, frontend page DONE — pending polish)
+- #3 Pengiriman: autocomplete Tujuan/Supir + multi-item + Nomor SO per item + list view w/ SO column & search
+- #6 Master SO visible di Store (read-only) + upload Excel SO
+- #10 SO autocomplete di semua menu (auto-suggest saat ketik SO no → tampil customer+desc)
+- #11 Login form geser atas (form saat ini terlalu ke bawah)
+- #13 Dashboard: total pembelian bulan ini (tgl 1 s.d. hari ini) + jumlah PO
+- #9 Header 3-baris untuk admin (row1=purchasing, row2=store, row3=persetujuan+log)
+
+### Batch 3 (integration)
+- #7 Auto-read PO dari JPG/PDF via **Gemini 3 Flash** (via Emergent LLM key)
+
+## Env Vars
+- MONGO_URL, DB_NAME, CORS_ORIGINS (preserved)
+- JWT_SECRET, ADMIN_USERNAME=susanto, ADMIN_PASSWORD
