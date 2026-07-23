@@ -399,7 +399,7 @@ async def kpi_report(
 # ---------------- Excel Import/Export ----------------
 EXPORT_HEADERS = [
     "Tanggal Invoice", "Nomor Project (SO)", "Nomor PO", "Nama Toko", "Kategori", "Nama Barang",
-    "Qty", "Unit", "Unit Price", "Total Price", "Nomor Invoice", "Tanggal PO", "Tanggal Terima", "Catatan"
+    "Qty", "Unit", "Unit Price", "Total Price", "Nomor Invoice", "Tanggal PO", "Plan Delivery", "Tanggal Terima", "Catatan"
 ]
 
 
@@ -443,7 +443,7 @@ async def export_xlsx(current: dict = Depends(get_current_user)):
             d.get("invoice_date", ""), d.get("project_no", ""), d.get("po_no", ""),
             d.get("vendor_name", ""), d.get("category", "Uncategorized"), d.get("item_name", ""), d.get("qty", 0),
             d.get("unit", ""), d.get("unit_price", 0), d.get("total_price", 0),
-            d.get("invoice_no", ""), d.get("po_date", ""), d.get("receive_date", ""), d.get("notes", ""),
+            d.get("invoice_no", ""), d.get("po_date", ""), d.get("plan_delivery_date", ""), d.get("receive_date", ""), d.get("notes", ""),
         ])
     for col_idx, header in enumerate(EXPORT_HEADERS, 1):
         max_len = max([len(str(header))] + [len(str(ws.cell(row=r, column=col_idx).value or "")) for r in range(2, min(ws.max_row, 100) + 1)])

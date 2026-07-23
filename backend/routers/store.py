@@ -2,11 +2,12 @@
 import io
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from db import db
 from deps import (
@@ -848,6 +849,91 @@ async def incoming_report(
         for d in items:
             d.pop("unit_price", None)
     return {"total": total, "page": page, "page_size": page_size, "items": items}
+
+
+MCL_TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "assets" / "mcl_template.xlsx"
+
+
+def _format_date_id(iso_date: Optional[str]) -> str:
+    if not iso_date:
+        return ""
+    try:
+        return datetime.fromisoformat(str(iso_date)[:10]).strftime("%d-%m-%Y")
+    except Exception:
+        return str(iso_date)
+
+
+@router.get("/store/incoming/mcl/{receipt_id}")
+async def print_mcl(receipt_id: str, current: dict = Depends(require_store_access)):
+    """Generate a Material Control Label XLSX (per nota) using the MKS template.
+    
+    Groups all receipts sharing the same (vendor_name, po_no, do_number, invoice_no, receive_date)
+    with the given receipt_id as the anchor. Returns a filled XLSX ready to print or save as PDF.
+    """
+    if not MCL_TEMPLATE_PATH.exists():
+        raise HTTPException(status_code=500, detail="MCL template not found on server")
+
+    anchor = await db.store_receipts.find_one({"id": receipt_id})
+    if not anchor:
+        raise HTTPException(status_code=404, detail="Receipt tidak ditemukan")
+
+    # Build group filter: match same nota — key fields together
+    group_filter: dict = {
+        "vendor_name": anchor.get("vendor_name") or "",
+        "receive_date": anchor.get("receive_date") or "",
+    }
+    for k in ("po_no", "do_number", "invoice_no"):
+        v = anchor.get(k) or ""
+        group_filter[k] = v
+
+    siblings = await db.store_receipts.find(group_filter, {"_id": 0}).to_list(length=1000)
+    if not siblings:
+        siblings = [anchor]
+
+    # Load template & fill
+    wb = load_workbook(str(MCL_TEMPLATE_PATH))
+    ws = wb["RECEIVED MATERIAL"] if "RECEIVED MATERIAL" in wb.sheetnames else wb.active
+
+    # Header values (labels are at B6:C6 / D6=":" / value at E6..)
+    ws["E6"] = anchor.get("do_number") or "-"
+    ws["E7"] = anchor.get("po_no") or "-"
+    ws["E8"] = anchor.get("vendor_name") or "-"
+
+    # Item rows: A12..A26 already contain 1..15
+    MAX_ROWS = 15
+    if len(siblings) > MAX_ROWS:
+        # Only first 15 items fit on the template; note it in a header cell
+        pass
+
+    for i, rec in enumerate(siblings[:MAX_ROWS]):
+        r = 12 + i
+        ws.cell(row=r, column=2).value = rec.get("so_no") or rec.get("so_number") or ""  # B: SO No
+        # C:E merged = Material Description
+        desc = rec.get("item_name") or ""
+        unit = rec.get("unit") or ""
+        ws.cell(row=r, column=3).value = f"{desc}" + (f" ({unit})" if unit else "")
+        ws.cell(row=r, column=6).value = rec.get("qty_received") or rec.get("qty") or 0  # F: Qty
+        ws.cell(row=r, column=7).value = _format_date_id(rec.get("receive_date"))  # G
+
+    # Note if overflow
+    if len(siblings) > MAX_ROWS:
+        ws["A28"] = f"*Catatan: dokumen ini berisi {len(siblings)} item, hanya {MAX_ROWS} pertama ditampilkan."
+
+    # Output
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    safe_do = (anchor.get("do_number") or anchor.get("invoice_no") or anchor.get("po_no") or "MCL").replace("/", "-").replace(" ", "_")
+    filename = f"MCL_{safe_do}_{anchor.get('receive_date','')}.xlsx"
+
+    log_action(current, "print_mcl", "store_receipt", receipt_id, {"group_size": len(siblings)})
+
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/store/issuances/takers")

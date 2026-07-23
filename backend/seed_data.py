@@ -61,6 +61,7 @@ async def seed_users():
         ("staff01",   "staff123",   "Budi Santoso",    "staff",   []),
         ("store01",   "store123",   "Rina Wulandari",  "store",   []),
         ("finance01", "finance123", "Ahmad Kurniawan", "finance", []),
+        ("engineer01","eng123",     "Engineering Team","engineering", []),
     ]
     for uname, pwd, name, role, perms in users:
         existing = await db.users.find_one({"username": uname})

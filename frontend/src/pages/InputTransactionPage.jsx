@@ -24,6 +24,7 @@ export default function InputTransactionPage() {
     vendor_name: "",
     invoice_no: "",
     po_date: today,
+    plan_delivery_date: "",
     receive_date: today,
     currency: "IDR",
     exchange_rate: 1,
@@ -134,6 +135,7 @@ export default function InputTransactionPage() {
           vendor_name: header.vendor_name.trim(),
           invoice_no: header.invoice_no || "",
           po_date: header.po_date || null,
+          plan_delivery_date: header.plan_delivery_date || null,
           receive_date: header.receive_date || null,
           category: (it.category || "").trim() || "Uncategorized",
           item_name: it.item_name.trim(),
@@ -285,6 +287,10 @@ export default function InputTransactionPage() {
             <div>
               <Label className="text-xs font-semibold text-slate-600 mb-1 block">Tanggal PO</Label>
               <Input type="date" data-testid="input-po-date" className={inputCls} value={header.po_date} onChange={(e) => setH("po_date", e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Plan Delivery <span className="text-slate-400 font-normal normal-case">(estimasi)</span></Label>
+              <Input type="date" data-testid="input-plan-delivery-date" className={inputCls} value={header.plan_delivery_date || ""} onChange={(e) => setH("plan_delivery_date", e.target.value)} />
             </div>
             <div>
               <Label className="text-xs font-semibold text-slate-600 mb-1 block">Tanggal Terima</Label>

@@ -174,9 +174,11 @@ export default function AppShell({ children }) {
   }, [canApprove]);
 
   // Filter dept visibility per role
-  const showPurchasing = role === "admin" || role === "staff" || role === "finance";
-  const showStore = role === "admin" || role === "store" || role === "finance";
+  const isEngineering = role === "engineering";
+  const showPurchasing = !isEngineering && (role === "admin" || role === "staff" || role === "finance");
+  const showStore = !isEngineering && (role === "admin" || role === "store" || role === "finance");
   const showAdmin = role === "admin";
+  const showBom = true;  // ALL authenticated users can view BOM (per requirement)
 
   // Purchasing items per role
   const purchasingItems = () => {
@@ -239,12 +241,26 @@ export default function AppShell({ children }) {
                   activePath={location.pathname}
                 />
               )}
+              {showBom && (
+                <NavLink
+                  to="/bom"
+                  data-testid="nav-bom-top"
+                  className={({ isActive }) =>
+                    `text-xs uppercase tracking-[0.05em] font-semibold px-3 h-9 flex items-center gap-2 border-b-2 transition-colors ${
+                      isActive ? "border-sky-600 text-sky-700" : "border-transparent text-slate-600 hover:text-slate-900"
+                    }`
+                  }
+                >
+                  <Package size={14} weight="duotone" /> BOM
+                </NavLink>
+              )}
             </nav>
           </div>
 
           {/* Right: approvals notif + user + logout */}
           <div className="flex items-center gap-2">
-          {/* Master SO — visible for ALL roles (read-only for finance/store) */}
+          {/* Master SO — visible for ALL roles except Engineering (BOM-only) */}
+          {!isEngineering && (
           <NavLink
             to="/so-master"
             data-testid="nav-so-master-top"
@@ -254,6 +270,7 @@ export default function AppShell({ children }) {
           >
             <ClipboardText size={14} weight="duotone" /> Master SO
           </NavLink>
+          )}
           {canApprove && (
               <NavLink
                 to="/admin?tab=requests"

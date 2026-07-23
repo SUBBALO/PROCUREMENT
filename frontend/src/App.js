@@ -18,6 +18,7 @@ import StoreManualReceivePage from "./pages/StoreManualReceivePage";
 import IncomingReportPage from "./pages/IncomingReportPage";
 import DeliveryPage from "./pages/DeliveryPage";
 import SOMasterPage from "./pages/SOMasterPage";
+import BOMPage from "./pages/BOMPage";
 import "./App.css";
 
 function LoadingScreen() {
@@ -33,8 +34,15 @@ function ProtectedRoute({ children, storeRoleTo = "/store/stock", blockStore = f
   const location = useLocation();
   if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
+  // Engineering: ONLY /bom accessible; redirect everywhere else to /bom
+  if (user.role === "engineering") {
+    if (!location.pathname.startsWith("/bom")) {
+      return <Navigate to="/bom" replace />;
+    }
+    return <AppShell>{children}</AppShell>;
+  }
   // Redirect store role away from Dashboard/Purchasing pages
-  if (user.role === "store" && !location.pathname.startsWith("/store") && !location.pathname.startsWith("/deliveries") && !location.pathname.startsWith("/so-master")) {
+  if (user.role === "store" && !location.pathname.startsWith("/store") && !location.pathname.startsWith("/deliveries") && !location.pathname.startsWith("/so-master") && !location.pathname.startsWith("/bom")) {
     return <Navigate to={storeRoleTo} replace />;
   }
   // Block store role from specific store pages (e.g., Laporan Store)
@@ -69,6 +77,7 @@ function AppRoutes() {
       <Route path="/store/incoming-report" element={<ProtectedRoute><IncomingReportPage /></ProtectedRoute>} />
       <Route path="/deliveries" element={<ProtectedRoute><DeliveryPage /></ProtectedRoute>} />
       <Route path="/so-master" element={<ProtectedRoute><SOMasterPage /></ProtectedRoute>} />
+      <Route path="/bom" element={<ProtectedRoute><BOMPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

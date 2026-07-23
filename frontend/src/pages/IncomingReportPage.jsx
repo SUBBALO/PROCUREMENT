@@ -7,7 +7,7 @@ import { Label } from "../components/ui/label";
 import { Button } from "../components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
-import { MagnifyingGlass, Package, Truck, Users, FileXls, Trash } from "@phosphor-icons/react";
+import { MagnifyingGlass, Package, Truck, Users, FileXls, Trash, Printer } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-sky-600 text-sm";
@@ -56,6 +56,16 @@ export default function IncomingReportPage() {
   };
 
   const setF = (k, v) => setFilters((s) => ({ ...s, [k]: v }));
+
+  const printMcl = async (row) => {
+    try {
+      const safe = (row.do_number || row.invoice_no || row.po_no || "MCL").toString().replace(/[/\s]/g, "_");
+      await downloadXlsx(`/store/incoming/mcl/${row.id}`, {}, `MCL_${safe}_${row.receive_date || ""}.xlsx`);
+      toast.success("Material Control Label berhasil dibuat");
+    } catch (e) {
+      toast.error(e.message || "Gagal buat MCL");
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -172,11 +182,12 @@ export default function IncomingReportPage() {
                 <th className="text-center p-2">Ke Stok?</th>
                 <th className="text-center p-2">MCL</th>
                 <th className="text-center p-2">MIF</th>
+                <th className="text-center p-2">Aksi</th>
               </tr>
             </thead>
             <tbody data-testid="ig-rows">
-              {loading && (<tr><td colSpan={isAdmin ? 11 : 10} className="p-6 text-center text-slate-400">Memuat...</td></tr>)}
-              {!loading && rows.length === 0 && (<tr><td colSpan={isAdmin ? 11 : 10} className="p-8 text-center text-slate-400"><Package size={22} weight="duotone" className="inline-block mr-2 text-slate-300" />Tidak ada data</td></tr>)}
+              {loading && (<tr><td colSpan={isAdmin ? 12 : 11} className="p-6 text-center text-slate-400">Memuat...</td></tr>)}
+              {!loading && rows.length === 0 && (<tr><td colSpan={isAdmin ? 12 : 11} className="p-8 text-center text-slate-400"><Package size={22} weight="duotone" className="inline-block mr-2 text-slate-300" />Tidak ada data</td></tr>)}
               {rows.map((r) => (
                 <tr key={r.id} className={`border-b border-slate-100 hover:bg-slate-50 ${selected.has(r.id) ? "bg-sky-50" : ""}`}>
                   {isAdmin && (
@@ -218,6 +229,17 @@ export default function IncomingReportPage() {
                   </td>
                   <td className="p-2 text-center">
                     <input type="checkbox" data-testid={`ig-mif-${r.id}`} className="w-4 h-4 accent-emerald-600 cursor-pointer" checked={!!r.mif_done} onChange={(e) => toggleFlag(r.id, "mif_done", e.target.checked)} />
+                  </td>
+                  <td className="p-2 text-center">
+                    <button
+                      type="button"
+                      data-testid={`ig-print-mcl-${r.id}`}
+                      onClick={() => printMcl(r)}
+                      title="Cetak Material Control Label untuk nota ini (semua item yang berbagi PO/DO/Invoice yang sama akan tergabung)"
+                      className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.05em] font-semibold text-white bg-slate-900 hover:bg-slate-800 px-2 py-1 rounded-none"
+                    >
+                      <Printer size={12} weight="bold" /> MCL
+                    </button>
                   </td>
                 </tr>
               ))}

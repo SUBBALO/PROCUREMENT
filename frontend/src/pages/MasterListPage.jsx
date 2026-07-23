@@ -135,6 +135,7 @@ export default function MasterListPage() {
         category: (t.category || "").trim() || "Uncategorized",
         invoice_no: t.invoice_no || "",
         po_date: t.po_date || null,
+        plan_delivery_date: t.plan_delivery_date || null,
         receive_date: t.receive_date || null,
         item_name: t.item_name,
         qty: Number(t.qty) || 0,
@@ -299,6 +300,7 @@ export default function MasterListPage() {
                 <th className="text-left p-3">Kategori</th>
                 <th className="text-left p-3">Nama Barang</th>
                 <th className="text-left p-3">SO / PO</th>
+                <th className="text-left p-3">Plan Delivery</th>
                 <th className="text-right p-3">Qty</th>
                 <th className="text-right p-3">Harga</th>
                 <th className="text-right p-3">Total (IDR)</th>
@@ -308,14 +310,14 @@ export default function MasterListPage() {
             <tbody data-testid="transactions-table">
               {loading && (
                 <tr>
-                  <td colSpan={11} className="text-center p-8 text-slate-400 text-sm">
+                  <td colSpan={12} className="text-center p-8 text-slate-400 text-sm">
                     Memuat data...
                   </td>
                 </tr>
               )}
               {!loading && data.items.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="text-center p-8 text-slate-400 text-sm" data-testid="empty-state">
+                  <td colSpan={12} className="text-center p-8 text-slate-400 text-sm" data-testid="empty-state">
                     Tidak ada data. Klik "Input Transaksi" atau "Import Excel" untuk mulai.
                   </td>
                 </tr>
@@ -350,6 +352,9 @@ export default function MasterListPage() {
                     <td className="p-3 text-slate-900 max-w-[300px] truncate" title={t.item_name}>{t.item_name}</td>
                     <td className="p-3 text-slate-600 text-xs">
                       {t.project_no || "-"} / {t.po_no || "-"}
+                    </td>
+                    <td className="p-3 text-slate-600 text-xs whitespace-nowrap">
+                      {t.plan_delivery_date ? formatDateID(t.plan_delivery_date) : "-"}
                     </td>
                     <td className="p-3 text-right tabular-nums">
                       {t.qty} <span className="text-slate-400 text-xs">{t.unit}</span>
@@ -458,6 +463,10 @@ export default function MasterListPage() {
               <div>
                 <Label className="text-xs font-semibold text-slate-600 mb-1 block">Tanggal PO</Label>
                 <Input type="date" className={inputCls} value={editTx.po_date || ""} onChange={(e) => setEditTx({ ...editTx, po_date: e.target.value })} />
+              </div>
+              <div>
+                <Label className="text-xs font-semibold text-slate-600 mb-1 block">Plan Delivery <span className="text-slate-400 font-normal normal-case">(estimasi)</span></Label>
+                <Input type="date" className={inputCls} value={editTx.plan_delivery_date || ""} onChange={(e) => setEditTx({ ...editTx, plan_delivery_date: e.target.value })} />
               </div>
               <div>
                 <Label className="text-xs font-semibold text-slate-600 mb-1 block">Tanggal Terima</Label>

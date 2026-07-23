@@ -83,12 +83,14 @@ async def require_approve_perm(current: dict = Depends(get_current_user)) -> dic
 
 async def require_write(current: dict = Depends(get_current_user)) -> dict:
     """Guard for purchasing writes (transactions, sales-orders).
-    Allowed: admin, staff. Blocked: finance (read-only), store (wrong dept)."""
+    Allowed: admin, staff. Blocked: finance (read-only), store (wrong dept), engineering (BOM only)."""
     role = current.get("role")
     if role == "finance":
         raise HTTPException(status_code=403, detail="Akun Finance hanya untuk view — tidak bisa mengubah data")
     if role == "store":
         raise HTTPException(status_code=403, detail="Akun Store tidak berwenang mengubah data purchasing/SO")
+    if role == "engineering":
+        raise HTTPException(status_code=403, detail="Akun Engineering hanya berwenang di modul BOM")
     return current
 
 
@@ -104,6 +106,20 @@ async def require_store_access(current: dict = Depends(get_current_user)) -> dic
 async def require_store_write(current: dict = Depends(get_current_user)) -> dict:
     if current.get("role") not in ("admin", "store"):
         raise HTTPException(status_code=403, detail="Akses ditolak")
+    return current
+
+
+async def require_bom_upload(current: dict = Depends(get_current_user)) -> dict:
+    """Only Engineering and Admin can upload BOM files."""
+    if current.get("role") not in ("engineering", "admin"):
+        raise HTTPException(status_code=403, detail="Hanya Engineering & Admin yang bisa upload BOM")
+    return current
+
+
+async def require_bom_admin(current: dict = Depends(get_current_user)) -> dict:
+    """Only Admin can annotate BOM (Available Stock, Qty Purchase, Remarks)."""
+    if current.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Hanya Admin yang bisa mengisi annotasi BOM")
     return current
 
 

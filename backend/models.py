@@ -53,6 +53,7 @@ class TransactionBase(BaseModel):
     total_price_idr: Optional[float] = 0.0
     invoice_no: Optional[str] = ""
     po_date: Optional[str] = None
+    plan_delivery_date: Optional[str] = None  # Estimated/planned delivery date at PO creation
     receive_date: Optional[str] = None
     notes: Optional[str] = ""
     is_compliant: Optional[bool] = True
