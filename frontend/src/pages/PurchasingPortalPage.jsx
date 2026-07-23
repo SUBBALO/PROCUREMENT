@@ -18,7 +18,7 @@ const CARDS = [
   {
     key: "master-items", label: "Master Items (Harga)", stats: "Item · Vendor · Price",
     description: "Rekap item, harga terakhir, vendor, unit standar.",
-    icon: Package, href: "/master-items",
+    icon: Package, href: "/items",
     accent: "from-amber-500 via-orange-500 to-red-500", accentText: "text-amber-400",
   },
   {
