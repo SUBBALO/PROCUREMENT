@@ -87,10 +87,21 @@ See `/app/memory/test_credentials.md`. Primary admin: **susanto / admin123**.
 - ✅ **BOM table layout refinement**: Stock/Qty Purchase columns compact (w-16), Admin Remark column enlarged (min-w-[280px]).
 
 ## Pending Tasks
-- **P0 — Sales Module (full)**: Costing request workflow (Sales↔Engineering), Quotation PDF generator, status flow.
+- **P0 — Engineering Costing full-flow polish**: Add optional PDF Quotation generator (kop surat), delivery status wiring from Quotation → Order.
 - **P1 — Recycle Bin / Soft Delete**: DEFERRED. When resumed: add `deleted_at` to all collections + Super Admin trash UI.
 - **P2 — QC Module**: Inspection incoming, approve/reject material before stock post, non-conformance report.
 - **P3 — Master Kategori CRUD** (nice-to-have): if user wants a proper master menu vs current free-text autocomplete.
+
+## Recent Additions (Feb 2026 — Iter 20/21)
+- ✅ Engineering Costing Workflow UX: SalesPage adapts header ("Engineering — Costing Requests") when role=engineering; back link to `/engineering`.
+- ✅ Buat Quotation dari Inquiry: after Sales accepts inquiry, "Buat Quotation dari Inquiry" button navigates to `/sales/quotations?from_inquiry=<id>` and auto-prefills CreateQuotationDialog with customer + items.
+- ✅ Bug fix: CreateQuotationDialog was crashing due to undefined `cc` state — now properly declared.
+- ✅ Quotation items table: added Unit Price + Total column (previously only Description/Qty/Unit).
+- ✅ Sales/Engineering Dashboard Stats (`GET /api/sales/stats`): 8-cell grid for Inquiries (Total/Draft/Terkirim/Dikerjakan/Menunggu Review/Accepted/Minta Revisi/Closed) and 4-cell grid for Quotations (Total/On Bidding/Confirm/Cancel).
+- ✅ Excel Export: `GET /api/inquiries/export/excel` and `GET /api/quotations/export/excel` with styled headers and role-based visibility. Buttons in Sales & Quotation pages.
+- ✅ Purchasing KPI card restored on `/` Purchasing Portal (was accidentally removed after portal restructure).
+- ✅ Super Admin Backup & Reset tab: Export JSON, Import (merge/replace + RESTORE-CONFIRM phrase), Wipe database (WIPE-ALL-DATA phrase + optional keep-users). Endpoint `POST /api/admin/backup/wipe` gated by `require_super_admin`.
+- ✅ Non-admin visiting `/admin` now redirects to `/` (no more spam error toast).
 
 ## Backlog (post-13-features, optional)
 - P2: Split routers/store.py (~800 lines) into receipts/issuances/requests
