@@ -58,6 +58,23 @@ async def seed_users():
     users = [
         # username, password, name, role, perms
         ("erwin",     "erwin123",   "Erwin",           "admin",   ["approve_store_requests", "view_store_report"]),
+        ("asiong",    "asiong123",  "Asiong Lu",       "admin",   ["approve_store_requests", "view_store_report"]),
+        # Sales team
+        ("nicholas",  "sales123",   "Nicholas Jacky C","sales",   []),
+        ("riska",     "sales123",   "Riska",           "sales",   []),
+        ("feggie",    "sales123",   "Feggie",          "sales",   []),
+        ("agus",      "sales123",   "Agus",            "sales",   []),
+        ("kiki",      "sales123",   "Kiki",            "sales",   []),
+        # Engineering team
+        ("zul",       "eng123",     "Zul",             "engineering", []),
+        ("riski",     "eng123",     "Riski",           "engineering", []),
+        ("madian",    "eng123",     "Madian",          "engineering", []),
+        ("trisna",    "eng123",     "Trisna",          "engineering", []),
+        # Purchasing (staff role) — susanto is the super admin (seeded elsewhere)
+        ("fiana",     "purch123",   "Fiana",           "staff",   []),
+        # Store team
+        ("khairul",   "store123",   "Khairul",         "store",   []),
+        # Legacy demo accounts kept for testing continuity
         ("staff01",   "staff123",   "Budi Santoso",    "staff",   []),
         ("store01",   "store123",   "Rina Wulandari",  "store",   []),
         ("finance01", "finance123", "Ahmad Kurniawan", "finance", []),

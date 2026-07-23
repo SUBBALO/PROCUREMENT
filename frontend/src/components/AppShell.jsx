@@ -210,7 +210,9 @@ export default function AppShell({ children }) {
             </NavLink>
 
             <nav className="flex items-center gap-1">
-              {!isLanding && showPurchasing && (
+              {/* All dept dropdowns removed per new design — users navigate via Landing/Sub-portal cards.
+                  Only Master SO and Persetujuan Store remain visible. */}
+              {false && !isLanding && showPurchasing && (
                 <DeptDropdown
                   label="Purchasing"
                   icon={ShoppingCart}
@@ -219,7 +221,7 @@ export default function AppShell({ children }) {
                   activePath={location.pathname}
                 />
               )}
-              {!isLanding && showStore && (
+              {false && !isLanding && showStore && (
                 <DeptDropdown
                   label="Store"
                   icon={Storefront}
@@ -234,7 +236,7 @@ export default function AppShell({ children }) {
                   activePath={location.pathname}
                 />
               )}
-              {!isLanding && showAdmin && (
+              {!isLanding && showAdmin && isSuperAdmin && (
                 <DeptDropdown
                   label="Admin"
                   icon={ShieldStar}

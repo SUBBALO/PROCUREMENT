@@ -18,6 +18,7 @@ from deps import _now_iso
 from security import hash_password, verify_password
 from routers import auth as auth_router
 from routers import ai as ai_router
+from routers import backup as backup_router
 from routers import bom as bom_router
 from routers import orders as orders_router
 from routers import sales as sales_router
@@ -38,6 +39,7 @@ api_router.include_router(orders_router.router)
 api_router.include_router(ai_router.router)
 api_router.include_router(bom_router.router)
 api_router.include_router(sales_router.router)
+api_router.include_router(backup_router.router)
 
 
 @api_router.get("/")

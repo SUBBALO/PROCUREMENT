@@ -522,7 +522,12 @@ async def list_quotations(q: Optional[str] = None, limit: int = 100, current: di
         filt["created_by_id"] = current.get("id")
     if q and q.strip():
         rx = {"$regex": re.escape(q.strip()), "$options": "i"}
-        filt["$or"] = [{"quotation_no": rx}, {"customer_name": rx}]
+        filt["$or"] = [
+            {"quotation_no": rx},
+            {"customer_name": rx},
+            {"attention": rx},
+            {"items.description": rx},
+        ]
     docs = await db.quotations.find(filt).sort("created_at", -1).limit(limit).to_list(length=limit)
     for d in docs:
         _clean(d)
@@ -539,6 +544,86 @@ async def get_quotation(qid: str, current: dict = Depends(get_current_user)):
 
 class QuotationStatusUpdate(BaseModel):
     status: str  # on_bidding | confirm_order | cancel
+
+
+# =============================================================================
+# CUSTOMERS MASTER
+# =============================================================================
+class CustomerCreate(BaseModel):
+    name: str
+    address: str = ""
+    pic: str = ""  # Person In Charge / Attention person
+    phone: str = ""
+    email: str = ""
+    notes: str = ""
+
+
+class CustomerUpdate(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    pic: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.get("/customers")
+async def list_customers(q: Optional[str] = None, limit: int = 500, current: dict = Depends(get_current_user)):
+    filt: dict = {}
+    if q and q.strip():
+        rx = {"$regex": re.escape(q.strip()), "$options": "i"}
+        filt["$or"] = [{"name": rx}, {"pic": rx}]
+    docs = await db.customers.find(filt).sort("name", 1).limit(limit).to_list(length=limit)
+    for d in docs:
+        _clean(d)
+    return {"items": docs, "total": len(docs)}
+
+
+@router.post("/customers")
+async def create_customer(payload: CustomerCreate, current: dict = Depends(get_current_user)):
+    if current.get("role") not in ("sales", "admin"):
+        raise HTTPException(status_code=403, detail="Hanya Sales & Admin yang bisa kelola customer")
+    if not payload.name.strip():
+        raise HTTPException(status_code=400, detail="Nama customer wajib diisi")
+    existing = await db.customers.find_one({"name": {"$regex": f"^{re.escape(payload.name.strip())}$", "$options": "i"}})
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Customer '{payload.name}' sudah ada")
+    doc = {
+        "id": str(uuid.uuid4()),
+        **{k: v.strip() if isinstance(v, str) else v for k, v in payload.model_dump().items()},
+        "name": payload.name.strip(),
+        "created_at": datetime.utcnow().isoformat(),
+        "created_by_name": current.get("name") or current.get("username"),
+    }
+    await db.customers.insert_one(doc)
+    await log_action(current, "create_customer", "customer", doc["id"], {"name": doc["name"]})
+    return _clean(doc)
+
+
+@router.put("/customers/{cid}")
+async def update_customer(cid: str, payload: CustomerUpdate, current: dict = Depends(get_current_user)):
+    if current.get("role") not in ("sales", "admin"):
+        raise HTTPException(status_code=403, detail="Hanya Sales & Admin yang bisa edit customer")
+    up = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+    if not up:
+        raise HTTPException(status_code=400, detail="Tidak ada perubahan")
+    up["updated_at"] = datetime.utcnow().isoformat()
+    res = await db.customers.update_one({"id": cid}, {"$set": up})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Customer tidak ditemukan")
+    updated = await db.customers.find_one({"id": cid})
+    return _clean(updated)
+
+
+@router.delete("/customers/{cid}")
+async def delete_customer(cid: str, current: dict = Depends(get_current_user)):
+    if current.get("role") not in ("sales", "admin"):
+        raise HTTPException(status_code=403, detail="Tidak berwenang")
+    res = await db.customers.delete_one({"id": cid})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Customer tidak ditemukan")
+    await log_action(current, "delete_customer", "customer", cid, {})
+    return {"success": True}
 
 
 @router.patch("/quotations/{qid}/status")

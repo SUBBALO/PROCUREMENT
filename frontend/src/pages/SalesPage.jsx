@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import {
   Storefront, ArrowLeft, Plus, PaperPlaneTilt, Trash, Paperclip, DownloadSimple,
   FileText, ClockCounterClockwise, ChatCircleDots, Check, X, MagnifyingGlass,
-  CircleNotch, Warning, ArrowClockwise,
+  CircleNotch, Warning, ArrowClockwise, PencilSimple,
 } from "@phosphor-icons/react";
 
 const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-rose-600 text-sm";
@@ -339,6 +339,7 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
 
   const role = user?.role;
   const isMineSales = role === "sales" && data?.created_by_id === user?.id;
+  const canEditDraft = data && data.status === "draft" && (isMineSales || role === "admin");
   const isOwnerOrAdmin = isMineSales || role === "admin";
   const isEng = role === "engineering" || role === "admin";
   const isSalesOrAdmin = role === "sales" || role === "admin";
@@ -355,13 +356,14 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
   }, [inquiryId, onClose]);
   useEffect(() => { reload(); }, [reload]);
 
-  const doAction = async () => {
+  const doAction = async (overrideAction = null) => {
+    const a = overrideAction || action;
     setProcessing(true);
     try {
-      if (action === "accept") {
+      if (a === "accept") {
         if (!actInput.trim()) { setProcessing(false); return toast.error("Nama PIC Engineer wajib diisi"); }
         await api.post(`/inquiries/${inquiryId}/accept`, { pic_engineer_name: actInput.trim() });
-      } else if (action === "complete") {
+      } else if (a === "complete") {
         for (const f of pendingEngFiles) {
           const fd = new FormData(); fd.append("file", f); fd.append("slot", "engineer");
           await api.post(`/inquiries/${inquiryId}/attachments`, fd, { headers: { "Content-Type": "multipart/form-data" } });
@@ -369,12 +371,12 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
         await api.post(`/inquiries/${inquiryId}/complete`, new URLSearchParams({ note: actNote }), {
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
         });
-      } else if (action === "review-accept") {
+      } else if (a === "review-accept") {
         await api.post(`/inquiries/${inquiryId}/review`, { approve: true, review_note: actNote });
-      } else if (action === "review-revise") {
+      } else if (a === "review-revise") {
         if (!actNote.trim()) { setProcessing(false); return toast.error("Catatan revisi wajib diisi"); }
         await api.post(`/inquiries/${inquiryId}/review`, { approve: false, review_note: actNote });
-      } else if (action === "submit-draft") {
+      } else if (a === "submit-draft") {
         await api.post(`/inquiries/${inquiryId}/submit`);
       }
       toast.success("Berhasil");
@@ -456,13 +458,13 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
 
             {/* Action panels */}
             <div className="mt-4 pt-3 border-t border-slate-200 space-y-2">
-              {/* Sales draft actions */}
-              {isMineSales && data.status === "draft" && !action && (
-                <div className="flex gap-2">
+              {/* Sales/Admin draft actions */}
+              {canEditDraft && !action && (
+                <div className="flex gap-2 flex-wrap">
                   <Button data-testid="edit-draft-btn" onClick={() => onEditDraft && onEditDraft(data)} variant="outline" className="rounded-none">
-                    Edit Draft
+                    <PencilSimple size={13} weight="bold" className="mr-1" /> Edit Draft
                   </Button>
-                  <Button data-testid="submit-draft" onClick={() => { setAction("submit-draft"); doAction(); }} disabled={processing} className="rounded-none bg-rose-600 hover:bg-rose-700 text-white">
+                  <Button data-testid="submit-draft" onClick={() => doAction("submit-draft")} disabled={processing} className="rounded-none bg-rose-600 hover:bg-rose-700 text-white">
                     <PaperPlaneTilt size={13} weight="bold" className="mr-1" /> Kirim ke Engineering
                   </Button>
                 </div>

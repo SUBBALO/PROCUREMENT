@@ -21,6 +21,12 @@ import SOMasterPage from "./pages/SOMasterPage";
 import BOMPage from "./pages/BOMPage";
 import LandingPage from "./pages/LandingPage";
 import SalesPage from "./pages/SalesPage";
+import PurchasingPortalPage from "./pages/PurchasingPortalPage";
+import StorePortalPage from "./pages/StorePortalPage";
+import SalesPortalPage from "./pages/SalesPortalPage";
+import EngineeringPortalPage from "./pages/EngineeringPortalPage";
+import QuotationPage from "./pages/QuotationPage";
+import CustomerMasterPage from "./pages/CustomerMasterPage";
 import "./App.css";
 
 function LoadingScreen() {
@@ -45,8 +51,8 @@ function ProtectedRoute({ children, storeRoleTo = "/store/stock", blockStore = f
 
   // Engineering: /bom AND /sales accessible outside `/`
   if (user.role === "engineering") {
-    if (!location.pathname.startsWith("/bom") && !location.pathname.startsWith("/sales")) {
-      return <Navigate to="/bom" replace />;
+    if (!location.pathname.startsWith("/bom") && !location.pathname.startsWith("/sales") && !location.pathname.startsWith("/engineering")) {
+      return <Navigate to="/engineering" replace />;
     }
     return <AppShell>{children}</AppShell>;
   }
@@ -81,7 +87,13 @@ function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/" element={<ProtectedRoute><LandingPage /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-      <Route path="/sales" element={<ProtectedRoute><SalesPage /></ProtectedRoute>} />
+      <Route path="/purchasing" element={<ProtectedRoute><PurchasingPortalPage /></ProtectedRoute>} />
+      <Route path="/store" element={<ProtectedRoute><StorePortalPage /></ProtectedRoute>} />
+      <Route path="/engineering" element={<ProtectedRoute><EngineeringPortalPage /></ProtectedRoute>} />
+      <Route path="/sales" element={<ProtectedRoute><SalesPortalPage /></ProtectedRoute>} />
+      <Route path="/sales/inquiries" element={<ProtectedRoute><SalesPage /></ProtectedRoute>} />
+      <Route path="/sales/quotations" element={<ProtectedRoute><QuotationPage /></ProtectedRoute>} />
+      <Route path="/sales/customers" element={<ProtectedRoute><CustomerMasterPage /></ProtectedRoute>} />
       <Route path="/input" element={<ProtectedRoute><InputTransactionPage /></ProtectedRoute>} />
       <Route path="/master" element={<ProtectedRoute><MasterListPage /></ProtectedRoute>} />
       <Route path="/items" element={<ProtectedRoute><MasterItemsPage /></ProtectedRoute>} />
