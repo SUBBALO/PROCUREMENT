@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 12 admin bulk-delete of store_receipts fully verified. Backend: 8/8 new iter12 tests + 132/132 full regression (after reseed). Frontend Playwright: RBAC visibility (store01 hidden, susanto visible), select→bulk-bar→dialog→cancel-preserves-selection, and confirm→toast→row-removal all pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter12.py",
+    "/app/test_reports/pytest/iter12_results.xml",
+    "/app/test_reports/pytest/iter12_full_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "bulk_delete_receipts: force=true wipes even fully-consumed receipts, breaking FIFO history for issuance rows that already reference receipt_id. Consider soft-delete flag or block if any store_issuances.allocations.receipt_id points to it. (Currently allocations only store denormalized snapshot, so historical reports are safe, but issuance→receipt drill-down would 404.)",
+    "Endpoint returns 404 only when NO ids match; a mixed batch (some valid, some unknown) silently deletes valid ones with no warning. Consider returning {deleted, missing_ids:[...]} for transparency.",
+    "Frontend: after successful delete, load() is called but selection is already cleared; if load() fails the toast success is misleading. Minor.",
+    "Frontend: 'ig-select-all' select-all only spans the current page (rows state), which is fine because page_size=500, but if pagination is added later this becomes surprising.",
+    "Audit log for bulk_delete_receipts stores '-' as resource_id (batch op); consider logging the ids array in the meta for forensic trace."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter12.py", "/app/test_reports/iteration_12.json"],
+  "success_rate": {"backend": "100% (132/132, incl. 8 new iter12)", "frontend": "100% (all iter12 UI assertions pass)"},
+  "test_credentials": "Same as /app/memory/test_credentials.md — all 5 users verified.",
+  "seed_data_creation": "Re-ran /app/backend/seed_data.py once mid-run to restore consumed transactions (needed by pre-existing test_list_seeded / TestMultiCurrency / test_store_pending_list assertions). Created & cleaned up UI_TEST_VENDOR_0..2 receipts for Playwright.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend iter12 test file uses session cookies. Full regression (132 tests) is stable but seed data (8 transactions, 4 SOs) gets consumed by CRUD/delete tests — re-run /app/backend/seed_data.py before running backend_test.py::TestTransactions and TestMultiCurrency. bulk-delete endpoint expects POST /api/store/receipts/bulk-delete with body {ids:[...], force?:bool}; require_admin (not super_admin) — both susanto & erwin pass.",
+  "rca_of_the_issue": "N/A — implementation matches spec. Only friction: (a) initial pytest run showed 3 pre-existing regression failures caused by consumed seed data (test_list_seeded expected >=8 transactions, TestMultiCurrency expected SGD seed, TestStoreRole expected pending list) — all pass after re-seed. (b) UI test needed to seed 3 UI_TEST_VENDOR receipts up-front because the incoming-report was empty in the shared preview DB."
+}

@@ -14,6 +14,7 @@ from deps import (
     can_see_prices,
     get_current_user,
     log_action,
+    require_admin,
     require_approve_perm,
     require_store_access,
     require_store_write,
@@ -750,6 +751,33 @@ async def incoming_report(
         for d in items:
             d.pop("unit_price", None)
     return {"total": total, "page": page, "page_size": page_size, "items": items}
+
+
+@router.post("/store/receipts/bulk-delete")
+async def bulk_delete_receipts(payload: dict, current: dict = Depends(require_admin)):
+    """Admin-only direct bulk delete of store receipts.
+    Rejects receipts that have been consumed (qty_remaining < qty_received) unless force=true."""
+    ids = payload.get("ids") or []
+    force = bool(payload.get("force"))
+    if not ids:
+        raise HTTPException(status_code=400, detail="Tidak ada ID yang dipilih")
+    receipts = await db.store_receipts.find({"id": {"$in": ids}}).to_list(length=len(ids))
+    if not receipts:
+        raise HTTPException(status_code=404, detail="Receipt tidak ditemukan")
+    consumed = [r for r in receipts if float(r.get("qty_received", 0)) - float(r.get("qty_remaining", 0)) > 1e-9]
+    if consumed and not force:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{len(consumed)} receipt sudah dipakai (issuance). Batalkan issuance dulu, "
+                f"atau kirim ulang dengan force=true untuk paksa hapus."
+            ),
+        )
+    res = await db.store_receipts.delete_many({"id": {"$in": ids}})
+    await log_action(current, "bulk_delete_receipts", "store_receipt", "-", {
+        "count": res.deleted_count, "requested": len(ids), "forced": force,
+    })
+    return {"deleted": res.deleted_count, "forced_consumed": len(consumed) if force else 0}
 
 
 @router.get("/store/incoming-report/xlsx")
