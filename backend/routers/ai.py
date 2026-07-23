@@ -98,17 +98,18 @@ async def parse_po(file: UploadFile = File(...), current: dict = Depends(require
     else:
         raise HTTPException(status_code=400, detail="Format tidak didukung. Upload JPG/PNG/WEBP/PDF")
 
-    tmp_path = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(img_bytes)
-            tmp_path = tmp.name
+        from google import genai
+        from google.genai import types
 
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.0-flash-exp")
-        uploaded = genai.upload_file(path=tmp_path, mime_type=mime)
-        resp = model.generate_content([PARSE_PROMPT, uploaded])
+        client = genai.Client(api_key=api_key)
+        resp = client.models.generate_content(
+            model="gemini-flash-latest",
+            contents=[
+                PARSE_PROMPT,
+                types.Part.from_bytes(data=img_bytes, mime_type=mime),
+            ],
+        )
         raw = resp.text if hasattr(resp, "text") else str(resp)
         logger.info(f"Gemini PO parse raw (first 300): {raw[:300]}")
 
@@ -155,7 +156,8 @@ async def parse_po(file: UploadFile = File(...), current: dict = Depends(require
             "exchange_rate": rate,
             "items": items,
         }
-    finally:
-        if tmp_path:
-            try: os.unlink(tmp_path)
-            except Exception: pass
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Gemini parse failed")
+        raise HTTPException(status_code=500, detail=f"Gemini error: {e}")

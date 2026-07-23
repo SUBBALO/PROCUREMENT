@@ -6,7 +6,7 @@ Import & run PROCUREMENT repo (SUBBALO/PROCUREMENT), then iterate 13 features (b
 ## Architecture
 - **Backend**: FastAPI + Motor MongoDB + cookie-JWT. Split: db.py, security.py, deps.py, models.py, routers/{auth,transactions,store,orders,ai}.py. server.py = 124-line bootstrap.
 - **Frontend**: React 19 + Craco + Tailwind + Shadcn + Router 7. AppShell has role-based 3-row header for admin.
-- **LLM**: Gemini 3 Flash via emergentintegrations + EMERGENT_LLM_KEY for PO auto-read.
+- **LLM**: Google Gemini `gemini-flash-latest` via **google-genai** SDK (direct API, key format `AQ.Ab8...` w/ X-goog-api-key header) for PO auto-read.
 - **Language**: Indonesian.
 
 ## Roles
@@ -62,7 +62,16 @@ See `/app/memory/test_credentials.md`. Primary admin: **susanto / admin123**.
 ## Env Vars
 - MONGO_URL, DB_NAME, CORS_ORIGINS (preserved)
 - JWT_SECRET, ADMIN_USERNAME=susanto, ADMIN_PASSWORD
-- **EMERGENT_LLM_KEY** (for parse-PO via Gemini 3 Flash)
+- **GEMINI_API_KEY** (user's Google AI Studio key — direct SDK, no Emergent key needed for parse-PO)
+
+## Changelog (Fork Session — 2026-02)
+- ✅ **[FIXED] AI Parse PO 500 Error**: Migrated from deprecated `google.generativeai` SDK (URL-based `?key=` auth incompatible with new `AQ.` key format) → **`google-genai` v2.12** SDK (uses `X-goog-api-key` header). Model: `gemini-flash-latest`. Verified end-to-end with dummy PO → returns valid JSON with vendor/PO/items.
+- ✅ Verified black button "Tarik dari PO Purchasing →" already in `/app/frontend/src/pages/StoreManualReceivePage.jsx` (line 113-121).
+
+## Pending Tasks (from user's 10-point list M498)
+- **P1 — Recycle Bin / Soft Delete**: Add `deleted_at` to transactions, store_receipts, store_issuances, deliveries, sales_orders, users. GET endpoints filter `deleted_at: null`. Super-Admin trash UI to restore/purge.
+- **P1 — Menu Koreksi Rework**: Select correction type (Qty/SO/Pengambil), inline pre-fill + edit, admin approval.
+- **P2 — Bill of Material (BOM) Module**: Excel/PDF upload → Gemini Vision → new collection + UI cross-reference stock. **DEFERRED** per user (M535: "jangan buat dulu").
 
 ## Backlog (post-13-features, optional)
 - P2: Split routers/store.py (~800 lines) into receipts/issuances/requests
