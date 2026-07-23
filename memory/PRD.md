@@ -73,9 +73,18 @@ See `/app/memory/test_credentials.md`. Primary admin: **susanto / admin123**.
 - ✅ **Bill of Material (Feature E)**: New /bom module. `boms` collection stores every revision. `POST /api/bom/upload` (multipart: file + `prepared_by` **required** + `revision_reason` optional) parses .xls (via xlrd 1.2.0) and .xlsx (openpyxl). Auto-detects existing SO → returns HTTP 409 with structured `{code, so_no, latest_rev, latest_uploaded_by, latest_uploaded_at, latest_prepared_by, message}`; frontend catches and reveals inline reason input. `prepared_by` captured manually because Engineering shares one login (7 people). `GET /bom/preparers` autocomplete. `GET /bom?q=...` fuzzy substring search across so_no/customer/project_name (case-insensitive). GET /bom/history/{so_no} shows revision log. PATCH /bom/{id}/annotations (admin-only) for Available Stock / Qty Purchase / Purchase Due Date / Admin Remark. New role **engineering** (seed: `engineer01`/`eng123`) — access ONLY to /bom (ProtectedRoute redirects). BOM detail meta card highlights Prepared By, Tanggal Upload, Diupload oleh. History dialog shows Pembuat BOM column. Admin remark cell uses auto-grow textarea (ref-based scrollHeight sync) so long text is fully visible without hover. Verified iter15+16 (23 tests total, 100% pass).
 - ✅ **Plan Delivery Date (Bonus)**: `plan_delivery_date` field added to TransactionBase. New input in Input Transaksi header (between Tanggal PO and Tanggal Terima). New column in Master List (between SO/PO and Qty). Excel export includes 'Plan Delivery' column.
 
-- ✅ **Department Portal Landing Page**: New `/` route hosts a dark modern portal with per-role dept cards (Sales / Engineering / Purchasing / Store / QC). Cards use gradient accents (rose/amber/sky/emerald/violet), icon duotones, entrance animation, hover translate. Role-based visibility — sales sees only Sales card, admin sees all 5. QC card marked "Coming Soon". Dashboard moved to `/dashboard`.
-- ✅ **Sales role**: New role `sales` (seed `sales01`/`sales123`). Restricted to `/sales` route + `/`. Placeholder page describes future flow: Costing Request → Engineering PIC → Costing Response + Drawing upload → Sales review Accept/Revise → Quotation PDF → status (on-bidding/confirm-order/cancel).
-- ✅ **Brand link → Home**: Logo header changed to `/`  home link; renamed to "ERP PT MKS".
+- ✅ **Sales Inquiry Costing Workflow (Phase 1)**: Full state machine `draft → submitted → in_progress → awaiting_review → (accepted | revision_requested loop) → closed`. Backend router `/api/inquiries` dengan:
+  - Sales create dengan multiple items + attachments upload ke MongoDB GridFS
+  - Draft mode (save-as-draft) sebelum submit
+  - Auto-generate nomor `INQ-001/MKS/VII/2026` (reset counter tiap bulan, Roman month)
+  - Engineering accept dengan PIC engineer name wajib (multi-collab OK)
+  - Engineering upload response files + note → complete
+  - Sales review Accept atau Request Revision (loop back to in_progress)
+  - Notification badge `/api/inquiries/pending-count` per role
+  - History log semua transisi state
+- ✅ **Quotation entity (Phase 1)**: Backend `/api/quotations` create/list/get/status. Auto-generate nomor `001/MKS/Q/VII/2026` (reset bulanan). Field manual: customer, attention, cc, items, notes, terms, signature. **PDF generator + kop surat overlay** = Phase 2 next task.
+- ✅ **Header cleanup**: Landing page `/` sekarang header MINIMAL (hanya logo + user + logout, semua menu dept dropdown/BOM/Master SO/Persetujuan disembunyikan). Logo brand `MKS Management System` klik = kembali ke landing (home).
+- ✅ **BOM table layout refinement**: Stock/Qty Purchase columns compact (w-16), Admin Remark column enlarged (min-w-[280px]).
 
 ## Pending Tasks
 - **P0 — Sales Module (full)**: Costing request workflow (Sales↔Engineering), Quotation PDF generator, status flow.

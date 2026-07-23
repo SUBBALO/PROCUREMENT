@@ -9,7 +9,7 @@ import {
 import { toast } from "sonner";
 import {
   ChartBar, Plus, MagnifyingGlass, SignOut, Package, ChartLineUp, ShieldStar, Warehouse, ArrowDown, ArrowUp,
-  ClipboardText, CaretDown, ShoppingCart, Storefront, Truck, ClockCounterClockwise, Bell, House,
+  ClipboardText, CaretDown, ShoppingCart, Storefront, Truck, ClockCounterClockwise, Bell,
 } from "@phosphor-icons/react";
 
 // ─── PURCHASING ─────────────────────────────────────────
@@ -201,7 +201,7 @@ export default function AppShell({ children }) {
               <img src="/assets/logo-mks.png" alt="MKS" className="w-8 h-8 object-contain" />
               <div>
                 <div className="font-bold text-sm tracking-tight text-slate-900 leading-tight" style={{ fontFamily: "Chivo, sans-serif" }}>
-                  ERP PT MKS
+                  MKS Management System
                 </div>
                 <div className="text-[9px] uppercase tracking-[0.2em] text-slate-400 leading-tight">
                   PT. Mitra Karya Sarana
@@ -256,22 +256,24 @@ export default function AppShell({ children }) {
                   <Package size={14} weight="duotone" /> BOM
                 </NavLink>
               )}
+              {!isLanding && isEngineering && (
+                <NavLink
+                  to="/sales"
+                  data-testid="nav-inquiries-top"
+                  className={({ isActive }) =>
+                    `text-xs uppercase tracking-[0.05em] font-semibold px-3 h-9 flex items-center gap-2 border-b-2 transition-colors ${
+                      isActive ? "border-rose-600 text-rose-700" : "border-transparent text-slate-600 hover:text-slate-900"
+                    }`
+                  }
+                >
+                  <ClipboardText size={14} weight="duotone" /> Inquiries
+                </NavLink>
+              )}
             </nav>
           </div>
 
           {/* Right: approvals notif + user + logout */}
           <div className="flex items-center gap-2">
-          {/* Home button — visible when NOT on landing */}
-          {!isLanding && (
-            <NavLink
-              to="/"
-              data-testid="nav-home"
-              className="flex items-center gap-1.5 px-3 h-9 text-[11px] uppercase tracking-[0.1em] font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors"
-              title="Kembali ke Department Portal"
-            >
-              <House size={14} weight="duotone" /> Home
-            </NavLink>
-          )}
           {/* Master SO — hidden on landing + for Engineering/Sales (dept-only roles) */}
           {!isLanding && !isEngineering && !isSales && (
           <NavLink

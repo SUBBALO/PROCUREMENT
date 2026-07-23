@@ -455,14 +455,14 @@ function BomDetail({ bom, annotations, canAnnotate, savingAnn, onBack, onUpdate,
                 <th className="text-left p-2 w-10">No</th>
                 <th className="text-left p-2">Item Name</th>
                 <th className="text-left p-2 min-w-[240px]">Specification</th>
-                <th className="text-right p-2">Qty</th>
-                <th className="text-left p-2">UoM</th>
+                <th className="text-right p-2 w-14">Qty</th>
+                <th className="text-left p-2 w-14">UoM</th>
                 <th className="text-left p-2">Material</th>
-                <th className="text-left p-2">Part</th>
-                <th className="text-right p-2 bg-amber-50">Available Stock</th>
-                <th className="text-right p-2 bg-amber-50">Qty Purchase</th>
-                <th className="text-left p-2 bg-amber-50">Due Date</th>
-                <th className="text-left p-2 bg-amber-50">Admin Remark</th>
+                <th className="text-left p-2 w-14">Part</th>
+                <th className="text-right p-2 bg-amber-50 w-16">Stock</th>
+                <th className="text-right p-2 bg-amber-50 w-16">Qty Purchase</th>
+                <th className="text-left p-2 bg-amber-50 w-28">Due Date</th>
+                <th className="text-left p-2 bg-amber-50 min-w-[280px]">Admin Remark</th>
               </tr>
             </thead>
             <tbody>
@@ -478,32 +478,32 @@ function BomDetail({ bom, annotations, canAnnotate, savingAnn, onBack, onUpdate,
                     <td className="p-2 text-slate-600 text-xs align-top whitespace-normal break-words max-w-[140px]">{it.material}</td>
                     <td className="p-2 text-slate-600 text-xs font-mono align-top whitespace-normal break-words max-w-[80px]">{it.remark}</td>
 
-                    <td className="p-1 bg-amber-50/40 align-top">
+                    <td className="p-1 bg-amber-50/40 align-top w-16">
                       {canAnnotate ? (
                         <Input
                           type="number" step="any"
                           data-testid={`bom-ann-stock-${it.item_no}`}
-                          className="h-8 rounded-none border-amber-200 text-xs text-right tabular-nums"
+                          className="h-8 w-full rounded-none border-amber-200 text-xs text-right tabular-nums px-1"
                           value={ann.available_stock ?? ""}
                           onChange={(e) => onUpdate(String(it.item_no), "available_stock", e.target.value)}
                           placeholder="0"
                         />
                       ) : (
-                        <div className="text-right text-xs tabular-nums text-slate-700 px-2">{ann.available_stock ?? "-"}</div>
+                        <div className="text-right text-xs tabular-nums text-slate-700 px-1">{ann.available_stock ?? "-"}</div>
                       )}
                     </td>
-                    <td className="p-1 bg-amber-50/40 align-top">
+                    <td className="p-1 bg-amber-50/40 align-top w-16">
                       {canAnnotate ? (
                         <Input
                           type="number" step="any"
                           data-testid={`bom-ann-qtypur-${it.item_no}`}
-                          className="h-8 rounded-none border-amber-200 text-xs text-right tabular-nums"
+                          className="h-8 w-full rounded-none border-amber-200 text-xs text-right tabular-nums px-1"
                           value={ann.qty_purchase ?? ""}
                           onChange={(e) => onUpdate(String(it.item_no), "qty_purchase", e.target.value)}
                           placeholder="0"
                         />
                       ) : (
-                        <div className="text-right text-xs tabular-nums text-slate-700 px-2">{ann.qty_purchase ?? "-"}</div>
+                        <div className="text-right text-xs tabular-nums text-slate-700 px-1">{ann.qty_purchase ?? "-"}</div>
                       )}
                     </td>
                     <td className="p-1 bg-amber-50/40 align-top">
@@ -519,7 +519,7 @@ function BomDetail({ bom, annotations, canAnnotate, savingAnn, onBack, onUpdate,
                         <div className="text-xs text-slate-700 px-2">{ann.purchase_due_date ? formatDateID(ann.purchase_due_date) : "-"}</div>
                       )}
                     </td>
-                    <td className="p-1 bg-amber-50/40 align-top">
+                    <td className="p-1 bg-amber-50/40 align-top min-w-[280px]">
                       {canAnnotate ? (
                         <textarea
                           data-testid={`bom-ann-remark-${it.item_no}`}
@@ -536,7 +536,7 @@ function BomDetail({ bom, annotations, canAnnotate, savingAnn, onBack, onUpdate,
                           placeholder="—"
                         />
                       ) : (
-                        <div className="text-xs text-slate-700 px-2 italic whitespace-pre-wrap break-words max-w-[220px]">{ann.admin_remark || "-"}</div>
+                        <div className="text-xs text-slate-700 px-2 italic whitespace-pre-wrap break-words">{ann.admin_remark || "-"}</div>
                       )}
                     </td>
                   </tr>

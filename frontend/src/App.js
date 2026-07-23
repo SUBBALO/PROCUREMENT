@@ -43,9 +43,9 @@ function ProtectedRoute({ children, storeRoleTo = "/store/stock", blockStore = f
     return <AppShell>{children}</AppShell>;
   }
 
-  // Engineering: ONLY /bom accessible outside `/`
+  // Engineering: /bom AND /sales accessible outside `/`
   if (user.role === "engineering") {
-    if (!location.pathname.startsWith("/bom")) {
+    if (!location.pathname.startsWith("/bom") && !location.pathname.startsWith("/sales")) {
       return <Navigate to="/bom" replace />;
     }
     return <AppShell>{children}</AppShell>;
