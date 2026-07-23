@@ -19,6 +19,7 @@ from deps import (
     require_bom_admin,
     require_bom_upload,
 )
+from services.soft_delete import NOT_DELETED_FILTER, merged, soft_delete_one
 
 
 router = APIRouter(prefix="/bom", tags=["bom"])
@@ -291,9 +292,7 @@ async def list_or_search_bom(
 
     if rev == "latest":
         # Aggregation: group by so_no, take max rev
-        pipeline = []
-        if filt:
-            pipeline.append({"$match": filt})
+        pipeline = [{"$match": merged(filt, NOT_DELETED_FILTER)}]
         pipeline.extend([
             {"$sort": {"so_no": 1, "rev_no": -1}},
             {"$group": {"_id": "$so_no", "doc": {"$first": "$$ROOT"}}},
@@ -303,7 +302,7 @@ async def list_or_search_bom(
         ])
         docs = await db.boms.aggregate(pipeline).to_list(length=limit)
     else:
-        docs = await db.boms.find(filt).sort([("so_no", 1), ("rev_no", -1)]).limit(limit).to_list(length=limit)
+        docs = await db.boms.find(merged(filt, NOT_DELETED_FILTER)).sort([("so_no", 1), ("rev_no", -1)]).limit(limit).to_list(length=limit)
 
     for d in docs:
         d.pop("_id", None)
@@ -313,7 +312,7 @@ async def list_or_search_bom(
 @router.get("/history/{so_no}")
 async def bom_history(so_no: str, current: dict = Depends(get_current_user)):
     """Return every revision for a given SO, newest first."""
-    docs = await db.boms.find({"so_no": so_no.strip()}).sort("rev_no", -1).to_list(length=200)
+    docs = await db.boms.find(merged({"so_no": so_no.strip()}, NOT_DELETED_FILTER)).sort("rev_no", -1).to_list(length=200)
     for d in docs:
         d.pop("_id", None)
     return {"so_no": so_no, "count": len(docs), "revisions": docs}
@@ -357,8 +356,8 @@ async def update_bom_annotations(
 @router.delete("/{bom_id}")
 async def delete_bom(bom_id: str, current: dict = Depends(require_bom_admin)):
     """Admin can delete a specific BOM revision (rarely used, e.g. mistake upload)."""
-    res = await db.boms.delete_one({"id": bom_id})
-    if res.deleted_count == 0:
+    ok = await soft_delete_one("boms", {"id": bom_id}, current)
+    if not ok:
         raise HTTPException(status_code=404, detail="BOM tidak ditemukan")
     await log_action(current, "delete_bom", "bom", bom_id, {})
     return {"success": True}

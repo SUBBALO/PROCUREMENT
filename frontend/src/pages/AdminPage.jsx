@@ -13,7 +13,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import {
   UsersThree, Plus, PencilSimple, Trash, Key, ShieldStar, Clock, FunnelSimple, CheckCircle, XCircle, ChatCircleDots,
-  Database, DownloadSimple, UploadSimple, Warning,
+  Database, DownloadSimple, UploadSimple, Warning, TrashSimple, ArrowCounterClockwise,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
@@ -52,11 +52,6 @@ export default function AdminPage() {
   const canApprove = me && me.role === "admin" && (me.perms || []).includes("approve_store_requests");
   const isSuperAdmin = !!me?.is_super_admin;
   const canAccessAdmin = isSuperAdmin || canApprove;
-
-  // Non-authorized users → redirect to landing (no error toast spam)
-  if (me && !canAccessAdmin) {
-    return <Navigate to="/" replace />;
-  }
   // Read initial tab from URL query (?tab=requests|logs|users)
   const initialTab = React.useMemo(() => {
     const p = new URLSearchParams(location.search);
@@ -76,6 +71,11 @@ export default function AdminPage() {
     try { const { data } = await api.get("/store/requests/pending-count"); setPendingCount(data.count || 0); } catch {}
   }, [canApprove]);
   useEffect(() => { refreshPending(); const t = setInterval(refreshPending, 30000); return () => clearInterval(t); }, [refreshPending]);
+
+  // Non-authorized users → redirect to landing (avoid error toast spam)
+  if (me && !canAccessAdmin) {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <div className="space-y-6">
@@ -116,12 +116,18 @@ export default function AdminPage() {
               <Database size={14} weight="bold" className="mr-1.5" /> Backup & Reset
             </TabsTrigger>
           )}
+          {isSuperAdmin && (
+            <TabsTrigger data-testid="tab-trash" value="trash" className="rounded-none data-[state=active]:bg-slate-900 data-[state=active]:text-white text-xs uppercase tracking-[0.1em] font-semibold h-9 px-4">
+              <TrashSimple size={14} weight="bold" className="mr-1.5" /> Recycle Bin
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="users" className="mt-4">{isSuperAdmin && <UsersTab me={me} />}</TabsContent>
         {canApprove && <TabsContent value="approvals" className="mt-4"><ApprovalsTab onReviewed={refreshPending} /></TabsContent>}
         <TabsContent value="logs" className="mt-4"><LogsTab /></TabsContent>
         {isSuperAdmin && <TabsContent value="backup" className="mt-4"><BackupTab /></TabsContent>}
+        {isSuperAdmin && <TabsContent value="trash" className="mt-4"><TrashTab /></TabsContent>}
       </Tabs>
     </div>
   );
@@ -968,3 +974,221 @@ function BackupTab() {
     </div>
   );
 }
+
+
+/* ================== Recycle Bin Tab (Super Admin only) ================== */
+const TRASH_COLLECTION_LABELS = {
+  transactions: "Transaksi PO",
+  sales_orders: "Sales Orders",
+  store_receipts: "Store Receipts",
+  store_issuances: "Store Issuances",
+  store_requests: "Store Requests",
+  deliveries: "Deliveries",
+  boms: "Bill of Material",
+  inquiries: "Sales Inquiries",
+  quotations: "Quotations",
+  customers: "Master Customer",
+  users: "Users",
+};
+
+function TrashTab() {
+  const [summary, setSummary] = useState(null);
+  const [activeColl, setActiveColl] = useState("transactions");
+  const [items, setItems] = useState([]);
+  const [fields, setFields] = useState([]);
+  const [selected, setSelected] = useState(new Set());
+  const [loading, setLoading] = useState(false);
+  const [q, setQ] = useState("");
+
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [purgePhrase, setPurgePhrase] = useState("");
+  const [purging, setPurging] = useState(false);
+
+  const [autoOpen, setAutoOpen] = useState(false);
+  const [autoBusy, setAutoBusy] = useState(false);
+
+  const loadSummary = useCallback(async () => {
+    try { const { data } = await api.get("/admin/trash/summary"); setSummary(data); } catch (e) { /* ignore */ }
+  }, []);
+  useEffect(() => { loadSummary(); }, [loadSummary]);
+
+  const loadList = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get("/admin/trash/list", { params: { collection: activeColl, q: q.trim() || undefined } });
+      setItems(data.items || []);
+      setFields(data.fields || []);
+      setSelected(new Set());
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal memuat trash");
+    } finally { setLoading(false); }
+  }, [activeColl, q]);
+  useEffect(() => { loadList(); }, [loadList]);
+
+  const toggleSelect = (id) => {
+    const nx = new Set(selected);
+    nx.has(id) ? nx.delete(id) : nx.add(id);
+    setSelected(nx);
+  };
+  const toggleAll = () => {
+    if (selected.size === items.length) setSelected(new Set());
+    else setSelected(new Set(items.map((it) => it.id)));
+  };
+
+  const doRestore = async () => {
+    if (selected.size === 0) return toast.error("Pilih data yang mau di-restore");
+    try {
+      const { data } = await api.post("/admin/trash/restore", { collection: activeColl, ids: Array.from(selected) });
+      toast.success(`${data.restored} data dipulihkan`);
+      await loadList(); await loadSummary();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal restore"); }
+  };
+
+  const doPurge = async () => {
+    if (purgePhrase !== "PURGE-FOREVER") return toast.error("Ketik 'PURGE-FOREVER' persis");
+    setPurging(true);
+    try {
+      const { data } = await api.post("/admin/trash/purge", { collection: activeColl, ids: Array.from(selected), confirm_phrase: purgePhrase });
+      toast.success(`${data.purged} data dihapus permanen`);
+      setPurgeOpen(false); setPurgePhrase("");
+      await loadList(); await loadSummary();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal purge"); }
+    finally { setPurging(false); }
+  };
+
+  const doAutoPurge = async () => {
+    setAutoBusy(true);
+    try {
+      const { data } = await api.post("/admin/trash/auto-purge");
+      toast.success(`Auto-purge selesai: ${data.purged} dokumen (>${data.cutoff_days} hari)`);
+      setAutoOpen(false);
+      await loadList(); await loadSummary();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal auto-purge"); }
+    finally { setAutoBusy(false); }
+  };
+
+  return (
+    <div className="space-y-4" data-testid="trash-tab">
+      {/* Summary strip */}
+      <Card className="rounded-none border-slate-200 p-3">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div>
+            <div className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500">Recycle Bin</div>
+            <div className="text-[11px] text-slate-500">Data yang dihapus akan otomatis diakhiri (purge) setelah <b>{summary?.auto_purge_days ?? 30} hari</b>. Total sekarang: <b className="tabular-nums">{summary?.total ?? 0}</b> dokumen.</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button data-testid="trash-refresh" variant="outline" onClick={() => { loadSummary(); loadList(); }} className="rounded-none text-xs h-8">Refresh</Button>
+            <Button data-testid="trash-auto-purge" onClick={() => setAutoOpen(true)} variant="outline" className="rounded-none text-xs h-8 border-red-300 text-red-700 hover:bg-red-50">
+              <Warning size={12} weight="bold" className="mr-1" /> Auto-Purge &gt;{summary?.auto_purge_days ?? 30}d
+            </Button>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {Object.keys(TRASH_COLLECTION_LABELS).map((c) => {
+            const cnt = summary?.collections?.[c] || 0;
+            const active = activeColl === c;
+            return (
+              <button
+                key={c}
+                data-testid={`trash-coll-${c}`}
+                onClick={() => setActiveColl(c)}
+                className={`px-2.5 py-1 text-[11px] uppercase tracking-[0.1em] font-semibold border transition-colors ${active ? "bg-slate-900 text-white border-slate-900" : cnt > 0 ? "bg-white text-slate-800 border-slate-300 hover:bg-slate-50" : "bg-slate-50 text-slate-400 border-slate-200"}`}
+              >
+                {TRASH_COLLECTION_LABELS[c]} <span className={`ml-1 tabular-nums ${active ? "text-white" : cnt > 0 ? "text-rose-600" : "text-slate-400"}`}>{cnt}</span>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* Toolbar */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-sm">
+          <b>{TRASH_COLLECTION_LABELS[activeColl]}</b> · <span className="text-slate-500">{items.length} item soft-deleted</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input data-testid="trash-search" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && loadList()} placeholder="Cari…" className="h-8 rounded-none w-56 text-sm" />
+          <Button data-testid="trash-restore-btn" onClick={doRestore} disabled={selected.size === 0} variant="outline" className="rounded-none text-xs h-8 border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+            <ArrowCounterClockwise size={13} weight="bold" className="mr-1" /> Restore ({selected.size})
+          </Button>
+          <Button data-testid="trash-purge-btn" onClick={() => setPurgeOpen(true)} disabled={selected.size === 0} className="rounded-none bg-red-600 hover:bg-red-700 text-white text-xs h-8">
+            <TrashSimple size={13} weight="bold" className="mr-1" /> Purge Forever ({selected.size})
+          </Button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <Card className="rounded-none border-slate-200 overflow-x-auto">
+        {loading ? (
+          <div className="p-6 text-center text-sm text-slate-400">Memuat…</div>
+        ) : items.length === 0 ? (
+          <div className="p-6 text-center text-sm text-slate-400">Tidak ada data terhapus di collection ini.</div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="p-2 w-8 text-left">
+                  <input data-testid="trash-select-all" type="checkbox" checked={selected.size === items.length} onChange={toggleAll} className="w-3.5 h-3.5" />
+                </th>
+                {fields.map((f) => (<th key={f} className="p-2 text-left uppercase text-[10px] tracking-[0.08em] text-slate-500 font-semibold">{f}</th>))}
+                <th className="p-2 text-left uppercase text-[10px] tracking-[0.08em] text-slate-500 font-semibold">Deleted At</th>
+                <th className="p-2 text-left uppercase text-[10px] tracking-[0.08em] text-slate-500 font-semibold">Deleted By</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => (
+                <tr key={it.id} className={`border-b border-slate-100 hover:bg-slate-50 ${selected.has(it.id) ? "bg-amber-50" : ""}`} data-testid={`trash-row-${it.id}`}>
+                  <td className="p-2"><input type="checkbox" checked={selected.has(it.id)} onChange={() => toggleSelect(it.id)} className="w-3.5 h-3.5" /></td>
+                  {fields.map((f) => (<td key={f} className="p-2 tabular-nums text-slate-700">{typeof it[f] === "number" ? it[f].toLocaleString("id-ID") : (it[f] ?? "-")}</td>))}
+                  <td className="p-2 text-slate-500">{(it.deleted_at || "").slice(0, 19).replace("T", " ")}</td>
+                  <td className="p-2 text-slate-500">{it.deleted_by_name || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      {/* Purge confirmation dialog */}
+      <Dialog open={purgeOpen} onOpenChange={setPurgeOpen}>
+        <DialogContent className="rounded-none max-w-md border-red-400">
+          <DialogHeader>
+            <DialogTitle className="text-red-700 flex items-center gap-2"><Warning size={20} weight="fill" /> Purge Forever</DialogTitle>
+            <DialogDescription>
+              Anda akan menghapus <b>{selected.size}</b> item di <b>{TRASH_COLLECTION_LABELS[activeColl]}</b> secara <b className="text-red-700">PERMANEN</b>. Aksi ini <b>tidak bisa</b> di-undo (bahkan Recycle Bin tidak menyimpannya).
+            </DialogDescription>
+          </DialogHeader>
+          <div>
+            <Label className="text-[11px] font-semibold text-red-900 mb-1 block">Ketik <span className="font-mono">PURGE-FOREVER</span> untuk konfirmasi</Label>
+            <Input data-testid="trash-purge-phrase" value={purgePhrase} onChange={(e) => setPurgePhrase(e.target.value)} className="h-9 rounded-none border-red-300 focus:ring-2 focus:ring-red-600" placeholder="PURGE-FOREVER" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPurgeOpen(false)} disabled={purging} className="rounded-none">Batal</Button>
+            <Button data-testid="trash-purge-confirm-btn" onClick={doPurge} disabled={purging || purgePhrase !== "PURGE-FOREVER"} className="rounded-none bg-red-600 hover:bg-red-700 text-white">
+              {purging ? "Menghapus…" : "Ya, Purge Forever"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Auto-purge confirmation dialog */}
+      <Dialog open={autoOpen} onOpenChange={setAutoOpen}>
+        <DialogContent className="rounded-none max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Warning size={20} weight="fill" className="text-red-600" /> Auto-Purge Trash Lama</DialogTitle>
+            <DialogDescription>
+              Hapus permanen semua item di Recycle Bin yang sudah lebih tua dari <b>{summary?.auto_purge_days ?? 30} hari</b>. Aksi ini tidak bisa di-undo.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAutoOpen(false)} disabled={autoBusy} className="rounded-none">Batal</Button>
+            <Button data-testid="trash-auto-purge-confirm-btn" onClick={doAutoPurge} disabled={autoBusy} className="rounded-none bg-red-600 hover:bg-red-700 text-white">
+              {autoBusy ? "Menghapus…" : "Ya, Purge Sekarang"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+

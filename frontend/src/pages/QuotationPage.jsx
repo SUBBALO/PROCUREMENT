@@ -426,13 +426,32 @@ function QuotationDetailDialog({ id, onClose, onChanged }) {
             )}
             <div className="mt-4 pt-3 border-t border-slate-200">
               <div className="text-[10px] uppercase tracking-[0.1em] font-bold text-slate-500 mb-2">Update Status</div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Button data-testid="status-on-bidding" onClick={() => setStatus("on_bidding")} disabled={saving || d.status === "on_bidding"} variant="outline" className="rounded-none text-xs">On Bidding</Button>
                 <Button data-testid="status-confirm" onClick={() => setStatus("confirm_order")} disabled={saving || d.status === "confirm_order"} className="rounded-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs">Confirm Order</Button>
                 <Button data-testid="status-cancel" onClick={() => setStatus("cancel")} disabled={saving || d.status === "cancel"} className="rounded-none bg-red-600 hover:bg-red-700 text-white text-xs">Cancel</Button>
               </div>
-              <div className="mt-3 p-2 bg-amber-50 border border-amber-200 text-[11px] text-amber-900">
-                📄 <b>PDF dengan kop surat A4</b> — akan dibuild di iterasi berikutnya.
+              <div className="mt-3">
+                <Button
+                  data-testid="btn-download-quotation-pdf"
+                  onClick={async () => {
+                    try {
+                      const res = await api.get(`/quotations/${id}/pdf`, { responseType: "blob" });
+                      const url = URL.createObjectURL(res.data);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `Quotation_${(d.quotation_no || id).replace(/[^A-Za-z0-9._-]+/g, "_")}.pdf`;
+                      document.body.appendChild(a); a.click(); a.remove();
+                      URL.revokeObjectURL(url);
+                      toast.success("PDF ter-download");
+                    } catch (e) {
+                      toast.error(e.response?.data?.detail || "Gagal generate PDF");
+                    }
+                  }}
+                  className="rounded-none bg-slate-900 hover:bg-slate-800 text-white text-xs uppercase tracking-[0.1em]"
+                >
+                  <FileText size={13} weight="bold" className="mr-1.5" /> Download PDF (Kop Surat PT MKS)
+                </Button>
               </div>
             </div>
           </>

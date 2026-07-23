@@ -17,6 +17,7 @@ click==8.4.2
 cryptography==49.0.0
 distro==1.9.0
 dnspython==2.8.0
+docopt==0.6.2
 ecdsa==0.19.2
 email-validator==2.3.0
 emergentintegrations==0.2.0
@@ -64,6 +65,7 @@ motor==3.3.1
 multidict==6.7.1
 mypy==2.3.0
 mypy_extensions==1.1.0
+num2words==0.5.14
 numpy==2.4.6
 oauthlib==3.3.1
 openai==1.99.9
@@ -100,6 +102,7 @@ pytokens==0.4.1
 PyYAML==6.0.3
 referencing==0.37.0
 regex==2026.7.19
+reportlab==5.0.0
 requests==2.34.2
 requests-oauthlib==2.0.0
 rich==15.0.0

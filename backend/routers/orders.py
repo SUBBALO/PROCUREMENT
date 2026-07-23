@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from db import db
 from deps import _now_iso, get_current_user, log_action, require_store_write, require_write
 from models import DeliveryCreate, SOCreate
+from services.soft_delete import NOT_DELETED_FILTER, merged, soft_delete_one
 
 router = APIRouter(tags=["orders"])
 
@@ -63,16 +64,16 @@ async def list_deliveries(
         if end_date:
             d["$lte"] = end_date
         filt["delivery_date"] = d
-    total = await db.deliveries.count_documents(filt)
-    items = await db.deliveries.find(filt, {"_id": 0}).sort("delivery_date", -1).skip((page - 1) * page_size).limit(page_size).to_list(length=page_size)
+    total = await db.deliveries.count_documents(merged(filt, NOT_DELETED_FILTER))
+    items = await db.deliveries.find(merged(filt, NOT_DELETED_FILTER), {"_id": 0}).sort("delivery_date", -1).skip((page - 1) * page_size).limit(page_size).to_list(length=page_size)
     return {"total": total, "page": page, "page_size": page_size, "items": items}
 
 
 @router.delete("/deliveries/{did}")
 async def delete_delivery(did: str, current: dict = Depends(require_store_write)):
     """Admin + store role only (matches create permission)."""
-    res = await db.deliveries.delete_one({"id": did})
-    if res.deleted_count == 0:
+    ok = await soft_delete_one("deliveries", {"id": did}, current)
+    if not ok:
         raise HTTPException(status_code=404, detail="Pengiriman tidak ditemukan")
     await log_action(current, "delete_delivery", "delivery", did, {})
     return {"ok": True}
@@ -148,7 +149,7 @@ async def list_sales_orders(current: dict = Depends(get_current_user), q: Option
             {"customer": {"$regex": q, "$options": "i"}},
             {"description": {"$regex": q, "$options": "i"}},
         ]
-    docs = await db.sales_orders.find(filt, {"_id": 0}).sort("so_no", 1).to_list(length=5000)
+    docs = await db.sales_orders.find(merged(filt, NOT_DELETED_FILTER), {"_id": 0}).sort("so_no", 1).to_list(length=5000)
     return docs
 
 
@@ -195,8 +196,8 @@ async def update_so(sid: str, payload: SOCreate, current: dict = Depends(require
 
 @router.delete("/sales-orders/{sid}")
 async def delete_so(sid: str, current: dict = Depends(require_write)):
-    res = await db.sales_orders.delete_one({"id": sid})
-    if res.deleted_count == 0:
+    ok = await soft_delete_one("sales_orders", {"id": sid}, current)
+    if not ok:
         raise HTTPException(status_code=404, detail="SO tidak ditemukan")
     await log_action(current, "delete_so", "sales_order", sid, {})
     return {"ok": True}

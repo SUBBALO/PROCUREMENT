@@ -9,6 +9,7 @@ import jwt
 
 from db import db
 from deps import _now_iso, get_current_user, log_action, require_admin, require_super_admin, SUPER_ADMIN_USERNAME
+from services.soft_delete import NOT_DELETED_FILTER, merged, soft_delete_one
 from security import (
     JWT_ALGORITHM,
     JWT_SECRET,
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 @router.post("/auth/login")
 async def login(payload: LoginRequest, response: Response):
     username = payload.username.lower().strip()
-    user = await db.users.find_one({"username": username})
+    user = await db.users.find_one(merged({"username": username}, NOT_DELETED_FILTER))
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Username atau password salah")
     if user.get("active") is False:
@@ -110,7 +111,7 @@ def _sanitize_user(u: dict) -> dict:
 
 @router.get("/users")
 async def list_users(current: dict = Depends(require_super_admin)):
-    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", 1).to_list(length=500)
+    users = await db.users.find(NOT_DELETED_FILTER, {"_id": 0, "password_hash": 0}).sort("created_at", 1).to_list(length=500)
     return [_sanitize_user(u) for u in users]
 
 
@@ -179,10 +180,10 @@ async def update_user(user_id: str, payload: UserUpdate, current: dict = Depends
 async def delete_user(user_id: str, current: dict = Depends(require_super_admin)):
     if user_id == current["id"]:
         raise HTTPException(status_code=400, detail="Tidak bisa hapus akun sendiri")
-    user = await db.users.find_one({"id": user_id})
+    user = await db.users.find_one(merged({"id": user_id}, NOT_DELETED_FILTER))
     if not user:
         raise HTTPException(status_code=404, detail="User tidak ditemukan")
-    await db.users.delete_one({"id": user_id})
+    await soft_delete_one("users", {"id": user_id}, current)
     await log_action(current, "delete_user", "user", user_id, {"username": user.get("username")})
     return {"ok": True}
 

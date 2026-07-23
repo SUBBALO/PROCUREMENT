@@ -43,7 +43,7 @@ async def get_current_user(request: Request) -> dict:
         if payload.get("type") != "access":
             raise HTTPException(status_code=401, detail="Invalid token type")
         user = await db.users.find_one({"id": payload["sub"]})
-        if not user:
+        if not user or user.get("deleted_at"):
             raise HTTPException(status_code=401, detail="User not found")
         if user.get("active") is False:
             raise HTTPException(status_code=403, detail="Akun user dinonaktifkan")

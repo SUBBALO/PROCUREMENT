@@ -12,6 +12,7 @@ from openpyxl import Workbook, load_workbook
 from db import db
 from deps import _now_iso, get_current_user, log_action, require_write
 from models import BulkCreateRequest, BulkDeleteRequest, Transaction, TransactionCreate
+from services.soft_delete import NOT_DELETED_FILTER, merged, soft_delete_one, soft_delete_many
 
 router = APIRouter(tags=["transactions"])
 
@@ -76,11 +77,11 @@ async def bulk_create(payload: BulkCreateRequest, current: dict = Depends(requir
 async def bulk_delete_transactions(payload: BulkDeleteRequest, current: dict = Depends(require_write)):
     if not payload.ids:
         raise HTTPException(status_code=400, detail="Tidak ada ID yang dipilih")
-    res = await db.transactions.delete_many({"id": {"$in": payload.ids}})
+    n = await soft_delete_many("transactions", {"id": {"$in": payload.ids}}, current)
     await log_action(current, "bulk_delete_transaction", "transaction", "-", {
-        "count": res.deleted_count, "requested": len(payload.ids),
+        "count": n, "requested": len(payload.ids),
     })
-    return {"deleted": res.deleted_count}
+    return {"deleted": n}
 
 
 @router.get("/transactions")
@@ -124,6 +125,7 @@ async def list_transactions(
         filt["invoice_date"] = date_filt
 
     direction = -1 if sort_dir == "desc" else 1
+    filt = merged(filt, NOT_DELETED_FILTER)
     total = await db.transactions.count_documents(filt)
     cursor = db.transactions.find(filt, {"_id": 0}).sort(sort_by, direction).skip((page - 1) * page_size).limit(page_size)
     items = await cursor.to_list(length=page_size)
@@ -158,15 +160,14 @@ async def update_transaction(tx_id: str, payload: TransactionCreate, current: di
 
 @router.delete("/transactions/{tx_id}")
 async def delete_transaction(tx_id: str, current: dict = Depends(require_write)):
-    existing = await db.transactions.find_one({"id": tx_id})
-    res = await db.transactions.delete_one({"id": tx_id})
-    if res.deleted_count == 0:
+    existing = await db.transactions.find_one(merged({"id": tx_id}, NOT_DELETED_FILTER))
+    if not existing:
         raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan")
-    if existing:
-        await log_action(current, "delete_transaction", "transaction", tx_id, {
-            "vendor": existing.get("vendor_name"), "item": existing.get("item_name"),
-            "invoice_no": existing.get("invoice_no"), "total": existing.get("total_price"),
-        })
+    await soft_delete_one("transactions", {"id": tx_id}, current)
+    await log_action(current, "delete_transaction", "transaction", tx_id, {
+        "vendor": existing.get("vendor_name"), "item": existing.get("item_name"),
+        "invoice_no": existing.get("invoice_no"), "total": existing.get("total_price"),
+    })
     return {"ok": True}
 
 
@@ -189,6 +190,7 @@ async def master_categories(current: dict = Depends(get_current_user)):
 @router.get("/master/items")
 async def master_items(current: dict = Depends(get_current_user)):
     pipeline = [
+        {"$match": NOT_DELETED_FILTER},
         {"$sort": {"invoice_date": -1, "created_at": -1}},
         {"$group": {
             "_id": "$item_name",

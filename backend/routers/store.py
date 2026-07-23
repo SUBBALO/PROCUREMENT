@@ -20,6 +20,7 @@ from deps import (
     require_store_access,
     require_store_write,
 )
+from services.soft_delete import NOT_DELETED_FILTER, merged, soft_delete_one, soft_delete_many
 from models import (
     BulkIssueRequest,
     BulkReceiveRequest,
@@ -276,7 +277,7 @@ async def store_receipts(current: dict = Depends(require_store_access),
         filt["item_name"] = item_name
     if transaction_id:
         filt["transaction_id"] = transaction_id
-    docs = await db.store_receipts.find(filt, {"_id": 0}).sort("receive_date", -1).to_list(length=1000)
+    docs = await db.store_receipts.find(merged(filt, NOT_DELETED_FILTER), {"_id": 0}).sort("receive_date", -1).to_list(length=1000)
     if not can_see_prices(current):
         for d in docs:
             d.pop("unit_price", None)
@@ -407,8 +408,8 @@ async def list_issuances(
             d["$lte"] = end_date
         filt["issue_date"] = d
 
-    total = await db.store_issuances.count_documents(filt)
-    cursor = db.store_issuances.find(filt, {"_id": 0}).sort("issue_date", -1).skip((page - 1) * page_size).limit(page_size)
+    total = await db.store_issuances.count_documents(merged(filt, NOT_DELETED_FILTER))
+    cursor = db.store_issuances.find(merged(filt, NOT_DELETED_FILTER), {"_id": 0}).sort("issue_date", -1).skip((page - 1) * page_size).limit(page_size)
     items = await cursor.to_list(length=page_size)
     hide_price = not can_see_prices(current)
     if hide_price:
@@ -610,13 +611,13 @@ async def list_store_requests(
         filt["status"] = status
     if current.get("role") != "admin" or mine:
         filt["requested_by"] = current["id"]
-    docs = await db.store_requests.find(filt, {"_id": 0}).sort("requested_at", -1).to_list(length=500)
+    docs = await db.store_requests.find(merged(filt, NOT_DELETED_FILTER), {"_id": 0}).sort("requested_at", -1).to_list(length=500)
     return docs
 
 
 @router.get("/store/requests/pending-count")
 async def pending_count(current: dict = Depends(require_approve_perm)):
-    n = await db.store_requests.count_documents({"status": "pending"})
+    n = await db.store_requests.count_documents(merged({"status": "pending"}, NOT_DELETED_FILTER))
     return {"count": n}
 
 
@@ -842,8 +843,8 @@ async def incoming_report(
             {"invoice_no": {"$regex": q, "$options": "i"}},
             {"do_number": {"$regex": q, "$options": "i"}},
         ]
-    total = await db.store_receipts.count_documents(filt)
-    cursor = db.store_receipts.find(filt, {"_id": 0}).sort("receive_date", -1).skip((page - 1) * page_size).limit(page_size)
+    total = await db.store_receipts.count_documents(merged(filt, NOT_DELETED_FILTER))
+    cursor = db.store_receipts.find(merged(filt, NOT_DELETED_FILTER), {"_id": 0}).sort("receive_date", -1).skip((page - 1) * page_size).limit(page_size)
     items = await cursor.to_list(length=page_size)
     if not can_see_prices(current):
         for d in items:
@@ -963,11 +964,11 @@ async def bulk_delete_receipts(payload: dict, current: dict = Depends(require_ad
                 f"atau kirim ulang dengan force=true untuk paksa hapus."
             ),
         )
-    res = await db.store_receipts.delete_many({"id": {"$in": ids}})
+    n = await soft_delete_many("store_receipts", {"id": {"$in": ids}}, current)
     await log_action(current, "bulk_delete_receipts", "store_receipt", "-", {
-        "count": res.deleted_count, "requested": len(ids), "forced": force,
+        "count": n, "requested": len(ids), "forced": force,
     })
-    return {"deleted": res.deleted_count, "forced_consumed": len(consumed) if force else 0}
+    return {"deleted": n, "forced_consumed": len(consumed) if force else 0}
 
 
 @router.get("/store/incoming-report/xlsx")

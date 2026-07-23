@@ -20,6 +20,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from db import db
 from deps import get_current_user, log_action
+from services.soft_delete import NOT_DELETED_FILTER, merged, soft_delete_one
 
 router = APIRouter(tags=["sales"])
 
@@ -180,7 +181,7 @@ async def list_inquiries(
     if q and q.strip():
         rx = {"$regex": re.escape(q.strip()), "$options": "i"}
         filt["$or"] = [{"inquiry_no": rx}, {"title": rx}, {"customer_name": rx}]
-    docs = await db.inquiries.find(filt).sort("created_at", -1).limit(limit).to_list(length=limit)
+    docs = await db.inquiries.find(merged(filt, NOT_DELETED_FILTER)).sort("created_at", -1).limit(limit).to_list(length=limit)
     for d in docs:
         _clean(d)
     return {"items": docs, "total": len(docs)}
@@ -530,7 +531,7 @@ async def list_quotations(q: Optional[str] = None, limit: int = 100, current: di
             {"attention": rx},
             {"items.description": rx},
         ]
-    docs = await db.quotations.find(filt).sort("created_at", -1).limit(limit).to_list(length=limit)
+    docs = await db.quotations.find(merged(filt, NOT_DELETED_FILTER)).sort("created_at", -1).limit(limit).to_list(length=limit)
     for d in docs:
         _clean(d)
     return {"items": docs, "total": len(docs)}
@@ -542,6 +543,30 @@ async def get_quotation(qid: str, current: dict = Depends(get_current_user)):
     if not d:
         raise HTTPException(status_code=404, detail="Quotation tidak ditemukan")
     return _clean(d)
+
+
+@router.get("/quotations/{qid}/pdf")
+async def download_quotation_pdf(qid: str, current: dict = Depends(get_current_user)):
+    """Generate & stream Quotation PDF with PT MKS letterhead."""
+    from services.quotation_pdf import build_quotation_pdf
+    d = await db.quotations.find_one({"id": qid})
+    if not d:
+        raise HTTPException(status_code=404, detail="Quotation tidak ditemukan")
+    # Try to enrich address from master customer if not stored on quotation
+    if not d.get("customer_address") and d.get("customer_name"):
+        cust = await db.customers.find_one({"name": d["customer_name"]})
+        if cust and cust.get("address"):
+            d["customer_address"] = cust["address"]
+    pdf_bytes = build_quotation_pdf(_clean(d))
+    await log_action(current, "download_quotation_pdf", "quotations", qid, {"quotation_no": d.get("quotation_no")})
+    safe_no = re.sub(r"[^A-Za-z0-9._-]+", "_", d.get("quotation_no") or qid)
+    fname = f"Quotation_{safe_no}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
 
 
 class QuotationStatusUpdate(BaseModel):
@@ -575,7 +600,7 @@ async def list_customers(q: Optional[str] = None, limit: int = 500, current: dic
     if q and q.strip():
         rx = {"$regex": re.escape(q.strip()), "$options": "i"}
         filt["$or"] = [{"name": rx}, {"pic": rx}]
-    docs = await db.customers.find(filt).sort("name", 1).limit(limit).to_list(length=limit)
+    docs = await db.customers.find(merged(filt, NOT_DELETED_FILTER)).sort("name", 1).limit(limit).to_list(length=limit)
     for d in docs:
         _clean(d)
     return {"items": docs, "total": len(docs)}
@@ -621,8 +646,8 @@ async def update_customer(cid: str, payload: CustomerUpdate, current: dict = Dep
 async def delete_customer(cid: str, current: dict = Depends(get_current_user)):
     if current.get("role") not in ("sales", "admin"):
         raise HTTPException(status_code=403, detail="Tidak berwenang")
-    res = await db.customers.delete_one({"id": cid})
-    if res.deleted_count == 0:
+    ok = await soft_delete_one("customers", {"id": cid}, current)
+    if not ok:
         raise HTTPException(status_code=404, detail="Customer tidak ditemukan")
     await log_action(current, "delete_customer", "customer", cid, {})
     return {"success": True}
@@ -663,7 +688,7 @@ async def sales_stats(current: dict = Depends(get_current_user)):
         inq_filter["status"] = {"$nin": ["draft"]}
 
     # Inquiries breakdown
-    inq_pipeline = [{"$match": inq_filter}, {"$group": {"_id": "$status", "count": {"$sum": 1}}}]
+    inq_pipeline = [{"$match": merged(inq_filter, NOT_DELETED_FILTER)}, {"$group": {"_id": "$status", "count": {"$sum": 1}}}]
     inq_agg = await db.inquiries.aggregate(inq_pipeline).to_list(length=None)
     inq_counts = {s: 0 for s in INQUIRY_STATUSES}
     for r in inq_agg:
@@ -672,7 +697,7 @@ async def sales_stats(current: dict = Depends(get_current_user)):
     inq_total = sum(inq_counts.values())
 
     # Quotations breakdown
-    quo_pipeline = [{"$match": quo_filter}, {"$group": {"_id": "$status", "count": {"$sum": 1}}}]
+    quo_pipeline = [{"$match": merged(quo_filter, NOT_DELETED_FILTER)}, {"$group": {"_id": "$status", "count": {"$sum": 1}}}]
     quo_agg = await db.quotations.aggregate(quo_pipeline).to_list(length=None)
     quo_counts = {s: 0 for s in QUOTATION_STATUSES}
     for r in quo_agg:
@@ -681,7 +706,7 @@ async def sales_stats(current: dict = Depends(get_current_user)):
     quo_total = sum(quo_counts.values())
 
     # Quotation value totals by status (per currency, biar tidak salah mix)
-    val_pipeline = [{"$match": quo_filter}, {"$group": {"_id": {"status": "$status", "currency": "$currency"}, "sum": {"$sum": "$total_amount"}}}]
+    val_pipeline = [{"$match": merged(quo_filter, NOT_DELETED_FILTER)}, {"$group": {"_id": {"status": "$status", "currency": "$currency"}, "sum": {"$sum": "$total_amount"}}}]
     val_agg = await db.quotations.aggregate(val_pipeline).to_list(length=None)
     quo_values: dict = {}
     for r in val_agg:
@@ -730,7 +755,7 @@ async def export_inquiries_excel(
     if q and q.strip():
         rx = {"$regex": re.escape(q.strip()), "$options": "i"}
         filt["$or"] = [{"inquiry_no": rx}, {"title": rx}, {"customer_name": rx}]
-    docs = await db.inquiries.find(filt).sort("created_at", -1).to_list(length=None)
+    docs = await db.inquiries.find(merged(filt, NOT_DELETED_FILTER)).sort("created_at", -1).to_list(length=None)
 
     wb = Workbook()
     ws = wb.active
@@ -788,7 +813,7 @@ async def export_quotations_excel(q: Optional[str] = None, current: dict = Depen
     if q and q.strip():
         rx = {"$regex": re.escape(q.strip()), "$options": "i"}
         filt["$or"] = [{"quotation_no": rx}, {"customer_name": rx}, {"attention": rx}, {"items.description": rx}]
-    docs = await db.quotations.find(filt).sort("created_at", -1).to_list(length=None)
+    docs = await db.quotations.find(merged(filt, NOT_DELETED_FILTER)).sort("created_at", -1).to_list(length=None)
 
     wb = Workbook()
     ws = wb.active
