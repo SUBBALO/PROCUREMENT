@@ -175,10 +175,11 @@ export default function AppShell({ children }) {
 
   // Filter dept visibility per role
   const isEngineering = role === "engineering";
-  const showPurchasing = !isEngineering && (role === "admin" || role === "staff" || role === "finance");
-  const showStore = !isEngineering && (role === "admin" || role === "store" || role === "finance");
+  const isSales = role === "sales";
+  const showPurchasing = !isEngineering && !isSales && (role === "admin" || role === "staff" || role === "finance");
+  const showStore = !isEngineering && !isSales && (role === "admin" || role === "store" || role === "finance");
   const showAdmin = role === "admin";
-  const showBom = true;  // ALL authenticated users can view BOM (per requirement)
+  const showBom = !isSales;  // BOM visible for all except sales-only users
 
   // Purchasing items per role
   const purchasingItems = () => {
@@ -195,17 +196,17 @@ export default function AppShell({ children }) {
         <div className="px-6 h-14 flex items-center justify-between gap-4">
           {/* Left: brand + main nav dropdowns */}
           <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2.5">
+            <NavLink to="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity" data-testid="brand-home-link">
               <img src="/assets/logo-mks.png" alt="MKS" className="w-8 h-8 object-contain" />
               <div>
                 <div className="font-bold text-sm tracking-tight text-slate-900 leading-tight" style={{ fontFamily: "Chivo, sans-serif" }}>
-                  Purchasing Department
+                  ERP PT MKS
                 </div>
                 <div className="text-[9px] uppercase tracking-[0.2em] text-slate-400 leading-tight">
                   PT. Mitra Karya Sarana
                 </div>
               </div>
-            </div>
+            </NavLink>
 
             <nav className="flex items-center gap-1">
               {showPurchasing && (
@@ -259,8 +260,8 @@ export default function AppShell({ children }) {
 
           {/* Right: approvals notif + user + logout */}
           <div className="flex items-center gap-2">
-          {/* Master SO — visible for ALL roles except Engineering (BOM-only) */}
-          {!isEngineering && (
+          {/* Master SO — hidden for Engineering & Sales (dept-only roles) */}
+          {!isEngineering && !isSales && (
           <NavLink
             to="/so-master"
             data-testid="nav-so-master-top"

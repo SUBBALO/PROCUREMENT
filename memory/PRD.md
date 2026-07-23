@@ -73,8 +73,14 @@ See `/app/memory/test_credentials.md`. Primary admin: **susanto / admin123**.
 - ✅ **Bill of Material (Feature E)**: New /bom module. `boms` collection stores every revision. `POST /api/bom/upload` (multipart: file + `prepared_by` **required** + `revision_reason` optional) parses .xls (via xlrd 1.2.0) and .xlsx (openpyxl). Auto-detects existing SO → returns HTTP 409 with structured `{code, so_no, latest_rev, latest_uploaded_by, latest_uploaded_at, latest_prepared_by, message}`; frontend catches and reveals inline reason input. `prepared_by` captured manually because Engineering shares one login (7 people). `GET /bom/preparers` autocomplete. `GET /bom?q=...` fuzzy substring search across so_no/customer/project_name (case-insensitive). GET /bom/history/{so_no} shows revision log. PATCH /bom/{id}/annotations (admin-only) for Available Stock / Qty Purchase / Purchase Due Date / Admin Remark. New role **engineering** (seed: `engineer01`/`eng123`) — access ONLY to /bom (ProtectedRoute redirects). BOM detail meta card highlights Prepared By, Tanggal Upload, Diupload oleh. History dialog shows Pembuat BOM column. Admin remark cell uses auto-grow textarea (ref-based scrollHeight sync) so long text is fully visible without hover. Verified iter15+16 (23 tests total, 100% pass).
 - ✅ **Plan Delivery Date (Bonus)**: `plan_delivery_date` field added to TransactionBase. New input in Input Transaksi header (between Tanggal PO and Tanggal Terima). New column in Master List (between SO/PO and Qty). Excel export includes 'Plan Delivery' column.
 
-## Pending Tasks (from user's original list)
-- **P1 — Recycle Bin / Soft Delete**: DEFERRED per user ("task a nanti nanti aja"). When resumed: add `deleted_at` to transactions, store_receipts, store_issuances, deliveries, sales_orders, users. GET endpoints filter `deleted_at: null`. Super-Admin trash UI to restore/purge.
+- ✅ **Department Portal Landing Page**: New `/` route hosts a dark modern portal with per-role dept cards (Sales / Engineering / Purchasing / Store / QC). Cards use gradient accents (rose/amber/sky/emerald/violet), icon duotones, entrance animation, hover translate. Role-based visibility — sales sees only Sales card, admin sees all 5. QC card marked "Coming Soon". Dashboard moved to `/dashboard`.
+- ✅ **Sales role**: New role `sales` (seed `sales01`/`sales123`). Restricted to `/sales` route + `/`. Placeholder page describes future flow: Costing Request → Engineering PIC → Costing Response + Drawing upload → Sales review Accept/Revise → Quotation PDF → status (on-bidding/confirm-order/cancel).
+- ✅ **Brand link → Home**: Logo header changed to `/`  home link; renamed to "ERP PT MKS".
+
+## Pending Tasks
+- **P0 — Sales Module (full)**: Costing request workflow (Sales↔Engineering), Quotation PDF generator, status flow.
+- **P1 — Recycle Bin / Soft Delete**: DEFERRED. When resumed: add `deleted_at` to all collections + Super Admin trash UI.
+- **P2 — QC Module**: Inspection incoming, approve/reject material before stock post, non-conformance report.
 - **P3 — Master Kategori CRUD** (nice-to-have): if user wants a proper master menu vs current free-text autocomplete.
 
 ## Backlog (post-13-features, optional)

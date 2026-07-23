@@ -19,6 +19,8 @@ import IncomingReportPage from "./pages/IncomingReportPage";
 import DeliveryPage from "./pages/DeliveryPage";
 import SOMasterPage from "./pages/SOMasterPage";
 import BOMPage from "./pages/BOMPage";
+import LandingPage from "./pages/LandingPage";
+import SalesPage from "./pages/SalesPage";
 import "./App.css";
 
 function LoadingScreen() {
@@ -34,10 +36,24 @@ function ProtectedRoute({ children, storeRoleTo = "/store/stock", blockStore = f
   const location = useLocation();
   if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
-  // Engineering: ONLY /bom accessible; redirect everywhere else to /bom
+
+  // Landing page (`/`) is accessible to EVERY authenticated role.
+  // Deep-link protection remains per role below.
+  if (location.pathname === "/") {
+    return <AppShell>{children}</AppShell>;
+  }
+
+  // Engineering: ONLY /bom accessible outside `/`
   if (user.role === "engineering") {
     if (!location.pathname.startsWith("/bom")) {
       return <Navigate to="/bom" replace />;
+    }
+    return <AppShell>{children}</AppShell>;
+  }
+  // Sales: ONLY /sales accessible outside `/`
+  if (user.role === "sales") {
+    if (!location.pathname.startsWith("/sales")) {
+      return <Navigate to="/sales" replace />;
     }
     return <AppShell>{children}</AppShell>;
   }
@@ -63,7 +79,9 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+      <Route path="/" element={<ProtectedRoute><LandingPage /></ProtectedRoute>} />
+      <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+      <Route path="/sales" element={<ProtectedRoute><SalesPage /></ProtectedRoute>} />
       <Route path="/input" element={<ProtectedRoute><InputTransactionPage /></ProtectedRoute>} />
       <Route path="/master" element={<ProtectedRoute><MasterListPage /></ProtectedRoute>} />
       <Route path="/items" element={<ProtectedRoute><MasterItemsPage /></ProtectedRoute>} />

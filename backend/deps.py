@@ -83,7 +83,7 @@ async def require_approve_perm(current: dict = Depends(get_current_user)) -> dic
 
 async def require_write(current: dict = Depends(get_current_user)) -> dict:
     """Guard for purchasing writes (transactions, sales-orders).
-    Allowed: admin, staff. Blocked: finance (read-only), store (wrong dept), engineering (BOM only)."""
+    Allowed: admin, staff. Blocked: finance (read-only), store, engineering, sales."""
     role = current.get("role")
     if role == "finance":
         raise HTTPException(status_code=403, detail="Akun Finance hanya untuk view — tidak bisa mengubah data")
@@ -91,6 +91,8 @@ async def require_write(current: dict = Depends(get_current_user)) -> dict:
         raise HTTPException(status_code=403, detail="Akun Store tidak berwenang mengubah data purchasing/SO")
     if role == "engineering":
         raise HTTPException(status_code=403, detail="Akun Engineering hanya berwenang di modul BOM")
+    if role == "sales":
+        raise HTTPException(status_code=403, detail="Akun Sales tidak berwenang mengubah data purchasing")
     return current
 
 
