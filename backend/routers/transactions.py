@@ -177,6 +177,15 @@ async def master_vendors(current: dict = Depends(get_current_user)):
     return sorted([v for v in vendors if v])
 
 
+@router.get("/master/categories")
+async def master_categories(current: dict = Depends(get_current_user)):
+    """Distinct list of transaction item categories for autocomplete."""
+    cats = await db.transactions.distinct("category")
+    # Filter empty/None then dedupe
+    clean = sorted({str(c).strip() for c in cats if c and str(c).strip()})
+    return clean
+
+
 @router.get("/master/items")
 async def master_items(current: dict = Depends(get_current_user)):
     pipeline = [
@@ -186,6 +195,7 @@ async def master_items(current: dict = Depends(get_current_user)):
             "last_price": {"$first": "$unit_price"},
             "last_vendor": {"$first": "$vendor_name"},
             "last_date": {"$first": "$invoice_date"},
+            "last_category": {"$first": "$category"},
             "unit": {"$first": "$unit"},
             "count": {"$sum": 1},
         }},
@@ -194,7 +204,9 @@ async def master_items(current: dict = Depends(get_current_user)):
     ]
     result = await db.transactions.aggregate(pipeline).to_list(length=5000)
     return [{"item_name": r["_id"], "last_price": r["last_price"], "last_vendor": r["last_vendor"],
-             "last_date": r["last_date"], "unit": r.get("unit", "Ea"), "count": r["count"]}
+             "last_date": r["last_date"], "unit": r.get("unit", "Ea"),
+             "last_category": r.get("last_category") or "Uncategorized",
+             "count": r["count"]}
             for r in result if r["_id"]]
 
 
@@ -386,7 +398,7 @@ async def kpi_report(
 
 # ---------------- Excel Import/Export ----------------
 EXPORT_HEADERS = [
-    "Tanggal Invoice", "Nomor Project (SO)", "Nomor PO", "Nama Toko", "Nama Barang",
+    "Tanggal Invoice", "Nomor Project (SO)", "Nomor PO", "Nama Toko", "Kategori", "Nama Barang",
     "Qty", "Unit", "Unit Price", "Total Price", "Nomor Invoice", "Tanggal PO", "Tanggal Terima", "Catatan"
 ]
 
@@ -429,7 +441,7 @@ async def export_xlsx(current: dict = Depends(get_current_user)):
     for d in docs:
         ws.append([
             d.get("invoice_date", ""), d.get("project_no", ""), d.get("po_no", ""),
-            d.get("vendor_name", ""), d.get("item_name", ""), d.get("qty", 0),
+            d.get("vendor_name", ""), d.get("category", "Uncategorized"), d.get("item_name", ""), d.get("qty", 0),
             d.get("unit", ""), d.get("unit_price", 0), d.get("total_price", 0),
             d.get("invoice_no", ""), d.get("po_date", ""), d.get("receive_date", ""), d.get("notes", ""),
         ])
@@ -488,6 +500,7 @@ async def import_xlsx(file: UploadFile = File(...), current: dict = Depends(get_
         col_so = find_col("project", "so")
         col_po = find_col("purchase order", "po no", "po")
         col_vendor = find_col("toko", "vendor", "supplier")
+        col_category = find_col("kategori", "category", "item code")
         col_item = find_col("nama barang", "detail description", "description", "item")
         col_qty = find_col("qty", "quantity")
         col_unit = find_col("item unit", "unit", "satuan")
@@ -511,6 +524,7 @@ async def import_xlsx(file: UploadFile = File(...), current: dict = Depends(get_
                     "project_no": str(row[col_so]) if col_so is not None and col_so < len(row) and row[col_so] not in (None, "") else "",
                     "po_no": str(row[col_po]) if col_po is not None and col_po < len(row) and row[col_po] not in (None, "") else "",
                     "vendor_name": str(row[col_vendor]).strip() if col_vendor is not None and col_vendor < len(row) and row[col_vendor] else "",
+                    "category": (str(row[col_category]).strip() if col_category is not None and col_category < len(row) and row[col_category] else "") or "Uncategorized",
                     "item_name": str(item_name).strip(),
                     "qty": _to_float(row[col_qty]) if col_qty is not None and col_qty < len(row) else 0,
                     "unit": str(row[col_unit]).strip() if col_unit is not None and col_unit < len(row) and row[col_unit] else "Ea",

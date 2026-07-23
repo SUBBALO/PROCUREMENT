@@ -48,6 +48,7 @@ export default function MasterListPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [categories, setCategories] = useState([]);
   const debounceRef = useRef(null);
 
   const load = useCallback(async (p = 1, f = filters) => {
@@ -69,6 +70,7 @@ export default function MasterListPage() {
 
   useEffect(() => {
     load(1, filters);
+    api.get("/master/categories").then((r) => setCategories(r.data || [])).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -130,6 +132,7 @@ export default function MasterListPage() {
         project_no: t.project_no || "",
         po_no: t.po_no || "",
         vendor_name: t.vendor_name,
+        category: (t.category || "").trim() || "Uncategorized",
         invoice_no: t.invoice_no || "",
         po_date: t.po_date || null,
         receive_date: t.receive_date || null,
@@ -293,6 +296,7 @@ export default function MasterListPage() {
                 <th className="text-left p-3">Tanggal</th>
                 <th className="text-left p-3">Invoice</th>
                 <th className="text-left p-3">Toko</th>
+                <th className="text-left p-3">Kategori</th>
                 <th className="text-left p-3">Nama Barang</th>
                 <th className="text-left p-3">SO / PO</th>
                 <th className="text-right p-3">Qty</th>
@@ -304,14 +308,14 @@ export default function MasterListPage() {
             <tbody data-testid="transactions-table">
               {loading && (
                 <tr>
-                  <td colSpan={10} className="text-center p-8 text-slate-400 text-sm">
+                  <td colSpan={11} className="text-center p-8 text-slate-400 text-sm">
                     Memuat data...
                   </td>
                 </tr>
               )}
               {!loading && data.items.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="text-center p-8 text-slate-400 text-sm" data-testid="empty-state">
+                  <td colSpan={11} className="text-center p-8 text-slate-400 text-sm" data-testid="empty-state">
                     Tidak ada data. Klik "Input Transaksi" atau "Import Excel" untuk mulai.
                   </td>
                 </tr>
@@ -338,6 +342,11 @@ export default function MasterListPage() {
                     <td className="p-3 whitespace-nowrap text-slate-700">{formatDateID(t.invoice_date)}</td>
                     <td className="p-3 whitespace-nowrap text-slate-700 font-mono text-xs">{t.invoice_no || "-"}</td>
                     <td className="p-3 text-slate-900">{t.vendor_name}</td>
+                    <td className="p-3 text-slate-600 text-xs whitespace-nowrap">
+                      <span className="inline-block px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 uppercase tracking-[0.05em] font-semibold">
+                        {t.category || "Uncategorized"}
+                      </span>
+                    </td>
                     <td className="p-3 text-slate-900 max-w-[300px] truncate" title={t.item_name}>{t.item_name}</td>
                     <td className="p-3 text-slate-600 text-xs">
                       {t.project_no || "-"} / {t.po_no || "-"}
@@ -409,6 +418,10 @@ export default function MasterListPage() {
               <div className="col-span-2">
                 <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nama Toko</Label>
                 <Input className={inputCls} value={editTx.vendor_name || ""} onChange={(e) => setEditTx({ ...editTx, vendor_name: e.target.value })} />
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs font-semibold text-slate-600 mb-1 block">Kategori</Label>
+                <Input list="edit-categories-list" className={inputCls} value={editTx.category || ""} onChange={(e) => setEditTx({ ...editTx, category: e.target.value })} placeholder="mis. Direct Material" />
               </div>
               <div className="col-span-2">
                 <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nama Barang</Label>
@@ -557,6 +570,10 @@ export default function MasterListPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <datalist id="edit-categories-list">
+        {categories.map((c) => (<option key={c} value={c} />))}
+      </datalist>
     </div>
   );
 }

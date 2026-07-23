@@ -12,7 +12,7 @@ const UNIT_OPTIONS = ["Ea", "Pcs", "Set", "Lot", "Kg", "Ltr", "Mtr", "Box", "Rol
 const CURRENCIES = ["IDR", "SGD", "USD"];
 const DEFAULT_RATES = { IDR: 1, SGD: 12000, USD: 16000 };
 
-const emptyItem = () => ({ project_no: "", item_name: "", qty: 1, unit: "Ea", unit_price: 0, notes: "", post_to_store: false });
+const emptyItem = () => ({ project_no: "", category: "", item_name: "", qty: 1, unit: "Ea", unit_price: 0, notes: "", post_to_store: false });
 
 const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-sky-600 text-sm";
 
@@ -31,11 +31,13 @@ export default function InputTransactionPage() {
   const [items, setItems] = useState([emptyItem()]);
   const [submitting, setSubmitting] = useState(false);
   const [vendors, setVendors] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [itemsMaster, setItemsMaster] = useState([]);
 
   // Load autocomplete sources once
   useEffect(() => {
     api.get("/master/vendors").then((r) => setVendors(r.data || [])).catch(() => {});
+    api.get("/master/categories").then((r) => setCategories(r.data || [])).catch(() => {});
     api.get("/master/items").then((r) => setItemsMaster(r.data || [])).catch(() => {});
   }, []);
 
@@ -58,12 +60,13 @@ export default function InputTransactionPage() {
       prev.map((it, idx) => {
         if (idx !== i) return it;
         const next = { ...it, [k]: v };
-        // Auto-fill unit & unit_price when a known item name is picked
+        // Auto-fill unit, unit_price & category when a known item name is picked
         if (k === "item_name") {
           const match = itemsIndex.get(v);
           if (match) {
             next.unit = match.unit || next.unit;
             if (!Number(it.unit_price)) next.unit_price = match.last_price || 0;
+            if (!it.category && match.last_category) next.category = match.last_category;
           }
         }
         return next;
@@ -71,10 +74,10 @@ export default function InputTransactionPage() {
     );
   const addRow = () => {
     setItems((prev) => [...prev, emptyItem()]);
-    // focus the new row's SO input on next tick
+    // focus the new row's category input on next tick
     setTimeout(() => {
       const nextIdx = items.length; // will be the new last index
-      const el = document.querySelector(`[data-testid="item-so-${nextIdx}"]`);
+      const el = document.querySelector(`[data-testid="item-category-${nextIdx}"]`);
       if (el) el.focus();
     }, 30);
   };
@@ -83,7 +86,8 @@ export default function InputTransactionPage() {
   const onRowKeyDown = (e, i, field) => {
     if (e.key !== "Enter") return;
     e.preventDefault();
-    const order = ["item-so", "item-name", "item-qty", "item-price"];
+    // New order: category → item-name → qty → price → item-so
+    const order = ["item-category", "item-name", "item-qty", "item-price", "item-so"];
     const curIdx = order.indexOf(field);
     if (curIdx < 0) return;
     if (curIdx < order.length - 1) {
@@ -91,14 +95,14 @@ export default function InputTransactionPage() {
       const el = document.querySelector(`[data-testid="${next}-${i}"]`);
       if (el) el.focus();
     } else {
-      // Last field (price) — if this is the last row, add new. Else, focus first field of next row.
+      // Last field (item-so) — if this is the last row, add new. Else, focus first field of next row.
       if (i === items.length - 1) {
         // Only add row if current row has an item_name (avoid empty rows)
         if (items[i].item_name && items[i].item_name.trim()) {
           addRow();
         }
       } else {
-        const el = document.querySelector(`[data-testid="item-so-${i + 1}"]`);
+        const el = document.querySelector(`[data-testid="item-category-${i + 1}"]`);
         if (el) el.focus();
       }
     }
@@ -131,6 +135,7 @@ export default function InputTransactionPage() {
           invoice_no: header.invoice_no || "",
           po_date: header.po_date || null,
           receive_date: header.receive_date || null,
+          category: (it.category || "").trim() || "Uncategorized",
           item_name: it.item_name.trim(),
           qty: Number(it.qty) || 0,
           unit: it.unit || "Ea",
@@ -157,6 +162,7 @@ export default function InputTransactionPage() {
       setItems([emptyItem()]);
       // Refresh master lists so newly-added names show up in autocomplete
       api.get("/master/vendors").then((r) => setVendors(r.data || [])).catch(() => {});
+      api.get("/master/categories").then((r) => setCategories(r.data || [])).catch(() => {});
       api.get("/master/items").then((r) => setItemsMaster(r.data || [])).catch(() => {});
     } catch (err) {
       toast.error(err.response?.data?.detail || "Gagal menyimpan transaksi");
@@ -193,6 +199,7 @@ export default function InputTransactionPage() {
       }));
       const parsed = (data.items || []).map((it) => ({
         project_no: "",
+        category: "Uncategorized",
         item_name: it.item_name || "",
         qty: it.qty || 1,
         unit: it.unit || "Ea",
@@ -328,12 +335,13 @@ export default function InputTransactionPage() {
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-xs uppercase tracking-[0.1em] font-bold text-slate-500">
                 <th className="text-left p-3 w-10">#</th>
-                <th className="text-left p-3 w-32">Nomor SO</th>
-                <th className="text-left p-3 min-w-[260px]">Nama Barang</th>
+                <th className="text-left p-3 w-40">Item <span className="text-slate-400 normal-case tracking-normal font-normal">(Kategori)</span></th>
+                <th className="text-left p-3 min-w-[240px]">Description <span className="text-slate-400 normal-case tracking-normal font-normal">(Nama Barang)</span></th>
                 <th className="text-right p-3 w-24">Qty</th>
                 <th className="text-left p-3 w-28">Unit</th>
                 <th className="text-right p-3 w-36">Unit Price</th>
-                <th className="text-right p-3 w-36">Total</th>
+                <th className="text-right p-3 w-36">Total Price</th>
+                <th className="text-left p-3 w-32">Nomor SO</th>
                 <th className="text-center p-3 w-24" title="Kirim ke Store untuk dimasukkan ke stok">Ke Store?</th>
                 <th className="text-center p-3 w-14"></th>
               </tr>
@@ -345,7 +353,7 @@ export default function InputTransactionPage() {
                   <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="p-2 text-slate-400 tabular-nums">{i + 1}</td>
                     <td className="p-2">
-                      <Input data-testid={`item-so-${i}`} list="so-list" autoComplete="off" className={inputCls} value={it.project_no} onChange={(e) => setItem(i, "project_no", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, sos.map((s) => s.so_no), (v) => setItem(i, "project_no", v))) return; onRowKeyDown(e, i, "item-so"); }} placeholder="mis. 4413" />
+                      <Input data-testid={`item-category-${i}`} list="categories-list" autoComplete="off" className={inputCls} value={it.category} onChange={(e) => setItem(i, "category", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, categories, (v) => setItem(i, "category", v))) return; onRowKeyDown(e, i, "item-category"); }} placeholder="mis. Direct Material" />
                     </td>
                     <td className="p-2">
                       <Input data-testid={`item-name-${i}`} list="items-list" autoComplete="off" className={inputCls} value={it.item_name} onChange={(e) => setItem(i, "item_name", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, itemsMaster.map((x) => x.item_name), (v) => setItem(i, "item_name", v))) return; onRowKeyDown(e, i, "item-name"); }} placeholder="mis. NUT BAUT M14 X 2.0" />
@@ -370,6 +378,9 @@ export default function InputTransactionPage() {
                     </td>
                     <td className="p-2 text-right tabular-nums font-semibold text-slate-900" data-testid={`item-total-${i}`}>
                       {currSymbol} {total.toLocaleString("id-ID", { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="p-2">
+                      <Input data-testid={`item-so-${i}`} list="so-list" autoComplete="off" className={inputCls} value={it.project_no} onChange={(e) => setItem(i, "project_no", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, sos.map((s) => s.so_no), (v) => setItem(i, "project_no", v))) return; onRowKeyDown(e, i, "item-so"); }} placeholder="mis. 4413" />
                     </td>
                     <td className="p-2 text-center">
                       <input
@@ -401,7 +412,7 @@ export default function InputTransactionPage() {
                   Grand Total ({header.currency})
                 </td>
                 <td className="p-3 text-right tabular-nums font-bold text-slate-900 text-base">{currSymbol} {grandTotal.toLocaleString("id-ID", { maximumFractionDigits: 2 })}</td>
-                <td colSpan={2}></td>
+                <td colSpan={3}></td>
               </tr>
               {header.currency !== "IDR" && (
                 <tr className="bg-slate-50">
@@ -409,7 +420,7 @@ export default function InputTransactionPage() {
                     ≈ IDR (rate {Number(header.exchange_rate).toLocaleString("id-ID")})
                   </td>
                   <td className="p-3 text-right tabular-nums font-semibold text-sky-700 text-sm" data-testid="grand-total-idr-footer">Rp {grandTotalIDR.toLocaleString("id-ID", { maximumFractionDigits: 0 })}</td>
-                  <td colSpan={2}></td>
+                  <td colSpan={3}></td>
                 </tr>
               )}
             </tfoot>
@@ -436,6 +447,11 @@ export default function InputTransactionPage() {
       <datalist id="vendors-list">
         {vendors.map((v) => (
           <option key={v} value={v} />
+        ))}
+      </datalist>
+      <datalist id="categories-list">
+        {categories.map((c) => (
+          <option key={c} value={c} />
         ))}
       </datalist>
       <datalist id="items-list">

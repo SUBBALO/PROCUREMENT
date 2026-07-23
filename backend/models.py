@@ -40,6 +40,7 @@ class TransactionBase(BaseModel):
     project_no: Optional[str] = ""
     po_no: Optional[str] = ""
     vendor_name: str
+    category: Optional[str] = "Uncategorized"
     item_name: str
     qty: float
     unit: Optional[str] = "Ea"
