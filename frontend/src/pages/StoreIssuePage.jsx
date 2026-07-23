@@ -290,7 +290,7 @@ export default function StoreIssuePage() {
                   <td className="p-2">{r.taker_name}</td>
                   {canSeePrice && <td className="p-2 text-right tabular-nums text-emerald-700">Rp {Number(r.total_cost || 0).toLocaleString("id-ID")}</td>}
                   <td className="p-2 text-center">
-                    <RequestCorrectionButton targetType="issuance" targetId={r.id} label={`${r.item_name} · ${r.qty}`} />
+                    <RequestCorrectionButton targetType="issuance" targetId={r.id} label={`${r.item_name} · ${r.qty}`} row={r} />
                   </td>
                 </tr>
               ))}
@@ -303,26 +303,66 @@ export default function StoreIssuePage() {
 }
 
 /* -------------------- Request Correction / Delete Button -------------------- */
-function RequestCorrectionButton({ targetType, targetId, label }) {
+function RequestCorrectionButton({ targetType, targetId, label, row }) {
   const [open, setOpen] = useState(false);
-  const [action, setAction] = useState("delete");
+  const [action, setAction] = useState("edit");
+  const [field, setField] = useState("qty");
   const [reason, setReason] = useState("");
-  const [description, setDescription] = useState("");
+  const [newValue, setNewValue] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const oldValue =
+    field === "qty" ? row?.qty :
+    field === "so_number" ? (row?.so_number || "") :
+    field === "taker_name" ? (row?.taker_name || "") : "";
+
+  const fieldLabel =
+    field === "qty" ? "Qty" :
+    field === "so_number" ? "Nomor SO" :
+    field === "taker_name" ? "Nama Pengambil" : "";
+
+  useEffect(() => {
+    if (open) {
+      setAction("edit"); setField("qty"); setReason(""); setNewValue(String(row?.qty ?? ""));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const onFieldChange = (f) => {
+    setField(f);
+    setNewValue(String(
+      f === "qty" ? (row?.qty ?? "") :
+      f === "so_number" ? (row?.so_number || "") :
+      f === "taker_name" ? (row?.taker_name || "") : ""
+    ));
+  };
 
   const submit = async () => {
     if (!reason.trim()) return toast.error("Alasan wajib diisi");
+    if (action === "edit") {
+      const s = String(newValue).trim();
+      if (!s) return toast.error(`Nilai baru untuk ${fieldLabel} wajib diisi`);
+      if (field === "qty") {
+        const n = parseFloat(s);
+        if (!(n > 0)) return toast.error("Qty baru harus angka > 0");
+      }
+      if (String(oldValue) === s) return toast.error("Nilai baru sama dengan nilai lama");
+    }
     setSaving(true);
     try {
+      const proposed =
+        action === "edit"
+          ? { field, new_value: field === "qty" ? parseFloat(newValue) : String(newValue).trim() }
+          : {};
       await api.post("/store/requests", {
         target_type: targetType,
         target_id: targetId,
         action_type: action,
         reason: reason.trim(),
-        proposed_changes: action === "edit" ? { description } : {},
+        proposed_changes: proposed,
       });
       toast.success("Permohonan koreksi terkirim, menunggu approval admin.");
-      setOpen(false); setReason(""); setDescription(""); setAction("delete");
+      setOpen(false);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal mengirim permohonan");
     } finally { setSaving(false); }
@@ -349,28 +389,59 @@ function RequestCorrectionButton({ targetType, targetId, label }) {
           </DialogHeader>
           <div className="grid gap-3">
             <div>
-              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Jenis Koreksi</Label>
+              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Jenis Permintaan</Label>
               <div className="flex gap-3 text-sm">
                 <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="action" value="delete" checked={action === "delete"} onChange={() => setAction("delete")} className="w-4 h-4 accent-red-600" />
-                  Hapus
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="action" value="edit" checked={action === "edit"} onChange={() => setAction("edit")} className="w-4 h-4 accent-sky-600" />
+                  <input type="radio" name="action" value="edit" checked={action === "edit"} onChange={() => setAction("edit")} className="w-4 h-4 accent-sky-600" data-testid="action-edit" />
                   Edit
                 </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="action" value="delete" checked={action === "delete"} onChange={() => setAction("delete")} className="w-4 h-4 accent-red-600" data-testid="action-delete" />
+                  Hapus
+                </label>
               </div>
             </div>
+
+            {action === "edit" && (
+              <>
+                <div>
+                  <Label className="text-xs font-semibold text-slate-600 mb-1 block">Field yang Dikoreksi</Label>
+                  <select
+                    value={field}
+                    onChange={(e) => onFieldChange(e.target.value)}
+                    data-testid="correction-field"
+                    className="w-full h-9 border border-slate-300 rounded-none px-2 text-sm bg-white"
+                  >
+                    <option value="qty">Qty</option>
+                    <option value="so_number">Nomor SO</option>
+                    <option value="taker_name">Nama Pengambil</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nilai Lama</Label>
+                    <Input value={String(oldValue ?? "")} readOnly className="rounded-none border-slate-300 text-sm bg-slate-50 text-slate-500" />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nilai Baru *</Label>
+                    <Input
+                      data-testid="correction-new-value"
+                      type={field === "qty" ? "number" : "text"}
+                      step={field === "qty" ? "any" : undefined}
+                      className="rounded-none border-slate-300 text-sm"
+                      value={newValue}
+                      onChange={(e) => setNewValue(e.target.value)}
+                      placeholder={`${fieldLabel} baru`}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
             <div>
               <Label className="text-xs font-semibold text-slate-600 mb-1 block">Alasan *</Label>
-              <Input data-testid="request-reason" className="rounded-none border-slate-300 text-sm" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="mis. Salah qty, salah SO, dll." />
+              <Input data-testid="request-reason" className="rounded-none border-slate-300 text-sm" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="mis. Salah input qty, salah SO, dll." />
             </div>
-            {action === "edit" && (
-              <div>
-                <Label className="text-xs font-semibold text-slate-600 mb-1 block">Perubahan yang diinginkan</Label>
-                <Input className="rounded-none border-slate-300 text-sm" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="mis. qty 10 → 8" />
-              </div>
-            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} className="rounded-none">Batal</Button>

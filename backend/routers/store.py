@@ -465,6 +465,62 @@ async def store_report_xlsx(
 
 
 # ---------------- Edit/Delete Request (approval workflow) ----------------
+ALLOWED_EDIT_FIELDS = {"qty", "so_number", "taker_name"}
+
+
+async def _apply_qty_correction(iss: dict, new_qty: float):
+    """Scale issuance qty and its FIFO allocations proportionally, syncing receipts."""
+    old_qty = float(iss.get("qty") or 0)
+    if old_qty <= 0:
+        raise HTTPException(status_code=400, detail="Qty lama tidak valid")
+    if abs(new_qty - old_qty) < 1e-9:
+        return
+    allocations = iss.get("allocations") or []
+    if not allocations:
+        # No FIFO allocations (edge case) — just update the qty field
+        await db.store_issuances.update_one({"id": iss["id"]}, {"$set": {"qty": new_qty}})
+        return
+
+    # Compute new allocation qty proportionally
+    scale = new_qty / old_qty
+    updates = []  # list of (receipt_id, delta_to_add_back, new_alloc_qty, alloc_index)
+    for idx, a in enumerate(allocations):
+        old_a = float(a.get("qty") or 0)
+        new_a = old_a * scale
+        delta = old_a - new_a  # positive means refund to receipt, negative means take more
+        updates.append((a.get("receipt_id"), delta, new_a, idx))
+
+    # If we need MORE from a receipt (delta < 0), verify receipt has enough qty_remaining
+    for rid, delta, _new_a, _i in updates:
+        if delta < -1e-9:
+            rec = await db.store_receipts.find_one({"id": rid})
+            if not rec:
+                raise HTTPException(status_code=400, detail=f"Receipt sumber (id: {rid}) sudah tidak ada, tidak bisa menambah qty")
+            remaining = float(rec.get("qty_remaining") or 0)
+            if remaining + 1e-9 < -delta:
+                raise HTTPException(status_code=400, detail=f"Stok tersisa pada receipt sumber ('{rec.get('item_name')}' PO {rec.get('po_no')}) hanya {remaining}, tidak cukup untuk koreksi qty ke {new_qty}")
+
+    # Apply changes
+    new_allocations = list(allocations)
+    total_cost = 0.0
+    for rid, delta, new_a, idx in updates:
+        # delta > 0 → refund to receipt (add to qty_remaining)
+        # delta < 0 → consume more from receipt (subtract qty_remaining)
+        await db.store_receipts.update_one({"id": rid}, {"$inc": {"qty_remaining": delta}})
+        new_allocations[idx] = {**new_allocations[idx], "qty": new_a}
+        total_cost += new_a * float(new_allocations[idx].get("unit_price") or 0)
+
+    await db.store_issuances.update_one(
+        {"id": iss["id"]},
+        {"$set": {
+            "qty": new_qty,
+            "allocations": new_allocations,
+            "total_cost": total_cost,
+            "avg_unit_price": (total_cost / new_qty) if new_qty else 0,
+        }}
+    )
+
+
 @router.post("/store/requests")
 async def create_store_request(payload: StoreRequestCreate, current: dict = Depends(require_store_access)):
     if payload.target_type not in ("receipt", "issuance"):
@@ -482,6 +538,31 @@ async def create_store_request(payload: StoreRequestCreate, current: dict = Depe
     if current.get("role") == "store" and target.get("created_by") != current["id"]:
         raise HTTPException(status_code=403, detail="Hanya bisa mengajukan koreksi untuk data milik sendiri")
 
+    proposed = payload.proposed_changes or {}
+    # New structured edit validation (issuance only for now)
+    if payload.action_type == "edit":
+        field = proposed.get("field")
+        if field:
+            if payload.target_type != "issuance":
+                raise HTTPException(status_code=400, detail="Koreksi terstruktur hanya untuk data Keluar Barang")
+            if field not in ALLOWED_EDIT_FIELDS:
+                raise HTTPException(status_code=400, detail=f"Field '{field}' tidak dapat dikoreksi. Pilih: qty, so_number, taker_name")
+            new_val = proposed.get("new_value")
+            if new_val is None or (isinstance(new_val, str) and not new_val.strip()):
+                raise HTTPException(status_code=400, detail="Nilai baru wajib diisi")
+            if field == "qty":
+                try:
+                    nq = float(new_val)
+                except Exception:
+                    raise HTTPException(status_code=400, detail="Qty baru harus angka")
+                if nq <= 0:
+                    raise HTTPException(status_code=400, detail="Qty baru harus > 0")
+                proposed["new_value"] = nq
+            else:
+                proposed["new_value"] = str(new_val).strip()
+            # snapshot old value from target for reliability
+            proposed["old_value"] = target.get(field)
+
     summary = {
         "item_name": target.get("item_name"),
         "qty": target.get("qty") or target.get("qty_received"),
@@ -498,7 +579,7 @@ async def create_store_request(payload: StoreRequestCreate, current: dict = Depe
         "target_summary": summary,
         "action_type": payload.action_type,
         "reason": payload.reason.strip(),
-        "proposed_changes": payload.proposed_changes or {},
+        "proposed_changes": proposed,
         "status": "pending",
         "requested_by": current["id"],
         "requested_by_username": current.get("username", ""),
@@ -547,6 +628,22 @@ async def review_store_request(req_id: str, payload: StoreRequestReview, current
         raise HTTPException(status_code=400, detail=f"Request sudah di-{req['status']}")
 
     new_status = "approved" if payload.approve else "rejected"
+
+    if payload.approve and req["action_type"] == "edit" and req["target_type"] == "issuance":
+        pc = req.get("proposed_changes") or {}
+        field = pc.get("field")
+        new_val = pc.get("new_value")
+        if field in ALLOWED_EDIT_FIELDS and new_val is not None:
+            iss = await db.store_issuances.find_one({"id": req["target_id"]})
+            if not iss:
+                raise HTTPException(status_code=404, detail="Data issuance sudah tidak ada")
+            if field in ("so_number", "taker_name"):
+                await db.store_issuances.update_one(
+                    {"id": req["target_id"]},
+                    {"$set": {field: str(new_val)}}
+                )
+            elif field == "qty":
+                await _apply_qty_correction(iss, float(new_val))
 
     if payload.approve and req["action_type"] == "delete":
         if req["target_type"] == "issuance":

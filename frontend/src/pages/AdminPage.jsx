@@ -185,7 +185,17 @@ function ApprovalsTab({ onReviewed }) {
                   <td className="p-3 text-xs">
                     <div className="text-slate-900 font-semibold">{r.target_summary?.item_name || "-"}</div>
                     <div className="text-slate-500 tabular-nums">Qty: {r.target_summary?.qty} · {r.target_summary?.so_number ? `SO ${r.target_summary.so_number}` : r.target_summary?.po_no ? `PO ${r.target_summary.po_no}` : ""}</div>
-                    {r.proposed_changes?.description && <div className="text-sky-700 mt-0.5">→ {r.proposed_changes.description}</div>}
+                    {r.proposed_changes?.field && (
+                      <div className="text-sky-700 mt-0.5">
+                        <span className="font-semibold uppercase text-[10px] tracking-[0.05em]">
+                          {r.proposed_changes.field === "qty" ? "Qty" : r.proposed_changes.field === "so_number" ? "SO" : "Pengambil"}:
+                        </span>{" "}
+                        <span className="line-through text-slate-400">{String(r.proposed_changes.old_value ?? "-")}</span>
+                        {" → "}
+                        <b>{String(r.proposed_changes.new_value ?? "-")}</b>
+                      </div>
+                    )}
+                    {!r.proposed_changes?.field && r.proposed_changes?.description && <div className="text-sky-700 mt-0.5">→ {r.proposed_changes.description}</div>}
                   </td>
                   <td className="p-3 text-xs text-slate-700 max-w-[240px]">{r.reason}</td>
                   <td className="p-3">
@@ -224,7 +234,25 @@ function ApprovalsTab({ onReviewed }) {
                   <div><span className="text-slate-500">Jenis:</span> <b>{reviewing.action_type === "delete" ? "Hapus" : "Edit"} {reviewing.target_type === "receipt" ? "Terima" : "Keluar"}</b></div>
                   <div><span className="text-slate-500">Target:</span> <b>{reviewing.target_summary?.item_name}</b> · Qty {reviewing.target_summary?.qty}</div>
                   <div className="pt-2 border-t border-slate-200"><span className="text-slate-500">Alasan:</span> {reviewing.reason}</div>
-                  {reviewing.proposed_changes?.description && <div><span className="text-slate-500">Usulan perubahan:</span> {reviewing.proposed_changes.description}</div>}
+                  {reviewing.proposed_changes?.field && (
+                    <div>
+                      <span className="text-slate-500">Field:</span>{" "}
+                      <b>{reviewing.proposed_changes.field === "qty" ? "Qty" : reviewing.proposed_changes.field === "so_number" ? "Nomor SO" : "Nama Pengambil"}</b>{" "}
+                      · <span className="line-through text-slate-400">{String(reviewing.proposed_changes.old_value ?? "-")}</span>{" → "}
+                      <b className="text-sky-700">{String(reviewing.proposed_changes.new_value ?? "-")}</b>
+                    </div>
+                  )}
+                  {!reviewing.proposed_changes?.field && reviewing.proposed_changes?.description && <div><span className="text-slate-500">Usulan perubahan:</span> {reviewing.proposed_changes.description}</div>}
+                  {reviewing.action_type === "edit" && reviewing.proposed_changes?.field && (
+                    <div className="pt-2 mt-2 border-t border-slate-200 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 p-2">
+                      ⚠️ Jika disetujui, perubahan akan <b>langsung diterapkan</b> pada data. Untuk koreksi Qty, alokasi FIFO ke stock akan otomatis di-adjust.
+                    </div>
+                  )}
+                  {reviewing.action_type === "delete" && (
+                    <div className="pt-2 mt-2 border-t border-slate-200 text-[11px] text-red-700 bg-red-50 border border-red-200 p-2">
+                      ⚠️ Jika disetujui, data akan <b>dihapus permanen</b> dan stok dikembalikan.
+                    </div>
+                  )}
                 </div>
               )}
             </DialogDescription>
