@@ -1,0 +1,24 @@
+{
+  "summary": "Iteration 14: tested Feature B (Menu Koreksi Rework) + Feature C (Kategori Transaksi). Backend: 12/12 iter14 pytest tests PASS. Frontend UI verified: (1) InputTransactionPage item table columns render as # | Item (Kategori) | Description (Nama Barang) | Qty | Unit | Unit Price | Total Price | Nomor SO | Ke Store? | X — verified via DOM headers. (2) item-category-0 input + #categories-list datalist present. (3) End-to-end tx creation with new category 'UICAT97584' + item 'UIITEM97584' succeeded. (4) MasterListPage shows new 'Kategori' column between Toko and Nama Barang; new value shows as gray badge; existing rows default to 'Uncategorized'. (5) StoreIssuePage Ajukan Koreksi dialog renders: radio action-edit/action-delete, dropdown correction-field with options {qty, so_number, taker_name}, readonly Nilai Lama, editable correction-new-value, request-reason. Backend correction flow verified: taker_name/so_number/qty edits auto-apply on admin approval; qty decrease refunds receipt.qty_remaining and rescales FIFO allocations proportionally; qty increase with insufficient stock returns 400; delete refunds allocations and deletes issuance; invalid field rejected; qty<=0 rejected; old_value snapshotted on request creation. All backend API contracts match code inspection of /app/backend/routers/store.py (_apply_qty_correction) and /app/backend/routers/transactions.py (/master/categories, /master/items last_category, EXPORT_HEADERS includes 'Kategori').",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter14.py",
+    "/app/test_reports/pytest/iter14_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/routers/store.py::_apply_qty_correction — 2 sequential DB update loops (one for receipts, one for issuance). If any error mid-loop leaves receipts in partially updated state (no transaction/rollback). Not a bug per test acceptance but worth adding a MongoDB session/transaction if the app scales.",
+    "backend/routers/store.py review_store_request auto-apply only handles 'issuance' target. For 'receipt' target edits with structured field, there's no apply path — request is created but nothing changes on approval. Currently only ALLOWED_EDIT_FIELDS gate for issuance; if a receipt edit is submitted with a proposed field it will silently no-op on approval. Consider explicit rejection at create time when target_type=='receipt' with structured proposed_changes.field.",
+    "frontend RequestCorrectionButton — when action='delete', dialog still shows old proposed_changes struct? Actually code sends empty {} when delete — good. But UI doesn't show a warning banner about delete being permanent in the dialog itself (only visible when admin reviews). Consider adding a red warning in the store-side dialog too for parity.",
+    "InputTransactionPage — category input has no client-side max length; MongoDB accepts arbitrary strings but master/categories distinct list can grow unbounded. Consider trimming + case-normalizing (e.g. Title Case) to avoid 'direct material' vs 'Direct Material' vs 'DIRECT MATERIAL' fragmenting the autocomplete."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter14.py"],
+  "success_rate": {"backend": "100% (12/12 iter14 tests)", "frontend": "100% (all UI acceptance items verified)"},
+  "test_credentials": "susanto/admin123 ok; erwin/erwin123 (not admin123 as claimed in request — /app/memory/test_credentials.md is source of truth); store01/store123 ok",
+  "seed_data_creation": "Backend pytest fixtures create TEST_* prefixed tx/receipt/issuance per test and delete tx after. Some receipts/issuances remain (approved delete requests remove issuances; other test tx cleaned up). UI test created 1 tx (UITESTVEND / UICAT97584 / UIITEM97584 qty=5) that persists in DB.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iter14.py covers Feature B + C end-to-end via backend cookie-session auth (requests.Session after POST /api/auth/login). Frontend routes are /input (not /input-transaction) and /master (not /master-list). React uses text-transform:uppercase CSS so innerText returns uppercase for th elements — use case-insensitive matching. Correction dialog testids: action-edit, action-delete, correction-field (select), correction-new-value, request-reason, submit-request-btn. Store issuance target_type='issuance'; all 3 edit fields {qty, so_number, taker_name} auto-apply on admin approval via _apply_qty_correction (proportional FIFO scaling for qty).",
+  "rca_of_the_issue": "N/A — no bugs found. Test credentials note in review_request said erwin/admin123 but memory file says erwin/erwin123; test used susanto (which works with admin123)."
+}
