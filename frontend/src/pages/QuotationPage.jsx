@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
@@ -31,6 +31,9 @@ export default function QuotationPage() {
   const [query, setQuery] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [openQ, setOpenQ] = useState(null);
+  const [prefill, setPrefill] = useState(null);        // { inquiry_id, customer_name, items[], ... }
+  const [searchParams, setSearchParams] = useSearchParams();
+  const fromInquiryId = searchParams.get("from_inquiry");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,6 +46,52 @@ export default function QuotationPage() {
     } finally { setLoading(false); }
   }, [query]);
   useEffect(() => { load(); }, [load]);
+
+  // Auto-open Create dialog with inquiry prefill
+  useEffect(() => {
+    if (!fromInquiryId || !isSales) return;
+    (async () => {
+      try {
+        const { data } = await api.get(`/inquiries/${fromInquiryId}`);
+        const [cust] = await Promise.all([
+          api.get("/customers", { params: { q: data.customer_name } }).catch(() => ({ data: { items: [] } })),
+        ]);
+        const custMatch = (cust.data?.items || []).find(
+          (c) => (c.name || "").toLowerCase() === (data.customer_name || "").toLowerCase()
+        );
+        setPrefill({
+          inquiry_id: data.id,
+          inquiry_no: data.inquiry_no,
+          customer_name: data.customer_name,
+          customer_address: custMatch?.address || "",
+          attention: custMatch?.pic || "",
+          items: (data.items || []).map((it, i) => ({
+            no: i + 1,
+            description: `${it.item_name}${it.specification ? " — " + it.specification : ""}`.trim(),
+            qty: Number(it.qty) || 1,
+            unit: it.unit || "EA",
+            unit_price: 0,
+          })),
+        });
+        setShowCreate(true);
+      } catch (e) {
+        toast.error(e.response?.data?.detail || "Gagal memuat Inquiry");
+        // Remove the query param so we don't loop
+        searchParams.delete("from_inquiry");
+        setSearchParams(searchParams, { replace: true });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromInquiryId, isSales]);
+
+  const closeCreate = () => {
+    setShowCreate(false);
+    setPrefill(null);
+    if (fromInquiryId) {
+      searchParams.delete("from_inquiry");
+      setSearchParams(searchParams, { replace: true });
+    }
+  };
 
   return (
     <div className="max-w-[1400px] mx-auto p-6 space-y-5">
@@ -118,18 +167,23 @@ export default function QuotationPage() {
         </div>
       </Card>
 
-      {showCreate && <CreateQuotationDialog onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); load(); }} />}
+      {showCreate && <CreateQuotationDialog prefill={prefill} onClose={closeCreate} onCreated={() => { closeCreate(); load(); }} />}
       {openQ && <QuotationDetailDialog id={openQ.id} onClose={() => setOpenQ(null)} onChanged={load} />}
     </div>
   );
 }
 
 
-function CreateQuotationDialog({ onClose, onCreated }) {
-  const [customerName, setCustomerName] = useState("");
-  const [customerAddress, setCustomerAddress] = useState("");
-  const [attention, setAttention] = useState("");
-  const [items, setItems] = useState([{ no: 1, description: "", qty: 1, unit: "EA", unit_price: 0 }]);
+function CreateQuotationDialog({ onClose, onCreated, prefill = null }) {
+  const [customerName, setCustomerName] = useState(prefill?.customer_name || "");
+  const [customerAddress, setCustomerAddress] = useState(prefill?.customer_address || "");
+  const [attention, setAttention] = useState(prefill?.attention || "");
+  const [cc, setCc] = useState("");
+  const [items, setItems] = useState(
+    prefill?.items?.length
+      ? prefill.items
+      : [{ no: 1, description: "", qty: 1, unit: "EA", unit_price: 0 }]
+  );
   const [notesLines, setNotesLines] = useState(["", ""]);
   const [totalAmount, setTotalAmount] = useState(0);
   const [inWords, setInWords] = useState("");
@@ -177,7 +231,8 @@ function CreateQuotationDialog({ onClose, onCreated }) {
     setSaving(true);
     try {
       const { data } = await api.post("/quotations", {
-        customer_name: customerName, customer_address: customerAddress, attention,
+        inquiry_id: prefill?.inquiry_id || null,
+        customer_name: customerName, customer_address: customerAddress, attention, cc,
         items: items.filter((i) => i.description.trim()).map((it) => ({
           ...it,
           qty: Number(it.qty) || 0,
@@ -202,6 +257,11 @@ function CreateQuotationDialog({ onClose, onCreated }) {
           <DialogTitle>Buat Quotation Baru</DialogTitle>
           <DialogDescription>Nomor otomatis format 001/MKS/Q/VII/2026, reset tiap bulan. PDF dengan kop surat menyusul.</DialogDescription>
         </DialogHeader>
+        {prefill?.inquiry_no && (
+          <div className="p-2.5 border border-amber-300 bg-amber-50 text-xs text-amber-900" data-testid="quo-from-inquiry-badge">
+            🔗 Prefilled dari Inquiry <b className="font-mono">{prefill.inquiry_no}</b> — customer, alamat, attention & item sudah terisi otomatis. Silakan lengkapi harga.
+          </div>
+        )}
         <div className="grid gap-3">
           <div className="grid grid-cols-2 gap-3">
             <div><Label className="text-xs font-semibold text-slate-600 mb-1 block">Customer *</Label><Input data-testid="quo-customer" className={inputCls} value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="PT. SPM Oil & Gas" /></div>
@@ -216,14 +276,16 @@ function CreateQuotationDialog({ onClose, onCreated }) {
               <button onClick={addItem} className="text-[10px] uppercase font-semibold text-amber-600 border border-amber-300 hover:bg-amber-50 px-2 py-0.5"><Plus size={11} weight="bold" className="inline mr-1" /> Tambah</button>
             </div>
             <table className="w-full text-xs border border-slate-200">
-              <thead className="bg-slate-50"><tr><th className="p-1 text-left w-8">#</th><th className="p-1 text-left">Description</th><th className="p-1 text-right w-20">Qty</th><th className="p-1 text-left w-16">Unit</th><th className="p-1 w-8"></th></tr></thead>
+              <thead className="bg-slate-50"><tr><th className="p-1 text-left w-8">#</th><th className="p-1 text-left">Description</th><th className="p-1 text-right w-20">Qty</th><th className="p-1 text-left w-16">Unit</th><th className="p-1 text-right w-28">Unit Price</th><th className="p-1 text-right w-28">Total</th><th className="p-1 w-8"></th></tr></thead>
               <tbody>
                 {items.map((it, i) => (
                   <tr key={i} className="border-t border-slate-100">
                     <td className="p-1 text-center text-slate-400">{i + 1}</td>
                     <td className="p-1"><Input data-testid={`quo-desc-${i}`} value={it.description} onChange={(e) => setItem(i, "description", e.target.value)} className="h-7 rounded-none text-xs" /></td>
-                    <td className="p-1"><Input type="number" step="any" value={it.qty} onChange={(e) => setItem(i, "qty", parseFloat(e.target.value) || 0)} className="h-7 rounded-none text-xs text-right" /></td>
-                    <td className="p-1"><Input value={it.unit} onChange={(e) => setItem(i, "unit", e.target.value)} className="h-7 rounded-none text-xs" /></td>
+                    <td className="p-1"><Input data-testid={`quo-qty-${i}`} type="number" step="any" value={it.qty} onChange={(e) => setItem(i, "qty", parseFloat(e.target.value) || 0)} className="h-7 rounded-none text-xs text-right" /></td>
+                    <td className="p-1"><Input data-testid={`quo-unit-${i}`} value={it.unit} onChange={(e) => setItem(i, "unit", e.target.value)} className="h-7 rounded-none text-xs" /></td>
+                    <td className="p-1"><Input data-testid={`quo-price-${i}`} type="number" step="any" value={it.unit_price} onChange={(e) => setItem(i, "unit_price", parseFloat(e.target.value) || 0)} className="h-7 rounded-none text-xs text-right" /></td>
+                    <td className="p-1 text-right tabular-nums text-slate-700 pr-2">{((Number(it.qty) || 0) * (Number(it.unit_price) || 0)).toLocaleString("id-ID")}</td>
                     <td className="p-1 text-center"><button onClick={() => rmItem(i)} disabled={items.length === 1} className="p-0.5 text-slate-400 hover:text-red-600 disabled:opacity-30"><Trash size={12} weight="bold" /></button></td>
                   </tr>
                 ))}
@@ -305,9 +367,14 @@ function QuotationDetailDialog({ id, onClose, onChanged }) {
             {(d.items || []).length > 0 && (
               <div className="mt-3 border border-slate-200">
                 <table className="w-full text-xs">
-                  <thead className="bg-slate-50"><tr><th className="p-1 text-left">#</th><th className="p-1 text-left">Description</th><th className="p-1 text-right">Qty</th><th className="p-1 text-left">Unit</th></tr></thead>
-                  <tbody>{d.items.map((it, i) => (<tr key={i} className="border-t border-slate-100"><td className="p-1 text-slate-400">{i + 1}</td><td className="p-1">{it.description}</td><td className="p-1 text-right tabular-nums">{it.qty}</td><td className="p-1 text-slate-600">{it.unit}</td></tr>))}</tbody>
+                  <thead className="bg-slate-50"><tr><th className="p-1 text-left">#</th><th className="p-1 text-left">Description</th><th className="p-1 text-right">Qty</th><th className="p-1 text-left">Unit</th><th className="p-1 text-right">Unit Price</th><th className="p-1 text-right">Total</th></tr></thead>
+                  <tbody>{d.items.map((it, i) => (<tr key={i} className="border-t border-slate-100"><td className="p-1 text-slate-400">{i + 1}</td><td className="p-1">{it.description}</td><td className="p-1 text-right tabular-nums">{it.qty}</td><td className="p-1 text-slate-600">{it.unit}</td><td className="p-1 text-right tabular-nums">{Number(it.unit_price || 0).toLocaleString("id-ID")}</td><td className="p-1 text-right tabular-nums font-semibold">{Number(it.total_price || (Number(it.qty)||0) * (Number(it.unit_price)||0)).toLocaleString("id-ID")}</td></tr>))}</tbody>
                 </table>
+              </div>
+            )}
+            {d.inquiry_id && (
+              <div className="mt-2 text-[11px] text-slate-500">
+                🔗 Sumber Inquiry: <span className="font-mono font-semibold text-slate-700">{d.inquiry_id.slice(0, 8)}…</span>
               </div>
             )}
             {(d.notes_lines || []).length > 0 && (

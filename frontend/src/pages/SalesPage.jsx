@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
@@ -9,9 +9,9 @@ import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { toast } from "sonner";
 import {
-  Storefront, ArrowLeft, Plus, PaperPlaneTilt, Trash, Paperclip, DownloadSimple,
+  Storefront, Wrench, ArrowLeft, Plus, PaperPlaneTilt, Trash, Paperclip, DownloadSimple,
   FileText, ClockCounterClockwise, ChatCircleDots, Check, X, MagnifyingGlass,
-  CircleNotch, Warning, ArrowClockwise, PencilSimple,
+  CircleNotch, Warning, ArrowClockwise, PencilSimple, Receipt,
 } from "@phosphor-icons/react";
 
 const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-rose-600 text-sm";
@@ -36,6 +36,7 @@ export default function SalesPage() {
   const role = user?.role;
   const isSales = role === "sales" || role === "admin";
   const isEngineering = role === "engineering" || role === "admin";
+  const isEngOnly = role === "engineering";  // pure engineering view (no sales privileges)
 
   const [tab, setTab] = useState(isEngineering && !isSales ? "eng" : "mine");  // 'mine' | 'eng' | 'all'
   const [items, setItems] = useState([]);
@@ -45,6 +46,15 @@ export default function SalesPage() {
   const [editingInquiry, setEditingInquiry] = useState(null);  // draft object to edit
   const [openInquiry, setOpenInquiry] = useState(null);
   const [pending, setPending] = useState(0);
+
+  const backLink = isEngOnly ? "/engineering" : "/";
+  const backLabel = isEngOnly ? "Kembali ke Engineering Portal" : "Kembali ke Portal";
+  const HeaderIcon = isEngOnly ? Wrench : Storefront;
+  const headerTitle = isEngOnly ? "Engineering — Costing Requests" : "Departemen Sales";
+  const headerSubtitle = isEngOnly
+    ? "Terima request dari Sales · Upload hasil costing & drawing"
+    : "Inquiry Costing · Quotation · Order Status";
+  const headerIconCls = isEngOnly ? "text-amber-600" : "text-rose-600";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,17 +81,17 @@ export default function SalesPage() {
 
   return (
     <div className="max-w-[1400px] mx-auto p-6 space-y-5">
-      <Link to="/" className="inline-flex items-center gap-1 text-xs uppercase tracking-[0.1em] text-slate-600 hover:text-slate-900" data-testid="sales-back-btn">
-        <ArrowLeft size={12} weight="bold" /> Kembali ke Portal
+      <Link to={backLink} className="inline-flex items-center gap-1 text-xs uppercase tracking-[0.1em] text-slate-600 hover:text-slate-900" data-testid="sales-back-btn">
+        <ArrowLeft size={12} weight="bold" /> {backLabel}
       </Link>
 
       <div className="flex items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <Storefront size={22} weight="duotone" className="text-rose-600" />
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>Departemen Sales</h1>
+            <HeaderIcon size={22} weight="duotone" className={headerIconCls} />
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }} data-testid="sales-page-title">{headerTitle}</h1>
           </div>
-          <p className="text-xs uppercase tracking-[0.1em] text-slate-500">Inquiry Costing · Quotation · Order Status</p>
+          <p className="text-xs uppercase tracking-[0.1em] text-slate-500">{headerSubtitle}</p>
         </div>
         {isSales && (
           <Button data-testid="new-inquiry-btn" onClick={() => setShowCreate(true)} className="rounded-none bg-rose-600 hover:bg-rose-700 text-white text-xs uppercase tracking-[0.1em]">
@@ -329,6 +339,7 @@ function CreateInquiryDialog({ onClose, onCreated, initial = null, existingId = 
 
 /* ============================== Detail Dialog ============================== */
 function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft }) {
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState(null);  // 'accept' | 'complete' | 'review-accept' | 'review-revise'
@@ -466,6 +477,23 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
                   </Button>
                   <Button data-testid="submit-draft" onClick={() => doAction("submit-draft")} disabled={processing} className="rounded-none bg-rose-600 hover:bg-rose-700 text-white">
                     <PaperPlaneTilt size={13} weight="bold" className="mr-1" /> Kirim ke Engineering
+                  </Button>
+                </div>
+              )}
+
+              {/* Sales accepted → Buat Quotation shortcut */}
+              {isSalesOrAdmin && data.status === "accepted" && (isOwnerOrAdmin) && !action && (
+                <div className="p-3 border-2 border-amber-400 bg-amber-50 flex items-center justify-between gap-3">
+                  <div className="text-sm">
+                    <div className="text-[10px] uppercase tracking-[0.1em] font-bold text-amber-900 mb-0.5">Inquiry Sudah Accepted</div>
+                    <div className="text-amber-900">Siap dibuatkan Quotation formal ke customer.</div>
+                  </div>
+                  <Button
+                    data-testid="btn-create-quotation-from-inquiry"
+                    onClick={() => navigate(`/sales/quotations?from_inquiry=${data.id}`)}
+                    className="rounded-none bg-amber-600 hover:bg-amber-700 text-white text-xs uppercase tracking-[0.1em]"
+                  >
+                    <Receipt size={13} weight="bold" className="mr-1" /> Buat Quotation dari Inquiry
                   </Button>
                 </div>
               )}
