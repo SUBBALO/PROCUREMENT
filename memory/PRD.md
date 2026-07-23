@@ -87,10 +87,16 @@ See `/app/memory/test_credentials.md`. Primary admin: **susanto / admin123**.
 - ✅ **BOM table layout refinement**: Stock/Qty Purchase columns compact (w-16), Admin Remark column enlarged (min-w-[280px]).
 
 ## Pending Tasks
-- **P0 — Engineering Costing full-flow polish**: Add optional PDF Quotation generator (kop surat), delivery status wiring from Quotation → Order.
-- **P1 — Recycle Bin / Soft Delete**: DEFERRED. When resumed: add `deleted_at` to all collections + Super Admin trash UI.
+- **P0 — Advanced Quotation features (nice-to-have)**: PDF preview modal in-app (currently just direct download); email quotation link.
 - **P2 — QC Module**: Inspection incoming, approve/reject material before stock post, non-conformance report.
-- **P3 — Master Kategori CRUD** (nice-to-have): if user wants a proper master menu vs current free-text autocomplete.
+- **P3 — Refactor router besar (`store.py` 1155 lines, `transactions.py` 561 lines)** — DEFERRED. Rasio risk/value tinggi. Rekomendasi: split ke sub-package (`routers/store/{receipts,issuances,requests,reports}.py`) sebagai iterasi tersendiri dengan test regression menyeluruh sebelum & sesudah refactor.
+- Retention: auto-purge job saat ini manual-trigger (`POST /api/admin/trash/auto-purge`). Bisa dijadikan cron (APScheduler) nanti.
+
+## Recent Additions (Feb 2026 — Iter 22)
+- ✅ **PDF Quotation Generator** dengan kop surat resmi PT MITRA KARYA SARANA (letterhead PNG sebagai background A4). Layout mirror Excel template user (Title, Customer+Meta, Attention/CC, Intro, Items table, Notes, Grand Total, In Words EN+ID, Term & Conditions, Signature). Endpoint: `GET /api/quotations/{id}/pdf`. Tombol "Download PDF" di QuotationDetailDialog.
+- ✅ **Recycle Bin / Soft Delete** untuk 11 koleksi (transactions, sales_orders, store_receipts, store_issuances, store_requests, deliveries, boms, inquiries, quotations, customers, users). Setiap DELETE sekarang menge-set `deleted_at`, `deleted_by`, `deleted_by_name`. Semua LIST/aggregation queries di-filter agar soft-deleted tidak tampil. Login user yang soft-deleted otomatis diblokir.
+- ✅ **Recycle Bin API** (Super Admin): `GET /api/admin/trash/summary` · `GET /list?collection=X` · `POST /restore {collection,ids}` · `POST /purge {collection,ids,confirm_phrase="PURGE-FOREVER"}` · `POST /auto-purge` (hapus permanen > 30 hari).
+- ✅ **Recycle Bin UI**: tab baru "Recycle Bin" di `/admin` (khusus Super Admin). Strip 11 tab koleksi dengan count. Multi-select restore & purge. Konfirmasi phrase untuk purge.
 
 ## Recent Additions (Feb 2026 — Iter 20/21)
 - ✅ Engineering Costing Workflow UX: SalesPage adapts header ("Engineering — Costing Requests") when role=engineering; back link to `/engineering`.
