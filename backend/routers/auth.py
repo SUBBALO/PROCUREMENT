@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 import jwt
 
 from db import db
-from deps import _now_iso, get_current_user, log_action, require_admin
+from deps import _now_iso, get_current_user, log_action, require_admin, require_super_admin, SUPER_ADMIN_USERNAME
 from security import (
     JWT_ALGORITHM,
     JWT_SECRET,
@@ -43,6 +43,7 @@ async def login(payload: LoginRequest, response: Response):
         "name": user.get("name", ""),
         "role": user["role"],
         "perms": user.get("perms", []),
+        "is_super_admin": (user.get("username") or "").lower().strip() == SUPER_ADMIN_USERNAME,
     }
 
 
@@ -70,6 +71,7 @@ async def me(current: dict = Depends(get_current_user)):
         "name": current.get("name", ""),
         "role": current["role"],
         "perms": current.get("perms", []),
+        "is_super_admin": (current.get("username") or "").lower().strip() == SUPER_ADMIN_USERNAME,
     }
 
 
@@ -107,13 +109,13 @@ def _sanitize_user(u: dict) -> dict:
 
 
 @router.get("/users")
-async def list_users(current: dict = Depends(require_admin)):
+async def list_users(current: dict = Depends(require_super_admin)):
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", 1).to_list(length=500)
     return [_sanitize_user(u) for u in users]
 
 
 @router.post("/users")
-async def create_user(payload: UserCreate, current: dict = Depends(require_admin)):
+async def create_user(payload: UserCreate, current: dict = Depends(require_super_admin)):
     username = payload.username.lower().strip()
     if not username or len(username) < 3:
         raise HTTPException(status_code=400, detail="Username minimal 3 karakter")
@@ -139,7 +141,7 @@ async def create_user(payload: UserCreate, current: dict = Depends(require_admin
 
 
 @router.put("/users/{user_id}")
-async def update_user(user_id: str, payload: UserUpdate, current: dict = Depends(require_admin)):
+async def update_user(user_id: str, payload: UserUpdate, current: dict = Depends(require_super_admin)):
     user = await db.users.find_one({"id": user_id})
     if not user:
         raise HTTPException(status_code=404, detail="User tidak ditemukan")
@@ -174,7 +176,7 @@ async def update_user(user_id: str, payload: UserUpdate, current: dict = Depends
 
 
 @router.delete("/users/{user_id}")
-async def delete_user(user_id: str, current: dict = Depends(require_admin)):
+async def delete_user(user_id: str, current: dict = Depends(require_super_admin)):
     if user_id == current["id"]:
         raise HTTPException(status_code=400, detail="Tidak bisa hapus akun sendiri")
     user = await db.users.find_one({"id": user_id})

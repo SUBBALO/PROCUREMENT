@@ -1,0 +1,25 @@
+{
+  "summary": "Iteration 11 RBAC hardening fully verified. Backend: 124/124 pytest passed (108 previous regression + 16 new iter11 super-admin tests). Frontend: All Playwright RBAC assertions pass for both erwin (non-super-admin) and susanto (super-admin).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter11.py",
+    "/app/test_reports/pytest/iter11_results.xml",
+    "/app/test_reports/pytest/iter11_full_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "deps.py require_super_admin: username comparison is lowercased & stripped on both sides — good. Error detail leaks the super-admin username (SUSANTO uppercased) — acceptable per spec but slight info-disclosure to non-super admins.",
+    "SUPER_ADMIN_USERNAME is read at module import; changing env at runtime requires backend restart. Consider making it a request-time lookup or documenting the constraint.",
+    "AdminPage deeplink guard: '?tab=users' silently redirects to approvals for non-super admins. Consider a small toast so users understand why they didn't land where they clicked.",
+    "Frontend relies on user.is_super_admin from /auth/me — good defence-in-depth since backend also enforces 403. No RBAC-only-on-frontend bugs found."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter11.py"],
+  "success_rate": {"backend": "100% (124/124, includes 16 new iter11)", "frontend": "100% (all iter11 RBAC assertions pass)"},
+  "test_credentials": "Re-seeded via /app/backend/seed_data.py. All 5 users (susanto/admin123, erwin/erwin123, staff01/staff123, store01/store123, finance01/finance123) verified via login.",
+  "seed_data_creation": "Ran /app/backend/seed_data.py before testing to restore staff01/store01/finance01 credentials to match test_credentials.md",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter11 test file /app/backend/tests/test_iter11.py uses requests.Session (cookie-based auth), not Bearer tokens — /api/auth/login sets HttpOnly cookie 'access_token' and returns user JSON w/ is_super_admin. Run full backend regression with REACT_APP_BACKEND_URL exported (some older iter4 tests import it without a default). Playwright login: fill inputs[0]/[1] with username/password then click 'Masuk' button. dept-admin dropdown behaviour is Radix — click force=True and wait 400ms.",
+  "rca_of_issue": "N/A — implementation matches spec end-to-end. Only friction encountered: (a) initial test wrote payload for /transactions using old flat 'items' schema (backend now expects single-row invoice_date/item_name/vendor_name); corrected. (b) Old iter4 tests require REACT_APP_BACKEND_URL to be set in shell env (they don't have a default) — export before running full regression."
+}

@@ -39,10 +39,8 @@ const STORE_OUTGOING = [
 const STORE_REPORT = { to: "/store/report", label: "Costing Store", icon: ClipboardText, testid: "nav-store-report" };
 
 // ─── ADMIN ──────────────────────────────────────────────
-const ADMIN_ITEMS = [
-  { to: "/admin", label: "Kelola User", icon: ShieldStar, testid: "nav-admin" },
-  { to: "/admin?tab=logs", label: "Log Aktivitas", icon: ClockCounterClockwise, testid: "nav-logs" },
-];
+const ADMIN_ITEM_USERS = { to: "/admin", label: "Kelola User", icon: ShieldStar, testid: "nav-admin" };
+const ADMIN_ITEM_LOGS = { to: "/admin?tab=logs", label: "Log Aktivitas", icon: ClockCounterClockwise, testid: "nav-logs" };
 
 function isPathMatch(current, target) {
   const t = target.split("?")[0];
@@ -160,6 +158,7 @@ export default function AppShell({ children }) {
   const perms = user?.perms || [];
   const canViewStoreReport = role === "admin" || (role !== "store" && perms.includes("view_store_report"));
   const canApprove = role === "admin" && perms.includes("approve_store_requests");
+  const isSuperAdmin = !!user?.is_super_admin;
 
   // Poll pending Persetujuan Store count (admin only)
   const [pendingCount, setPendingCount] = useState(0);
@@ -238,7 +237,7 @@ export default function AppShell({ children }) {
                   label="Admin"
                   icon={ShieldStar}
                   testid="dept-admin"
-                  items={ADMIN_ITEMS}
+                  items={isSuperAdmin ? [ADMIN_ITEM_USERS, ADMIN_ITEM_LOGS] : [ADMIN_ITEM_LOGS]}
                   activePath={location.pathname}
                 />
               )}

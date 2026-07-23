@@ -1,12 +1,16 @@
 """FastAPI dependencies + role guards + audit log helper.
 
 Role matrix:
-  admin   — full access
+  admin   — full access (except user-management restricted to super admin)
   staff   — purchasing write (transactions, SO); no admin/store operations
   store   — store operations only; no purchasing/SO writes
   finance — read-only across the board (sees prices)
+
+Super admin: only the username matching env SUPER_ADMIN_USERNAME (default 'susanto')
+can manage users (create/edit/delete).
 """
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -18,6 +22,8 @@ from db import db
 from security import decode_token
 
 logger = logging.getLogger(__name__)
+
+SUPER_ADMIN_USERNAME = os.environ.get("SUPER_ADMIN_USERNAME", "susanto").lower().strip()
 
 
 def _now_iso() -> str:
@@ -53,6 +59,17 @@ async def get_current_user(request: Request) -> dict:
 async def require_admin(current: dict = Depends(get_current_user)) -> dict:
     if current.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Hanya admin yang bisa mengakses")
+    return current
+
+
+async def require_super_admin(current: dict = Depends(get_current_user)) -> dict:
+    """User-management is restricted to the primary admin only (env SUPER_ADMIN_USERNAME,
+    default 'susanto'). Other admins can still perform every other admin action."""
+    if (current.get("username") or "").lower().strip() != SUPER_ADMIN_USERNAME:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Hanya {SUPER_ADMIN_USERNAME.upper()} yang bisa mengelola user",
+        )
     return current
 
 

@@ -49,14 +49,17 @@ export default function AdminPage() {
   const { user: me } = useAuth();
   const location = useLocation();
   const canApprove = me && me.role === "admin" && (me.perms || []).includes("approve_store_requests");
+  const isSuperAdmin = !!me?.is_super_admin;
   // Read initial tab from URL query (?tab=requests|logs|users)
   const initialTab = React.useMemo(() => {
     const p = new URLSearchParams(location.search);
     const t = p.get("tab");
     if (t === "requests" && canApprove) return "approvals";
     if (t === "logs") return "logs";
-    return "users";
-  }, [location.search, canApprove]);
+    // Non-super-admins cannot open the "users" tab — fall back to logs / approvals
+    if (t === "users" && !isSuperAdmin) return canApprove ? "approvals" : "logs";
+    return isSuperAdmin ? "users" : (canApprove ? "approvals" : "logs");
+  }, [location.search, canApprove, isSuperAdmin]);
   const [tab, setTab] = useState(initialTab);
   useEffect(() => { setTab(initialTab); }, [initialTab]);
   const [pendingCount, setPendingCount] = useState(0);
@@ -77,15 +80,21 @@ export default function AdminPage() {
           <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
             Admin Panel
           </h1>
-          <p className="text-sm text-slate-500 mt-1">Kelola user{canApprove && ", persetujuan koreksi Store,"} dan pantau aktivitas.</p>
+          <p className="text-sm text-slate-500 mt-1">
+            {isSuperAdmin ? "Kelola user, " : ""}
+            {canApprove ? "persetujuan koreksi Store, dan " : ""}
+            pantau aktivitas.
+          </p>
         </div>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="rounded-none bg-white border border-slate-200 p-0 h-auto">
-          <TabsTrigger data-testid="tab-users" value="users" className="rounded-none data-[state=active]:bg-slate-900 data-[state=active]:text-white text-xs uppercase tracking-[0.1em] font-semibold h-9 px-4">
-            <UsersThree size={14} weight="bold" className="mr-1.5" /> Kelola User
-          </TabsTrigger>
+          {isSuperAdmin && (
+            <TabsTrigger data-testid="tab-users" value="users" className="rounded-none data-[state=active]:bg-slate-900 data-[state=active]:text-white text-xs uppercase tracking-[0.1em] font-semibold h-9 px-4">
+              <UsersThree size={14} weight="bold" className="mr-1.5" /> Kelola User
+            </TabsTrigger>
+          )}
           {canApprove && (
             <TabsTrigger data-testid="tab-approvals" value="approvals" className="rounded-none data-[state=active]:bg-slate-900 data-[state=active]:text-white text-xs uppercase tracking-[0.1em] font-semibold h-9 px-4 relative">
               <ChatCircleDots size={14} weight="bold" className="mr-1.5" /> Persetujuan Store
@@ -97,7 +106,7 @@ export default function AdminPage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="users" className="mt-4"><UsersTab me={me} /></TabsContent>
+        <TabsContent value="users" className="mt-4">{isSuperAdmin && <UsersTab me={me} />}</TabsContent>
         {canApprove && <TabsContent value="approvals" className="mt-4"><ApprovalsTab onReviewed={refreshPending} /></TabsContent>}
         <TabsContent value="logs" className="mt-4"><LogsTab /></TabsContent>
       </Tabs>
