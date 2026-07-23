@@ -324,7 +324,7 @@ export default function AppShell({ children }) {
       <main className="flex-1 px-6 py-6 max-w-[1600px] w-full mx-auto">{children}</main>
 
       <footer className="border-t border-slate-200 bg-white px-6 py-3 text-[11px] text-slate-400 uppercase tracking-[0.15em]">
-        Purchasing Department &copy; {new Date().getFullYear()} — PT. Mitra Karya Sarana
+        Developed by Purchasing Department &copy; {new Date().getFullYear()} — PT. Mitra Karya Sarana
       </footer>
     </div>
   );

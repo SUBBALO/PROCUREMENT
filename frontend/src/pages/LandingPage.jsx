@@ -129,7 +129,7 @@ export default function LandingPage() {
 
         {/* Footer */}
         <div className="mt-16 pt-8 border-t border-slate-800 text-[10px] uppercase tracking-[0.25em] font-semibold text-slate-500 flex flex-wrap items-center justify-between gap-2">
-          <div>ERP PT MKS · {new Date().getFullYear()} · Sistem Terintegrasi Antar Departemen</div>
+          <div>Developed by Purchasing Department &copy; {new Date().getFullYear()} — PT. Mitra Karya Sarana</div>
           <div className="text-slate-600">
             Peran Anda: <span className="text-slate-300">{role.toUpperCase()}</span>
           </div>
