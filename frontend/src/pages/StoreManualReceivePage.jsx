@@ -5,7 +5,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { FloppyDisk, Plus, Trash } from "@phosphor-icons/react";
+import { FloppyDisk, Plus, Trash, ArrowDown } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { tryAutocomplete } from "../lib/autocomplete";
 
@@ -106,12 +106,19 @@ export default function IncomingGoodsPage() {
             Input Incoming Goods
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            2 cara input: <b>Manual</b> (customer/supplier tanpa PO) di bawah, atau{" "}
-            <a href="/store/receive" data-testid="link-receive-po" className="text-sky-700 font-semibold underline hover:text-sky-900">
-              Tarik dari PO Purchasing →
-            </a>
+            Input manual barang masuk dari <b>Customer</b> (produksi) atau <b>Supplier</b> (tanpa PO). Multi-item — tekan{" "}
+            <kbd className="px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-700 text-[10px] rounded">Enter</kbd> untuk tambah baris.
           </p>
         </div>
+        <a
+          href="/store/receive"
+          data-testid="link-receive-po"
+          className="inline-flex items-center gap-2 h-10 px-5 rounded-none bg-slate-900 hover:bg-slate-800 text-white text-xs uppercase tracking-[0.1em] font-semibold transition-colors"
+        >
+          <ArrowDown size={14} weight="bold" />
+          Tarik dari PO Purchasing
+          <span className="ml-1">→</span>
+        </a>
       </div>
 
       <form onSubmit={submit} className="space-y-4" data-testid="incoming-form">
