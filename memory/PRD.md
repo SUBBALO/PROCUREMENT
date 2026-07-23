@@ -67,11 +67,15 @@ See `/app/memory/test_credentials.md`. Primary admin: **susanto / admin123**.
 ## Changelog (Fork Session — 2026-02)
 - ✅ **[FIXED] AI Parse PO 500 Error**: Migrated from deprecated `google.generativeai` SDK (URL-based `?key=` auth incompatible with new `AQ.` key format) → **`google-genai` v2.12** SDK (uses `X-goog-api-key` header). Model: `gemini-flash-latest`. Verified end-to-end with dummy PO → returns valid JSON with vendor/PO/items.
 - ✅ Verified black button "Tarik dari PO Purchasing →" already in `/app/frontend/src/pages/StoreManualReceivePage.jsx` (line 113-121).
+- ✅ **Menu Koreksi Rework (Task B)**: Structured Edit dialog (radio Edit/Hapus, field dropdown Qty/SO/Taker, readonly old value, editable new value). Admin approval auto-applies changes: `so_number`/`taker_name` → direct update; `qty` → proportional FIFO allocation scaling with receipt qty_remaining sync (rejects if insufficient stock). Delete path also refunds stock. Verified in `/app/test_reports/iteration_14.json` (12/12 pass).
+- ✅ **Kategori Transaksi (Feature C)**: Added `category` free-text field to TransactionBase (default 'Uncategorized'). New /master/categories autocomplete endpoint. Input Transaksi column order reworked: `# | Item(Kategori) | Description(NamaBarang) | Qty | Unit | UnitPrice | TotalPrice | NomorSO | KeStore | X`. Master List has new Kategori column with badge. Excel import/export includes Kategori column (defaults 'Uncategorized' if missing).
+- ✅ **Print MCL (Feature D)**: GET /api/store/incoming/mcl/{receipt_id} groups receipts by (vendor,po,do,invoice,receive_date), fills `/app/backend/assets/mcl_template.xlsx` template preserving A55='MKS-F-STR-004#Rev.00' doc register. Frontend adds Print button per row in Laporan Incoming Goods (new 'Aksi' column).
+- ✅ **Bill of Material (Feature E)**: New /bom module. `boms` collection stores every revision. `POST /api/bom/upload` parses .xls (via xlrd 1.2.0) and .xlsx (openpyxl) into structured items. Auto-increments Rev.0 → Rev.1 → Rev.2 per SO; revision_reason mandatory for rev≥1. Search by so_no with `?rev=latest|all`. GET /bom/history/{so_no} shows revision log. PATCH /bom/{id}/annotations (admin-only) for Available Stock / Qty Purchase / Purchase Due Date / Admin Remark. New role **engineering** (seed: `engineer01`/`eng123`) — access ONLY to /bom (ProtectedRoute redirects). BOM detail page: auto-growing textarea for admin remark so long text is fully visible without hover.
+- ✅ **Plan Delivery Date (Bonus)**: `plan_delivery_date` field added to TransactionBase. New input in Input Transaksi header (between Tanggal PO and Tanggal Terima). New column in Master List (between SO/PO and Qty). Excel export includes 'Plan Delivery' column.
 
-## Pending Tasks (from user's 10-point list M498)
-- **P1 — Recycle Bin / Soft Delete**: Add `deleted_at` to transactions, store_receipts, store_issuances, deliveries, sales_orders, users. GET endpoints filter `deleted_at: null`. Super-Admin trash UI to restore/purge.
-- **P1 — Menu Koreksi Rework**: Select correction type (Qty/SO/Pengambil), inline pre-fill + edit, admin approval.
-- **P2 — Bill of Material (BOM) Module**: Excel/PDF upload → Gemini Vision → new collection + UI cross-reference stock. **DEFERRED** per user (M535: "jangan buat dulu").
+## Pending Tasks (from user's original list)
+- **P1 — Recycle Bin / Soft Delete**: DEFERRED per user ("task a nanti nanti aja"). When resumed: add `deleted_at` to transactions, store_receipts, store_issuances, deliveries, sales_orders, users. GET endpoints filter `deleted_at: null`. Super-Admin trash UI to restore/purge.
+- **P3 — Master Kategori CRUD** (nice-to-have): if user wants a proper master menu vs current free-text autocomplete.
 
 ## Backlog (post-13-features, optional)
 - P2: Split routers/store.py (~800 lines) into receipts/issuances/requests

@@ -927,7 +927,7 @@ async def print_mcl(receipt_id: str, current: dict = Depends(require_store_acces
     safe_do = (anchor.get("do_number") or anchor.get("invoice_no") or anchor.get("po_no") or "MCL").replace("/", "-").replace(" ", "_")
     filename = f"MCL_{safe_do}_{anchor.get('receive_date','')}.xlsx"
 
-    log_action(current, "print_mcl", "store_receipt", receipt_id, {"group_size": len(siblings)})
+    await log_action(current, "print_mcl", "store_receipt", receipt_id, {"group_size": len(siblings)})
 
     return StreamingResponse(
         buf,

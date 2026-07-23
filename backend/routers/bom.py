@@ -177,16 +177,28 @@ def _read_workbook(content: bytes, filename: str) -> List[List]:
 
 
 # ------------------------------ Endpoints ------------------------------
+@router.get("/preparers")
+async def bom_preparers(current: dict = Depends(get_current_user)):
+    """Distinct list of previously-entered `prepared_by` names for autocomplete."""
+    names = await db.boms.distinct("prepared_by")
+    return sorted({str(n).strip() for n in names if n and str(n).strip()})
+
+
 @router.post("/upload")
 async def upload_bom(
     file: UploadFile = File(...),
+    prepared_by: str = Form(...),
     revision_reason: str = Form(""),
     current: dict = Depends(require_bom_upload),
 ):
     """Upload a BOM Excel. If SO_NO already exists, auto-creates next revision.
+    `prepared_by` is REQUIRED — since Engineering shares one login for 7 people,
+    the actual creator name is captured here for audit history.
     `revision_reason` is required for revisions beyond the first."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="Nama file tidak ada")
+    if not prepared_by or not prepared_by.strip():
+        raise HTTPException(status_code=400, detail="Nama Pembuat BOM wajib diisi")
 
     content = await file.read()
     if len(content) == 0:
@@ -214,9 +226,18 @@ async def upload_bom(
     next_rev = 0 if not latest else int(latest.get("rev_no", 0)) + 1
 
     if next_rev > 0 and not revision_reason.strip():
+        # SO already exists → prompt user for revision reason (frontend catches 409 and shows inline input)
         raise HTTPException(
-            status_code=400,
-            detail=f"SO {so_no} sudah pernah diupload (Rev.{latest.get('rev_no')}). Alasan revisi wajib diisi.",
+            status_code=409,
+            detail={
+                "code": "revision_reason_required",
+                "so_no": so_no,
+                "latest_rev": int(latest.get("rev_no", 0)),
+                "latest_uploaded_by": latest.get("uploaded_by_name") or "",
+                "latest_uploaded_at": latest.get("uploaded_at", "")[:19].replace("T", " "),
+                "latest_prepared_by": latest.get("prepared_by") or "",
+                "message": f"Nomor SO {so_no} sudah ada di database (Rev.{latest.get('rev_no')} diupload oleh {latest.get('uploaded_by_name')} pada {latest.get('uploaded_at','')[:10]}). Silakan isi alasan revisi untuk melanjutkan.",
+            },
         )
 
     doc = {
@@ -230,6 +251,7 @@ async def upload_bom(
         "class_material": parsed["header"].get("class_material") or "",
         "delivery_date": parsed["header"].get("delivery_date") or "",
         "bom_date": parsed["header"].get("date") or "",
+        "prepared_by": prepared_by.strip(),
         "items": parsed["items"],
         "annotations": {},  # keyed by str(item_no) → {available_stock, qty_purchase, purchase_due_date, admin_remark}
         "revision_reason": revision_reason.strip(),
@@ -249,15 +271,23 @@ async def upload_bom(
 @router.get("")
 async def list_or_search_bom(
     so_no: Optional[str] = None,
+    q: Optional[str] = None,
     rev: str = "latest",  # 'latest' | 'all'
     limit: int = 200,
     current: dict = Depends(get_current_user),
 ):
-    """List BOMs. If so_no provided: filter by SO. rev='latest' returns only newest rev per SO.
-    rev='all' returns every revision."""
+    """List BOMs. Filters:
+      - `so_no`: exact match on SO (backward compat)
+      - `q`: fuzzy substring search across so_no / customer / project_name (case-insensitive)
+    rev='latest' returns only newest rev per SO. rev='all' returns every revision."""
+    import re
     filt: dict = {}
     if so_no:
         filt["so_no"] = so_no.strip()
+    elif q and q.strip():
+        pattern = re.escape(q.strip())
+        rx = {"$regex": pattern, "$options": "i"}
+        filt["$or"] = [{"so_no": rx}, {"customer": rx}, {"project_name": rx}]
 
     if rev == "latest":
         # Aggregation: group by so_no, take max rev
