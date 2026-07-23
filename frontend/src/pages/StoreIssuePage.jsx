@@ -24,6 +24,7 @@ export default function StoreIssuePage() {
   const [stock, setStock] = useState([]);
   const [recent, setRecent] = useState([]);
   const [sos, setSos] = useState([]);
+  const [takers, setTakers] = useState([]);
   const [saving, setSaving] = useState(false);
 
   const loadStock = useCallback(async () => {
@@ -190,7 +191,7 @@ export default function StoreIssuePage() {
                         <Input data-testid={`issue-so-${i}`} list="issue-so-list" autoComplete="off" className={inputCls} value={r.so_number} onChange={(e) => setRow(i, "so_number", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, soOptions, (v) => setRow(i, "so_number", v))) return; onRowKeyDown(e, i, "issue-so"); }} placeholder="mis. 4413" />
                       </td>
                       <td className="p-2">
-                        <Input data-testid={`issue-taker-${i}`} className={inputCls} value={r.taker_name} onChange={(e) => setRow(i, "taker_name", e.target.value)} onKeyDown={(e) => onRowKeyDown(e, i, "issue-taker")} placeholder="mis. Sahab" />
+                        <Input data-testid={`issue-taker-${i}`} list="issue-takers-list" autoComplete="off" className={inputCls} value={r.taker_name} onChange={(e) => setRow(i, "taker_name", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, takers, (v) => setRow(i, "taker_name", v))) return; onRowKeyDown(e, i, "issue-taker"); }} placeholder="mis. Sahab" />
                       </td>
                       <td className="p-2">
                         <Input data-testid={`issue-date-${i}`} type="date" className={inputCls} value={r.issue_date} onChange={(e) => setRow(i, "issue_date", e.target.value)} onKeyDown={(e) => onRowKeyDown(e, i, "issue-date")} />
@@ -224,6 +225,9 @@ export default function StoreIssuePage() {
         </datalist>
         <datalist id="issue-so-list">
           {sos.map((s) => (<option key={s.id} value={s.so_no}>{`${s.customer} — ${s.description || ""}`}</option>))}
+        </datalist>
+        <datalist id="issue-takers-list">
+          {takers.map((t) => (<option key={t} value={t} />))}
         </datalist>
 
         <div className="flex items-center justify-between gap-3">

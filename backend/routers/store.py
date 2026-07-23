@@ -753,6 +753,13 @@ async def incoming_report(
     return {"total": total, "page": page, "page_size": page_size, "items": items}
 
 
+@router.get("/store/issuances/takers")
+async def issuance_takers(current: dict = Depends(require_store_access)):
+    """Distinct taker names from historical issuances for autocomplete."""
+    names = await db.store_issuances.distinct("taker_name")
+    return sorted([n for n in names if n])
+
+
 @router.post("/store/receipts/bulk-delete")
 async def bulk_delete_receipts(payload: dict, current: dict = Depends(require_admin)):
     """Admin-only direct bulk delete of store receipts.
@@ -813,13 +820,14 @@ async def incoming_report_xlsx(
     ws = wb.active
     ws.title = "Incoming Goods"
     headers = ["Tgl Terima", "Sumber", "Vendor/Customer", "Nama Barang", "Qty", "Unit",
-               "PO No", "DO No", "Invoice No", "Ke Stok?", "MCL", "MIF", "Catatan"]
+               "Nomor SO", "PO No", "DO No", "Invoice No", "Ke Stok?", "MCL", "MIF", "Catatan"]
     ws.append(headers)
     for d in docs:
         src_label = "PO" if d.get("source") == "po" else ("Customer" if d.get("is_customer_material") else "Supplier")
         ws.append([
             d.get("receive_date", ""), src_label, d.get("vendor_name", ""),
             d.get("item_name", ""), float(d.get("qty_received", 0)), d.get("unit", ""),
+            d.get("so_no", "") or d.get("so_number", ""),
             d.get("po_no", ""), d.get("do_number", ""), d.get("invoice_no", ""),
             "Ya" if d.get("add_to_stock", True) else "Tidak",
             "Ya" if d.get("mcl_done") else "Tidak",

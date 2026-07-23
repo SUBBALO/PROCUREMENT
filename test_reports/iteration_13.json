@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 13 fully tested. Backend: 140/141 tests pass (only the pre-existing test_iter4::test_valid_png_returns_fields fails, which is EXPECTED because the user-provided GEMINI_API_KEY 'AQ.Ab8RN6LI...' is an OAuth-token-format string that Google rejects with API_KEY_INVALID). 9 new iter13 tests all pass. Frontend Playwright: title=ERP PT MKS OK, login hint text updated OK, Master SO top pill visible for both susanto & store01 with correct canWrite gating OK, /store/receive dialog has merged 'Nomor Invoice / DO *' field (receive-invoice visible, receive-do wrapped in div.hidden), /store/manual-receive has link-receive-po pointing to /store/receive, 'Nomor SO' column present in incoming report table + xlsx export, /store/issue taker input uses list=issue-takers-list datalist, Store dropdown no longer shows 'Terima dari PO Purchasing'. All 8 acceptance items from feature list verified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/transactions/parse-po", "issue": "When Gemini API rejects the key, backend returns raw 500 'Internal Server Error' (uncaught googleapiclient.errors.HttpError from genai.upload_file). Should be caught and returned as HTTPException(502) with a friendly message mentioning Gemini/Google API. Not a functional regression (endpoint reachable, no EMERGENT_LLM_KEY reference) but hurts UX and violates the acceptance criterion 'error message mentions GEMINI or google API'."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter13.py",
+    "/app/test_reports/pytest/iter13_results.xml",
+    "/app/test_reports/pytest/iter13_full_results.xml"
+  ],
+  "action_items": [
+    "Wrap genai.upload_file / model.generate_content calls in try/except (googleapiclient.errors.HttpError, google.api_core.exceptions.*) and raise HTTPException(502, detail='Gemini API error: ...') so parse-po returns a user-friendly error instead of 500 Internal Server Error when the API key is invalid or the model call fails.",
+    "Replace user-provided OAuth-format key 'AQ.Ab8RN6LI...' in backend/.env with a real Google AI Studio API key (starts with 'AIza...') before /api/transactions/parse-po can be considered fully working. Currently rejected with 'API_KEY_INVALID' by Google.",
+    "Consider removing the now-unused 'emergentintegrations==0.2.0' from backend/requirements.txt if no other module imports it (grep showed 0 references)."
+  ],
+  "critical_code_review_comments": [
+    "ai.py: no try/except around google-generativeai calls — any Google-side error (invalid key, rate limit, file-upload failure) surfaces as raw 500. Should wrap in try/except and return 502 with a clean message.",
+    "ai.py: genai.upload_file uploads the image to Google Files service each call, which incurs cost/latency and requires the Files API be enabled on the project. For simple <10MB images consider inlining via `{'mime_type': mime, 'data': img_bytes}` in generate_content instead of upload_file — simpler, cheaper, no cleanup step needed.",
+    "ai.py: tmp_path cleanup uses os.unlink but Google's uploaded_file remains on their servers. Consider calling genai.delete_file(uploaded.name) in the finally block to avoid orphan uploads.",
+    "StoreReceivePage.jsx: the hidden div wrapping receive-do still submits the doNo value; if invNo and doNo are both meant to represent the same field now, form submit logic should sync doNo=invNo (or drop the second field entirely) to avoid silent double-storage of two fields containing different data.",
+    "requirements.txt still lists 'emergentintegrations==0.2.0' although no code imports it after this iteration — dead dependency."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter13.py"
+  ],
+  "success_rate": {"backend": "99.3% (140/141) — 1 expected failure due to invalid Gemini key", "frontend": "100% (all 8 iter13 acceptance items verified)"},
+  "test_credentials": "Same as /app/memory/test_credentials.md — all 5 accounts verified.",
+  "seed_data_creation": "Ran /app/backend/seed_data.py once before regression tests. New iter13 taker autocomplete test seeds & keeps 1 receipt+issuance per run (TEST_ITER13_ prefix).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iter13.py covers: GET /store/issuances/takers (5 assertions incl. seeded taker roundtrip), parse-po no-EMERGENT_LLM_KEY/no-emergentintegrations invariant, incoming xlsx has 'Nomor SO' header. Frontend Master SO top pill is [data-testid=nav-so-master-top]; Store dropdown was refactored — 'Terima dari PO Purchasing' link removed and moved to StoreManualReceivePage header as [data-testid=link-receive-po]. Merged invoice/DO field: receive-invoice is the user-facing input, receive-do is retained inside a wrapper div.hidden (className='hidden'), NOT on the Input itself, so `page.is_visible('[data-testid=receive-do]')` returns False (correct).",
+  "rca_of_the_issue": "test_iter4::test_valid_png_returns_fields failure — Google Generative Language API returns HTTP 400 {'reason':'API_KEY_INVALID'} because backend/.env GEMINI_API_KEY='AQ.Ab8RN6LIehyMVLot8MZ7Xb7GwLkeUvLrkCZ1qQ6hVDvTZh-KQw' is an OAuth access-token format (starts with 'AQ.'), not a Google AI Studio API key (which starts with 'AIza'). The endpoint is properly migrated to google-generativeai SDK — this is a key-provisioning issue, not a code bug. However, the exception is not caught in ai.py, so client sees a bare 500. See action_items."
+}

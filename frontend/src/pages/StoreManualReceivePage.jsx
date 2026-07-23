@@ -100,14 +100,18 @@ export default function IncomingGoodsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
-          Input Incoming Goods
-        </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Input manual barang masuk dari <b>Customer</b> (untuk produksi) atau <b>Supplier</b> (tanpa PO). Bisa multi-item — tekan{" "}
-          <kbd className="px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-700 text-[10px] rounded">Enter</kbd> di kolom terakhir untuk tambah baris.
-        </p>
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
+            Input Incoming Goods
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            2 cara input: <b>Manual</b> (customer/supplier tanpa PO) di bawah, atau{" "}
+            <a href="/store/receive" data-testid="link-receive-po" className="text-sky-700 font-semibold underline hover:text-sky-900">
+              Tarik dari PO Purchasing →
+            </a>
+          </p>
+        </div>
       </div>
 
       <form onSubmit={submit} className="space-y-4" data-testid="incoming-form">

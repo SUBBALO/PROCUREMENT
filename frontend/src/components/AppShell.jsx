@@ -19,14 +19,12 @@ const PURCHASE_ITEMS = [
   { to: "/master", label: "Master List", icon: MagnifyingGlass, testid: "nav-master" },
   { to: "/items", label: "Master Barang", icon: Package, testid: "nav-items" },
   { to: "/kpi", label: "KPI Purchasing", icon: ChartLineUp, testid: "nav-kpi" },
-  { to: "/so-master", label: "Master SO", icon: ClipboardText, testid: "nav-so-master" },
 ];
 
 // ─── STORE — grouped Incoming vs Outgoing ───────────────
 const STORE_STOCK = { to: "/store/stock", label: "Stok", icon: Warehouse, testid: "nav-store-stock" };
 
 const STORE_INCOMING = [
-  { to: "/store/receive", label: "Terima dari PO Purchasing", icon: ArrowDown, testid: "nav-store-receive" },
   { to: "/store/manual-receive", label: "Input Incoming Goods", icon: ArrowDown, testid: "nav-store-manual" },
   { to: "/store/incoming-report", label: "Laporan Incoming Goods", icon: ClipboardText, testid: "nav-store-incoming-report" },
 ];
@@ -246,7 +244,17 @@ export default function AppShell({ children }) {
 
           {/* Right: approvals notif + user + logout */}
           <div className="flex items-center gap-2">
-            {canApprove && (
+          {/* Master SO — visible for ALL roles (read-only for finance/store) */}
+          <NavLink
+            to="/so-master"
+            data-testid="nav-so-master-top"
+            className={({ isActive }) => `flex items-center gap-1.5 px-3 h-9 text-[11px] uppercase tracking-[0.1em] font-semibold border transition-colors ${
+              isActive ? "border-sky-600 text-sky-700 bg-sky-50" : "border-slate-300 text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <ClipboardText size={14} weight="duotone" /> Master SO
+          </NavLink>
+          {canApprove && (
               <NavLink
                 to="/admin?tab=requests"
                 data-testid="nav-approvals-top"

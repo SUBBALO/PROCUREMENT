@@ -153,14 +153,13 @@ function ReceiveDialog({ group, onClose, onSaved }) {
         </DialogHeader>
 
         {/* Header info once */}
-        <div className="grid grid-cols-3 gap-3 border-t border-slate-200 pt-3">
+        <div className="grid grid-cols-2 gap-3 border-t border-slate-200 pt-3">
           <div>
-            <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nomor Invoice</Label>
-            <Input data-testid="receive-invoice" className={`${inputCls} font-mono`} value={invNo} onChange={(e) => setInvNo(e.target.value)} placeholder="Update ke Masterlist Purchasing" />
+            <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nomor Invoice / DO *</Label>
+            <Input data-testid="receive-invoice" className={`${inputCls} font-mono`} value={invNo} onChange={(e) => setInvNo(e.target.value)} placeholder="Nomor Invoice atau DO" />
           </div>
-          <div>
-            <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nomor DO / Nota Terima</Label>
-            <Input data-testid="receive-do" className={`${inputCls} font-mono`} value={doNo} onChange={(e) => setDoNo(e.target.value)} placeholder="mis. DO-2026-0123" />
+          <div className="hidden">
+            <Input data-testid="receive-do" value={doNo} onChange={(e) => setDoNo(e.target.value)} />
           </div>
           <div>
             <Label className="text-xs font-semibold text-slate-600 mb-1 block">Tanggal Terima *</Label>

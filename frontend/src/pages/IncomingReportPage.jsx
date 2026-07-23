@@ -167,6 +167,7 @@ export default function IncomingReportPage() {
                 <th className="text-left p-2">Vendor / Customer</th>
                 <th className="text-left p-2">Barang</th>
                 <th className="text-right p-2">Qty</th>
+                <th className="text-left p-2">Nomor SO</th>
                 <th className="text-left p-2">PO / DO / Invoice</th>
                 <th className="text-center p-2">Ke Stok?</th>
                 <th className="text-center p-2">MCL</th>
@@ -174,8 +175,8 @@ export default function IncomingReportPage() {
               </tr>
             </thead>
             <tbody data-testid="ig-rows">
-              {loading && (<tr><td colSpan={isAdmin ? 10 : 9} className="p-6 text-center text-slate-400">Memuat...</td></tr>)}
-              {!loading && rows.length === 0 && (<tr><td colSpan={isAdmin ? 10 : 9} className="p-8 text-center text-slate-400"><Package size={22} weight="duotone" className="inline-block mr-2 text-slate-300" />Tidak ada data</td></tr>)}
+              {loading && (<tr><td colSpan={isAdmin ? 11 : 10} className="p-6 text-center text-slate-400">Memuat...</td></tr>)}
+              {!loading && rows.length === 0 && (<tr><td colSpan={isAdmin ? 11 : 10} className="p-8 text-center text-slate-400"><Package size={22} weight="duotone" className="inline-block mr-2 text-slate-300" />Tidak ada data</td></tr>)}
               {rows.map((r) => (
                 <tr key={r.id} className={`border-b border-slate-100 hover:bg-slate-50 ${selected.has(r.id) ? "bg-sky-50" : ""}`}>
                   {isAdmin && (
@@ -203,6 +204,7 @@ export default function IncomingReportPage() {
                   <td className="p-2 text-slate-900">{r.vendor_name}</td>
                   <td className="p-2 text-slate-900">{r.item_name} <span className="text-xs text-slate-400 uppercase">{r.unit}</span></td>
                   <td className="p-2 text-right tabular-nums">{r.qty_received}</td>
+                  <td className="p-2 font-mono text-xs text-slate-700">{r.so_no || r.so_number || "-"}</td>
                   <td className="p-2 text-xs font-mono text-slate-600">
                     {r.po_no || "-"}{r.do_number ? ` / DO ${r.do_number}` : ""}{r.invoice_no ? ` / ${r.invoice_no}` : ""}
                   </td>

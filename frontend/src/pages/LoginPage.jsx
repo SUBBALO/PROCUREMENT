@@ -118,8 +118,8 @@ export default function LoginPage() {
                 {submitting ? "Memproses..." : "Masuk"}
               </Button>
 
-              <div className="text-xs text-slate-400 pt-4 border-t border-slate-200">
-                Default: <span className="font-mono text-slate-600">susanto / admin123</span>
+              <div className="text-xs text-slate-400 pt-4 border-t border-slate-200 text-center">
+                Butuh akses? Hubungi admin sistem.
               </div>
             </form>
           </CardContent>
