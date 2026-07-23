@@ -101,3 +101,8 @@ frontend/node_modules/.cache/default-development/5.pack
 frontend/node_modules/.cache/default-development/15.pack
 frontend/node_modules/.cache/default-development/14.pack
 frontend/node_modules/.cache/default-development/16.pack
+
+# Emergent test artifacts (may contain API keys / sensitive test data)
+test_reports/
+!test_reports/.gitkeep
+automation_output/
