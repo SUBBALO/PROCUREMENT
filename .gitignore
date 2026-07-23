@@ -107,3 +107,4 @@ test_reports/
 !test_reports/.gitkeep
 automation_output/
 frontend/node_modules/.cache/default-development/22.pack
+frontend/node_modules/.cache/default-development/25.pack

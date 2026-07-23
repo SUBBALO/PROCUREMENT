@@ -9,7 +9,7 @@ import {
 import { toast } from "sonner";
 import {
   ChartBar, Plus, MagnifyingGlass, SignOut, Package, ChartLineUp, ShieldStar, Warehouse, ArrowDown, ArrowUp,
-  ClipboardText, CaretDown, ShoppingCart, Storefront, Truck, ClockCounterClockwise, Bell,
+  ClipboardText, CaretDown, ShoppingCart, Storefront, Truck, ClockCounterClockwise, Bell, House,
 } from "@phosphor-icons/react";
 
 // ─── PURCHASING ─────────────────────────────────────────
@@ -157,6 +157,7 @@ export default function AppShell({ children }) {
   const canViewStoreReport = role === "admin" || (role !== "store" && perms.includes("view_store_report"));
   const canApprove = role === "admin" && perms.includes("approve_store_requests");
   const isSuperAdmin = !!user?.is_super_admin;
+  const isLanding = location.pathname === "/";
 
   // Poll pending Persetujuan Store count (admin only)
   const [pendingCount, setPendingCount] = useState(0);
@@ -209,7 +210,7 @@ export default function AppShell({ children }) {
             </NavLink>
 
             <nav className="flex items-center gap-1">
-              {showPurchasing && (
+              {!isLanding && showPurchasing && (
                 <DeptDropdown
                   label="Purchasing"
                   icon={ShoppingCart}
@@ -218,7 +219,7 @@ export default function AppShell({ children }) {
                   activePath={location.pathname}
                 />
               )}
-              {showStore && (
+              {!isLanding && showStore && (
                 <DeptDropdown
                   label="Store"
                   icon={Storefront}
@@ -233,7 +234,7 @@ export default function AppShell({ children }) {
                   activePath={location.pathname}
                 />
               )}
-              {showAdmin && (
+              {!isLanding && showAdmin && (
                 <DeptDropdown
                   label="Admin"
                   icon={ShieldStar}
@@ -242,7 +243,7 @@ export default function AppShell({ children }) {
                   activePath={location.pathname}
                 />
               )}
-              {showBom && (
+              {!isLanding && showBom && (
                 <NavLink
                   to="/bom"
                   data-testid="nav-bom-top"
@@ -260,8 +261,19 @@ export default function AppShell({ children }) {
 
           {/* Right: approvals notif + user + logout */}
           <div className="flex items-center gap-2">
-          {/* Master SO — hidden for Engineering & Sales (dept-only roles) */}
-          {!isEngineering && !isSales && (
+          {/* Home button — visible when NOT on landing */}
+          {!isLanding && (
+            <NavLink
+              to="/"
+              data-testid="nav-home"
+              className="flex items-center gap-1.5 px-3 h-9 text-[11px] uppercase tracking-[0.1em] font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors"
+              title="Kembali ke Department Portal"
+            >
+              <House size={14} weight="duotone" /> Home
+            </NavLink>
+          )}
+          {/* Master SO — hidden on landing + for Engineering/Sales (dept-only roles) */}
+          {!isLanding && !isEngineering && !isSales && (
           <NavLink
             to="/so-master"
             data-testid="nav-so-master-top"
@@ -272,7 +284,7 @@ export default function AppShell({ children }) {
             <ClipboardText size={14} weight="duotone" /> Master SO
           </NavLink>
           )}
-          {canApprove && (
+          {!isLanding && canApprove && (
               <NavLink
                 to="/admin?tab=requests"
                 data-testid="nav-approvals-top"

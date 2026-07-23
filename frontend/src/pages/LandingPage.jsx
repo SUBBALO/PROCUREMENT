@@ -10,7 +10,7 @@ const DEPARTMENTS = [
   {
     key: "sales",
     label: "Sales",
-    tagline: "Costing Request · Quotation · Order Status",
+    tagline: "Inquiry · Quotation",
     description: "Kirim permintaan costing ke Engineering, buat quotation PDF, dan pantau status order (on-bidding, confirmed, cancelled).",
     icon: Storefront,
     href: "/sales",
@@ -18,13 +18,13 @@ const DEPARTMENTS = [
     accentSolid: "bg-rose-600",
     accentText: "text-rose-600",
     accentBorder: "border-rose-300",
-    stats: "Sales Order · Costing · Quotation",
+    stats: "Inquiry · Quotation",
     roles: ["admin", "finance", "sales"],
   },
   {
     key: "engineering",
     label: "Engineering",
-    tagline: "Bill of Material · Costing Response · Drawing",
+    tagline: "Costing · Drawing · BOM",
     description: "Kelola BOM per SO dengan sistem revisi otomatis, respon permintaan costing dari Sales, dan simpan drawing pendukung.",
     icon: Wrench,
     href: "/bom",
@@ -32,7 +32,7 @@ const DEPARTMENTS = [
     accentSolid: "bg-amber-600",
     accentText: "text-amber-600",
     accentBorder: "border-amber-300",
-    stats: "BOM · Revisi · Drawing",
+    stats: "Costing · Drawing · BOM",
     roles: ["admin", "finance", "engineering"],
   },
   {
