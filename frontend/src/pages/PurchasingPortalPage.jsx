@@ -1,6 +1,6 @@
 import React from "react";
 import DeptPortal from "../components/DeptPortal";
-import { Plus, ListDashes, Package, ChartBar, Truck } from "@phosphor-icons/react";
+import { Plus, ListDashes, Package, ChartBar, Truck, ChartLineUp } from "@phosphor-icons/react";
 
 const CARDS = [
   {
@@ -22,10 +22,16 @@ const CARDS = [
     accent: "from-amber-500 via-orange-500 to-red-500", accentText: "text-amber-400",
   },
   {
-    key: "dashboard", label: "Dashboard", stats: "KPI · Metrik",
+    key: "dashboard", label: "Dashboard", stats: "Statistik · Metrik",
     description: "Ringkasan pembelian per periode, top vendor, expose FX.",
     icon: ChartBar, href: "/dashboard",
     accent: "from-violet-500 via-purple-500 to-fuchsia-500", accentText: "text-violet-400",
+  },
+  {
+    key: "kpi", label: "KPI Purchasing", stats: "OTD · Compliance · Completion",
+    description: "Laporan KPI Purchasing: On-Time Delivery, Quality, PO Completion Rate — bisa print.",
+    icon: ChartLineUp, href: "/kpi",
+    accent: "from-rose-500 via-pink-500 to-fuchsia-500", accentText: "text-rose-400",
   },
 ];
 

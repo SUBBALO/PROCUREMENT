@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import {
   Storefront, Wrench, ArrowLeft, Plus, PaperPlaneTilt, Trash, Paperclip, DownloadSimple,
   FileText, ClockCounterClockwise, ChatCircleDots, Check, X, MagnifyingGlass,
-  CircleNotch, Warning, ArrowClockwise, PencilSimple, Receipt,
+  CircleNotch, Warning, ArrowClockwise, PencilSimple, Receipt, MicrosoftExcelLogo,
 } from "@phosphor-icons/react";
 
 const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-rose-600 text-sm";
@@ -46,6 +46,8 @@ export default function SalesPage() {
   const [editingInquiry, setEditingInquiry] = useState(null);  // draft object to edit
   const [openInquiry, setOpenInquiry] = useState(null);
   const [pending, setPending] = useState(0);
+  const [stats, setStats] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   const backLink = isEngOnly ? "/engineering" : "/";
   const backLabel = isEngOnly ? "Kembali ke Engineering Portal" : "Kembali ke Portal";
@@ -69,6 +71,30 @@ export default function SalesPage() {
   }, [query]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadStats = useCallback(async () => {
+    try { const { data } = await api.get("/sales/stats"); setStats(data); } catch {}
+  }, []);
+  useEffect(() => { loadStats(); }, [loadStats, items.length]);
+
+  const doExport = async () => {
+    setExporting(true);
+    try {
+      const res = await api.get("/inquiries/export/excel", {
+        params: query.trim() ? { q: query.trim() } : {},
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Inquiries_MKS_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Excel Inquiries ter-download");
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal export");
+    } finally { setExporting(false); }
+  };
 
   useEffect(() => {
     const tick = async () => {
@@ -94,11 +120,35 @@ export default function SalesPage() {
           <p className="text-xs uppercase tracking-[0.1em] text-slate-500">{headerSubtitle}</p>
         </div>
         {isSales && (
-          <Button data-testid="new-inquiry-btn" onClick={() => setShowCreate(true)} className="rounded-none bg-rose-600 hover:bg-rose-700 text-white text-xs uppercase tracking-[0.1em]">
-            <Plus size={14} weight="bold" className="mr-1.5" /> Buat Inquiry Costing
+          <div className="flex items-center gap-2">
+            <Button data-testid="inq-export-excel" onClick={doExport} disabled={exporting} variant="outline" className="rounded-none h-9 text-xs uppercase tracking-[0.1em]">
+              <MicrosoftExcelLogo size={14} weight="bold" className="mr-1.5 text-emerald-600" /> {exporting ? "Menyiapkan…" : "Export Excel"}
+            </Button>
+            <Button data-testid="new-inquiry-btn" onClick={() => setShowCreate(true)} className="rounded-none bg-rose-600 hover:bg-rose-700 text-white text-xs uppercase tracking-[0.1em]">
+              <Plus size={14} weight="bold" className="mr-1.5" /> Buat Inquiry Costing
+            </Button>
+          </div>
+        )}
+        {!isSales && isEngineering && (
+          <Button data-testid="inq-export-excel" onClick={doExport} disabled={exporting} variant="outline" className="rounded-none h-9 text-xs uppercase tracking-[0.1em]">
+            <MicrosoftExcelLogo size={14} weight="bold" className="mr-1.5 text-emerald-600" /> {exporting ? "Menyiapkan…" : "Export Excel"}
           </Button>
         )}
       </div>
+
+      {/* Stats Dashboard */}
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2" data-testid="sales-stats-grid">
+          <StatCard label="Total Inquiry" value={stats.inquiries?.total} accent="rose" testid="stat-inq-total" />
+          <StatCard label="Draft" value={stats.inquiries?.by_status?.draft} accent="slate" testid="stat-inq-draft" />
+          <StatCard label="Terkirim" value={stats.inquiries?.by_status?.submitted} accent="amber" testid="stat-inq-submitted" />
+          <StatCard label="Dikerjakan" value={stats.inquiries?.by_status?.in_progress} accent="sky" testid="stat-inq-in-progress" />
+          <StatCard label="Menunggu Review" value={stats.inquiries?.by_status?.awaiting_review} accent="violet" testid="stat-inq-awaiting" />
+          <StatCard label="Accepted" value={stats.inquiries?.by_status?.accepted} accent="emerald" testid="stat-inq-accepted" />
+          <StatCard label="Minta Revisi" value={stats.inquiries?.by_status?.revision_requested} accent="red" testid="stat-inq-revision" />
+          <StatCard label="Closed" value={stats.inquiries?.by_status?.closed} accent="slate" testid="stat-inq-closed" />
+        </div>
+      )}
 
       {/* Notif */}
       {pending > 0 && (
@@ -616,6 +666,26 @@ function Meta({ label, value, highlight = false }) {
     <div>
       <div className="text-[10px] uppercase tracking-[0.1em] font-semibold text-slate-400 mb-0.5">{label}</div>
       <div className={`text-sm ${highlight ? "font-bold text-slate-900" : "text-slate-800"}`}>{value || "-"}</div>
+    </div>
+  );
+}
+
+const STAT_ACCENT = {
+  slate:   "border-slate-200 bg-white text-slate-700",
+  rose:    "border-rose-200 bg-rose-50 text-rose-800",
+  amber:   "border-amber-200 bg-amber-50 text-amber-800",
+  sky:     "border-sky-200 bg-sky-50 text-sky-800",
+  violet:  "border-violet-200 bg-violet-50 text-violet-800",
+  emerald: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  red:     "border-red-200 bg-red-50 text-red-800",
+};
+
+function StatCard({ label, value, accent = "slate", testid }) {
+  const cls = STAT_ACCENT[accent] || STAT_ACCENT.slate;
+  return (
+    <div className={`border ${cls} p-2.5`} data-testid={testid}>
+      <div className="text-[10px] uppercase tracking-[0.1em] font-bold opacity-70 leading-tight">{label}</div>
+      <div className="text-2xl font-bold tabular-nums leading-none mt-1" style={{ fontFamily: "Chivo, sans-serif" }}>{value ?? 0}</div>
     </div>
   );
 }

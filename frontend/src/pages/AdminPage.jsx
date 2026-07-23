@@ -13,6 +13,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import {
   UsersThree, Plus, PencilSimple, Trash, Key, ShieldStar, Clock, FunnelSimple, CheckCircle, XCircle, ChatCircleDots,
+  Database, DownloadSimple, UploadSimple, Warning,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
@@ -104,11 +105,17 @@ export default function AdminPage() {
           <TabsTrigger data-testid="tab-logs" value="logs" className="rounded-none data-[state=active]:bg-slate-900 data-[state=active]:text-white text-xs uppercase tracking-[0.1em] font-semibold h-9 px-4">
             <Clock size={14} weight="bold" className="mr-1.5" /> Log Aktivitas
           </TabsTrigger>
+          {isSuperAdmin && (
+            <TabsTrigger data-testid="tab-backup" value="backup" className="rounded-none data-[state=active]:bg-slate-900 data-[state=active]:text-white text-xs uppercase tracking-[0.1em] font-semibold h-9 px-4">
+              <Database size={14} weight="bold" className="mr-1.5" /> Backup & Reset
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="users" className="mt-4">{isSuperAdmin && <UsersTab me={me} />}</TabsContent>
         {canApprove && <TabsContent value="approvals" className="mt-4"><ApprovalsTab onReviewed={refreshPending} /></TabsContent>}
         <TabsContent value="logs" className="mt-4"><LogsTab /></TabsContent>
+        {isSuperAdmin && <TabsContent value="backup" className="mt-4"><BackupTab /></TabsContent>}
       </Tabs>
     </div>
   );
@@ -742,4 +749,216 @@ function LogDetail({ action, details, entity_id }) {
     default:
       return <code className="text-[10px] text-slate-500">{JSON.stringify(details)}</code>;
   }
+}
+
+
+
+/* ================== Backup & Reset Tab (Super Admin only) ================== */
+function BackupTab() {
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+
+  const [importFile, setImportFile] = useState(null);
+  const [importMode, setImportMode] = useState("merge");
+  const [importPhrase, setImportPhrase] = useState("");
+  const [importing, setImporting] = useState(false);
+
+  const [wipePhrase, setWipePhrase] = useState("");
+  const [keepUsers, setKeepUsers] = useState(true);
+  const [wipeConfirmOpen, setWipeConfirmOpen] = useState(false);
+  const [wiping, setWiping] = useState(false);
+
+  const loadSummary = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get("/admin/backup/summary");
+      setSummary(data);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal memuat ringkasan");
+    } finally { setLoading(false); }
+  }, []);
+  useEffect(() => { loadSummary(); }, [loadSummary]);
+
+  const doExport = async () => {
+    setExporting(true);
+    try {
+      const res = await api.get("/admin/backup/export", { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      a.download = `mks_backup_${stamp}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Backup berhasil di-download");
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal export");
+    } finally { setExporting(false); }
+  };
+
+  const doImport = async () => {
+    if (!importFile) return toast.error("Pilih file backup JSON terlebih dulu");
+    if (importPhrase !== "RESTORE-CONFIRM") return toast.error("Ketik 'RESTORE-CONFIRM' persis untuk melanjutkan");
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", importFile);
+      fd.append("confirm_phrase", importPhrase);
+      fd.append("mode", importMode);
+      const { data } = await api.post("/admin/backup/import", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success(`Restore selesai — ${Object.values(data.restored || {}).reduce((a, b) => a + b, 0)} dokumen`);
+      setImportFile(null); setImportPhrase("");
+      loadSummary();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal restore");
+    } finally { setImporting(false); }
+  };
+
+  const doWipe = async () => {
+    if (wipePhrase !== "WIPE-ALL-DATA") return toast.error("Ketik 'WIPE-ALL-DATA' persis untuk melanjutkan");
+    setWiping(true);
+    try {
+      const { data } = await api.post("/admin/backup/wipe", { confirm_phrase: wipePhrase, keep_users: keepUsers });
+      toast.success(`Database di-reset — ${data.total_deleted} dokumen dihapus`);
+      setWipePhrase(""); setWipeConfirmOpen(false);
+      loadSummary();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal reset");
+    } finally { setWiping(false); }
+  };
+
+  return (
+    <div className="space-y-5" data-testid="backup-tab">
+      {/* Summary */}
+      <Card className="rounded-none border-slate-200 bg-white p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500 mb-0.5">Ringkasan Database</div>
+            <div className="text-[11px] text-slate-400">Total dokumen per collection saat ini</div>
+          </div>
+          <Button variant="outline" onClick={loadSummary} disabled={loading} className="rounded-none text-xs h-8">Refresh</Button>
+        </div>
+        {loading || !summary ? (
+          <div className="text-sm text-slate-400 py-6 text-center">Memuat…</div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {Object.entries(summary.collections || {}).map(([name, n]) => (
+                <div key={name} className="border border-slate-200 p-2" data-testid={`backup-count-${name}`}>
+                  <div className="text-[10px] uppercase tracking-[0.1em] text-slate-500 font-semibold">{name}</div>
+                  <div className="text-lg font-bold tabular-nums text-slate-900">{n.toLocaleString("id-ID")}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 text-xs text-slate-500">Total: <b className="tabular-nums">{summary.total_documents?.toLocaleString("id-ID")}</b> dokumen</div>
+          </>
+        )}
+      </Card>
+
+      {/* Export */}
+      <Card className="rounded-none border-emerald-200 bg-emerald-50/40 p-4">
+        <div className="flex items-start gap-3">
+          <div className="p-2 border border-emerald-300 bg-white text-emerald-700 rounded-none"><DownloadSimple size={20} weight="duotone" /></div>
+          <div className="flex-1">
+            <div className="text-sm font-bold text-slate-900 mb-0.5">Export Backup (Download JSON)</div>
+            <div className="text-xs text-slate-600 mb-3">Download seluruh data database sebagai file JSON. Simpan file ini di tempat aman sebelum melakukan Reset / Import.</div>
+            <Button data-testid="backup-export-btn" onClick={doExport} disabled={exporting} className="rounded-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs uppercase tracking-[0.1em]">
+              <DownloadSimple size={13} weight="bold" className="mr-1" /> {exporting ? "Menyiapkan…" : "Download Backup"}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Import */}
+      <Card className="rounded-none border-sky-200 bg-sky-50/40 p-4">
+        <div className="flex items-start gap-3">
+          <div className="p-2 border border-sky-300 bg-white text-sky-700 rounded-none"><UploadSimple size={20} weight="duotone" /></div>
+          <div className="flex-1 space-y-2">
+            <div className="text-sm font-bold text-slate-900">Import / Restore Backup</div>
+            <div className="text-xs text-slate-600">
+              Restore dari file backup JSON. <b>Mode "merge"</b>: upsert per ID (aman, tidak menghapus data baru). <b>Mode "replace"</b>: hapus dulu semua data lalu insert dari backup (destructive).
+            </div>
+            <div className="grid md:grid-cols-3 gap-2">
+              <div>
+                <Label className="text-[11px] font-semibold text-slate-600 mb-1 block">File Backup (.json)</Label>
+                <input data-testid="backup-import-file" type="file" accept="application/json,.json" onChange={(e) => setImportFile(e.target.files?.[0] || null)} className="text-xs file:mr-3 file:py-1.5 file:px-3 file:border-0 file:bg-slate-900 file:text-white file:text-[10px] file:uppercase file:tracking-[0.1em] file:font-semibold file:cursor-pointer" />
+                {importFile && <div className="mt-1 text-[10px] text-slate-500">{importFile.name} · {(importFile.size / 1024).toFixed(1)} KB</div>}
+              </div>
+              <div>
+                <Label className="text-[11px] font-semibold text-slate-600 mb-1 block">Mode</Label>
+                <Select value={importMode} onValueChange={setImportMode}>
+                  <SelectTrigger className={inputCls} data-testid="backup-import-mode"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="merge">merge (upsert per ID — aman)</SelectItem>
+                    <SelectItem value="replace">replace (hapus + insert — destructive)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-[11px] font-semibold text-slate-600 mb-1 block">Ketik <span className="font-mono text-red-600">RESTORE-CONFIRM</span></Label>
+                <Input data-testid="backup-import-phrase" value={importPhrase} onChange={(e) => setImportPhrase(e.target.value)} className={inputCls} placeholder="RESTORE-CONFIRM" />
+              </div>
+            </div>
+            <Button data-testid="backup-import-btn" onClick={doImport} disabled={importing || !importFile || importPhrase !== "RESTORE-CONFIRM"} className="rounded-none bg-sky-600 hover:bg-sky-700 text-white text-xs uppercase tracking-[0.1em]">
+              <UploadSimple size={13} weight="bold" className="mr-1" /> {importing ? "Restoring…" : "Restore Sekarang"}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Wipe / Reset */}
+      <Card className="rounded-none border-red-300 bg-red-50 p-4">
+        <div className="flex items-start gap-3">
+          <div className="p-2 border border-red-400 bg-white text-red-700 rounded-none"><Warning size={20} weight="fill" /></div>
+          <div className="flex-1 space-y-2">
+            <div className="text-sm font-bold text-red-900">DANGER ZONE — Reset Database Fresh</div>
+            <div className="text-xs text-red-800">
+              Hapus <b>seluruh data bisnis</b>: Transaksi PO, Sales Order, Store Receipt/Issue/Request, Delivery, BOM, Inquiry, Quotation, Customer, Counters &amp; Activity Logs.
+              Data <b>User</b> tetap dipertahankan agar Anda dan tim bisa login. <b>Aksi ini tidak bisa di-undo.</b> Selalu Export Backup dulu.
+            </div>
+            <div className="grid md:grid-cols-[1fr_auto] gap-2 items-end">
+              <div>
+                <Label className="text-[11px] font-semibold text-red-900 mb-1 block">Ketik <span className="font-mono">WIPE-ALL-DATA</span> untuk konfirmasi</Label>
+                <Input data-testid="backup-wipe-phrase" value={wipePhrase} onChange={(e) => setWipePhrase(e.target.value)} className="h-9 rounded-none border-red-300 focus:ring-2 focus:ring-red-600 text-sm" placeholder="WIPE-ALL-DATA" />
+              </div>
+              <label className="flex items-center gap-2 text-xs text-red-900 pb-1 cursor-pointer">
+                <input data-testid="backup-wipe-keep-users" type="checkbox" checked={keepUsers} onChange={(e) => setKeepUsers(e.target.checked)} className="w-4 h-4" />
+                Pertahankan Users
+              </label>
+            </div>
+            <Button
+              data-testid="backup-wipe-btn"
+              onClick={() => setWipeConfirmOpen(true)}
+              disabled={wipePhrase !== "WIPE-ALL-DATA"}
+              className="rounded-none bg-red-600 hover:bg-red-700 text-white text-xs uppercase tracking-[0.1em]"
+            >
+              <Trash size={13} weight="bold" className="mr-1" /> Reset Database Sekarang
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Final confirmation dialog */}
+      <Dialog open={wipeConfirmOpen} onOpenChange={setWipeConfirmOpen}>
+        <DialogContent className="rounded-none max-w-md border-red-400">
+          <DialogHeader>
+            <DialogTitle className="text-red-700 flex items-center gap-2"><Warning size={20} weight="fill" /> Konfirmasi Reset Database</DialogTitle>
+            <DialogDescription>
+              Anda akan menghapus <b>seluruh data bisnis</b> ({summary?.total_documents?.toLocaleString("id-ID")} dokumen).
+              {keepUsers ? " Data User (login) akan dipertahankan." : " Termasuk semua user kecuali akun Anda sendiri."}
+              <br /><br />
+              Aksi ini <b className="text-red-700">TIDAK BISA di-undo</b>. Pastikan sudah Export Backup.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWipeConfirmOpen(false)} disabled={wiping} className="rounded-none">Batal</Button>
+            <Button data-testid="backup-wipe-confirm-btn" onClick={doWipe} disabled={wiping} className="rounded-none bg-red-600 hover:bg-red-700 text-white">
+              {wiping ? "Menghapus…" : "Ya, Hapus Sekarang"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }

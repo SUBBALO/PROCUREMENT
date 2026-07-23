@@ -8,7 +8,7 @@ import { Label } from "../components/ui/label";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { toast } from "sonner";
-import { FileText, ArrowLeft, Plus, Trash, CircleNotch, MagnifyingGlass } from "@phosphor-icons/react";
+import { FileText, ArrowLeft, Plus, Trash, CircleNotch, MagnifyingGlass, MicrosoftExcelLogo } from "@phosphor-icons/react";
 
 const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-amber-600 text-sm";
 
@@ -46,6 +46,32 @@ export default function QuotationPage() {
     } finally { setLoading(false); }
   }, [query]);
   useEffect(() => { load(); }, [load]);
+
+  const [stats, setStats] = useState(null);
+  const loadStats = useCallback(async () => {
+    try { const { data } = await api.get("/sales/stats"); setStats(data); } catch {}
+  }, []);
+  useEffect(() => { loadStats(); }, [loadStats, items.length]);
+
+  const [exporting, setExporting] = useState(false);
+  const doExport = async () => {
+    setExporting(true);
+    try {
+      const res = await api.get("/quotations/export/excel", {
+        params: query.trim() ? { q: query.trim() } : {},
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Quotations_MKS_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Excel Quotations ter-download");
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal export");
+    } finally { setExporting(false); }
+  };
 
   // Auto-open Create dialog with inquiry prefill
   useEffect(() => {
@@ -108,11 +134,26 @@ export default function QuotationPage() {
           <p className="text-xs uppercase tracking-[0.1em] text-slate-500">Format: 001/MKS/Q/VII/2026 · Reset counter tiap bulan · Kop Surat A4 (PDF menyusul)</p>
         </div>
         {isSales && (
-          <Button data-testid="new-quotation-btn" onClick={() => setShowCreate(true)} className="rounded-none bg-amber-600 hover:bg-amber-700 text-white text-xs uppercase tracking-[0.1em]">
-            <Plus size={14} weight="bold" className="mr-1.5" /> Buat Quotation
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button data-testid="quo-export-excel" onClick={doExport} disabled={exporting} variant="outline" className="rounded-none h-9 text-xs uppercase tracking-[0.1em]">
+              <MicrosoftExcelLogo size={14} weight="bold" className="mr-1.5 text-emerald-600" /> {exporting ? "Menyiapkan…" : "Export Excel"}
+            </Button>
+            <Button data-testid="new-quotation-btn" onClick={() => setShowCreate(true)} className="rounded-none bg-amber-600 hover:bg-amber-700 text-white text-xs uppercase tracking-[0.1em]">
+              <Plus size={14} weight="bold" className="mr-1.5" /> Buat Quotation
+            </Button>
+          </div>
         )}
       </div>
+
+      {/* Quotation stats */}
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" data-testid="quo-stats-grid">
+          <QuoStatCard label="Total Quotation" value={stats.quotations?.total} accent="slate" testid="quo-stat-total" />
+          <QuoStatCard label="On Bidding" value={stats.quotations?.by_status?.on_bidding} accent="amber" testid="quo-stat-on-bidding" />
+          <QuoStatCard label="Confirm Order" value={stats.quotations?.by_status?.confirm_order} accent="emerald" testid="quo-stat-confirm" />
+          <QuoStatCard label="Cancel" value={stats.quotations?.by_status?.cancel} accent="red" testid="quo-stat-cancel" />
+        </div>
+      )}
 
       <div className="flex items-end gap-3">
         <div className="flex-1 max-w-lg">
@@ -400,3 +441,22 @@ function QuotationDetailDialog({ id, onClose, onChanged }) {
     </Dialog>
   );
 }
+
+
+const QUO_ACCENT = {
+  slate:   "border-slate-200 bg-white text-slate-700",
+  amber:   "border-amber-200 bg-amber-50 text-amber-800",
+  emerald: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  red:     "border-red-200 bg-red-50 text-red-800",
+};
+
+function QuoStatCard({ label, value, accent = "slate", testid }) {
+  const cls = QUO_ACCENT[accent] || QUO_ACCENT.slate;
+  return (
+    <div className={`border ${cls} p-3`} data-testid={testid}>
+      <div className="text-[10px] uppercase tracking-[0.1em] font-bold opacity-70">{label}</div>
+      <div className="text-3xl font-bold tabular-nums leading-none mt-1.5" style={{ fontFamily: "Chivo, sans-serif" }}>{value ?? 0}</div>
+    </div>
+  );
+}
+

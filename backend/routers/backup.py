@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from db import db
-from deps import get_current_user, log_action, require_admin
+from deps import get_current_user, log_action, require_admin, require_super_admin
 
 
 router = APIRouter(prefix="/admin/backup", tags=["backup"])
@@ -24,6 +24,14 @@ BACKUP_COLLECTIONS = [
     "users", "transactions", "sales_orders", "store_receipts", "store_issuances",
     "store_requests", "deliveries", "boms", "inquiries", "quotations", "counters",
     "activity_logs",
+]
+
+# Collections wiped during "reset database" — excludes users (kept so admins can still login)
+WIPE_COLLECTIONS = [
+    "transactions", "sales_orders", "store_receipts", "store_issuances",
+    "store_requests", "deliveries", "boms", "inquiries", "quotations",
+    "customers",
+    "counters", "activity_logs",
 ]
 
 
@@ -135,3 +143,41 @@ async def import_backup(
 
     await log_action(current, "import_backup", "backup", "-", {"mode": mode, "stats": stats})
     return {"success": True, "mode": mode, "restored": stats, "backup_source_id": payload.get("backup_id")}
+
+
+
+# =============================================================================
+# WIPE / RESET
+# =============================================================================
+class WipeRequest(BaseModel):
+    confirm_phrase: str          # must equal "WIPE-ALL-DATA"
+    keep_users: bool = True      # default: users tetap ada (agar admin bisa login)
+
+
+@router.post("/wipe")
+async def wipe_database(payload: WipeRequest, current: dict = Depends(require_super_admin)):
+    """DANGER — Hapus semua data bisnis (transaksi, SO, Store, BOM, Inquiry, Quotation,
+    Customer, counters, activity_logs). User tetap dipertahankan agar login masih bisa.
+
+    Hanya Super Admin (susanto) yang bisa. Harus konfirmasi phrase 'WIPE-ALL-DATA'.
+    """
+    if payload.confirm_phrase != "WIPE-ALL-DATA":
+        raise HTTPException(
+            status_code=400,
+            detail="Konfirmasi tidak valid. Ketik 'WIPE-ALL-DATA' (case-sensitive) untuk melanjutkan.",
+        )
+
+    stats: Dict[str, int] = {}
+    for coll in WIPE_COLLECTIONS:
+        res = await db[coll].delete_many({})
+        stats[coll] = res.deleted_count
+
+    # Optional: bersihkan users selain super admin
+    if not payload.keep_users:
+        me_username = (current.get("username") or "").lower().strip()
+        res = await db.users.delete_many({"username": {"$ne": me_username}})
+        stats["users"] = res.deleted_count
+
+    await log_action(current, "wipe_database", "backup", "-", {"stats": stats, "keep_users": payload.keep_users})
+    total = sum(stats.values())
+    return {"success": True, "total_deleted": total, "collections": stats}

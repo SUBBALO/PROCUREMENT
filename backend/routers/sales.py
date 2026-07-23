@@ -15,6 +15,8 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from db import db
 from deps import get_current_user, log_action
@@ -638,3 +640,206 @@ async def update_quotation_status(qid: str, payload: QuotationStatusUpdate, curr
     await log_action(current, "quotation_status", "quotation", qid, {"status": payload.status})
     updated = await db.quotations.find_one({"id": qid})
     return _clean(updated)
+
+
+# =============================================================================
+# STATS / DASHBOARD
+# =============================================================================
+INQUIRY_STATUSES = ["draft", "submitted", "in_progress", "awaiting_review", "accepted", "revision_requested", "closed"]
+QUOTATION_STATUSES = ["on_bidding", "confirm_order", "cancel"]
+
+
+@router.get("/sales/stats")
+async def sales_stats(current: dict = Depends(get_current_user)):
+    """Aggregated dashboard for Sales & Engineering: Inquiry & Quotation counts by status."""
+    role = current.get("role")
+    # Sales sees only own inquiries; Engineering sees all non-draft; admin sees everything
+    inq_filter: dict = {}
+    quo_filter: dict = {}
+    if role == "sales":
+        inq_filter["created_by_id"] = current.get("id")
+        quo_filter["created_by_id"] = current.get("id")
+    if role == "engineering":
+        inq_filter["status"] = {"$nin": ["draft"]}
+
+    # Inquiries breakdown
+    inq_pipeline = [{"$match": inq_filter}, {"$group": {"_id": "$status", "count": {"$sum": 1}}}]
+    inq_agg = await db.inquiries.aggregate(inq_pipeline).to_list(length=None)
+    inq_counts = {s: 0 for s in INQUIRY_STATUSES}
+    for r in inq_agg:
+        s = r["_id"] or "draft"
+        inq_counts[s] = r["count"]
+    inq_total = sum(inq_counts.values())
+
+    # Quotations breakdown
+    quo_pipeline = [{"$match": quo_filter}, {"$group": {"_id": "$status", "count": {"$sum": 1}}}]
+    quo_agg = await db.quotations.aggregate(quo_pipeline).to_list(length=None)
+    quo_counts = {s: 0 for s in QUOTATION_STATUSES}
+    for r in quo_agg:
+        s = r["_id"] or "on_bidding"
+        quo_counts[s] = r["count"]
+    quo_total = sum(quo_counts.values())
+
+    # Quotation value totals by status (per currency, biar tidak salah mix)
+    val_pipeline = [{"$match": quo_filter}, {"$group": {"_id": {"status": "$status", "currency": "$currency"}, "sum": {"$sum": "$total_amount"}}}]
+    val_agg = await db.quotations.aggregate(val_pipeline).to_list(length=None)
+    quo_values: dict = {}
+    for r in val_agg:
+        st = r["_id"].get("status") or "on_bidding"
+        cur = r["_id"].get("currency") or "IDR"
+        quo_values.setdefault(st, {})[cur] = float(r.get("sum") or 0)
+
+    return {
+        "inquiries": {"total": inq_total, "by_status": inq_counts},
+        "quotations": {"total": quo_total, "by_status": quo_counts, "values_by_status": quo_values},
+        "role": role,
+    }
+
+
+# =============================================================================
+# EXCEL EXPORTS
+# =============================================================================
+def _xl_header_style(cell):
+    cell.font = Font(bold=True, color="FFFFFF", size=10)
+    cell.fill = PatternFill("solid", fgColor="1E293B")
+    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin = Side(style="thin", color="94A3B8")
+    cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+
+def _xl_data_border(cell):
+    thin = Side(style="thin", color="E2E8F0")
+    cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+
+@router.get("/inquiries/export/excel")
+async def export_inquiries_excel(
+    status: Optional[str] = None,
+    q: Optional[str] = None,
+    current: dict = Depends(get_current_user),
+):
+    """Export Inquiry list ke Excel (respect same visibility rules as GET /inquiries)."""
+    filt: dict = {}
+    role = current.get("role")
+    if role == "sales":
+        filt["created_by_id"] = current.get("id")
+    if role == "engineering":
+        filt["status"] = {"$nin": ["draft"]}
+    if status and status != "all":
+        filt["status"] = status
+    if q and q.strip():
+        rx = {"$regex": re.escape(q.strip()), "$options": "i"}
+        filt["$or"] = [{"inquiry_no": rx}, {"title": rx}, {"customer_name": rx}]
+    docs = await db.inquiries.find(filt).sort("created_at", -1).to_list(length=None)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Inquiries"
+    headers = ["No", "No Inquiry", "Judul", "Customer", "Deadline", "Status", "PIC Engineer",
+               "Jumlah Item", "Dibuat Oleh", "Tanggal Buat", "Diterima Oleh", "Tanggal Selesai"]
+    for i, h in enumerate(headers, 1):
+        c = ws.cell(row=1, column=i, value=h)
+        _xl_header_style(c)
+    ws.row_dimensions[1].height = 26
+
+    for i, d in enumerate(docs, start=2):
+        row = [
+            i - 1,
+            d.get("inquiry_no"),
+            d.get("title"),
+            d.get("customer_name"),
+            d.get("customer_deadline") or "",
+            (d.get("status") or "").upper(),
+            d.get("pic_engineer_name") or "",
+            len(d.get("items") or []),
+            d.get("created_by_name") or "",
+            (d.get("created_at") or "")[:10],
+            d.get("accepted_by_name") or "",
+            (d.get("completed_at") or "")[:10] if d.get("completed_at") else "",
+        ]
+        for j, v in enumerate(row, 1):
+            c = ws.cell(row=i, column=j, value=v)
+            _xl_data_border(c)
+            c.font = Font(size=10)
+            c.alignment = Alignment(vertical="center", wrap_text=True)
+
+    widths = [5, 22, 40, 28, 12, 14, 20, 8, 18, 12, 18, 12]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"Inquiries_MKS_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    await log_action(current, "export_inquiries_excel", "inquiries", "-", {"rows": len(docs)})
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@router.get("/quotations/export/excel")
+async def export_quotations_excel(q: Optional[str] = None, current: dict = Depends(get_current_user)):
+    filt: dict = {}
+    if current.get("role") == "sales":
+        filt["created_by_id"] = current.get("id")
+    if q and q.strip():
+        rx = {"$regex": re.escape(q.strip()), "$options": "i"}
+        filt["$or"] = [{"quotation_no": rx}, {"customer_name": rx}, {"attention": rx}, {"items.description": rx}]
+    docs = await db.quotations.find(filt).sort("created_at", -1).to_list(length=None)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Quotations"
+    headers = ["No", "No Quotation", "Tanggal", "Customer", "Attention", "CC",
+               "Jumlah Item", "Currency", "Total Amount", "Status", "Payment Term", "Delivery", "Validity", "Sales"]
+    for i, h in enumerate(headers, 1):
+        c = ws.cell(row=1, column=i, value=h)
+        _xl_header_style(c)
+    ws.row_dimensions[1].height = 26
+
+    for i, d in enumerate(docs, start=2):
+        row = [
+            i - 1,
+            d.get("quotation_no"),
+            (d.get("created_at") or "")[:10],
+            d.get("customer_name"),
+            d.get("attention") or "",
+            d.get("cc") or "",
+            len(d.get("items") or []),
+            d.get("currency") or "IDR",
+            float(d.get("total_amount") or 0),
+            (d.get("status") or "").upper(),
+            d.get("payment_term") or "",
+            d.get("delivery_time") or "",
+            d.get("validity") or "",
+            d.get("created_by_name") or "",
+        ]
+        for j, v in enumerate(row, 1):
+            c = ws.cell(row=i, column=j, value=v)
+            _xl_data_border(c)
+            c.font = Font(size=10)
+            if j == 9:  # Total Amount
+                c.number_format = '#,##0.00'
+                c.alignment = Alignment(horizontal="right", vertical="center")
+            else:
+                c.alignment = Alignment(vertical="center", wrap_text=True)
+
+    widths = [5, 24, 12, 28, 20, 20, 8, 10, 18, 14, 24, 20, 22, 16]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"Quotations_MKS_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    await log_action(current, "export_quotations_excel", "quotations", "-", {"rows": len(docs)})
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
