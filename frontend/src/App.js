@@ -53,6 +53,7 @@ import MyAssignmentsPage from "./pages/MyAssignmentsPage";
 import EngineeringDrfWorkPage from "./pages/EngineeringDrfWorkPage";
 import MyDrfWorkListPage from "./pages/MyDrfWorkListPage";
 import ECNPage from "./pages/ECNPage";
+import WorkOrderEngineeringPage from "./pages/WorkOrderEngineeringPage";
 import SOStampPage from "./pages/SOStampPage";
 import DocumentControlPortalPage from "./pages/DocumentControlPortalPage";
 import "./App.css";
@@ -203,6 +204,7 @@ function AppRoutes() {
       <Route path="/engineering/my-drf" element={<ProtectedRoute><MyDrfWorkListPage /></ProtectedRoute>} />
       <Route path="/engineering/drf/:drfId" element={<ProtectedRoute><EngineeringDrfWorkPage /></ProtectedRoute>} />
       <Route path="/engineering/ecn" element={<ProtectedRoute><ECNPage /></ProtectedRoute>} />
+      <Route path="/engineering/work-orders" element={<ProtectedRoute><WorkOrderEngineeringPage /></ProtectedRoute>} />
       <Route path="/engineering/work-order/:drawingId" element={<ProtectedRoute><EngineeringWorkOrderPage /></ProtectedRoute>} />
       <Route path="/my/signature-history" element={<ProtectedRoute><MySignatureHistoryPage /></ProtectedRoute>} />
       <Route path="/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />

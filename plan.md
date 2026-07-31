@@ -1,97 +1,115 @@
 # Engineering Workflow Redesign Plan (MKS ERP)
 
 ## 1) Objectives
-- Implement **Phase 1 (New Order)**: 1 DRF can contain **multiple drawings** but **exactly 1 shared BOM**; only assigned engineering staff can edit.
-- Add **multi-document upload** for engineering work (MKS drawing, customer drawing, nesting + other attachments) with **preview / replace / delete** before submit.
-- Ensure **digital signature (TTD) per NEW MKS drawing** before submit to Eng Leader.
-- Keep existing modules working (Sales DRF, approvals, DC stamping, Store/Purchasing, etc.), no env URL changes.
+- ✅ **Phase 1 (New Order) delivered**: 1 DRF dapat berisi **multiple drawings** tetapi **hanya 1 shared BOM**; hanya engineer yang ditunjuk yang bisa mengerjakan.
+- ✅ **Riski (Eng Leader) hanya Accept + Assign** engineer; tidak generate/upload. Jika Riski assign dirinya sendiri → langsung masuk Work Group untuk mengerjakan.
+- ✅ Engineer dapat **generate nomor DWG lebih dari 1** dalam 1 DRF dan semuanya **share 1 BOM**.
+- ✅ Tambah field **Customer DWG No (opsional)** untuk setiap DWG MKS baru, tampil di Master List dan ikut pencarian.
+- ✅ Tambah UX verifikasi penomoran: engineer dapat melihat **preview next-number** dan **recent DWG list** untuk memastikan nomor tidak loncat.
+- ✅ **Master List Drawing view-only** (tanpa edit/upload) sebagai katalog pencarian; pencarian via **SO** menampilkan DWG MKS + DWG customer terkait.
+- ✅ Implement modul **ECR & ECN**:
+  - **ECR** = perubahan berasal dari customer
+  - **ECN** = perubahan internal MKS oleh engineering
+  - Draft → submit → review approve/reject, nomor **ECR-YYMM-### / ECN-YYMM-###**.
+- ✅ Portal cleanup: kartu **BOM Preparation & Approval** dihapus; 3 kartu Engineering digabung menjadi **1 kartu role-aware**.
+- ✅ Tetap menjaga modul lain berjalan; tidak mengubah env URL.
+- ✅ (Tambahan sebelumnya) Document Control stamping multi-page sudah diperbaiki (DC/SO/TTD di semua halaman + picker scrollable).
 
 ---
 
 ## 2) Implementation Steps
 
 ### Phase 1 — Core Workflow POC (isolation, must pass before full UI)
-**Core = “DRF(New Order) → assign → generate N drawings → 1 shared BOM → multi-upload per drawing → TTD per new MKS drawing → submit to Eng Leader”.**
+**Core = “DRF(New Order) → Leader accept+assign → engineer generate N drawings → 1 shared BOM → upload per drawing → TTD per new MKS drawing → submit ke Eng Leader”.**
 
 POC Steps (backend-first, minimal):
 1. **Model additions (non-breaking):**
-   - Add `drf_id` and `work_group_id` (or `drawing_group_id`) to drawing records.
-   - Add `bom_id` (shared) on DRF or group doc.
-   - Add `assigned_engineer_id` on DRF (single assignee) to enforce edit rights.
+   - ✅ `from_drf_id` pada drawing untuk grouping.
+   - ✅ DRF: `assigned_engineer_id/name`, `assigned_by/at`, `shared_bom_id`, `linked_drawing_ids`.
+   - ✅ Drawing: `customer_drawing_no` (opsional).
 2. **New endpoints (POC scope):**
-   - `POST /drawing-requests/{id}/assign-engineer` (Eng Leader only): set assignee.
-   - `POST /drawing-requests/{id}/new-order/init` (assigned engineer): create N drawing stubs, reserve numbers.
-   - `GET /drawing-requests/{id}/work` (view): return DRF + drawings + BOM id + attachments status.
-3. **Uploads (POC scope, reuse existing):**
-   - For each drawing: keep `file_id` as **MKS drawing** (single latest), `customer_ref_file_id` as **customer drawing** (single latest), `additional_files[]` as **multi-attachments** (nesting + others).
-   - Add ability to **delete/replace**: implement delete endpoints for main MKS file and extras if missing.
-4. **TTD requirement (POC scope):**
-   - Before submit-to-leader, validate: each NEW drawing has MKS PDF uploaded and has `approvals` entry for stage `submit` (engineer TTD).
-5. **POC test script:**
-   - Seed DRF(new_order) → assign → init N=3 → upload MKS + nesting → sign each → submit → assert status transitions.
+   - ✅ `GET /drawing-requests/engineering-users` (Eng Leader/Admin): list engineer untuk dropdown.
+   - ✅ `POST /drawing-requests/{id}/accept-assign` (Eng Leader/Admin): accept + assign.
+   - ✅ `POST /drawing-requests/{id}/generate-drawings` (assignee): create N drawings + shared BOM.
+   - ✅ `GET /drawings?from_drf_id=...` filter.
+3. **Uploads (reuse existing):**
+   - ✅ Per-drawing: `file_id` = MKS drawing; `customer_ref_file_id` = customer drawing; `extras[]` = multi attachment (nesting, costing, dll) dengan preview/replace/delete via Work Order yang sudah ada.
+4. **TTD requirement (existing flow):**
+   - ✅ TTD per drawing dilakukan via Work Order (SignaturePlacementModal) sebelum submit ke Eng Leader.
+5. **POC tests:**
+   - ✅ Curl tests + UI tests + testing_agent (backend 94.4% success; UI 0 console errors untuk role leader & staff).
 
-POC Exit: all endpoints work with real files, permissions enforced, no regressions in existing drawing endpoints.
-
----
-
-### Phase 2 — V1 App Development (Phase 1 features in full UI)
-User stories (Phase 2):
-1. As Sales, I can create and submit a New Order DRF so Engineering can start work.
-2. As Eng Leader, I can accept a DRF and assign exactly one engineer without filling other fields.
-3. As assigned engineer, I can specify “jumlah drawing” and the system generates multiple drawing numbers under one DRF.
-4. As assigned engineer, I can upload multiple files (nesting + docs) and preview/replace/delete before submitting.
-5. As assigned engineer, I must digitally sign each NEW MKS drawing before I can submit to Eng Leader.
-
-Implementation:
-1. **Backend (complete Phase 1):**
-   - Finalize DRF fields: `assigned_engineer_id`, `assigned_engineer_name`, statuses: `accepted` → `in_progress` → `submitted_to_leader`.
-   - Enforce permissions: only assignee can mutate BOM/uploads; others view-only.
-   - Add missing endpoints for file management (replace/delete MKS PDF, delete extras) if not present.
-2. **Frontend (Engineering portal cleanup for Phase 1):**
-   - Create a single “**Drawing Work Inbox**” for assigned engineer: list DRF assigned to me.
-   - Add “**Work Detail**” page per DRF:
-     - Section A: Generate drawing count → show list of drawings with numbers.
-     - Section B: Shared BOM editor (existing BOM page embedded or linked).
-     - Section C: Per-drawing upload panel:
-       - MKS drawing upload (replace)
-       - Customer drawing upload (replace)
-       - Nesting/attachments multi-upload (add, preview, delete)
-     - Section D: TTD per drawing using existing signature placement modal (page selection already supported).
-     - Section E: Submit button with clear validation errors.
-3. **Incremental tests:**
-   - UI happy-path: assigned engineer completes DRF with 2 drawings.
-   - Permission test: other engineer can view but cannot edit.
-
-End of Phase 2: one full New Order flow works end-to-end.
+POC Exit: semua endpoints berfungsi, permission enforced, dan tidak ada regresi.
 
 ---
 
-### Phase 3 — Add more features (Repeat Order + revision loop + QC/Sales + UI simplification)
-User stories (Phase 3):
-1. As engineer, I can create Repeat Order by searching old drawing no/SO and auto-pull nesting + costing into new work.
-2. As engineer, if auto-pull fails, I can manually upload required docs with preview/replace/delete.
-3. As engineer, I can add a NEW drawing to repeat order (generate number) and only that new drawing requires TTD.
-4. As Eng Leader, I can send revision notes + multiple revised files back to engineer, and engineer can resubmit.
-5. As QC, I can preview (no download) MKS + customer drawings and digitally sign all MKS drawings.
+### Phase 2 — V1 App Development (Repeat Order + costing pull + attachment cloning)
+Fokus Phase 2 (belum dikerjakan):
+1. **Repeat Order workflow:**
+   - Search old drawing dengan 2 metode:
+     - by **Drawing No**
+     - by **SO** yang berhubungan
+   - Auto-pull ke DRF repeat:
+     - **Nesting PDF** dan attachment terkait
+     - **Costing price** dari modul **Material Costing** (per SO/drawing)
+   - Jika tidak ditemukan → fallback manual multi-upload (preview/replace/delete).
+2. **Repeat Order: add-new-drawing:**
+   - Dalam repeat order, boleh tambah drawing baru → generate nomor baru.
+   - Hanya drawing baru yang wajib TTD; drawing lama tidak perlu TTD.
+3. **UI integration:**
+   - Extend Work Group untuk mode repeat order:
+     - panel pencarian drawing/SO lama
+     - panel hasil auto-pull + mapping attachment
+     - tombol “Tambah drawing baru”
 
-Implementation outline:
-- Repeat Order: integrate with Material Costing module lookup and attachment cloning.
-- Revision loop: leader attachments + notes + status transitions.
-- QC view-only PDF (hide download) + watermark; QC signature stage.
-- Engineering portal cards/menu: consolidate to 3–4 key entrypoints (Inbox, Work Detail, My Assignments, Master/Archive).
+End of Phase 2: repeat order end-to-end berjalan (auto-pull + fallback) dengan shared BOM.
+
+---
+
+### Phase 3 — Revision loop + QC/Sales/Document Control wiring + UX simplification
+Fokus Phase 3 (belum dikerjakan):
+1. **Revision loop Riski ↔ engineer staff:**
+   - Eng Leader bisa upload multiple file revisi + catatan revisi ke eng staff.
+   - Engineer revisi, replace/hapus upload, lalu resubmit.
+2. **QC flow (view-only, no download):**
+   - QC bisa preview **MKS drawing** + **customer drawing**, tidak ada tombol download.
+   - QC TTD semua MKS drawing → submit.
+3. **Sales flow:**
+   - Sales TTD → popup isi data SO stamping untuk produksi (sudah ada) dan pastikan wiring halus.
+4. **Document Control (Salma):**
+   - Setelah 4 TTD lengkap (Eng staff, Eng leader, QC, Sales) drawing masuk Master List dan masuk queue DC.
+   - DC stamp dulu → baru SO stamp produksi.
+   - (Stamping multi-page sudah beres, tinggal wiring status/queue bila perlu.)
+5. **ECR/ECN enhancement (opsional):**
+   - Tambahkan attachments pada ECR/ECN.
+   - Link ECR/ECN ke drawing/BOM target dan alur “apply change”.
 
 ---
 
 ## 3) Next Actions
-1. Confirm naming/statuses for DRF workflow (accepted/in_progress/submitted_to_leader/etc.).
-2. Implement Phase 1 POC endpoints + DB fields (non-breaking).
-3. Write and run the Phase 1 POC script until pass.
-4. Build Phase 2 UI screens around the proven backend.
-5. Run end-to-end testing (Sales → Leader assign → Engineer work → submit).
+1. **Rapikan navigasi Engineering:**
+   - ✅ Sudah digabung jadi 1: **Work Order Engineering** (`/engineering/work-orders`), role-aware.
+2. **Finalize permission & UX rules:**
+   - ✅ Riski hanya assign; Work Group edit hanya assignee (Admin override).
+3. **Mulai Phase 2 (Repeat Order):**
+   - Implement lookup Material Costing + clone attachments.
+   - Add UI panel repeat order.
+4. **Mulai Phase 3:**
+   - Revision loop leader↔staff.
+   - QC view-only + sign.
+   - Pastikan chain 4 TTD → DC stamp → SO stamp berjalan mulus.
 
 ---
 
 ## 4) Success Criteria
-- Phase 1: One DRF(New Order) can generate N drawings, share one BOM, accept multi-upload with preview/replace/delete, enforce assignee-only edit, and require TTD per new MKS drawing before submit.
-- No regressions: existing drawing register, approvals, DC stamping, and other departments remain functional.
-- UX: Engineering entrypoints are simplified (single inbox + single work detail page covers most work).
+- ✅ Phase 1 complete:
+  - DRF(New Order) dapat generate N drawings.
+  - Semua drawings share 1 BOM.
+  - Assignee-only edit (leader assign-only).
+  - Customer DWG No tersimpan & searchable.
+  - Nomor drawing bisa dicek (preview next-number + recent list).
+  - Master List view-only.
+  - ECR/ECN tersedia.
+  - Engineering cards disederhanakan menjadi 1 entrypoint.
+- ✅ No regressions: modul existing tetap berjalan; stamping multi-page sudah fixed.
+- ⏳ Phase 2 + 3 complete (target berikutnya): repeat order auto-pull + revision loop + QC/Sales + DC queue/wiring end-to-end.

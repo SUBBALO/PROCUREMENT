@@ -1,6 +1,6 @@
 [
   {
-    "content": "Multi-page stamping fix (DC/SO/TTD all pages + scrollable picker) - DONE",
+    "content": "Multi-page stamping fix (DC/SO/TTD all pages + scrollable picker)",
     "status": "completed"
   },
   {
@@ -8,23 +8,23 @@
     "status": "completed"
   },
   {
-    "content": "Customer DWG No field on drawings + Master List column + search by SO",
+    "content": "Customer DWG No field + Master List column + search by SO",
     "status": "completed"
   },
   {
-    "content": "Generate panel: next-number preview + recent numbers list (verify sequence)",
+    "content": "Generate panel: next-number preview + recent numbers list",
     "status": "completed"
   },
   {
-    "content": "Master List Drawing = view-only (no edit/upload)",
+    "content": "Master List Drawing = view-only",
     "status": "completed"
   },
   {
-    "content": "ECR & ECN module (customer vs internal change) + portal card (removed BOM Prep card)",
+    "content": "ECR & ECN module (customer vs internal) + portal card",
     "status": "completed"
   },
   {
-    "content": "Comprehensive testing of all Engineering changes via testing_agent",
-    "status": "in_progress"
+    "content": "Consolidate 3 Eng cards into 1 role-aware 'Work Order Engineering' card - verified both roles",
+    "status": "completed"
   }
 ]
