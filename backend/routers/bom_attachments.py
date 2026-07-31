@@ -567,6 +567,41 @@ def _excel_to_html(xlsx_bytes: bytes, orig_name: str) -> str:
     return f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>{escape(orig_name)}</title>{css}</head><body>{body}{js}</body></html>"
 
 
+@router.get("/bom/{bom_id}/attachments/{attach_id}/page-meta")
+async def attachment_page_meta(bom_id: str, attach_id: str, current: dict = Depends(get_current_user)):
+    """Metadata halaman untuk viewer image-based (PDF saja)."""
+    from utils.pdf_render import pdf_page_meta
+    doc = await db.bom_attachments.find_one({"id": attach_id, "bom_id": bom_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Attachment tidak ditemukan")
+    if _ext(doc["filename"]) != ".pdf":
+        raise HTTPException(status_code=400, detail="Preview gambar hanya untuk PDF")
+    stream = await _stream_from_gridfs(doc["file_id"])
+    raw = await stream.read()
+    return pdf_page_meta(raw)
+
+
+@router.get("/bom/{bom_id}/attachments/{attach_id}/page-image")
+async def attachment_page_image(bom_id: str, attach_id: str, page: int = 0, scale: float = 2.0,
+                                current: dict = Depends(get_current_user)):
+    """Render satu halaman lampiran PDF menjadi PNG untuk viewer image-based."""
+    from utils.pdf_render import pdf_page_png
+    doc = await db.bom_attachments.find_one({"id": attach_id, "bom_id": bom_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Attachment tidak ditemukan")
+    if _ext(doc["filename"]) != ".pdf":
+        raise HTTPException(status_code=400, detail="Preview gambar hanya untuk PDF")
+    stream = await _stream_from_gridfs(doc["file_id"])
+    raw = await stream.read()
+    try:
+        png = pdf_page_png(raw, page, scale)
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
+    return StreamingResponse(io.BytesIO(png), media_type="image/png",
+                             headers={"Cache-Control": "private, max-age=300"})
+
+
+
 @router.get("/bom/{bom_id}/attachments/{attach_id}/preview")
 async def preview_attachment(bom_id: str, attach_id: str, current: dict = Depends(get_current_user)):
     """Inline preview. PDF: native. Excel: convert to PDF first."""

@@ -1,30 +1,34 @@
 [
   {
-    "content": "Phase A — Stamp per-halaman (TTD/DC/SO) + verified",
+    "content": "Login susanto/Subbalo1994 diperbaiki (+ clear lockout)",
     "status": "completed"
   },
   {
-    "content": "Bugfix — exit Work Order tidak ke 'BOM Preparation'",
+    "content": "PdfPreviewModal: tombol PRINT (cetak gambar) + DOWNLOAD untuk semua role",
     "status": "completed"
   },
   {
-    "content": "Sales #1 — Inquiry 'Nama Project' + hapus field project (verified UI)",
+    "content": "Backend render: BOM attachment page-meta/page-image (tested)",
     "status": "completed"
   },
   {
-    "content": "Sales #2 — Riwayat TTD jadi tab di Review TTD; kartu dihapus (verified UI)",
+    "content": "Backend render: MII inspection page-meta/page-image (endpoint ok)",
     "status": "completed"
   },
   {
-    "content": "Phase B — Universal PdfPreviewModal image-based (verified: render+stamp+zoom+no-download)",
+    "content": "Wire BOM attachment preview (nesting) + extras + drawing ke image viewer",
     "status": "completed"
   },
   {
-    "content": "Phase B3 — Wire preview: PendingApproval, MySigHistory, SOStamp, MyAssignments, DRF, ControlledDB, MasterDrawing",
+    "content": "Wire MII preview (QCPage) ke image viewer",
     "status": "completed"
   },
   {
-    "content": "Phase B4 (belum) — Wire preview: extras/BOM-att, MII, template form, DocDistribution link",
+    "content": "Watermark UNCONTROLLED + printed-by (salma/doc_control exempt watermark, printed-by tetap) — verified",
+    "status": "completed"
+  },
+  {
+    "content": "Sisa (defer): template form preview + lampiran inquiry Sales ke image viewer",
     "status": "pending"
   }
 ]

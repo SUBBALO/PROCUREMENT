@@ -4,6 +4,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== Print facility untuk PdfPreviewModal (cetak halaman gambar) ===== */
+#pdf-print-root { position: fixed; left: -99999px; top: 0; }
+@media print {
+  body * { visibility: hidden !important; }
+  #pdf-print-root, #pdf-print-root * { visibility: visible !important; }
+  #pdf-print-root { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; }
+  #pdf-print-root img { display: block; width: 100%; margin: 0 auto; page-break-after: always; }
+  @page { margin: 8mm; }
+}
+
+
 body {
     margin: 0;
     font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;

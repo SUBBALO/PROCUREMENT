@@ -1,31 +1,33 @@
 import React, { useEffect, useState, useCallback } from "react";
 import api from "../lib/api";
-import { useAuth } from "../lib/auth";
-import { X, MagnifyingGlassPlus, MagnifyingGlassMinus, DownloadSimple, ArrowClockwise } from "@phosphor-icons/react";
+import { X, MagnifyingGlassPlus, MagnifyingGlassMinus, DownloadSimple, Printer, ArrowClockwise } from "@phosphor-icons/react";
 
 /**
- * PdfPreviewModal — viewer PDF baca-saja berbasis GAMBAR (render server-side page-image).
+ * PdfPreviewModal — viewer PDF baca berbasis GAMBAR (render server-side page-image).
  * Menggantikan "buka tab baru" yang sering kena blokir popup / dicegat IDM.
  *
- * - Semua halaman dirender sebagai <img> (tidak bisa di-download langsung / tidak dicegat IDM).
- * - Zoom in/out + scroll. Bisa banyak dokumen via tab (mis. Drawing MKS + Drawing Customer).
- * - TANPA tombol download, KECUALI role Document Control → tombol download muncul bila downloadUrl diberikan.
+ * Fitur: scroll semua halaman, zoom, PRINT (cetak halaman gambar), dan DOWNLOAD (file asli).
+ * Print & Download tersedia untuk SEMUA role.
+ *
+ * MODE A (drawing): beri `drawingId` + `target`/`targets`.
+ * MODE B (generik): beri `metaUrl` (path relatif ke /api) + `pageUrlBuilder(page)` +
+ *   opsional `downloadUrl`. Dipakai untuk lampiran BOM, MII, template, dll.
  *
  * Props:
- *   - drawingId   : id drawing
- *   - target      : "mks" | "customer_ref" | "extra" (dipakai kalau `targets` tidak diberikan)
- *   - targets     : [{ key, label, extraId? }] — tampilkan pemilih tab dokumen (opsional)
- *   - extraId     : id extra file (kalau target="extra")
- *   - stamped     : bool (default true) — tampilkan versi ber-stamp
- *   - title/subtitle : header
- *   - downloadUrl : URL download (hanya dipakai bila user doc_control)
- *   - onClose     : tutup
+ *   - drawingId, target ("mks"|"customer_ref"|"extra"), targets [{key,label,extraId?}], extraId
+ *   - metaUrl (string, generic), pageUrlBuilder (fn(page)->string, generic)
+ *   - stamped (bool, default true untuk drawing)
+ *   - title, subtitle
+ *   - downloadUrl (string) — file asli untuk di-download
+ *   - onClose
  */
 export default function PdfPreviewModal({
   drawingId,
   target = "mks",
   targets = null,
   extraId = "",
+  metaUrl = "",
+  pageUrlBuilder = null,
   stamped = true,
   title = "Preview Dokumen",
   subtitle = "",
@@ -33,42 +35,66 @@ export default function PdfPreviewModal({
   onClose,
 }) {
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
-  const { user } = useAuth();
-  const isDocControl = ["doc_control", "document_control"].includes(user?.role);
-  const tabList = (targets && targets.length) ? targets : [{ key: target, label: "Dokumen", extraId }];
+  const generic = !!metaUrl;
+  const tabList = generic
+    ? [{ key: "__generic__", label: "Dokumen" }]
+    : ((targets && targets.length) ? targets : [{ key: target, label: "Dokumen", extraId }]);
   const [activeKey, setActiveKey] = useState(tabList[0].key);
   const active = tabList.find((t) => t.key === activeKey) || tabList[0];
   const [meta, setMeta] = useState(null);
   const [err, setErr] = useState("");
   const [zoom, setZoom] = useState(1);
+  const [printing, setPrinting] = useState(false);
+
+  // Default download URL untuk mode drawing bila tidak diberikan
+  const effectiveDownloadUrl = downloadUrl || (!generic && drawingId
+    ? (active.key === "customer_ref"
+        ? `${apiUrl}/api/drawings/${drawingId}/customer-ref/download`
+        : `${apiUrl}/api/drawings/${drawingId}/pdf-stamped`)
+    : "");
 
   const load = useCallback(async () => {
     setMeta(null); setErr("");
     try {
-      const params = { target: active.key };
-      if (active.extraId) params.extra_id = active.extraId;
-      const { data } = await api.get(`/drawings/${drawingId}/page-meta`, { params });
-      setMeta(data);
+      if (generic) {
+        const { data } = await api.get(metaUrl);
+        setMeta(data);
+      } else {
+        const params = { target: active.key };
+        if (active.extraId) params.extra_id = active.extraId;
+        const { data } = await api.get(`/drawings/${drawingId}/page-meta`, { params });
+        setMeta(data);
+      }
     } catch (e) {
-      setErr(e.response?.data?.detail || "Dokumen tidak tersedia");
+      setErr(e.response?.data?.detail || "Dokumen tidak tersedia untuk preview");
     }
-  }, [drawingId, active.key, active.extraId]);
+  }, [drawingId, active.key, active.extraId, generic, metaUrl]);
 
   useEffect(() => { load(); }, [load]);
 
   const imgUrl = (n) => {
+    if (generic && pageUrlBuilder) return pageUrlBuilder(n);
     const p = new URLSearchParams({ target: active.key, page: String(n), scale: "2" });
     if (active.extraId) p.set("extra_id", active.extraId);
     if (stamped) p.set("stamped", "1");
     return `${apiUrl}/api/drawings/${drawingId}/page-image?${p.toString()}`;
   };
 
+  const doPrint = () => {
+    setPrinting(true);
+    // beri waktu gambar (yang sudah ter-cache) untuk render di print-root
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => setPrinting(false), 500);
+    }, 600);
+  };
+
   return (
-    <div className="fixed inset-0 z-[75] bg-black/80 flex flex-col" data-testid="pdf-preview-modal" onContextMenu={(e) => e.preventDefault()}>
+    <div className="fixed inset-0 z-[75] bg-black/80 flex flex-col" data-testid="pdf-preview-modal">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 p-3 bg-slate-900 text-white shrink-0">
         <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-widest text-slate-400">Preview (baca-saja{isDocControl && downloadUrl ? "" : " · tanpa download"})</div>
+          <div className="text-[10px] uppercase tracking-widest text-slate-400">Preview Dokumen</div>
           <div className="font-mono font-bold truncate">{title}</div>
           {subtitle && <div className="text-[11px] text-slate-300 truncate">{subtitle}</div>}
         </div>
@@ -76,8 +102,11 @@ export default function PdfPreviewModal({
           <button onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.15).toFixed(2)))} className="p-2 bg-slate-700 hover:bg-slate-600 rounded" title="Perkecil" data-testid="pdf-zoom-out"><MagnifyingGlassMinus size={16} weight="bold" /></button>
           <span className="text-xs w-12 text-center tabular-nums" data-testid="pdf-zoom-level">{Math.round(zoom * 100)}%</span>
           <button onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.15).toFixed(2)))} className="p-2 bg-slate-700 hover:bg-slate-600 rounded" title="Perbesar" data-testid="pdf-zoom-in"><MagnifyingGlassPlus size={16} weight="bold" /></button>
-          {isDocControl && downloadUrl && (
-            <a href={downloadUrl} target="_blank" rel="noreferrer" className="ml-2 inline-flex items-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded text-xs font-bold uppercase tracking-widest" data-testid="pdf-download-dc">
+          <button onClick={doPrint} disabled={!meta} className="ml-2 inline-flex items-center gap-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs font-bold uppercase tracking-widest disabled:opacity-40" title="Cetak" data-testid="pdf-print">
+            <Printer size={15} weight="bold" /> Print
+          </button>
+          {effectiveDownloadUrl && (
+            <a href={effectiveDownloadUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded text-xs font-bold uppercase tracking-widest" data-testid="pdf-download">
               <DownloadSimple size={15} weight="bold" /> Download
             </a>
           )}
@@ -120,7 +149,7 @@ export default function PdfPreviewModal({
                 <div key={`${active.key}-${n}`} className="flex flex-col items-center">
                   <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Halaman {n + 1} / {meta.pages}</div>
                   <div className="bg-white shadow-2xl" style={{ width: `min(${1000 * zoom}px, ${95 * zoom}vw)`, aspectRatio: `${size.w} / ${size.h}` }}>
-                    <img src={imgUrl(n)} alt={`Halaman ${n + 1}`} className="w-full h-full object-contain select-none pointer-events-none" draggable={false} data-testid={`pdf-preview-page-${n}`} />
+                    <img src={imgUrl(n)} alt={`Halaman ${n + 1}`} className="w-full h-full object-contain select-none" draggable={false} data-testid={`pdf-preview-page-${n}`} />
                   </div>
                 </div>
               );
@@ -128,6 +157,15 @@ export default function PdfPreviewModal({
           </div>
         )}
       </div>
+
+      {/* Print area (tersembunyi di layar; muncul saat window.print) */}
+      {printing && meta && (
+        <div id="pdf-print-root">
+          {Array.from({ length: meta.pages }).map((_, n) => (
+            <img key={`print-${n}`} src={imgUrl(n)} alt={`Halaman ${n + 1}`} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

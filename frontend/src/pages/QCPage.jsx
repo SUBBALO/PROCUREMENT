@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ClipboardText, MagnifyingGlass, X, FileText, CheckCircle, Warning, ArrowClockwise, FloppyDisk, Eye } from "@phosphor-icons/react";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
+import PdfPreviewModal from "../components/PdfPreviewModal";
 
 const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-sky-600 text-sm";
 const _today = () => new Date().toISOString().slice(0, 10);
@@ -196,6 +197,8 @@ function InspectionDialog({ inspectionId, onClose }) {
   const [inspectionDate, setInspectionDate] = useState(_today());
   const [rows, setRows] = useState([]);
   const [showPreview, setShowPreview] = useState(false);
+  const [showMiiViewer, setShowMiiViewer] = useState(false);
+  const apiUrl = process.env.REACT_APP_BACKEND_URL;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -278,17 +281,8 @@ function InspectionDialog({ inspectionId, onClose }) {
   };
 
   const previewPdf = async () => {
-    // Iter 21 — Preview di new tab (blob URL bypass IDM). User bisa Ctrl+P dari viewer.
-    try {
-      const res = await api.get(`/qc/inspections/${inspectionId}/pdf`, { responseType: "blob" });
-      const blob = new Blob([res.data], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const win = window.open(url, "_blank", "noopener,noreferrer");
-      if (win) win.document.title = `MII_${(doc?.do_no || inspectionId).slice(0, 20)}.pdf`;
-      setTimeout(() => URL.revokeObjectURL(url), 120000);
-    } catch (e) {
-      toast.error("Gagal preview PDF");
-    }
+    // Iter 40 — Preview image-based (tanpa new-tab / anti-IDM). Ada tombol Print & Download di viewer.
+    setShowMiiViewer(true);
   };
 
   const downloadPdf = async () => {
@@ -451,6 +445,16 @@ function InspectionDialog({ inspectionId, onClose }) {
         </DialogFooter>
       </DialogContent>
       {showPreview && doc && <MIIPreviewDialog doc={{ ...doc, items: rows, inspection_date: inspectionDate }} onClose={() => setShowPreview(false)} onDownload={downloadPdf} onPreview={previewPdf} />}
+      {showMiiViewer && (
+        <PdfPreviewModal
+          metaUrl={`/qc/inspections/${inspectionId}/page-meta`}
+          pageUrlBuilder={(n) => `${apiUrl}/api/qc/inspections/${inspectionId}/page-image?page=${n}&scale=2`}
+          title={`MII — ${doc?.do_no || inspectionId}`}
+          subtitle={doc?.source_name || ""}
+          downloadUrl={`${apiUrl}/api/qc/inspections/${inspectionId}/pdf`}
+          onClose={() => setShowMiiViewer(false)}
+        />
+      )}
     </Dialog>
   );
 }

@@ -1177,12 +1177,14 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
     id: activeDwg.file_id, name: activeDwg.filename || `${activeDwg.drawing_no}.pdf`,
     previewUrl: `${backendUrl}/api/drawings/${activeDwg.id}/preview`,
     kind: "drawing_pdf",
+    viewer: { drawingId: activeDwg.id, target: "mks", downloadUrl: `${backendUrl}/api/drawings/${activeDwg.id}/pdf-stamped` },
   } : null;
 
   const customerRefFile = activeDwg.customer_ref_file_id ? {
     id: activeDwg.customer_ref_file_id, name: activeDwg.customer_ref_filename || `${activeDwg.drawing_no}-CUST-REF.pdf`,
     previewUrl: `${backendUrl}/api/drawings/${activeDwg.id}/customer-ref/preview`,
     kind: "customer_ref",
+    viewer: { drawingId: activeDwg.id, target: "customer_ref", downloadUrl: `${backendUrl}/api/drawings/${activeDwg.id}/customer-ref/download` },
   } : null;
 
   const uploadDrawingPdf = async (file) => {
@@ -1280,6 +1282,13 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
   };
 
   const openPreview = (name, url, contentType) => setPreviewFile({ name, url, contentType });
+  const openFilePreview = (f) => setPreviewFile({
+    name: f.name || f.filename,
+    url: f.previewUrl,
+    contentType: f.content_type,
+    viewer: f.viewer || null,
+    downloadUrl: f.downloadUrl || (f.viewer && f.viewer.downloadUrl) || "",
+  });
 
   // Multi-file drawing (additional_files[]) — user request: "kadang dokumen drawing lebih dari 1 file"
   const uploadDrawingExtra = async (file) => {
@@ -1339,7 +1348,7 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
               </div>
               <button
                 type="button"
-                onClick={() => openPreview(f.name, f.previewUrl, f.content_type)}
+                onClick={() => openFilePreview(f)}
                 className={`p-1 text-${accent}-700 hover:bg-${accent}-50`}
                 title="Preview inline"
                 data-testid={`dw-att-view-${category}-${f.id || i}`}
@@ -1389,10 +1398,17 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
   const nestingList = (bomAttachments.nesting || []).map((a) => ({
     ...a,
     previewUrl: `${backendUrl}/api/bom/${activeDwg.bom_id}/attachments/${a.id}/preview`,
+    viewer: {
+      metaUrl: `/bom/${activeDwg.bom_id}/attachments/${a.id}/page-meta`,
+      pageBase: `${backendUrl}/api/bom/${activeDwg.bom_id}/attachments/${a.id}/page-image`,
+      downloadUrl: `${backendUrl}/api/bom/${activeDwg.bom_id}/attachments/${a.id}/download`,
+    },
   }));
   const costingList = (bomAttachments.costing || []).map((a) => ({
     ...a,
     previewUrl: `${backendUrl}/api/bom/${activeDwg.bom_id}/attachments/${a.id}/preview`,
+    // costing = Excel → tetap pakai InlinePreviewDialog (HTML); download tetap tersedia
+    downloadUrl: `${backendUrl}/api/bom/${activeDwg.bom_id}/attachments/${a.id}/download`,
   }));
 
   return (
@@ -1537,7 +1553,12 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
                   </div>
                   <button
                     type="button"
-                    onClick={() => openPreview(f.filename, `${backendUrl}/api/drawings/${activeDwg.id}/extras/${f.id}/preview`, f.content_type)}
+                    onClick={() => openFilePreview({
+                      name: f.filename,
+                      previewUrl: `${backendUrl}/api/drawings/${activeDwg.id}/extras/${f.id}/preview`,
+                      content_type: f.content_type,
+                      viewer: { drawingId: activeDwg.id, target: "extra", extraId: f.id, downloadUrl: `${backendUrl}/api/drawings/${activeDwg.id}/extras/${f.id}/preview` },
+                    })}
                     className="p-1 text-slate-700 hover:bg-slate-100"
                     title="Preview"
                     data-testid={`dw-att-view-extra-${f.id}`}
@@ -1562,7 +1583,37 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
 
       {loading && <div className="text-[11px] text-slate-400 italic">Memuat attachments BOM...</div>}
 
-      {previewFile && <InlinePreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} />}
+      {previewFile && (() => {
+        const ext = (previewFile.name || "").split(".").pop().toLowerCase();
+        const isPdf = ext === "pdf" || (previewFile.contentType || "").includes("pdf");
+        const v = previewFile.viewer;
+        // Excel / gambar / non-PDF → tetap InlinePreviewDialog (punya tombol download sendiri)
+        if (v && isPdf) {
+          if (v.metaUrl) {
+            return (
+              <PdfPreviewModal
+                metaUrl={v.metaUrl}
+                pageUrlBuilder={(n) => `${v.pageBase}?page=${n}&scale=2`}
+                title={previewFile.name}
+                downloadUrl={v.downloadUrl || previewFile.downloadUrl || ""}
+                onClose={() => setPreviewFile(null)}
+              />
+            );
+          }
+          return (
+            <PdfPreviewModal
+              drawingId={v.drawingId}
+              target={v.target}
+              extraId={v.extraId || ""}
+              stamped
+              title={previewFile.name}
+              downloadUrl={v.downloadUrl || previewFile.downloadUrl || ""}
+              onClose={() => setPreviewFile(null)}
+            />
+          );
+        }
+        return <InlinePreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} />;
+      })()}
     </div>
   );
 }

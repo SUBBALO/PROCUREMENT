@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from db import db
@@ -298,14 +298,13 @@ async def reopen_inspection(inspection_id: str, current: dict = Depends(require_
     return _clean(fresh)
 
 
-@router.get("/qc/inspections/{inspection_id}/pdf")
-async def download_inspection_pdf(inspection_id: str, current: dict = Depends(require_qc_access)):
+async def _build_inspection_pdf_bytes(inspection_id: str, current: dict):
+    """Bangun PDF MII (Excel template → visual template → hardcode fallback). Balikkan (bytes, filename)."""
     doc = await db.qc_inspections.find_one({"id": inspection_id})
     if not doc:
         raise HTTPException(status_code=404, detail="Inspection tidak ditemukan")
     doc = _clean(doc)
 
-    # Build binding data (used by Excel & visual templates)
     data = {
         "company_name": "PT. MITRA KARYA SARANA",
         "source_type": doc.get("source_type", ""),
@@ -331,8 +330,6 @@ async def download_inspection_pdf(inspection_id: str, current: dict = Depends(re
 
     used_engine = "hardcode"
     pdf_bytes = None
-
-    # 1. Try Excel-based template (uploaded via /admin/excel-templates)
     try:
         from routers.excel_templates import get_active_xlsx_bytes, render_excel_template
         xlsx_bytes = await get_active_xlsx_bytes("MII")
@@ -343,7 +340,6 @@ async def download_inspection_pdf(inspection_id: str, current: dict = Depends(re
         import logging
         logging.getLogger(__name__).warning(f"MII Excel render failed: {e}")
 
-    # 2. Fallback to visual-editor template
     if not pdf_bytes:
         tpl = await db.form_templates.find_one(
             {"code": "MII", "is_active": True, "$or": [{"deleted_at": {"$exists": False}}, {"deleted_at": None}]},
@@ -358,17 +354,44 @@ async def download_inspection_pdf(inspection_id: str, current: dict = Depends(re
                 import logging
                 logging.getLogger(__name__).warning(f"MII visual render failed: {e}")
 
-    # 3. Fallback to hardcoded generator
     if not pdf_bytes:
         from services.mii_pdf import build_mii_pdf
         pdf_bytes = build_mii_pdf(doc)
         used_engine = "hardcode"
 
     fname = f"MII_{(doc.get('do_no') or doc.get('id'))[:20]}.pdf"
-    await log_action(current, "qc_download_mii_pdf", "qc_inspection", inspection_id,
-                     {"engine": used_engine})
+    return pdf_bytes, fname, used_engine
+
+
+@router.get("/qc/inspections/{inspection_id}/pdf")
+async def download_inspection_pdf(inspection_id: str, current: dict = Depends(require_qc_access)):
+    pdf_bytes, fname, used_engine = await _build_inspection_pdf_bytes(inspection_id, current)
+    await log_action(current, "qc_download_mii_pdf", "qc_inspection", inspection_id, {"engine": used_engine})
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
+
+
+@router.get("/qc/inspections/{inspection_id}/page-meta")
+async def inspection_page_meta(inspection_id: str, current: dict = Depends(require_qc_access)):
+    """Metadata halaman MII untuk viewer image-based."""
+    from utils.pdf_render import pdf_page_meta
+    pdf_bytes, _, _ = await _build_inspection_pdf_bytes(inspection_id, current)
+    return pdf_page_meta(pdf_bytes)
+
+
+@router.get("/qc/inspections/{inspection_id}/page-image")
+async def inspection_page_image(inspection_id: str, page: int = 0, scale: float = 2.0,
+                                current: dict = Depends(require_qc_access)):
+    """Render satu halaman MII menjadi PNG untuk viewer image-based."""
+    from utils.pdf_render import pdf_page_png
+    pdf_bytes, _, _ = await _build_inspection_pdf_bytes(inspection_id, current)
+    try:
+        png = pdf_page_png(pdf_bytes, page, scale)
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
+    import io as _io
+    return StreamingResponse(_io.BytesIO(png), media_type="image/png",
+                             headers={"Cache-Control": "private, max-age=120"})
