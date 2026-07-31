@@ -8,27 +8,23 @@
     "status": "completed"
   },
   {
-    "content": "Sales #1 — Inquiry: 'Nama Project' + hapus field project terpisah",
+    "content": "Sales #1 — Inquiry 'Nama Project' + hapus field project (verified UI)",
     "status": "completed"
   },
   {
-    "content": "Sales #2 — Riwayat TTD jadi tab di Review TTD; kartu terpisah dihapus",
+    "content": "Sales #2 — Riwayat TTD jadi tab di Review TTD; kartu dihapus (verified UI)",
     "status": "completed"
   },
   {
-    "content": "Phase B — Universal PdfPreviewModal (image-based, no-download kecuali DC)",
+    "content": "Phase B — Universal PdfPreviewModal image-based (verified: render+stamp+zoom+no-download)",
     "status": "completed"
   },
   {
-    "content": "Phase B3 — Wire: PendingApproval, MySignatureHistory, SOStamp, MyAssignments, DRF, ControlledDB, MasterDrawing",
+    "content": "Phase B3 — Wire preview: PendingApproval, MySigHistory, SOStamp, MyAssignments, DRF, ControlledDB, MasterDrawing",
     "status": "completed"
   },
   {
-    "content": "Phase B4 (defer) — Wire preview: extras/BOM-att, MII, template form, DocDistribution link",
+    "content": "Phase B4 (belum) — Wire preview: extras/BOM-att, MII, template form, DocDistribution link",
     "status": "pending"
-  },
-  {
-    "content": "Test — stamp per-halaman UI + universal preview + Sales changes + regression (repeat/QC)",
-    "status": "in_progress"
   }
 ]
