@@ -12,9 +12,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from db import db
-from deps import get_current_user, is_admin_like, is_eng_head, is_engineering, log_action
+from deps import get_current_user, is_admin_like, is_eng_head, is_engineering, log_action, SALES_ROLES
 
 router = APIRouter(tags=["ecn"])
+
+
+def _is_sales(user: dict) -> bool:
+    return (user or {}).get("role") in SALES_ROLES or is_admin_like(user)
 
 
 def _now_iso() -> str:
@@ -29,7 +33,8 @@ def _clean(doc: dict) -> dict:
 
 
 async def _next_change_no(kind: str) -> str:
-    """kind: 'ecr' (dari customer) atau 'ecn' (internal MKS/eng)."""
+    """Format: ECN-YY-MM-NN / ECR-YY-MM-NN (NN = urut per bulan).
+    kind: 'ecr' (dari customer, dibuat Sales) atau 'ecn' (pemberitahuan perubahan ke Produksi)."""
     now = datetime.now(timezone.utc)
     yy = f"{now.year % 100:02d}"
     mm = f"{now.month:02d}"
@@ -39,7 +44,7 @@ async def _next_change_no(kind: str) -> str:
         {"_id": key}, {"$inc": {"value": 1}}, upsert=True, return_document=True,
     )
     seq = (counter or {}).get("value", 1)
-    return f"{prefix}-{yy}{mm}-{seq:03d}"
+    return f"{prefix}-{yy}-{mm}-{seq:02d}"
 
 
 class ECNCreate(BaseModel):
@@ -57,15 +62,20 @@ class ECNCreate(BaseModel):
     submit: bool = False               # True = langsung submit ke Eng Leader
 
 
-def _can_ecn(user: dict) -> bool:
-    return is_engineering(user) or is_admin_like(user)
+def _can_view_ecn(user: dict) -> bool:
+    return is_engineering(user) or _is_sales(user) or is_admin_like(user)
 
 
 @router.post("/ecn")
 async def create_ecn(payload: ECNCreate, current: dict = Depends(get_current_user)):
-    if not _can_ecn(current):
-        raise HTTPException(status_code=403, detail="Hanya Engineering yang boleh buat ECR/ECN")
     kind = "ecr" if (payload.kind or "").lower() == "ecr" else "ecn"
+    # ECR = dibuat Sales (perubahan dari customer). ECN = dibuat Engineering (pemberitahuan ke Produksi).
+    if kind == "ecr":
+        if not _is_sales(current):
+            raise HTTPException(status_code=403, detail="ECR hanya boleh dibuat oleh Sales")
+    else:
+        if not (is_engineering(current) or is_admin_like(current)):
+            raise HTTPException(status_code=403, detail="ECN hanya boleh dibuat oleh Engineering")
     if payload.change_type not in ("drawing", "bom", "both"):
         raise HTTPException(status_code=400, detail="change_type tidak valid")
     if not payload.reason.strip():
@@ -104,7 +114,7 @@ async def create_ecn(payload: ECNCreate, current: dict = Depends(get_current_use
 @router.get("/ecn")
 async def list_ecn(status: Optional[str] = None, kind: Optional[str] = None, q: Optional[str] = None,
                    current: dict = Depends(get_current_user)):
-    if not _can_ecn(current):
+    if not _can_view_ecn(current):
         raise HTTPException(status_code=403, detail="Akses ditolak")
     filt = {"deleted_at": {"$exists": False}}
     if status:
@@ -120,7 +130,7 @@ async def list_ecn(status: Optional[str] = None, kind: Optional[str] = None, q: 
 
 @router.get("/ecn/{ecn_id}")
 async def get_ecn(ecn_id: str, current: dict = Depends(get_current_user)):
-    if not _can_ecn(current):
+    if not _can_view_ecn(current):
         raise HTTPException(status_code=403, detail="Akses ditolak")
     doc = await db.ecns.find_one({"id": ecn_id, "deleted_at": {"$exists": False}}, {"_id": 0})
     if not doc:

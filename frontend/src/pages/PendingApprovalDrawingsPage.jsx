@@ -9,6 +9,7 @@ import BackLink from "../components/BackLink";
 import { Input } from "../components/ui/input";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
+import DrawingViewOnlyModal from "../components/DrawingViewOnlyModal";
 
 const ROLE_STAGE_MAP = {
   eng_leader: "eng_head",
@@ -29,7 +30,9 @@ export default function PendingApprovalDrawingsPage() {
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
   const [sigDrawing, setSigDrawing] = useState(null);
+  const [viewDrawing, setViewDrawing] = useState(null);
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
+  const isQC = user?.role === "qc";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -147,15 +150,25 @@ export default function PendingApprovalDrawingsPage() {
                     </td>
                     <td className="p-3 text-center">
                       <div className="flex gap-1 justify-center">
-                        <a
-                          href={`${apiUrl}/api/drawings/${d.id}/pdf-stamped`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-bold uppercase gap-0.5"
-                          data-testid={`pending-view-${d.drawing_no}`}
-                        >
-                          <Eye size={11} weight="bold" /> View PDF
-                        </a>
+                        {isQC ? (
+                          <button
+                            onClick={() => setViewDrawing(d)}
+                            className="inline-flex items-center px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-bold uppercase gap-0.5"
+                            data-testid={`pending-view-${d.drawing_no}`}
+                          >
+                            <Eye size={11} weight="bold" /> Preview
+                          </button>
+                        ) : (
+                          <a
+                            href={`${apiUrl}/api/drawings/${d.id}/pdf-stamped`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-bold uppercase gap-0.5"
+                            data-testid={`pending-view-${d.drawing_no}`}
+                          >
+                            <Eye size={11} weight="bold" /> View PDF
+                          </a>
+                        )}
                         <button
                           onClick={() => setSigDrawing(d)}
                           disabled={!stage}
@@ -188,6 +201,13 @@ export default function PendingApprovalDrawingsPage() {
           stage={stage}
           onDone={() => { setSigDrawing(null); load(); }}
           onClose={() => setSigDrawing(null)}
+        />
+      )}
+
+      {viewDrawing && (
+        <DrawingViewOnlyModal
+          drawing={viewDrawing}
+          onClose={() => setViewDrawing(null)}
         />
       )}
     </div>

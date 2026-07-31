@@ -1,26 +1,22 @@
 [
   {
-    "content": "Multi-page stamping fix (DC/SO/TTD all pages + scrollable picker)",
+    "content": "Backend: GET /drawings/repeat-search",
     "status": "completed"
   },
   {
-    "content": "Phase 1: DRF Work Group + accept-assign + generate N drawings sharing 1 BOM",
+    "content": "Backend: POST /drawing-requests/{drf_id}/pull-repeat",
     "status": "completed"
   },
   {
-    "content": "Customer DWG No + Master List view-only + column + search by SO",
+    "content": "Frontend: RepeatOrderPanel di EngineeringDrfWorkPage",
     "status": "completed"
   },
   {
-    "content": "Generate panel: next-number preview + recent numbers",
+    "content": "Frontend: QC view-only preview modal + role-aware PendingApprovalDrawingsPage",
     "status": "completed"
   },
   {
-    "content": "ECR & ECN module",
-    "status": "completed"
-  },
-  {
-    "content": "Consolidate Engineering cards into 1 role-aware 'Work Order Engineering' with 4 tabs (assign, in-progress, Perlu TTD Saya, Riwayat TTD)",
-    "status": "completed"
+    "content": "Test backend (repeat-search + pull-repeat) & QC flow via testing agent",
+    "status": "in_progress"
   }
 ]

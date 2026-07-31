@@ -115,8 +115,13 @@ export default function EngineeringDrfWorkPage() {
 
       {isRepeat && (
         <div className="border-2 border-blue-300 bg-blue-50 p-3 text-sm text-blue-800">
-          <b>Repeat Order:</b> tarik-otomatis drawing lama + nesting + costing akan tersedia di <b>Fase 2</b>. Untuk sekarang Anda tetap bisa generate drawing baru & isi BOM.
+          <b>Repeat Order:</b> tarik-otomatis <b>Drawing + BOM + Nesting + Costing</b> dari order lama (cari via SO / No. DWG). Hasil tarikan auto-attach & BOM autofill — <b>editable bila Qty berubah</b>. Kalau data lama tidak ketemu, tetap bisa generate drawing baru & upload manual di bawah.
         </div>
+      )}
+
+      {/* Repeat Order: auto-pull panel */}
+      {canEdit && isRepeat && (
+        <RepeatPullPanel drf={drf} onDone={load} />
       )}
 
       {/* Generate drawings */}
@@ -367,6 +372,126 @@ function GenerateDrawingsPanel({ drf, existingCount, onDone }) {
           <Button onClick={submit} disabled={busy} className="rounded-none bg-emerald-700 hover:bg-emerald-800 text-white disabled:opacity-40" data-testid="drf-gen-submit">
             {busy ? "Membuat..." : `Generate ${rows.length} Nomor Drawing`}
           </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RepeatPullPanel({ drf, onDone }) {
+  const [q, setQ] = useState(drf.ref_so_no || drf.so_no || "");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [selected, setSelected] = useState({});
+  const [classMaterial, setClassMaterial] = useState(drf.material ? `RAW MATERIAL FOR ${drf.qty_order} ${drf.unit}` : "");
+  const [busy, setBusy] = useState(false);
+  const [searched, setSearched] = useState(false);
+
+  const doSearch = useCallback(async () => {
+    if (!q.trim()) return toast.error("Isi SO / No. DWG untuk mencari");
+    setSearching(true);
+    setSearched(true);
+    try {
+      const { data } = await api.get(`/drawings/repeat-search?q=${encodeURIComponent(q.trim())}`);
+      setResults(data.items || []);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal mencari");
+      setResults([]);
+    } finally { setSearching(false); }
+  }, [q]);
+
+  // Auto-search sekali saat panel dibuka bila ada ref SO
+  useEffect(() => {
+    if ((drf.ref_so_no || drf.so_no || "").trim()) { doSearch(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggle = (id) => setSelected((p) => ({ ...p, [id]: !p[id] }));
+  const selectedIds = Object.keys(selected).filter((k) => selected[k]);
+
+  const pull = async () => {
+    if (selectedIds.length === 0) return toast.error("Pilih minimal 1 drawing lama");
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/drawing-requests/${drf.id}/pull-repeat`, {
+        source_drawing_ids: selectedIds,
+        class_material: classMaterial,
+      });
+      toast.success(`✓ ${data.drawings.length} drawing ditarik (Drawing + BOM + Nesting + Costing). Cek & edit Qty bila perlu.`);
+      setSelected({});
+      onDone?.();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal menarik data lama");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="border-2 border-blue-500" data-testid="repeat-pull-panel">
+      <div className="px-3 py-2 bg-blue-600 text-white flex items-center gap-2">
+        <ArrowClockwise size={16} weight="bold" />
+        <div className="text-[11px] uppercase tracking-widest font-bold flex-1">Tarik Otomatis Data Order Lama (Repeat)</div>
+      </div>
+      <div className="p-4 bg-blue-50 space-y-4">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex-1 min-w-[240px]">
+            <div className="text-[10px] uppercase tracking-widest font-bold text-blue-800 mb-1">Cari via SO lama / No. DWG / No. DWG Customer</div>
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && doSearch()}
+              className="rounded-none border-blue-300 h-10"
+              placeholder="mis. SO-2024-001 atau DWG.24.05.01_MKS..."
+              data-testid="repeat-search-input"
+            />
+          </div>
+          <Button onClick={doSearch} disabled={searching} className="rounded-none bg-blue-700 hover:bg-blue-800 text-white h-10" data-testid="repeat-search-btn">
+            {searching ? "Mencari..." : "Cari"}
+          </Button>
+        </div>
+
+        <div className="bg-white border border-blue-200">
+          <div className="px-3 py-1.5 bg-blue-100/60 text-[10px] uppercase tracking-widest font-bold text-blue-800 border-b border-blue-200">
+            Hasil pencarian ({results.length})
+          </div>
+          <div className="max-h-72 overflow-y-auto divide-y divide-slate-100" data-testid="repeat-results">
+            {searching && <div className="p-6 text-center text-slate-400 text-sm">Mencari...</div>}
+            {!searching && searched && results.length === 0 && (
+              <div className="p-6 text-center text-sm text-slate-500">
+                Tidak ada drawing lama yang cocok. Gunakan panel <b>Generate Nomor Drawing</b> di bawah untuk buat & upload manual.
+              </div>
+            )}
+            {!searching && results.map((r) => (
+              <label key={r.id} className={`flex items-start gap-3 p-2.5 cursor-pointer hover:bg-blue-50/60 ${selected[r.id] ? "bg-blue-50" : ""}`} data-testid={`repeat-opt-${r.drawing_no}`}>
+                <input type="checkbox" checked={!!selected[r.id]} onChange={() => toggle(r.id)} className="mt-1" />
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono font-bold text-slate-900 text-sm">{r.drawing_no}</div>
+                  <div className="text-xs text-slate-500 truncate">{r.title || "-"} · {r.drawing_type} · SO {r.so_no || "-"} · {r.customer_name || "-"}</div>
+                  {r.customer_drawing_no && <div className="text-[10px] text-slate-500">Cust DWG: <span className="font-mono">{r.customer_drawing_no}</span></div>}
+                </div>
+                <div className="flex flex-wrap gap-1 justify-end">
+                  <Chip ok={r.has_mks} label="MKS" neutral={!r.has_mks} />
+                  <Chip ok={r.has_customer_ref} label="Cust Dwg" neutral={!r.has_customer_ref} />
+                  <Chip ok={r.has_nesting} label="Nesting" neutral={!r.has_nesting} />
+                  <Chip ok={r.has_costing} label="Costing" neutral={!r.has_costing} />
+                  <Chip ok={!!r.bom_no} label={r.bom_no || "No BOM"} neutral={!r.bom_no} />
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[240px]">
+            <div className="text-[10px] uppercase tracking-widest font-bold text-blue-800 mb-1">Class / Paket Material (opsional)</div>
+            <Input value={classMaterial} onChange={(e) => setClassMaterial(e.target.value)} className="rounded-none border-blue-300 h-10" placeholder="mis. RAW MATERIAL FOR QTY 5 PCS" data-testid="repeat-class" />
+          </div>
+          <Button onClick={pull} disabled={busy || selectedIds.length === 0} className="rounded-none bg-blue-700 hover:bg-blue-800 text-white h-10 disabled:opacity-40" data-testid="repeat-pull-btn">
+            <ArrowClockwise size={15} weight="bold" className="mr-1" />
+            {busy ? "Menarik..." : `Tarik ${selectedIds.length || ""} Drawing`}
+          </Button>
+        </div>
+        <div className="text-[11px] text-slate-500">
+          Data yang ditarik: Drawing (MKS + Customer), BOM (item + costing lama sebagai referensi), & Nesting. Semua auto-attach di tiap Work Order. BOM bersama bisa diedit bila Qty berubah.
         </div>
       </div>
     </div>

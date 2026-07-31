@@ -382,6 +382,69 @@ async def list_drawings(
     return {"items": docs, "total": len(docs), "disciplines": VALID_DISCIPLINES, "statuses": VALID_STATUS}
 
 
+@router.get("/drawings/repeat-search")
+async def repeat_search_drawings(
+    q: Optional[str] = None,
+    limit: int = 30,
+    current: dict = Depends(get_current_user),
+):
+    """Cari drawing lama untuk Repeat Order (by Drawing No / Customer DWG No / SO / Project / Customer).
+    Balikkan ringkasan + indikator ketersediaan MKS drawing, Customer drawing, Nesting, & Costing
+    sehingga engineer bisa auto-pull data lama ke DRF repeat.
+    Didefinisikan SEBELUM route generic /drawings/{drawing_id}.
+    """
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    filt = {"deleted_at": {"$exists": False}}
+    if q and q.strip():
+        rx = {"$regex": re.escape(q.strip()), "$options": "i"}
+        filt["$or"] = [
+            {"drawing_no": rx}, {"customer_drawing_no": rx}, {"so_no": rx},
+            {"title": rx}, {"project_name": rx}, {"customer_name": rx},
+        ]
+    docs = await db.drawings.find(filt, {"_id": 0}).sort("updated_at", -1).limit(limit).to_list(length=limit)
+
+    # Kumpulkan bom_id untuk cek attachment nesting/costing dalam 1 query
+    bom_ids = [d.get("bom_id") for d in docs if d.get("bom_id")]
+    att_map: dict = {}
+    if bom_ids:
+        atts = await db.bom_attachments.find(
+            {"bom_id": {"$in": bom_ids}, "deleted_at": {"$exists": False}},
+            {"_id": 0, "bom_id": 1, "category": 1},
+        ).to_list(length=2000)
+        for a in atts:
+            att_map.setdefault(a.get("bom_id"), set()).add(a.get("category"))
+
+    out = []
+    for d in docs:
+        cats = att_map.get(d.get("bom_id"), set())
+        extras = d.get("additional_files") or d.get("extras") or []
+        out.append({
+            "id": d.get("id"),
+            "drawing_no": d.get("drawing_no"),
+            "customer_drawing_no": d.get("customer_drawing_no") or "",
+            "so_no": d.get("so_no") or "",
+            "title": d.get("title") or d.get("project_name") or "",
+            "project_name": d.get("project_name") or "",
+            "customer_name": d.get("customer_name") or "",
+            "customer_code": d.get("customer_code") or "MKS",
+            "project_initial": d.get("project_initial") or "",
+            "drawing_type": d.get("drawing_type") or "Assembly",
+            "discipline": d.get("discipline") or "Mechanical",
+            "class_material": d.get("class_material") or "",
+            "bom_id": d.get("bom_id") or "",
+            "bom_no": d.get("bom_no") or "",
+            "has_mks": bool(d.get("file_id")),
+            "has_customer_ref": bool(d.get("customer_ref_file_id")),
+            "extras_count": len(extras),
+            "has_nesting": ("nesting" in cats) or any((e.get("label") or "").lower().find("nest") >= 0 for e in extras),
+            "has_costing": ("costing" in cats) or ("costing_prev" in cats),
+            "updated_at": d.get("updated_at"),
+        })
+    return {"items": out, "total": len(out)}
+
+
+
 @router.post("/drawings")
 async def create_drawing(payload: DrawingIn, current: dict = Depends(get_current_user)):
     if not _can_edit(current):

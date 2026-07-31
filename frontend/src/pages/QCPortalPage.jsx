@@ -9,8 +9,8 @@ export default function QCPortalPage() {
     {
       key: "pending-approval",
       label: "Review & TTD Drawing (QC Inspection)",
-      stats: "Cek quality · TTD kalau OK",
-      description: "Drawing sudah di-approve Eng Head & menunggu QC review. Buka PDF → cek dimensi, tolerance, spec material → klik TTD & Approve kalau OK, atau Reject kalau ada item yang perlu revisi.",
+      stats: "Baca view-only · TTD kalau OK",
+      description: "Drawing sudah di-approve Eng Head & menunggu QC review. Klik Preview untuk baca Drawing MKS & Drawing Customer (view-only, tanpa download) → cek dimensi, tolerance, spec material → klik TTD & Approve kalau OK (lanjut ke Sales), atau Reject kalau perlu revisi.",
       icon: Stamp,
       href: "/drawings/pending-my-approval",
       accent: "from-emerald-500 via-green-500 to-teal-500",

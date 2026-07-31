@@ -55,7 +55,7 @@ export default function ECNPage() {
             Perubahan Drawing — ECR & ECN
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            <b>ECR</b> = permintaan perubahan drawing dari <b>customer</b>. <b>ECN</b> = perubahan drawing MKS internal dari <b>engineer</b>. Buat → submit ke Eng Leader untuk review & approve.
+            <b>ECN</b> = pemberitahuan perubahan gambar ke <b>Produksi</b> (dibuat Engineering; sumber perubahan bisa dari customer maupun MKS sendiri). <b>ECR</b> = permintaan perubahan dari <b>customer</b> yang dibuat <b>Sales</b> ke Engineering. Tidak semua ECN berasal dari ECR.
           </p>
         </div>
         <Button onClick={() => setShowForm(true)} className="rounded-none bg-rose-600 hover:bg-rose-700 text-white" data-testid="ecn-new-btn">
@@ -135,9 +135,16 @@ export default function ECNPage() {
 }
 
 function ECNFormDialog({ onClose, onSaved }) {
-  const [form, setForm] = useState({ kind: "ecn", change_type: "drawing", drawing_no: "", bom_no: "", so_no: "", customer_name: "", reason: "", description: "", priority: "normal" });
+  const { user } = useAuth();
+  const isSales = user?.role === "sales";
+  const isEng = ["engineering", "eng_head", "eng_leader", "eng_staff"].includes(user?.role);
+  const isAdmin = ["admin", "super_admin", "supervisor"].includes(user?.role);
+  const defaultKind = isSales && !isAdmin ? "ecr" : "ecn";
+  const [form, setForm] = useState({ kind: defaultKind, change_type: "drawing", drawing_no: "", bom_no: "", so_no: "", customer_name: "", reason: "", description: "", priority: "normal" });
   const [busy, setBusy] = useState(false);
   const upd = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const canEcr = isSales || isAdmin;
+  const canEcn = isEng || isAdmin;
 
   const save = async (submit) => {
     if (!form.reason.trim()) return toast.error("Alasan perubahan wajib diisi");

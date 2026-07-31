@@ -43,26 +43,31 @@ POC Exit: semua endpoints berfungsi, permission enforced, dan tidak ada regresi.
 
 ---
 
-### Phase 2 — V1 App Development (Repeat Order + costing pull + attachment cloning)
-Fokus Phase 2 (belum dikerjakan):
-1. **Repeat Order workflow:**
-   - Search old drawing dengan 2 metode:
-     - by **Drawing No**
-     - by **SO** yang berhubungan
-   - Auto-pull ke DRF repeat:
-     - **Nesting PDF** dan attachment terkait
-     - **Costing price** dari modul **Material Costing** (per SO/drawing)
-   - Jika tidak ditemukan → fallback manual multi-upload (preview/replace/delete).
-2. **Repeat Order: add-new-drawing:**
-   - Dalam repeat order, boleh tambah drawing baru → generate nomor baru.
-   - Hanya drawing baru yang wajib TTD; drawing lama tidak perlu TTD.
-3. **UI integration:**
-   - Extend Work Group untuk mode repeat order:
-     - panel pencarian drawing/SO lama
-     - panel hasil auto-pull + mapping attachment
-     - tombol “Tambah drawing baru”
+### Phase 2 — Repeat Order Auto-Pull + QC View-Only + TTD (IN PROGRESS)
 
-End of Phase 2: repeat order end-to-end berjalan (auto-pull + fallback) dengan shared BOM.
+**Keputusan user (konfirmasi terbaru):**
+- Sumber pencarian repeat order: **kombinasi SO + Drawing No**.
+- Yang di-auto-pull: **Drawing + BOM + Nesting + Costing** → di-copy & auto-attach, autofill di BOM, **editable bila Qty berubah**.
+- Bila data lama tidak ketemu: **tampilkan form upload manual** (pakai flow generate/upload yang sudah ada).
+- QC: hanya bisa lihat **MKS drawing + Customer drawing** (view-only, **tanpa tombol download**), lalu **TTD**.
+- Setelah QC TTD → **lanjut ke Sales** (sudah sesuai chain: pending_qc → pending_sales).
+
+**Pendekatan implementasi (reuse infra teruji):**
+1. **Backend — Repeat Order:**
+   - `GET /drawings/repeat-search?q=` → cari drawing lama via drawing_no / customer_drawing_no / SO / project / customer, balikkan info + bom_id/bom_no + indikator MKS/Cust/Nesting/Costing.
+   - `POST /drawing-requests/{drf_id}/pull-repeat` (assignee/admin) → clone N drawing lama menjadi drawing baru di DRF ini:
+     - Drawing pertama: `create_drawing` mode `create_new` + `source_bom_id` (clone item BOM + bom_attachments incl costing→costing_prev). Sisanya link ke shared BOM.
+     - Clone file level-drawing (file_id MKS, customer_ref_file_id, additional_files) sebagai reference-copy.
+     - Tandai `is_repeat_pulled`, `pulled_from_drawing_no`.
+   - Reuse `create_drawing(DrawingIn(..., source_bom_id=...))` yang sudah ada.
+2. **Frontend — Repeat Order Panel** di `EngineeringDrfWorkPage`:
+   - Ganti banner "Fase 2 coming" dengan panel: cari SO/DWG lama → pilih → **Tarik Otomatis**.
+   - Fallback: tetap ada panel Generate/Upload manual (yang sudah ada) bila tidak ketemu.
+3. **Frontend — QC View-Only:**
+   - `PendingApprovalDrawingsPage` dibuat role-aware: untuk role `qc`, ganti link "View PDF" (bisa di-download) dengan **modal preview embed** (MKS stamped + Customer ref) memakai `#toolbar=0&navpanes=0` → tanpa tombol download. Tetap ada TTD & Approve + Reject.
+   - Role lain tetap perilaku existing (tidak diubah).
+
+End of Phase 2: repeat order auto-pull + fallback berjalan; QC preview view-only tanpa download + TTD → Sales.
 
 ---
 

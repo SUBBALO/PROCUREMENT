@@ -433,6 +433,126 @@ async def generate_drawings_for_drf(
     return {"success": True, "drawings": created, "shared_bom_id": shared_bom_id}
 
 
+class PullRepeatIn(BaseModel):
+    source_drawing_ids: List[str]
+    class_material: str = ""
+
+
+@router.post("/drawing-requests/{drf_id}/pull-repeat")
+async def pull_repeat_drawings(
+    drf_id: str,
+    payload: PullRepeatIn,
+    current: dict = Depends(get_current_user),
+):
+    """Repeat Order — tarik-otomatis data drawing lama menjadi drawing baru di DRF ini.
+    Untuk tiap source drawing yang dipilih:
+      - Buat drawing baru (nomor DWG baru) yang meng-clone metadata drawing lama.
+      - Drawing pertama membuat BOM baru dgn meng-clone item + attachment (nesting/costing→costing_prev)
+        dari BOM lama (source_bom_id). Drawing berikutnya berbagi BOM yang sama.
+      - File level-drawing (MKS drawing, Customer drawing, additional files/nesting) di-clone
+        sebagai reference-copy (share GridFS id) → auto attached, editable/replace via Work Order.
+    BOM autofilled & editable bila ada perubahan Qty.
+    """
+    doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="DRF tidak ditemukan")
+    assignee = doc.get("assigned_engineer_id")
+    is_assignee = assignee and current.get("id") == assignee
+    if not (is_assignee or is_eng_head(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya engineer yang ditugaskan yang boleh mengerjakan DRF ini")
+    if doc["status"] not in ("accepted", "in_progress"):
+        raise HTTPException(status_code=400, detail=f"DRF harus di-accept & di-assign dulu (status sekarang: {doc['status']})")
+    if not payload.source_drawing_ids:
+        raise HTTPException(status_code=400, detail="Pilih minimal 1 drawing lama untuk ditarik")
+
+    from routers.drawing_register import create_drawing, DrawingIn
+
+    assigned_name = doc.get("assigned_engineer_name") or (current.get("name") or current.get("username"))
+    customer_code = (doc.get("customer_code") or "MKS").upper().strip() or "MKS"
+    created = []
+    shared_bom_id = doc.get("shared_bom_id") or ""
+
+    for source_id in payload.source_drawing_ids:
+        src = await db.drawings.find_one({"id": source_id, "deleted_at": {"$exists": False}})
+        if not src:
+            raise HTTPException(status_code=404, detail=f"Drawing sumber {source_id} tidak ditemukan")
+
+        if not shared_bom_id:
+            bom_mode = "create_new"
+            bom_id = ""
+            source_bom_id = src.get("bom_id") or ""
+        else:
+            bom_mode = "existing"
+            bom_id = shared_bom_id
+            source_bom_id = ""
+
+        din = DrawingIn(
+            customer_code=(src.get("customer_code") or customer_code).upper().strip(),
+            customer_name=doc.get("customer_name") or src.get("customer_name") or "",
+            project_initial=(src.get("project_initial") or "").strip(),
+            drawing_type=src.get("drawing_type") or "Assembly",
+            title=src.get("title") or "",
+            discipline=src.get("discipline") or "Mechanical",
+            customer_drawing_no=(src.get("customer_drawing_no") or "").strip(),
+            so_no=doc.get("so_no") or "",
+            project_name=doc.get("project_name") or src.get("project_name") or "",
+            class_material=payload.class_material or src.get("class_material") or "",
+            prepared_by=assigned_name,
+            from_drf_id=drf_id,
+            assigned_to_user_id=assignee or current.get("id"),
+            assigned_to_name=assigned_name,
+            bom_link_mode=bom_mode,
+            bom_id=bom_id,
+            source_bom_id=source_bom_id,
+        )
+        dr = await create_drawing(din, current)
+        if not shared_bom_id:
+            shared_bom_id = dr.get("bom_id") or ""
+
+        # Clone file level-drawing dari drawing lama (reference-copy, share GridFS id).
+        clone_set = {
+            "is_repeat_pulled": True,
+            "pulled_from_drawing_id": src.get("id"),
+            "pulled_from_drawing_no": src.get("drawing_no"),
+            "updated_at": _now_iso(),
+        }
+        if src.get("file_id"):
+            clone_set["file_id"] = src.get("file_id")
+            clone_set["filename"] = src.get("filename")
+            clone_set["file_uploaded_at"] = _now_iso()
+        if src.get("customer_ref_file_id"):
+            clone_set["customer_ref_file_id"] = src.get("customer_ref_file_id")
+            clone_set["customer_ref_filename"] = src.get("customer_ref_filename")
+            clone_set["customer_ref_uploaded_at"] = _now_iso()
+        src_extras = src.get("additional_files") or []
+        if src_extras:
+            cloned_extras = []
+            for e in src_extras:
+                ne = {**e}
+                ne["id"] = str(uuid.uuid4())
+                ne["copied_from_drawing"] = src.get("id")
+                cloned_extras.append(ne)
+            clone_set["additional_files"] = cloned_extras
+        await db.drawings.update_one({"id": dr["id"]}, {"$set": clone_set})
+        dr.update(clone_set)
+        created.append(dr)
+
+    linked_ids = [d["id"] for d in created]
+    await db.drawing_requests.update_one(
+        {"id": drf_id},
+        {"$set": {
+            "status": "in_progress",
+            "linked_drawing_id": (doc.get("linked_drawing_id") or (linked_ids[0] if linked_ids else None)),
+            "linked_drawing_ids": (doc.get("linked_drawing_ids") or []) + linked_ids,
+            "shared_bom_id": shared_bom_id,
+            "updated_at": _now_iso(),
+        }},
+    )
+    await log_action(current, "drf_pull_repeat", "drawing_requests", drf_id,
+                     {"form_no": doc.get("form_no"), "count": len(created)})
+    return {"success": True, "drawings": created, "shared_bom_id": shared_bom_id}
+
+
 @router.post("/drawing-requests/{drf_id}/link-drawing")
 async def link_drawing_to_drf(
     drf_id: str,
