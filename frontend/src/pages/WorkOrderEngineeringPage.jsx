@@ -7,7 +7,7 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
-import { Wrench, ArrowClockwise, MagnifyingGlass, UserPlus, ArrowRight, Eye, CheckCircle, Tray, Gear } from "@phosphor-icons/react";
+import { Wrench, ArrowClockwise, MagnifyingGlass, UserPlus, ArrowRight, Eye, CheckCircle, Tray, Gear, PencilSimple, ClockCounterClockwise } from "@phosphor-icons/react";
 
 const LEADER_ROLES = ["eng_head", "eng_leader", "admin", "super_admin", "supervisor"];
 
@@ -26,8 +26,11 @@ export default function WorkOrderEngineeringPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
-  const [tab, setTab] = useState(isLeader ? "assign" : "mine");
+  const [tab, setTab] = useState(isLeader ? "assign" : "inprogress");
   const [assignDrf, setAssignDrf] = useState(null);
+  const [pendingTtd, setPendingTtd] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [subLoading, setSubLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -40,6 +43,23 @@ export default function WorkOrderEngineeringPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load data untuk tab TTD saat dibuka
+  useEffect(() => {
+    if (tab === "pendingttd") {
+      setSubLoading(true);
+      api.get("/drawings/pending-my-approval")
+        .then(({ data }) => setPendingTtd(data.items || data || []))
+        .catch(() => setPendingTtd([]))
+        .finally(() => setSubLoading(false));
+    } else if (tab === "history") {
+      setSubLoading(true);
+      api.get(`/drawings/my-signature-history${isLeader ? "?all=true" : ""}`)
+        .then(({ data }) => setHistory(data.items || []))
+        .catch(() => setHistory([]))
+        .finally(() => setSubLoading(false));
+    }
+  }, [tab, isLeader]);
 
   const matchQ = (d) => !q.trim() || `${d.form_no} ${d.so_no} ${d.customer_name} ${d.project_name}`.toLowerCase().includes(q.toLowerCase());
 
@@ -66,14 +86,16 @@ export default function WorkOrderEngineeringPage() {
         </p>
       </div>
 
-      {/* Tabs (leader only) */}
-      {isLeader && (
-        <div className="flex gap-1 border-b border-slate-200">
-          <TabBtn active={tab === "assign"} onClick={() => setTab("assign")} icon={Tray} label="Perlu Di-assign" count={needAssign.length} testid="wo-tab-assign" />
-          <TabBtn active={tab === "inprogress"} onClick={() => setTab("inprogress")} icon={Gear} label="Sedang Dikerjakan" count={inProgress.length} testid="wo-tab-inprogress" />
-        </div>
-      )}
+      {/* Tabs (role-aware) */}
+      <div className="flex gap-1 border-b border-slate-200 flex-wrap">
+        {isLeader && <TabBtn active={tab === "assign"} onClick={() => setTab("assign")} icon={Tray} label="Perlu Di-assign" count={needAssign.length} testid="wo-tab-assign" />}
+        <TabBtn active={tab === "inprogress"} onClick={() => setTab("inprogress")} icon={Gear} label="Sedang Dikerjakan" count={inProgress.length} testid="wo-tab-inprogress" />
+        <TabBtn active={tab === "pendingttd"} onClick={() => setTab("pendingttd")} icon={PencilSimple} label="Perlu TTD Saya" count={pendingTtd.length} testid="wo-tab-pendingttd" />
+        <TabBtn active={tab === "history"} onClick={() => setTab("history")} icon={ClockCounterClockwise} label="Riwayat TTD" testid="wo-tab-history" />
+      </div>
 
+      {/* DRF tabs: assign / inprogress */}
+      {(tab === "assign" || tab === "inprogress") && (
       <Card className="rounded-none border-slate-200 overflow-hidden">
         <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
           <MagnifyingGlass size={14} className="text-slate-500" />
@@ -104,7 +126,6 @@ export default function WorkOrderEngineeringPage() {
                 </td></tr>
               )}
               {shown.map((d) => {
-                const assigned = !!d.assigned_engineer_id;
                 return (
                   <tr key={d.id} className="border-b border-slate-100 hover:bg-teal-50/40" data-testid={`wo-row-${d.form_no}`}>
                     <td className="p-3 font-mono font-semibold text-slate-900 text-xs">{d.form_no}</td>
@@ -145,6 +166,87 @@ export default function WorkOrderEngineeringPage() {
           </table>
         </div>
       </Card>
+      )}
+
+      {/* Perlu TTD Saya */}
+      {tab === "pendingttd" && (
+        <Card className="rounded-none border-slate-200 overflow-hidden">
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-500">
+            Drawing yang menunggu <b>tanda tangan Anda</b>. Klik "Review & TTD" untuk preview + bubuhkan TTD.
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-white border-b border-slate-200">
+                <tr className="text-[10px] uppercase tracking-[0.08em] font-bold text-slate-500">
+                  <th className="text-left p-3">Drawing No</th>
+                  <th className="text-left p-3">Title</th>
+                  <th className="text-left p-3">SO</th>
+                  <th className="text-left p-3">Customer</th>
+                  <th className="text-left p-3">Tahap</th>
+                  <th className="text-center p-3">Aksi</th>
+                </tr>
+              </thead>
+              <tbody data-testid="wo-pendingttd-list">
+                {subLoading && <tr><td colSpan={6} className="p-8 text-center text-slate-400">Memuat...</td></tr>}
+                {!subLoading && pendingTtd.length === 0 && <tr><td colSpan={6} className="p-12 text-center text-slate-400">Tidak ada drawing yang menunggu TTD Anda.</td></tr>}
+                {pendingTtd.map((d) => (
+                  <tr key={d.id} className="border-b border-slate-100 hover:bg-amber-50/40" data-testid={`wo-ttd-row-${d.drawing_no}`}>
+                    <td className="p-3 font-mono font-bold text-xs">{d.drawing_no}</td>
+                    <td className="p-3 text-xs">{d.title || d.project_name || "-"}</td>
+                    <td className="p-3 font-mono text-xs">{d.so_no || "-"}</td>
+                    <td className="p-3 text-xs">{d.customer_name || "-"}</td>
+                    <td className="p-3 text-xs"><span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-400 text-[9px] font-bold uppercase">{(d.approval_status || "").replace("pending_", "")}</span></td>
+                    <td className="p-3 text-center">
+                      <button onClick={() => navigate(`/engineering/work-order/${d.id}`)} className="inline-flex items-center px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold uppercase gap-0.5" data-testid={`wo-ttd-review-${d.drawing_no}`}>
+                        <PencilSimple size={11} weight="bold" /> Review & TTD
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* Riwayat TTD */}
+      {tab === "history" && (
+        <Card className="rounded-none border-slate-200 overflow-hidden">
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-500">
+            {isLeader ? "Riwayat TTD SEMUA user (audit ISO)." : "Riwayat TTD Anda (audit ISO)."} Read-only.
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-white border-b border-slate-200">
+                <tr className="text-[10px] uppercase tracking-[0.08em] font-bold text-slate-500">
+                  <th className="text-left p-3">Tgl TTD</th>
+                  <th className="text-left p-3">Drawing No</th>
+                  <th className="text-left p-3">Tahap</th>
+                  <th className="text-left p-3">Oleh</th>
+                  <th className="text-left p-3">Status Skrg</th>
+                  <th className="text-center p-3">Lihat</th>
+                </tr>
+              </thead>
+              <tbody data-testid="wo-history-list">
+                {subLoading && <tr><td colSpan={6} className="p-8 text-center text-slate-400">Memuat...</td></tr>}
+                {!subLoading && history.length === 0 && <tr><td colSpan={6} className="p-12 text-center text-slate-400">Belum ada riwayat TTD.</td></tr>}
+                {history.map((h, i) => (
+                  <tr key={i} className="border-b border-slate-100 hover:bg-slate-50" data-testid={`wo-hist-row-${i}`}>
+                    <td className="p-3 text-xs">{h.signed_at ? new Date(h.signed_at).toLocaleString("id-ID") : "-"}</td>
+                    <td className="p-3 font-mono font-bold text-xs">{h.drawing_no}</td>
+                    <td className="p-3 text-xs uppercase">{h.stage}</td>
+                    <td className="p-3 text-xs">{h.signed_by || "-"}</td>
+                    <td className="p-3 text-xs">{h.drawing_status_now}</td>
+                    <td className="p-3 text-center">
+                      {h.has_pdf && <button onClick={() => navigate(`/engineering/work-order/${h.drawing_id}`)} className="p-1 text-violet-700 hover:bg-violet-50" title="Lihat drawing"><Eye size={13} /></button>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       {assignDrf && (
         <AssignEngineerDialog

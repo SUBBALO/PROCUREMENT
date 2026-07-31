@@ -1875,34 +1875,39 @@ async def list_pending_dc_stamp(current: dict = Depends(get_current_user)):
 
 
 @router.get("/drawings/my-signature-history")
-async def my_signature_history(current: dict = Depends(get_current_user)):
-    """Iter 22 — Riwayat TTD saya (bukti audit ISO): semua drawing yang pernah di-TTD user
-    sebagai submit/eng_head/qc/sales/dc/so_stamp. Return: drawing_no, project, tgl TTD, stage, status."""
+async def my_signature_history(all: bool = False, current: dict = Depends(get_current_user)):
+    """Iter 22 — Riwayat TTD (bukti audit ISO): drawing yang pernah di-TTD.
+    Default = milik user login. all=true (khusus Eng Leader/Admin) = semua user."""
     uid = current.get("id")
     uname = (current.get("username") or "").lower().strip()
     if not uid and not uname:
         raise HTTPException(status_code=401, detail="Unauthenticated")
 
-    q = {
-        "deleted_at": {"$exists": False},
-        "approvals": {
-            "$elemMatch": {
-                "$or": [
-                    {"user_id": uid} if uid else {"user_id": "__na__"},
-                    {"username": uname} if uname else {"username": "__na__"},
-                ]
-            }
-        },
-    }
+    show_all = bool(all) and (is_eng_head(current) or is_admin_like(current))
+    if show_all:
+        q = {"deleted_at": {"$exists": False}, "approvals": {"$exists": True, "$ne": []}}
+    else:
+        q = {
+            "deleted_at": {"$exists": False},
+            "approvals": {
+                "$elemMatch": {
+                    "$or": [
+                        {"user_id": uid} if uid else {"user_id": "__na__"},
+                        {"username": uname} if uname else {"username": "__na__"},
+                    ]
+                }
+            },
+        }
     docs = await db.drawings.find(q, {"_id": 0}).sort([("updated_at", -1)]).to_list(length=500)
 
     history = []
     for d in docs:
         for a in d.get("approvals", []) or []:
-            match_id = uid and a.get("user_id") == uid
-            match_name = uname and (a.get("username") or "").lower().strip() == uname
-            if not (match_id or match_name):
-                continue
+            if not show_all:
+                match_id = uid and a.get("user_id") == uid
+                match_name = uname and (a.get("username") or "").lower().strip() == uname
+                if not (match_id or match_name):
+                    continue
             history.append({
                 "drawing_id": d.get("id"),
                 "drawing_no": d.get("drawing_no"),

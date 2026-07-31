@@ -33,17 +33,6 @@ export default function EngineeringPortalPage() {
   }, [isHead, isEngUser]);
 
   const CARDS = [
-    ...(isHead ? [{
-      key: "pending-approval",
-      label: "Review & TTD Drawing dari Engineer",
-      stats: "Cek hasil kerja engineer · TTD kalau OK",
-      description: "Drawing yang sudah dikerjakan engineer & menunggu review Anda. Buka PDF → cek isi drawing, BOM, dimensi → kalau OK klik TTD & Approve, kalau perlu revisi klik Reject dengan catatan.",
-      icon: PenNib,
-      href: "/drawings/pending-my-approval",
-      accent: "from-orange-500 via-amber-500 to-yellow-500",
-      accentText: "text-orange-400",
-      badgeCount: pendingApproval,
-    }] : []),
     ...(isEngUser ? [{
       key: "work-orders",
       label: "Work Order Engineering",
@@ -70,8 +59,8 @@ export default function EngineeringPortalPage() {
       accent: "from-sky-500 via-blue-500 to-indigo-500", accentText: "text-sky-400",
     },
     {
-      key: "drawings", label: "MKS-F-ENG-005 Drawing Master List", stats: "Register · Upload · Verifikasi PDF",
-      description: "Register nomor drawing + upload PDF. Sistem verifikasi isi PDF, warning jika drawing_no tidak match.",
+      key: "drawings", label: "Drawing Master List", stats: "Katalog View-Only · Cari via SO",
+      description: "Katalog semua drawing (DWG MKS + No. DWG Customer). View-only — cari cukup dengan Nomor SO untuk melihat drawing MKS & customer terkait.",
       icon: FileText, href: "/engineering/drawings",
       accent: "from-violet-500 via-purple-500 to-fuchsia-500", accentText: "text-violet-400",
     },
@@ -87,16 +76,6 @@ export default function EngineeringPortalPage() {
       icon: Package, href: "/bom",
       accent: "from-amber-500 via-yellow-500 to-lime-500", accentText: "text-amber-400",
     },
-    ...(isEngUser ? [{
-      key: "sig-history",
-      label: "Riwayat TTD Saya",
-      stats: "Bukti Audit · ISO 9001",
-      description: "Semua drawing yang pernah Anda TTD sebagai bukti audit. Lengkap dengan tanggal, jam, peran (Prepared By / Eng Head), dan link preview PDF.",
-      icon: ClipboardIcon,
-      href: "/my/signature-history",
-      accent: "from-indigo-500 via-purple-500 to-fuchsia-500",
-      accentText: "text-indigo-400",
-    }] : []),
   ];
 
   return <DeptPortal deptLabel="Engineering Department" deptTagline="Drawing Request · Tugas Saya · Costing · BOM · Master Drawing" accentColor="amber" cards={CARDS} />;

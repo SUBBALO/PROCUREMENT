@@ -4,27 +4,23 @@
     "status": "completed"
   },
   {
-    "content": "Phase 1: DRF Work Group (Riski accept+assign only, self-assign redirect; engineer generates N drawings sharing 1 BOM)",
+    "content": "Phase 1: DRF Work Group + accept-assign + generate N drawings sharing 1 BOM",
     "status": "completed"
   },
   {
-    "content": "Customer DWG No field + Master List column + search by SO",
+    "content": "Customer DWG No + Master List view-only + column + search by SO",
     "status": "completed"
   },
   {
-    "content": "Generate panel: next-number preview + recent numbers list",
+    "content": "Generate panel: next-number preview + recent numbers",
     "status": "completed"
   },
   {
-    "content": "Master List Drawing = view-only",
+    "content": "ECR & ECN module",
     "status": "completed"
   },
   {
-    "content": "ECR & ECN module (customer vs internal) + portal card",
-    "status": "completed"
-  },
-  {
-    "content": "Consolidate 3 Eng cards into 1 role-aware 'Work Order Engineering' card - verified both roles",
+    "content": "Consolidate Engineering cards into 1 role-aware 'Work Order Engineering' with 4 tabs (assign, in-progress, Perlu TTD Saya, Riwayat TTD)",
     "status": "completed"
   }
 ]
