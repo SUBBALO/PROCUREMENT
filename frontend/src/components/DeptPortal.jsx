@@ -1,0 +1,90 @@
+import React from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { ArrowRight, ArrowLeft, Sparkle } from "@phosphor-icons/react";
+
+/**
+ * Reusable department sub-portal (LIGHT theme, 1-screen compact).
+ */
+export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky", cards }) {
+  const navigate = useNavigate();
+
+  return (
+    <div className="min-h-[calc(100vh-60px)] bg-slate-50 text-slate-900 relative overflow-hidden -mx-6 -my-6">
+      <div
+        className="absolute inset-0 opacity-[0.03] pointer-events-none"
+        style={{
+          backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
+        }}
+      />
+      <div className={`absolute -top-40 -left-40 w-96 h-96 bg-${accentColor}-200/40 blur-3xl rounded-full pointer-events-none`} />
+      <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-rose-200/30 blur-3xl rounded-full pointer-events-none" />
+
+      <div className="relative max-w-[1400px] mx-auto px-6 py-5">
+        <Link to="/" className="inline-flex items-center gap-1 text-xs uppercase tracking-[0.15em] text-slate-500 hover:text-slate-900 transition-colors mb-4">
+          <ArrowLeft size={12} weight="bold" /> Kembali ke Portal Utama
+        </Link>
+
+        <div className="mb-5">
+          <div className="flex items-center gap-2 mb-1.5">
+            <Sparkle size={14} weight="fill" className="text-amber-500" />
+            <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-slate-500">{deptLabel} Sub-Portal</span>
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
+            {deptLabel}
+          </h1>
+          {deptTagline && <p className="mt-1.5 text-xs text-slate-600">{deptTagline}</p>}
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          {cards.map((c, idx) => (
+            <Card key={c.key} card={c} onEnter={() => c.href && c.href !== "#" && !c.comingSoon && navigate(c.href)} delay={idx * 60} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function Card({ card, onEnter, delay }) {
+  const Icon = card.icon;
+  // Convert -400 text tokens to -600 for readability on white
+  const accentText = (card.accentText || "").replace(/-4\d\d/, "-600");
+  return (
+    <button
+      data-testid={`subcard-${card.key}`}
+      onClick={onEnter}
+      disabled={card.comingSoon || !card.href || card.href === "#"}
+      className="group relative text-left bg-white border border-slate-200 hover:border-slate-300 hover:shadow-lg transition-all duration-300 overflow-hidden disabled:cursor-not-allowed hover:-translate-y-0.5"
+      style={{ animationDelay: `${delay}ms`, animationName: "fadeSlideIn", animationDuration: "500ms", animationFillMode: "backwards" }}
+    >
+      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${card.accent} opacity-70 group-hover:opacity-100 transition-opacity`} />
+      {card.comingSoon && (
+        <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-slate-100 border border-slate-300 text-[8px] uppercase tracking-[0.15em] font-bold text-slate-600">
+          Soon
+        </div>
+      )}
+      {!card.comingSoon && card.badgeCount > 0 && (
+        <div
+          className="absolute top-2 right-2 min-w-[24px] h-6 px-1.5 flex items-center justify-center bg-red-600 text-white text-[11px] font-bold rounded-full animate-pulse shadow-md"
+          data-testid={`subcard-badge-${card.key}`}
+          title={`${card.badgeCount} item menunggu tindakan Anda`}
+        >
+          {card.badgeCount > 99 ? "99+" : card.badgeCount}
+        </div>
+      )}
+      <div className="p-4 pt-5">
+        <div className="w-11 h-11 flex items-center justify-center bg-slate-50 border border-slate-200 mb-3 group-hover:bg-slate-100 transition-colors">
+          <Icon size={22} weight="duotone" className={accentText} />
+        </div>
+        <div className="text-[9px] uppercase tracking-[0.15em] font-bold text-slate-500 mb-1">{card.stats || ""}</div>
+        <h3 className="text-lg font-bold tracking-tight text-slate-900 mb-1.5" style={{ fontFamily: "Chivo, sans-serif" }}>{card.label}</h3>
+        <p className="text-[11px] text-slate-600 leading-snug mb-3 min-h-[42px]">{card.description}</p>
+        <div className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.15em] font-bold ${accentText} group-hover:gap-2 transition-all`}>
+          {card.comingSoon ? "Segera" : "Buka"}
+          {!card.comingSoon && <ArrowRight size={12} weight="bold" />}
+        </div>
+      </div>
+    </button>
+  );
+}

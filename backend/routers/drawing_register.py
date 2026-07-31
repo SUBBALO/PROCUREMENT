@@ -1,0 +1,1862 @@
+"""MKS-F-ENG-005 Drawing Master List — register nomor drawing + upload file + verifikasi konten PDF.
+
+Engineering register drawing (drawing_no + metadata) → upload PDF. Sistem extract text
+dari PDF dan cek apakah drawing_no register muncul di isi PDF. Jika tidak → warning kuning.
+"""
+from __future__ import annotations
+import io
+import os
+import re
+import uuid
+from datetime import datetime, timezone
+from typing import Optional, List
+
+from bson import ObjectId
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi.responses import StreamingResponse
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+from pydantic import BaseModel
+
+from db import db
+from deps import get_current_user, log_action
+
+router = APIRouter(tags=["drawings"])
+
+VALID_DISCIPLINES = ["Mechanical", "Civil", "Electrical", "Piping", "Structural", "Instrument", "General"]
+VALID_STATUS = ["Draft", "Issued", "Superseded", "Cancelled"]
+
+# Default drawing number config
+DEFAULT_CONFIG = {
+    "default_customer_code": "MKS",   # customer code default
+    "assembly_start_seq": 0,           # A.00
+    "part_start_seq": 1,               # P.01
+}
+
+
+async def _get_config() -> dict:
+    doc = await db.drawing_config.find_one({"_id": "default"}, {"_id": 0})
+    if not doc:
+        return dict(DEFAULT_CONFIG)
+    return {**DEFAULT_CONFIG, **doc}
+
+
+async def _next_drawing_no(customer_code: str, project_initial: str, drawing_type: str) -> dict:
+    """Generate next drawing number in format:
+       DWG.YY.MM.NN_CUSTOMER.INITIAL.TYPE.SEQ
+
+    NN = monthly running number, unique per project within a month
+    (same customer+initial+YYYYMM = same NN, only TYPE.SEQ differs)
+    TYPE = "A" (Assembly) or "P" (Part)
+    Assembly starts from 00, Part starts from 01. Both increment.
+    """
+    cfg = await _get_config()
+    customer_code = (customer_code or cfg.get("default_customer_code") or "MKS").upper().strip()
+    project_initial = (project_initial or "").upper().strip()
+    if not project_initial:
+        raise HTTPException(status_code=400, detail="project_initial wajib untuk auto-generate (mis. 'SP' untuk Support Plate)")
+    if drawing_type not in ("Assembly", "Part"):
+        raise HTTPException(status_code=400, detail="drawing_type harus 'Assembly' atau 'Part'")
+
+    now = datetime.now(timezone.utc)
+    yy = f"{now.year % 100:02d}"
+    mm = f"{now.month:02d}"
+    year_month = f"{yy}.{mm}"
+
+    # 1) Determine monthly_running (NN):
+    # Cek apakah project (customer + initial) sudah ada drawing di bulan ini
+    existing_project_drawing = await db.drawings.find_one({
+        "year_month": year_month,
+        "customer_code": customer_code,
+        "project_initial": project_initial,
+        "deleted_at": {"$exists": False},
+    })
+    if existing_project_drawing and existing_project_drawing.get("monthly_running") is not None:
+        monthly_running = int(existing_project_drawing["monthly_running"])
+    else:
+        # New project in this month → next monthly counter
+        counter_key = f"drawing_monthly_{yy}_{mm}"
+        res = await db.counters.find_one_and_update(
+            {"_id": counter_key},
+            {"$inc": {"value": 1}},
+            upsert=True,
+            return_document=True,
+        )
+        monthly_running = (res or {}).get("value") or 1
+
+    # 2) Determine type_seq
+    type_letter = "A" if drawing_type == "Assembly" else "P"
+    start_seq = int(cfg.get("assembly_start_seq" if drawing_type == "Assembly" else "part_start_seq") or 0)
+    # Find max existing seq for this project+type
+    existing_type_drawings = await db.drawings.find({
+        "year_month": year_month,
+        "customer_code": customer_code,
+        "project_initial": project_initial,
+        "drawing_type": drawing_type,
+        "deleted_at": {"$exists": False},
+    }, {"type_seq": 1, "_id": 0}).to_list(length=1000)
+    max_seq = max([int(d.get("type_seq", -1)) for d in existing_type_drawings], default=None)
+    if max_seq is None:
+        type_seq = start_seq
+    else:
+        type_seq = max_seq + 1
+
+    dno = f"DWG.{yy}.{mm}.{monthly_running:02d}_{customer_code}.{project_initial}.{type_letter}.{type_seq:02d}"
+    return {
+        "drawing_no": dno,
+        "year_month": year_month,
+        "customer_code": customer_code,
+        "project_initial": project_initial,
+        "monthly_running": monthly_running,
+        "drawing_type": drawing_type,
+        "type_letter": type_letter,
+        "type_seq": type_seq,
+    }
+
+_gridfs: Optional[AsyncIOMotorGridFSBucket] = None
+
+
+def _fs() -> AsyncIOMotorGridFSBucket:
+    global _gridfs
+    if _gridfs is None:
+        _gridfs = AsyncIOMotorGridFSBucket(db, bucket_name="drawings")
+    return _gridfs
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _clean(d):
+    if d:
+        d.pop("_id", None)
+    return d
+
+
+def _can_edit(user: dict) -> bool:
+    role = (user or {}).get("role", "")
+    return role in ("admin", "super_admin", "supervisor", "eng_leader", "eng_head", "eng_staff", "engineering")
+
+
+def _is_eng_head_role(user: dict) -> bool:
+    """Eng Head/Leader/Admin bisa assign ke user lain & override permission."""
+    role = (user or {}).get("role", "")
+    return role in ("admin", "super_admin", "supervisor", "eng_leader", "eng_head")
+
+
+def _can_modify_drawing(user: dict, drawing: dict) -> bool:
+    """Iter 20 — Permission check untuk edit/upload/submit drawing.
+
+    Rules:
+    - Kalau drawing belum di-assign ke siapapun → semua eng_role bisa edit (compat lama)
+    - Kalau sudah di-assign → hanya assigned user + Eng Head + Admin yang bisa edit
+    - Kalau bukan eng_role → deny
+    """
+    if not _can_edit(user):
+        return False
+    assigned_id = (drawing or {}).get("assigned_to_user_id")
+    if not assigned_id:
+        return True  # belum di-assign, siapa saja di eng team boleh
+    if _is_eng_head_role(user):
+        return True  # Eng Head/Admin selalu boleh
+    return user.get("id") == assigned_id
+
+
+def _can_view(user: dict) -> bool:
+    role = (user or {}).get("role", "")
+    return role in (
+        "admin", "super_admin", "supervisor", "finance", "sales", "purchasing",
+        "eng_leader", "eng_head", "eng_staff", "engineering", "production", "qc",
+        "doc_control", "document_control",
+    )
+
+
+class DrawingIn(BaseModel):
+    drawing_no: str = ""  # kosong → auto-generate berdasarkan customer_code + project_initial + drawing_type
+    customer_code: str = "MKS"       # default MKS (bisa custom untuk external customer)
+    customer_name: str = ""          # opsional — nama customer lengkap (auto-fill dari customer master)
+    project_initial: str = ""         # WAJIB kalau auto-generate. mis. "SP" untuk Support Plate
+    drawing_type: str = "Assembly"    # Assembly | Part
+    title: str = ""
+    revision: str = "Rev-0"
+    discipline: str = "Mechanical"
+    so_no: str = ""
+    project_name: str = ""
+    class_material: str = ""          # deskripsi paket order — mis. "RAW MATERIAL FOR QTY 1 PCS"
+    prepared_by: str = ""
+    request_by_sales: str = ""        # Sales yang request drawing (dropdown nama sales)
+    checked_by: str = ""
+    drawing_date: str = ""
+    status: str = "Draft"
+    remark: str = ""
+    # BOM linking
+    bom_link_mode: str = "none"   # none | create_new | existing
+    bom_no: str = ""              # kosong dgn mode=create_new → auto-generate
+    bom_id: str = ""              # untuk mode=existing
+    source_bom_id: str = ""       # untuk Repeat Order: copy items + attachments dari BOM ini ke BOM baru
+    # Iter 19 — Link ke Drawing Request Form (dari Sales)
+    from_drf_id: str = ""         # kalau drawing ini dibuat sebagai lanjutan dari DRF, isi ID DRF-nya
+    # Iter 20 — Assign engineer yang mengerjakan drawing
+    assigned_to_user_id: str = ""
+    assigned_to_name: str = ""
+
+
+class ConfigIn(BaseModel):
+    default_customer_code: Optional[str] = None
+    assembly_start_seq: Optional[int] = None
+    part_start_seq: Optional[int] = None
+
+
+def _normalize_dno(s: str) -> str:
+    """Uppercase + strip non-alphanumeric — for lookup / fuzzy compare in PDF text."""
+    return re.sub(r"[^A-Z0-9]", "", (s or "").upper())
+
+
+def _extract_pdf_text(pdf_bytes: bytes) -> str:
+    """Best-effort text extraction (pypdf). Return empty string on error."""
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        chunks = []
+        # Only scan first 5 pages (drawing title usually on page 1)
+        for i, page in enumerate(reader.pages):
+            if i >= 5:
+                break
+            try:
+                chunks.append(page.extract_text() or "")
+            except Exception:
+                pass
+        return "\n".join(chunks)
+    except Exception:
+        return ""
+
+
+def _check_drawing_no_in_text(drawing_no: str, pdf_text: str) -> dict:
+    """Return {match, extracted_candidates, note}."""
+    if not drawing_no:
+        return {"match": False, "extracted_candidates": [], "note": "drawing_no register kosong"}
+    if not pdf_text.strip():
+        return {"match": False, "extracted_candidates": [], "note": "Tidak bisa extract teks dari PDF (mungkin scan/gambar)"}
+
+    target = _normalize_dno(drawing_no)
+    haystack = _normalize_dno(pdf_text)
+    if target in haystack:
+        return {"match": True, "extracted_candidates": [drawing_no], "note": "Nomor drawing ditemukan di PDF"}
+
+    # Try to detect any drawing-number-like patterns in text as suggestions
+    candidates = set()
+    # Pattern: alphanumeric with dashes/slashes, min 5 chars, at least one letter and one digit
+    for m in re.findall(r"[A-Za-z0-9][A-Za-z0-9\-/_.]{4,30}[A-Za-z0-9]", pdf_text):
+        norm = _normalize_dno(m)
+        if 5 <= len(norm) <= 30 and any(c.isalpha() for c in norm) and any(c.isdigit() for c in norm):
+            candidates.add(m.strip())
+    # Keep at most 8 unique candidates
+    candidates_list = sorted(candidates)[:8]
+    return {
+        "match": False,
+        "extracted_candidates": candidates_list,
+        "note": f"Nomor register '{drawing_no}' tidak ditemukan di isi PDF",
+    }
+
+
+@router.get("/drawings/config")
+async def get_drawing_config(current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    cfg = await _get_config()
+    now = datetime.now(timezone.utc)
+    return {
+        **cfg,
+        "format_template": "DWG.YY.MM.NN_CUSTOMER.INITIAL.TYPE.SEQ",
+        "format_example": f"DWG.{now.year % 100:02d}.{now.month:02d}.01_MKS.SP.A.00",
+    }
+
+
+@router.put("/drawings/config")
+async def update_drawing_config(payload: ConfigIn, current: dict = Depends(get_current_user)):
+    if not _can_edit(current):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+    data = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not data:
+        raise HTTPException(status_code=400, detail="Tidak ada field valid")
+    await db.drawing_config.update_one({"_id": "default"}, {"$set": data}, upsert=True)
+    return {"success": True, **data}
+
+
+@router.get("/drawings/next-number")
+async def preview_next_number(
+    customer_code: str = "MKS",
+    project_initial: str = "",
+    drawing_type: str = "Assembly",
+    current: dict = Depends(get_current_user),
+):
+    """Preview drawing_no yang akan digenerate — TIDAK mengubah counter.
+    Perlu customer_code + project_initial + drawing_type.
+    """
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    if not project_initial:
+        # Show placeholder
+        now = datetime.now(timezone.utc)
+        yy = f"{now.year % 100:02d}"
+        mm = f"{now.month:02d}"
+        return {"preview": f"DWG.{yy}.{mm}.NN_{customer_code}.[INITIAL].A.00", "note": "Isi Project Initial dulu"}
+
+    cfg = await _get_config()
+    customer_code = (customer_code or cfg.get("default_customer_code") or "MKS").upper().strip()
+    project_initial = project_initial.upper().strip()
+    if drawing_type not in ("Assembly", "Part"):
+        drawing_type = "Assembly"
+
+    now = datetime.now(timezone.utc)
+    yy = f"{now.year % 100:02d}"
+    mm = f"{now.month:02d}"
+    year_month = f"{yy}.{mm}"
+
+    # Check existing project
+    existing_project = await db.drawings.find_one({
+        "year_month": year_month,
+        "customer_code": customer_code,
+        "project_initial": project_initial,
+        "deleted_at": {"$exists": False},
+    })
+    if existing_project and existing_project.get("monthly_running") is not None:
+        monthly_running = int(existing_project["monthly_running"])
+        is_new_project = False
+    else:
+        # Peek next counter (tidak increment)
+        counter_key = f"drawing_monthly_{yy}_{mm}"
+        counter = await db.counters.find_one({"_id": counter_key}) or {}
+        monthly_running = (counter.get("value") or 0) + 1
+        is_new_project = True
+
+    type_letter = "A" if drawing_type == "Assembly" else "P"
+    start_seq = int(cfg.get("assembly_start_seq" if drawing_type == "Assembly" else "part_start_seq") or 0)
+    existing_type = await db.drawings.find({
+        "year_month": year_month,
+        "customer_code": customer_code,
+        "project_initial": project_initial,
+        "drawing_type": drawing_type,
+        "deleted_at": {"$exists": False},
+    }, {"type_seq": 1, "_id": 0}).to_list(length=1000)
+    max_seq = max([int(d.get("type_seq", -1)) for d in existing_type], default=None)
+    type_seq = start_seq if max_seq is None else max_seq + 1
+
+    preview = f"DWG.{yy}.{mm}.{monthly_running:02d}_{customer_code}.{project_initial}.{type_letter}.{type_seq:02d}"
+    return {
+        "preview": preview,
+        "year_month": year_month,
+        "monthly_running": monthly_running,
+        "is_new_project": is_new_project,
+        "existing_project_drawings": len(existing_type),
+        "type_letter": type_letter,
+        "type_seq": type_seq,
+    }
+
+
+@router.get("/drawings")
+async def list_drawings(
+    q: Optional[str] = None,
+    discipline: Optional[str] = None,
+    status: Optional[str] = None,
+    so_no: Optional[str] = None,
+    limit: int = 500,
+    current: dict = Depends(get_current_user),
+):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    filt = {"deleted_at": {"$exists": False}}
+    if discipline: filt["discipline"] = discipline
+    if status: filt["status"] = status
+    if so_no: filt["so_no"] = so_no
+    if q and q.strip():
+        rx = {"$regex": re.escape(q.strip()), "$options": "i"}
+        filt["$or"] = [
+            {"drawing_no": rx}, {"title": rx}, {"project_name": rx},
+            {"so_no": rx}, {"prepared_by": rx}, {"remark": rx},
+        ]
+    docs = await db.drawings.find(filt, {"_id": 0}).sort("updated_at", -1).limit(limit).to_list(length=limit)
+    return {"items": docs, "total": len(docs), "disciplines": VALID_DISCIPLINES, "statuses": VALID_STATUS}
+
+
+@router.post("/drawings")
+async def create_drawing(payload: DrawingIn, current: dict = Depends(get_current_user)):
+    if not _can_edit(current):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+
+    # Auto-generate if empty
+    auto_generated = False
+    drawing_no = (payload.drawing_no or "").strip()
+    meta = {}
+    if not drawing_no:
+        meta = await _next_drawing_no(payload.customer_code, payload.project_initial, payload.drawing_type)
+        drawing_no = meta["drawing_no"]
+        auto_generated = True
+
+    # Uniqueness check on drawing_no + revision
+    existing = await db.drawings.find_one({
+        "drawing_no": drawing_no,
+        "revision": payload.revision,
+        "deleted_at": {"$exists": False},
+    })
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Drawing '{drawing_no}' rev {payload.revision} sudah ada")
+
+    user_name = current.get("username") or current.get("name")
+
+    # Handle BOM linking
+    bom_id_final = None
+    bom_no_final = ""
+    if payload.bom_link_mode == "create_new":
+        # Auto-generate BOM or use provided bom_no
+        bom_no_to_create = (payload.bom_no or "").strip()
+        auto_bom = False
+        if not bom_no_to_create:
+            # Import lazily to avoid circular
+            from routers.bom import _next_bom_no
+            bom_info = await _next_bom_no()
+            bom_no_to_create = bom_info["bom_no"]
+            auto_bom = True
+        # Check uniqueness
+        existing_bom = await db.boms.find_one({"bom_no": bom_no_to_create, "deleted_at": {"$exists": False}})
+        if existing_bom:
+            raise HTTPException(status_code=409, detail=f"BOM '{bom_no_to_create}' sudah ada — pilih 'existing' atau kosongkan untuk auto")
+
+        # Repeat Order: copy items dari source BOM
+        copied_items = []
+        source_bom = None
+        if payload.source_bom_id:
+            source_bom = await db.boms.find_one(
+                {"id": payload.source_bom_id, "deleted_at": {"$exists": False}},
+                {"_id": 0, "items": 1, "class_material": 1, "bom_no": 1}
+            )
+            if not source_bom:
+                raise HTTPException(status_code=404, detail="Source BOM (untuk Repeat Order) tidak ditemukan")
+            for idx, it in enumerate((source_bom.get("items") or []), start=1):
+                copied_items.append({
+                    "item_no": idx,
+                    "item_name": it.get("item_name") or it.get("item_specification") or "",
+                    "item_specification": it.get("item_specification") or "",
+                    "qty": float(it.get("qty") or 0),
+                    "uom": it.get("uom") or "",
+                    "material": it.get("material") or "",
+                    "weight_kg": it.get("weight_kg"),
+                    "purchase_due_date": "",  # reset — user isi baru
+                    "remark": it.get("remark") or "",
+                })
+        # Create BOM record
+        bom_doc = {
+            "id": str(uuid.uuid4()),
+            "so_no": payload.so_no.strip(),
+            "rev_no": 0,
+            "bom_no": bom_no_to_create,
+            "project_name": payload.project_name.strip(),
+            "project_dwg": drawing_no,  # link back
+            "customer": payload.customer_code.upper().strip(),
+            "class_material": (payload.class_material or (source_bom or {}).get("class_material") or "").strip(),
+            "delivery_date": "",
+            "bom_date": datetime.now(timezone.utc).date().isoformat(),
+            "prepared_by": (payload.prepared_by or user_name or "").strip(),
+            "items": copied_items,
+            "annotations": {},
+            "revision_reason": "",
+            "auto_generated": auto_bom,
+            "source": "repeat_order" if payload.source_bom_id else "drawing_register",
+            "source_bom_id": payload.source_bom_id or None,
+            "source_bom_no": (source_bom or {}).get("bom_no") if source_bom else None,
+            "is_repeat": bool(payload.source_bom_id),
+            "uploaded_by_id": current.get("id"),
+            "uploaded_by_name": user_name,
+            "uploaded_by_role": current.get("role"),
+            "uploaded_at": _now_iso(),
+            "original_filename": None,
+            # Iter 35 workflow — new BOMs start as draft
+            "engineering_status": "draft",
+            "signatures": {
+                "prepared_by": None,
+                "checked_by": None,
+                "acknowledged_by": None,
+                "approved_by": None,
+            },
+        }
+        await db.boms.insert_one(bom_doc.copy())
+        bom_id_final = bom_doc["id"]
+        bom_no_final = bom_no_to_create
+
+        # Repeat Order: copy attachments (drawing PDF, customer_ref, nesting, costing) from source BOM
+        # Reference-copy: same file_id shared. If user replaces file, sistem create new file.
+        if payload.source_bom_id:
+            src_attachments = await db.bom_attachments.find(
+                {"bom_id": payload.source_bom_id, "deleted_at": {"$exists": False},
+                 "category": {"$in": ["drawing", "customer_ref", "nesting", "costing", "costing_prev"]}},
+                {"_id": 0},
+            ).to_list(length=100)
+            for src in src_attachments:
+                new_att = {**src}
+                new_att["id"] = str(uuid.uuid4())
+                new_att["bom_id"] = bom_id_final
+                new_att["copied_from"] = src.get("id")
+                new_att["copied_at"] = _now_iso()
+                # Costing sekarang jadi "costing_prev" di BOM baru (harga lama sebagai referensi)
+                if src.get("category") == "costing":
+                    new_att["category"] = "costing_prev"
+                await db.bom_attachments.insert_one(new_att)
+    elif payload.bom_link_mode == "existing":
+        # Verify existing BOM
+        if not payload.bom_id:
+            raise HTTPException(status_code=400, detail="bom_id wajib untuk mode existing")
+        b = await db.boms.find_one({"id": payload.bom_id, "deleted_at": {"$exists": False}}, {"bom_no": 1})
+        if not b:
+            raise HTTPException(status_code=404, detail="BOM tidak ditemukan")
+        bom_id_final = payload.bom_id
+        bom_no_final = b.get("bom_no", "")
+
+    doc = payload.model_dump()
+    doc["drawing_no"] = drawing_no
+    doc["customer_code"] = (payload.customer_code or "MKS").upper().strip()
+    doc["customer_name"] = (payload.customer_name or "").strip()
+    doc["request_by_sales"] = (payload.request_by_sales or "").strip()
+    doc["project_initial"] = (payload.project_initial or "").upper().strip()
+    doc["auto_generated"] = auto_generated
+
+    # Auto-save customer_code back to customer master (upsert by name).
+    # Bila engineer ketik manual customer_code, sekaligus persist ke customers collection.
+    if doc["customer_name"] and doc["customer_code"]:
+        try:
+            existing_cust = await db.customers.find_one(
+                {"name": {"$regex": f"^{re.escape(doc['customer_name'])}$", "$options": "i"},
+                 "deleted_at": {"$exists": False}}
+            )
+            if existing_cust:
+                if (existing_cust.get("customer_code") or "").upper() != doc["customer_code"]:
+                    await db.customers.update_one(
+                        {"id": existing_cust["id"]},
+                        {"$set": {
+                            "customer_code": doc["customer_code"],
+                            "customer_code_updated_by": user_name,
+                            "updated_at": _now_iso(),
+                        }},
+                    )
+            else:
+                await db.customers.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "name": doc["customer_name"],
+                    "customer_code": doc["customer_code"],
+                    "address": "", "pic": "", "phone": "", "email": "", "notes": "",
+                    "created_at": _now_iso(),
+                    "created_by_name": user_name,
+                    "auto_created_from": "drawing_register",
+                })
+        except Exception:
+            pass  # non-fatal — jangan gagalkan create drawing
+    doc["year_month"] = meta.get("year_month")
+    doc["monthly_running"] = meta.get("monthly_running")
+    doc["type_letter"] = meta.get("type_letter")
+    doc["type_seq"] = meta.get("type_seq")
+    doc["bom_id"] = bom_id_final
+    doc["bom_no"] = bom_no_final
+    doc["id"] = str(uuid.uuid4())
+    doc["created_at"] = _now_iso()
+    doc["created_by"] = user_name
+    doc["updated_at"] = _now_iso()
+    doc["updated_by"] = user_name
+    doc["file_id"] = None
+    doc["filename"] = None
+    doc["file_uploaded_at"] = None
+    doc["pdf_match_status"] = None
+    doc["pdf_match_note"] = None
+    # Iter 16 — Digital Approval Workflow untuk Drawing
+    # Sequential: draft → pending_eng_head → pending_qc → pending_sales → approved → controlled → released
+    doc["approval_status"] = "draft"
+    doc["approvals"] = []  # array of {stage, name, role, user_id, username, at, notes}
+    # Iter 19 — Link back to Drawing Request Form (kalau dibuat dari DRF)
+    if payload.from_drf_id:
+        doc["from_drf_id"] = payload.from_drf_id
+    await db.drawings.insert_one(doc.copy())
+    # Update DRF: link drawing_id back
+    if payload.from_drf_id:
+        await db.drawing_requests.update_one(
+            {"id": payload.from_drf_id, "deleted_at": {"$exists": False}},
+            {"$set": {
+                "linked_drawing_id": doc["id"],
+                "status": "in_progress",
+                "updated_at": _now_iso(),
+            }},
+        )
+    await log_action(current, "drawing_create", "drawings", doc["id"], {"drawing_no": doc["drawing_no"], "bom_no": bom_no_final, "auto": auto_generated, "from_drf_id": payload.from_drf_id or None})
+    return _clean(doc)
+
+
+@router.put("/drawings/{drawing_id}")
+async def update_drawing(drawing_id: str, payload: DrawingIn, current: dict = Depends(get_current_user)):
+    if not _can_edit(current):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+    existing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    if not _can_modify_drawing(current, existing):
+        assigned_name = existing.get("assigned_to_name", "-")
+        raise HTTPException(status_code=403, detail=f"Drawing ini di-assign ke {assigned_name}. Hanya orang tersebut atau Eng Head yang bisa edit.")
+    user_name = current.get("username") or current.get("name")
+    update = payload.model_dump()
+    update["drawing_no"] = update["drawing_no"].strip()
+    update["customer_code"] = (update.get("customer_code") or "MKS").upper().strip()
+    update["customer_name"] = (update.get("customer_name") or "").strip()
+    update["request_by_sales"] = (update.get("request_by_sales") or "").strip()
+    update["updated_at"] = _now_iso()
+    update["updated_by"] = user_name
+    # Iter 20 — Preserve assigned_to fields (hanya bisa diubah via /assign endpoint)
+    update.pop("assigned_to_user_id", None)
+    update.pop("assigned_to_name", None)
+    # Preserve link ke DRF (immutable)
+    update.pop("from_drf_id", None)
+    await db.drawings.update_one({"id": drawing_id}, {"$set": update})
+
+    # Auto-save customer_code back to customer master
+    if update["customer_name"] and update["customer_code"]:
+        try:
+            existing_cust = await db.customers.find_one(
+                {"name": {"$regex": f"^{re.escape(update['customer_name'])}$", "$options": "i"},
+                 "deleted_at": {"$exists": False}}
+            )
+            if existing_cust:
+                if (existing_cust.get("customer_code") or "").upper() != update["customer_code"]:
+                    await db.customers.update_one(
+                        {"id": existing_cust["id"]},
+                        {"$set": {"customer_code": update["customer_code"],
+                                  "customer_code_updated_by": user_name,
+                                  "updated_at": _now_iso()}},
+                    )
+            else:
+                await db.customers.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "name": update["customer_name"],
+                    "customer_code": update["customer_code"],
+                    "address": "", "pic": "", "phone": "", "email": "", "notes": "",
+                    "created_at": _now_iso(),
+                    "created_by_name": user_name,
+                    "auto_created_from": "drawing_register",
+                })
+        except Exception:
+            pass
+    return {"success": True}
+
+
+@router.delete("/drawings/{drawing_id}")
+async def delete_drawing(drawing_id: str, current: dict = Depends(get_current_user)):
+    if not _can_edit(current):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+    existing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    # Delete GridFS file if any
+    if existing.get("file_id"):
+        try:
+            await _fs().delete(ObjectId(existing["file_id"]))
+        except Exception:
+            pass
+    await db.drawings.update_one(
+        {"id": drawing_id},
+        {"$set": {"deleted_at": _now_iso(), "deleted_by": current.get("username")}},
+    )
+    await log_action(current, "drawing_delete", "drawings", drawing_id, {})
+    return {"success": True}
+
+
+# =========================================================================
+# Iter 22 — Link BOM ke drawing yang sudah ada (untuk Engineering Work Order page)
+# =========================================================================
+class LinkBomIn(BaseModel):
+    bom_link_mode: str = "none"   # none | create_new | existing
+    bom_no: str = ""              # untuk create_new
+    bom_id: str = ""              # untuk existing
+
+
+@router.post("/drawings/{drawing_id}/link-bom")
+async def drawing_link_bom(drawing_id: str, payload: LinkBomIn, current: dict = Depends(get_current_user)):
+    """Link BOM ke drawing yang sudah ada — dipakai di Engineering Work Order page
+    ketika Trisna (assignee) menentukan BOM linking setelah drawing di-register oleh Eng Head."""
+    drawing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not drawing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    if not _can_modify_drawing(current, drawing):
+        assigned_name = drawing.get("assigned_to_name", "-")
+        raise HTTPException(status_code=403, detail=f"Drawing di-assign ke {assigned_name} — Anda tidak berhak")
+
+    user_name = current.get("username") or current.get("name")
+    mode = (payload.bom_link_mode or "none").strip()
+
+    bom_id_final = None
+    bom_no_final = ""
+
+    if mode == "none":
+        pass  # unlink
+    elif mode == "existing":
+        if not payload.bom_id:
+            raise HTTPException(status_code=400, detail="bom_id wajib untuk mode existing")
+        b = await db.boms.find_one({"id": payload.bom_id, "deleted_at": {"$exists": False}}, {"bom_no": 1})
+        if not b:
+            raise HTTPException(status_code=404, detail="BOM tidak ditemukan")
+        bom_id_final = payload.bom_id
+        bom_no_final = b.get("bom_no", "")
+    elif mode == "create_new":
+        bom_no_to_create = (payload.bom_no or "").strip()
+        auto_bom = False
+        if not bom_no_to_create:
+            from routers.bom import _next_bom_no
+            bom_info = await _next_bom_no()
+            bom_no_to_create = bom_info["bom_no"]
+            auto_bom = True
+        existing_bom = await db.boms.find_one({"bom_no": bom_no_to_create, "deleted_at": {"$exists": False}})
+        if existing_bom:
+            raise HTTPException(status_code=409, detail=f"BOM '{bom_no_to_create}' sudah ada")
+        bom_doc = {
+            "id": str(uuid.uuid4()),
+            "so_no": (drawing.get("so_no") or "").strip(),
+            "rev_no": 0,
+            "bom_no": bom_no_to_create,
+            "project_name": (drawing.get("project_name") or "").strip(),
+            "project_dwg": drawing.get("drawing_no") or "",
+            "customer": (drawing.get("customer_code") or "MKS").upper().strip(),
+            "class_material": (drawing.get("class_material") or "").strip(),
+            "delivery_date": "",
+            "bom_date": datetime.now(timezone.utc).date().isoformat(),
+            "prepared_by": (drawing.get("prepared_by") or user_name or "").strip(),
+            "items": [],
+            "annotations": {},
+            "revision_reason": "",
+            "auto_generated": auto_bom,
+            "source": "work_order_link",
+            "source_bom_id": None,
+            "source_bom_no": None,
+            "is_repeat": False,
+            "uploaded_by_id": current.get("id"),
+            "uploaded_by_name": user_name,
+            "uploaded_by_role": current.get("role"),
+            "uploaded_at": _now_iso(),
+            "original_filename": None,
+            "engineering_status": "draft",
+            "signatures": {"prepared_by": None, "checked_by": None,
+                           "acknowledged_by": None, "approved_by": None},
+        }
+        await db.boms.insert_one(bom_doc.copy())
+        bom_id_final = bom_doc["id"]
+        bom_no_final = bom_no_to_create
+    else:
+        raise HTTPException(status_code=400, detail=f"Mode tidak valid: {mode}")
+
+    await db.drawings.update_one(
+        {"id": drawing_id},
+        {"$set": {"bom_id": bom_id_final, "bom_no": bom_no_final,
+                  "updated_at": _now_iso(), "updated_by": user_name}},
+    )
+    await log_action(current, "drawing_link_bom", "drawings", drawing_id,
+                     {"mode": mode, "bom_no": bom_no_final})
+    return {"success": True, "bom_id": bom_id_final, "bom_no": bom_no_final}
+
+
+# =========================================================================
+# Iter 20 — Assign engineer & list engineering users
+# =========================================================================
+ENG_ROLE_LIST = ["eng_staff", "engineering", "eng_head", "eng_leader"]
+
+
+@router.get("/drawings/my-assignments")
+async def list_my_assignments(current: dict = Depends(get_current_user)):
+    """Iter 21 — List drawing yang di-assign ke current user (untuk Eng Staff).
+    Return drawings dengan assigned_to_user_id == current user_id."""
+    if not _can_edit(current):
+        return {"items": [], "total": 0}
+    docs = await db.drawings.find(
+        {"assigned_to_user_id": current["id"], "deleted_at": {"$exists": False}},
+        {"_id": 0},
+    ).sort("updated_at", -1).to_list(length=200)
+    return {"items": docs, "total": len(docs)}
+
+
+@router.get("/drawings/engineering-users")
+async def list_engineering_users(current: dict = Depends(get_current_user)):
+    """Return list of engineering users untuk dropdown assign."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    users = await db.users.find(
+        {"role": {"$in": ENG_ROLE_LIST}, "active": {"$ne": False}},
+        {"_id": 0, "id": 1, "username": 1, "name": 1, "role": 1},
+    ).sort("name", 1).to_list(length=200)
+    return {"items": users}
+
+
+class AssignIn(BaseModel):
+    assigned_to_user_id: str = ""
+    assigned_to_name: str = ""  # opsional — override display name
+
+
+@router.post("/drawings/{drawing_id}/assign")
+async def assign_drawing(
+    drawing_id: str,
+    payload: AssignIn,
+    current: dict = Depends(get_current_user),
+):
+    """Eng Head/Admin assign drawing ke engineer tertentu.
+    Kosongkan assigned_to_user_id untuk hapus assignment."""
+    if not _is_eng_head_role(current):
+        raise HTTPException(status_code=403, detail="Hanya Eng Head/Admin yang boleh assign")
+    existing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+
+    upd = {"updated_at": _now_iso()}
+    if payload.assigned_to_user_id:
+        u = await db.users.find_one({"id": payload.assigned_to_user_id})
+        if not u:
+            raise HTTPException(status_code=404, detail="User tidak ditemukan")
+        if u.get("role") not in ENG_ROLE_LIST:
+            raise HTTPException(status_code=400, detail="User bukan Engineering")
+        upd["assigned_to_user_id"] = u["id"]
+        upd["assigned_to_name"] = payload.assigned_to_name or u.get("name") or u.get("username")
+        upd["assigned_by"] = current.get("name") or current.get("username")
+        upd["assigned_at"] = _now_iso()
+    else:
+        upd["assigned_to_user_id"] = ""
+        upd["assigned_to_name"] = ""
+    await db.drawings.update_one({"id": drawing_id}, {"$set": upd})
+    await log_action(current, "drawing_assign", "drawings", drawing_id, {
+        "drawing_no": existing.get("drawing_no"),
+        "assigned_to": upd.get("assigned_to_name"),
+    })
+    out = await db.drawings.find_one({"id": drawing_id}, {"_id": 0})
+    return out
+
+
+@router.post("/drawings/verify-pdf")
+async def verify_pdf(
+    drawing_no: str = Form(...),
+    file: UploadFile = File(...),
+    current: dict = Depends(get_current_user),
+):
+    """Verify PDF contents against a drawing_no BEFORE actually uploading. Returns match info."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext != ".pdf":
+        raise HTTPException(status_code=400, detail="Hanya PDF yang bisa diverifikasi")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="File kosong")
+    text = _extract_pdf_text(content)
+    result = _check_drawing_no_in_text(drawing_no, text)
+    result["text_extracted_chars"] = len(text)
+    return result
+
+
+@router.post("/drawings/{drawing_id}/upload")
+async def upload_drawing_pdf(
+    drawing_id: str,
+    force: bool = Form(False),
+    file: UploadFile = File(...),
+    current: dict = Depends(get_current_user),
+):
+    """Upload PDF for a registered drawing. If drawing_no mismatch detected → warning
+    (but proceed anyway per user preference). Client can call /verify-pdf first.
+    """
+    if not _can_edit(current):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+    existing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    if not _can_modify_drawing(current, existing):
+        assigned_name = existing.get("assigned_to_name", "-")
+        raise HTTPException(status_code=403, detail=f"Drawing ini di-assign ke {assigned_name}. Hanya orang tersebut yang bisa upload PDF.")
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext != ".pdf":
+        raise HTTPException(status_code=400, detail="Hanya PDF yang boleh diupload")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="File kosong")
+    if len(content) > 100 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File > 100 MB tidak diizinkan")
+
+    # Verify content
+    text = _extract_pdf_text(content)
+    check = _check_drawing_no_in_text(existing["drawing_no"], text)
+
+    # Replace old file if any
+    if existing.get("file_id"):
+        try:
+            await _fs().delete(ObjectId(existing["file_id"]))
+        except Exception:
+            pass
+
+    fs = _fs()
+    file_id = await fs.upload_from_stream(
+        file.filename, content,
+        metadata={"content_type": "application/pdf", "drawing_id": drawing_id},
+    )
+
+    user_name = current.get("username") or current.get("name")
+    update = {
+        "file_id": str(file_id),
+        "filename": file.filename,
+        "file_uploaded_at": _now_iso(),
+        "file_uploaded_by": user_name,
+        "pdf_match_status": "verified" if check["match"] else "warning",
+        "pdf_match_note": check["note"],
+        "pdf_extracted_candidates": check["extracted_candidates"],
+        "updated_at": _now_iso(),
+        "updated_by": user_name,
+    }
+    # Auto-status: kalau drawing masih "Draft" dan drawing PDF pertama kali di-upload, promote ke "Issued"
+    prev_status = (existing.get("status") or "Draft").strip()
+    if prev_status.lower() == "draft":
+        update["status"] = "Issued"
+        update["status_auto_promoted_at"] = _now_iso()
+        update["status_auto_promoted_by"] = user_name
+    await db.drawings.update_one({"id": drawing_id}, {"$set": update})
+    await log_action(current, "drawing_upload", "drawings", drawing_id, {
+        "filename": file.filename, "match": check["match"],
+        "status_auto_promoted": prev_status.lower() == "draft",
+    })
+    return {
+        "success": True,
+        "match": check["match"],
+        "note": check["note"],
+        "extracted_candidates": check["extracted_candidates"],
+        "file_uploaded_at": update["file_uploaded_at"],
+        "filename": file.filename,
+        "status": update.get("status") or prev_status,
+        "status_auto_promoted": prev_status.lower() == "draft",
+    }
+
+
+@router.get("/drawings/{drawing_id}/preview")
+async def preview_drawing(drawing_id: str, current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    doc = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not doc or not doc.get("file_id"):
+        raise HTTPException(status_code=404, detail="File tidak ditemukan")
+    stream = await _fs().open_download_stream(ObjectId(doc["file_id"]))
+    raw = await stream.read()
+    return StreamingResponse(
+        io.BytesIO(raw),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{doc.get("filename") or doc["drawing_no"]}.pdf"'},
+    )
+
+
+@router.get("/drawings/{drawing_id}/download")
+async def download_drawing(drawing_id: str, current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    doc = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not doc or not doc.get("file_id"):
+        raise HTTPException(status_code=404, detail="File tidak ditemukan")
+    stream = await _fs().open_download_stream(ObjectId(doc["file_id"]))
+    raw = await stream.read()
+    return StreamingResponse(
+        io.BytesIO(raw),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{doc.get("filename") or doc["drawing_no"]}.pdf"'},
+    )
+
+
+# ============ CUSTOMER REFERENCE (opsional) ============
+
+@router.post("/drawings/{drawing_id}/upload-customer-ref")
+async def upload_customer_ref(
+    drawing_id: str,
+    file: UploadFile = File(...),
+    current: dict = Depends(get_current_user),
+):
+    """Upload PDF referensi dari CUSTOMER (bukan MKS drawing).
+    Ini file acuan dari client yang jadi dasar gambar MKS.
+    """
+    if not _can_edit(current):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+    existing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext != ".pdf":
+        raise HTTPException(status_code=400, detail="Hanya PDF yang boleh diupload")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="File kosong")
+    if len(content) > 100 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File > 100 MB tidak diizinkan")
+
+    # Delete old customer ref if any
+    if existing.get("customer_ref_file_id"):
+        try:
+            await _fs().delete(ObjectId(existing["customer_ref_file_id"]))
+        except Exception:
+            pass
+
+    fs = _fs()
+    file_id = await fs.upload_from_stream(
+        file.filename, content,
+        metadata={"content_type": "application/pdf", "drawing_id": drawing_id, "type": "customer_ref"},
+    )
+
+    user_name = current.get("username") or current.get("name")
+    update = {
+        "customer_ref_file_id": str(file_id),
+        "customer_ref_filename": file.filename,
+        "customer_ref_uploaded_at": _now_iso(),
+        "customer_ref_uploaded_by": user_name,
+        "updated_at": _now_iso(),
+        "updated_by": user_name,
+    }
+    await db.drawings.update_one({"id": drawing_id}, {"$set": update})
+    await log_action(current, "drawing_customer_ref_upload", "drawings", drawing_id, {"filename": file.filename})
+    return {"success": True, **update}
+
+
+@router.get("/drawings/{drawing_id}/customer-ref/preview")
+async def preview_customer_ref(drawing_id: str, current: dict = Depends(get_current_user)):
+    """Preview Customer Reference PDF.
+
+    Iter 18: Customer Ref juga dianggap sebagai dokumen controlled MKS — otomatis
+    dapat watermark "UNCONTROLLED COPY WHEN PRINTED" + footer info user (kecuali
+    yg akses adalah Doc Control atau Admin). Log audit trail print history.
+    """
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    doc = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not doc or not doc.get("customer_ref_file_id"):
+        raise HTTPException(status_code=404, detail="Customer reference tidak ditemukan")
+    stream = await _fs().open_download_stream(ObjectId(doc["customer_ref_file_id"]))
+    raw = await stream.read()
+
+    # Watermark logic: sama seperti PDF stamped — kalau drawing sudah controlled dan user bukan DC/admin, apply watermark
+    is_dc_or_admin = is_doc_control(current) or is_admin_like(current)
+    show_watermark = (
+        doc.get("approval_status") in ("controlled", "approved") and not is_dc_or_admin
+    )
+
+    printed_by = current.get("name") or current.get("username") or ""
+
+    # Iter 20 — Customer Ref juga bisa punya DC stamp Salma
+    ref_dc_stamp = doc.get("customer_ref_dc_stamp")
+
+    if show_watermark or printed_by or ref_dc_stamp:
+        raw = _apply_pdf_stamps(
+            raw,
+            approvals=[],
+            dc_stamp=ref_dc_stamp,   # ← stamp Salma di customer ref
+            watermark_uncontrolled=show_watermark,
+            printed_by=printed_by,
+        )
+
+    # Log audit trail
+    try:
+        await log_action(current, "customer_ref_preview", "drawings", drawing_id, {
+            "drawing_no": doc.get("drawing_no"),
+            "filename": doc.get("customer_ref_filename"),
+            "watermarked": show_watermark,
+        })
+    except Exception:
+        pass
+
+    return StreamingResponse(
+        io.BytesIO(raw),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="customer-ref-{doc["drawing_no"]}.pdf"'},
+    )
+
+
+@router.get("/drawings/{drawing_id}/customer-ref/download")
+async def download_customer_ref(drawing_id: str, current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    doc = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not doc or not doc.get("customer_ref_file_id"):
+        raise HTTPException(status_code=404, detail="Customer reference tidak ditemukan")
+    stream = await _fs().open_download_stream(ObjectId(doc["customer_ref_file_id"]))
+    raw = await stream.read()
+    filename = doc.get("customer_ref_filename") or f"customer-ref-{doc['drawing_no']}.pdf"
+    return StreamingResponse(
+        io.BytesIO(raw),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.delete("/drawings/{drawing_id}/customer-ref")
+async def delete_customer_ref(drawing_id: str, current: dict = Depends(get_current_user)):
+    if not _can_edit(current):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+    existing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    if existing.get("customer_ref_file_id"):
+        try:
+            await _fs().delete(ObjectId(existing["customer_ref_file_id"]))
+        except Exception:
+            pass
+    await db.drawings.update_one({"id": drawing_id}, {"$set": {
+        "customer_ref_file_id": None, "customer_ref_filename": None,
+        "customer_ref_uploaded_at": None, "customer_ref_uploaded_by": None,
+    }})
+    return {"success": True}
+
+
+@router.delete("/drawings/{drawing_id}/file")
+async def delete_drawing_pdf(drawing_id: str, current: dict = Depends(get_current_user)):
+    """Delete just the uploaded PDF file, keep the drawing record."""
+    if not _can_edit(current):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+    existing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    if existing.get("file_id"):
+        try:
+            await _fs().delete(ObjectId(existing["file_id"]))
+        except Exception:
+            pass
+    await db.drawings.update_one({"id": drawing_id}, {"$set": {
+        "file_id": None, "filename": None,
+        "file_uploaded_at": None, "file_uploaded_by": None,
+        "pdf_match_status": None, "pdf_match_note": None, "pdf_extracted_candidates": None,
+    }})
+    await log_action(current, "drawing_delete_file", "drawings", drawing_id, {})
+    return {"success": True}
+
+
+# ============ MULTI-FILE (Additional Files per Drawing) ============
+# User: "kadang dokumen drawing lebih dari 1 file" — support N extra files per drawing
+# (misal: gambar rev-1 + rev-2 + detail zoom + BOM sheet). Stored in same GridFS bucket.
+
+DRAWING_EXTRA_MAX_MB = 100
+DRAWING_EXTRA_ALLOWED_EXT = {".pdf", ".jpg", ".jpeg", ".png", ".dwg", ".dxf", ".xlsx", ".xls", ".zip"}
+
+
+@router.post("/drawings/{drawing_id}/extras")
+async def upload_extra_file(
+    drawing_id: str,
+    file: UploadFile = File(...),
+    label: str = Form(""),  # optional caption/description
+    current: dict = Depends(get_current_user),
+):
+    """Upload extra/additional file (any type) attached to a drawing. Multiple allowed."""
+    if not _can_edit(current):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+    existing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in DRAWING_EXTRA_ALLOWED_EXT:
+        raise HTTPException(status_code=400, detail=f"Ekstensi {ext} tidak diizinkan. Boleh: {sorted(DRAWING_EXTRA_ALLOWED_EXT)}")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="File kosong")
+    if len(content) > DRAWING_EXTRA_MAX_MB * 1024 * 1024:
+        raise HTTPException(status_code=400, detail=f"File > {DRAWING_EXTRA_MAX_MB} MB tidak diizinkan")
+
+    fs = _fs()
+    file_id = await fs.upload_from_stream(
+        file.filename, content,
+        metadata={
+            "content_type": file.content_type or "application/octet-stream",
+            "drawing_id": drawing_id,
+            "type": "extra",
+        },
+    )
+
+    entry = {
+        "id": str(uuid.uuid4()),
+        "file_id": str(file_id),
+        "filename": file.filename,
+        "label": (label or "").strip(),
+        "ext": ext,
+        "size": len(content),
+        "content_type": file.content_type or "application/octet-stream",
+        "uploaded_at": _now_iso(),
+        "uploaded_by": current.get("username") or current.get("name"),
+    }
+    await db.drawings.update_one(
+        {"id": drawing_id},
+        {"$push": {"additional_files": entry}, "$set": {"updated_at": _now_iso()}},
+    )
+    await log_action(current, "drawing_upload_extra", "drawings", drawing_id, {"filename": file.filename, "ext": ext})
+    return {"success": True, "file": entry}
+
+
+@router.get("/drawings/{drawing_id}/extras/{extra_id}/preview")
+async def preview_extra_file(drawing_id: str, extra_id: str, current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    doc = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    entry = next((f for f in (doc.get("additional_files") or []) if f.get("id") == extra_id), None)
+    if not entry:
+        raise HTTPException(status_code=404, detail="File tidak ditemukan")
+    try:
+        stream = await _fs().open_download_stream(ObjectId(entry["file_id"]))
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"File gagal dibaca: {e}")
+    raw = await stream.read()
+
+    # Iter 20 — Kalau PDF, apply DC stamp (kalau ada) + watermark untuk non-DC
+    ctype = (entry.get("content_type") or "").lower()
+    is_pdf = ctype == "application/pdf" or (entry.get("ext") or "").lower() == ".pdf"
+    if is_pdf:
+        is_dc_or_admin = is_doc_control(current) or is_admin_like(current)
+        show_watermark = (
+            doc.get("approval_status") in ("controlled", "approved") and not is_dc_or_admin
+        )
+        extra_dc_stamp = entry.get("dc_stamp")
+        printed_by = current.get("name") or current.get("username") or ""
+        if show_watermark or printed_by or extra_dc_stamp:
+            try:
+                raw = _apply_pdf_stamps(
+                    raw,
+                    approvals=[],
+                    dc_stamp=extra_dc_stamp,
+                    watermark_uncontrolled=show_watermark,
+                    printed_by=printed_by,
+                )
+            except Exception:
+                pass  # fallback ke raw kalau gagal parse PDF
+
+    return StreamingResponse(
+        io.BytesIO(raw),
+        media_type=entry.get("content_type") or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{entry.get("filename")}"'},
+    )
+
+
+@router.delete("/drawings/{drawing_id}/extras/{extra_id}")
+async def delete_extra_file(drawing_id: str, extra_id: str, current: dict = Depends(get_current_user)):
+    if not _can_edit(current):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+    doc = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    entry = next((f for f in (doc.get("additional_files") or []) if f.get("id") == extra_id), None)
+    if not entry:
+        raise HTTPException(status_code=404, detail="File tidak ditemukan")
+    try:
+        await _fs().delete(ObjectId(entry["file_id"]))
+    except Exception:
+        pass
+    await db.drawings.update_one(
+        {"id": drawing_id},
+        {"$pull": {"additional_files": {"id": extra_id}}, "$set": {"updated_at": _now_iso()}},
+    )
+    await log_action(current, "drawing_delete_extra", "drawings", drawing_id, {"extra_id": extra_id})
+    return {"success": True}
+
+
+
+# ============================================================================
+# Iter 16 — Digital Approval Workflow untuk Drawing
+# Strict sequential: draft → pending_eng_head → pending_qc → pending_sales → approved → controlled → released
+# ============================================================================
+from deps import is_eng_head, is_qc, is_doc_control, is_engineering, is_admin_like, is_super_admin_user, SALES_ROLES  # noqa: E402
+
+STAGE_ORDER = ["eng_head", "qc", "sales"]  # sequential approval stages
+STAGE_STATUS = {
+    "eng_head": "pending_eng_head",
+    "qc": "pending_qc",
+    "sales": "pending_sales",
+}
+NEXT_STATUS_AFTER = {
+    "pending_eng_head": "pending_qc",
+    "pending_qc": "pending_sales",
+    "pending_sales": "approved",
+}
+
+
+def _stage_allowed_roles(stage: str) -> tuple:
+    if stage == "eng_head":
+        return ("eng_leader", "eng_head", "engineering")
+    if stage == "qc":
+        return ("qc",)
+    if stage == "sales":
+        return SALES_ROLES
+    return tuple()
+
+
+def _sig_stamp(current: dict, notes: str = "") -> dict:
+    return {
+        "name": (current.get("name") or current.get("username") or "").strip(),
+        "user_id": current.get("id"),
+        "username": current.get("username"),
+        "role": current.get("role"),
+        "at": _now_iso(),
+        "notes": (notes or "").strip(),
+    }
+
+
+class ApprovalActionIn(BaseModel):
+    notes: str = ""
+    # Iter 18 — Digital signature placement (opsional):
+    # Approver klik posisi di PDF viewer → koordinat 0..1 relatif ke lebar/tinggi halaman
+    stamp_x: Optional[float] = None
+    stamp_y: Optional[float] = None
+    stamp_page: Optional[int] = 0     # halaman (0-indexed). Default 0 = halaman pertama.
+    stamp_size: Optional[str] = "M"    # "S" | "M" | "L" — untuk kolom TTD yang beda-beda ukuran
+    # Iter 20d — Data SO Stamp Produksi (dipakai saat Sales TTD, auto-terisi ke Salma)
+    so_stamp_data: Optional[dict] = None
+
+
+@router.post("/drawings/{drawing_id}/submit-for-approval")
+async def drawing_submit_for_approval(
+    drawing_id: str,
+    payload: ApprovalActionIn = None,
+    current: dict = Depends(get_current_user),
+):
+    """Engineer submit drawing draft → pending_eng_head. Approval flow dimulai.
+
+    Engineer (Prepared By) juga langsung TTD di PDF drawing pada posisi yang dipilih.
+    """
+    drawing = await db.drawings.find_one({"id": drawing_id})
+    if not drawing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    status = drawing.get("approval_status", "draft")
+    if status != "draft":
+        raise HTTPException(status_code=409, detail=f"Drawing sudah dalam status '{status}', tidak bisa submit ulang")
+    if not drawing.get("file_id"):
+        raise HTTPException(status_code=400, detail="Upload PDF drawing terlebih dahulu sebelum submit approval")
+    if not is_engineering(current) and not is_admin_like(current):
+        raise HTTPException(status_code=403, detail="Hanya Engineering yang boleh submit drawing untuk approval")
+    if not _can_modify_drawing(current, drawing):
+        assigned_name = drawing.get("assigned_to_name", "-")
+        raise HTTPException(status_code=403, detail=f"Drawing ini di-assign ke {assigned_name}. Hanya orang tersebut yang bisa submit.")
+
+    stamp = _sig_stamp(current, notes=(payload.notes if payload else ""))
+    stamp["stage"] = "submit"
+    # Iter 22 — Prepared By juga TTD digital di PDF pada posisi yang dipilih
+    if payload:
+        if payload.stamp_x is not None: stamp["x"] = float(payload.stamp_x)
+        if payload.stamp_y is not None: stamp["y"] = float(payload.stamp_y)
+        if payload.stamp_page is not None: stamp["page"] = int(payload.stamp_page)
+        if payload.stamp_size: stamp["size"] = str(payload.stamp_size).upper()
+    await db.drawings.update_one(
+        {"id": drawing_id},
+        {"$set": {"approval_status": "pending_eng_head", "submitted_at": _now_iso(),
+                  "submitted_by": stamp["name"], "prepared_by": stamp["name"]},
+         "$push": {"approvals": stamp}},
+    )
+    await log_action(current, "drawing_submit_approval", "drawings", drawing_id,
+                     {"drawing_no": drawing.get("drawing_no")})
+    return {"success": True, "approval_status": "pending_eng_head", "signed_by": stamp["name"]}
+
+
+@router.post("/drawings/{drawing_id}/approve/{stage}")
+async def drawing_approve_stage(
+    drawing_id: str, stage: str,
+    payload: ApprovalActionIn = None,
+    current: dict = Depends(get_current_user),
+):
+    """Approve stage. Sequential: stage harus sesuai approval_status saat ini.
+
+    Stages valid: eng_head, qc, sales
+    """
+    if stage not in STAGE_ORDER:
+        raise HTTPException(status_code=400, detail=f"Stage '{stage}' tidak valid. Pilih: {STAGE_ORDER}")
+
+    drawing = await db.drawings.find_one({"id": drawing_id})
+    if not drawing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+
+    current_status = drawing.get("approval_status", "draft")
+    expected_status = STAGE_STATUS[stage]
+    # Sequential enforcement: current_status harus == expected for this stage
+    if current_status != expected_status:
+        raise HTTPException(
+            status_code=409,
+            detail=(f"Drawing sedang di status '{current_status}', tidak bisa approve stage '{stage}'. "
+                    f"Stage {stage} hanya bisa saat status '{expected_status}'."),
+        )
+
+    # Role check — hanya role yang tepat yang boleh TTD stage ini.
+    # Super_admin (Susanto) diperbolehkan sebagai emergency override, tapi admin/supervisor
+    # biasa TIDAK boleh bypass — mereka juga harus punya role QC/Sales/Eng Head jika mau TTD.
+    allowed = _stage_allowed_roles(stage)
+    role = current.get("role")
+    if role not in allowed and not is_super_admin_user(current):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Role Anda ({role}) tidak boleh approve stage '{stage}'. Butuh role: {allowed}",
+        )
+
+    # Iter 22 — Untuk stage 'sales', hanya Sales requester (yg buat DRF) yang boleh TTD.
+    # Sales LAIN tidak boleh TTD atas nama sales lain. Super admin bypass.
+    if stage == "sales" and role in SALES_ROLES and not is_super_admin_user(current):
+        drf_id = drawing.get("from_drf_id")
+        my_id = current.get("id")
+        my_username = (current.get("username") or "").lower().strip()
+        my_name = (current.get("name") or "").lower().strip()
+        is_requester = False
+        if drf_id:
+            drf = await db.drawing_requests.find_one(
+                {"id": drf_id}, {"_id": 0, "requested_by": 1}
+            )
+            rb = (drf or {}).get("requested_by") or {}
+            if rb.get("user_id") == my_id:
+                is_requester = True
+            elif (rb.get("username") or "").lower().strip() == my_username:
+                is_requester = True
+            elif (rb.get("name") or "").lower().strip() == my_name:
+                is_requester = True
+        else:
+            rbs = (drawing.get("request_by_sales") or "").lower().strip()
+            if rbs and (rbs == my_name or rbs == my_username):
+                is_requester = True
+        if not is_requester:
+            requester_name = (drf and (drf.get("requested_by") or {}).get("name")) or drawing.get("request_by_sales") or "Sales lain"
+            raise HTTPException(
+                status_code=403,
+                detail=(f"Anda tidak berhak TTD drawing ini. Drawing ini di-request oleh "
+                        f"'{requester_name}' — hanya dia (atau super admin) yang boleh TTD stage Sales."),
+            )
+
+    stamp = _sig_stamp(current, notes=(payload.notes if payload else ""))
+    stamp["stage"] = stage
+    # Iter 18 — simpan posisi stamp digital untuk pdf-stamper
+    if payload:
+        if payload.stamp_x is not None: stamp["x"] = float(payload.stamp_x)
+        if payload.stamp_y is not None: stamp["y"] = float(payload.stamp_y)
+        if payload.stamp_page is not None: stamp["page"] = int(payload.stamp_page)
+        if payload.stamp_size: stamp["size"] = str(payload.stamp_size).upper()
+    next_status = NEXT_STATUS_AFTER[current_status]
+    update = {
+        "approval_status": next_status,
+        "updated_at": _now_iso(),
+    }
+    if next_status == "approved":
+        update["approved_at"] = _now_iso()
+    # Iter 20d — Sales stage: simpan so_stamp_draft untuk auto-fill di Salma SO Stamp form
+    if stage == "sales" and payload and payload.so_stamp_data:
+        _sd = payload.so_stamp_data or {}
+        update["so_stamp_draft"] = {
+            "so_no": (_sd.get("so_no") or "").strip(),
+            "po_no": (_sd.get("po_no") or "").strip(),
+            "qty": (_sd.get("qty") or "").strip(),
+            "customer": (_sd.get("customer") or "").strip(),
+            "received_date": (_sd.get("received_date") or "").strip(),
+            "due_date": (_sd.get("due_date") or "").strip(),
+            "filled_by": current.get("name") or current.get("username"),
+            "filled_at": _now_iso(),
+        }
+    await db.drawings.update_one(
+        {"id": drawing_id},
+        {"$set": update, "$push": {"approvals": stamp}},
+    )
+    # Iter 19 — Update linked DRF status kalau drawing linked ke DRF
+    if next_status == "approved" and drawing.get("from_drf_id"):
+        await db.drawing_requests.update_one(
+            {"id": drawing["from_drf_id"], "deleted_at": {"$exists": False}},
+            {"$set": {"status": "completed", "completed_at": _now_iso(), "updated_at": _now_iso()}},
+        )
+    await log_action(current, f"drawing_approve_{stage}", "drawings", drawing_id,
+                     {"drawing_no": drawing.get("drawing_no"), "next_status": next_status})
+    return {"success": True, "approval_status": next_status, "stage": stage, "signed_by": stamp["name"]}
+
+
+@router.post("/drawings/{drawing_id}/reject/{stage}")
+async def drawing_reject_stage(
+    drawing_id: str, stage: str,
+    payload: ApprovalActionIn,
+    current: dict = Depends(get_current_user),
+):
+    """Reject a stage — kembalikan drawing ke status 'draft' untuk revisi. Wajib notes."""
+    if stage not in STAGE_ORDER:
+        raise HTTPException(status_code=400, detail=f"Stage '{stage}' tidak valid")
+    if not payload.notes or len(payload.notes.strip()) < 5:
+        raise HTTPException(status_code=400, detail="Reject wajib menyertakan notes/alasan (min 5 karakter)")
+
+    drawing = await db.drawings.find_one({"id": drawing_id})
+    if not drawing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+
+    current_status = drawing.get("approval_status", "draft")
+    expected_status = STAGE_STATUS[stage]
+    if current_status != expected_status:
+        raise HTTPException(status_code=409, detail=f"Tidak bisa reject stage '{stage}' — status saat ini '{current_status}'")
+
+    allowed = _stage_allowed_roles(stage)
+    role = current.get("role")
+    if role not in allowed and not is_super_admin_user(current):
+        raise HTTPException(status_code=403, detail=f"Role Anda tidak boleh reject stage '{stage}'")
+
+    stamp = _sig_stamp(current, notes=payload.notes)
+    stamp["stage"] = f"reject_{stage}"
+    await db.drawings.update_one(
+        {"id": drawing_id},
+        {"$set": {"approval_status": "draft", "rejected_at": _now_iso(),
+                  "rejected_stage": stage, "reject_notes": payload.notes.strip()},
+         "$push": {"approvals": stamp}},
+    )
+    await log_action(current, f"drawing_reject_{stage}", "drawings", drawing_id,
+                     {"drawing_no": drawing.get("drawing_no"), "notes": payload.notes})
+    return {"success": True, "approval_status": "draft", "rejected_stage": stage}
+
+
+@router.get("/drawings/pending-my-approval")
+async def list_pending_my_approval(current: dict = Depends(get_current_user)):
+    """List drawings yang sekarang butuh approval dari user (sesuai role stage)."""
+    role = current.get("role")
+    if role in ("eng_leader", "eng_head", "engineering"):
+        my_status = "pending_eng_head"
+    elif role == "qc":
+        my_status = "pending_qc"
+    elif role in SALES_ROLES:
+        my_status = "pending_sales"
+    elif is_doc_control(current):
+        # Doc Control (Salma) melihat semua yang sudah 'approved' (siap di-stamp)
+        my_status = "approved"
+    elif is_super_admin_user(current):
+        # Super Admin bisa lihat semua stage (emergency override)
+        my_status = {"$in": ["pending_eng_head", "pending_qc", "pending_sales", "approved"]}
+    else:
+        return {"items": [], "total": 0}
+
+    filt = {"approval_status": my_status, "deleted_at": {"$exists": False}}
+    docs = await db.drawings.find(filt, {"_id": 0}).sort("updated_at", -1).to_list(length=200)
+
+    # Iter 22 — Sales hanya lihat drawing yang DIA sendiri yang buat DRF-nya (bukan Sales lain).
+    # Super admin bypass. Kalau drawing tidak punya from_drf_id (drawing lama tanpa DRF),
+    # fallback: bandingkan nama request_by_sales dengan nama user.
+    if role in SALES_ROLES and not is_super_admin_user(current):
+        my_id = current.get("id")
+        my_username = (current.get("username") or "").lower().strip()
+        my_name = (current.get("name") or "").lower().strip()
+
+        # Kumpulkan DRF requester untuk semua drawing yg punya from_drf_id
+        drf_ids = [d.get("from_drf_id") for d in docs if d.get("from_drf_id")]
+        drf_map = {}
+        if drf_ids:
+            drfs = await db.drawing_requests.find(
+                {"id": {"$in": drf_ids}}, {"_id": 0, "id": 1, "requested_by": 1}
+            ).to_list(length=len(drf_ids))
+            drf_map = {r.get("id"): (r.get("requested_by") or {}) for r in drfs}
+
+        def _mine(d):
+            drf_id = d.get("from_drf_id")
+            if drf_id and drf_id in drf_map:
+                rb = drf_map[drf_id]
+                if rb.get("user_id") == my_id:
+                    return True
+                if (rb.get("username") or "").lower().strip() == my_username:
+                    return True
+                if (rb.get("name") or "").lower().strip() == my_name:
+                    return True
+                return False
+            # Fallback drawing lama tanpa DRF: cek request_by_sales
+            rbs = (d.get("request_by_sales") or "").lower().strip()
+            if rbs and (rbs == my_name or rbs == my_username):
+                return True
+            # Fallback lain: kalau tidak ada info sama sekali, tampilkan (agar tidak hilang saat data lama)
+            return not drf_id and not rbs
+
+        docs = [d for d in docs if _mine(d)]
+
+    return {"items": docs, "total": len(docs)}
+
+
+# ============================================================================
+# Iter 17 — Fase 2: Document Control Stamp + Stamped PDF Preview/Print
+# ============================================================================
+from utils.pdf_stamper import apply_stamps as _apply_pdf_stamps  # noqa: E402
+
+
+class DCStampIn(BaseModel):
+    notes: str = ""
+    stamp_x: Optional[float] = None
+    stamp_y: Optional[float] = None
+    target: Optional[str] = "mks"
+    extra_id: Optional[str] = ""
+
+
+class SOStampIn(BaseModel):
+    """Iter 20b — SO Stamp untuk Production (Salma isi manual)."""
+    so_no: str = ""
+    po_no: str = ""
+    qty: str = ""
+    customer: str = ""
+    received_date: str = ""
+    due_date: str = ""
+    stamp_x: Optional[float] = None
+    stamp_y: Optional[float] = None
+
+
+@router.post("/drawings/{drawing_id}/stamp-controlled")
+async def drawing_stamp_controlled(
+    drawing_id: str,
+    payload: DCStampIn = None,
+    current: dict = Depends(get_current_user),
+):
+    """Iter 20 — Salma stamp SATU dokumen per call (MKS drawing / Customer Ref / Extra).
+    Setiap dokumen bisa punya posisi stamp berbeda. Setelah SEMUA dokumen (MKS + customer_ref
+    kalau ada + semua extras kalau ada) di-stamp, approval_status jadi 'controlled'.
+
+    payload.target:
+      - "mks"          → stamp file_id (drawing MKS utama)
+      - "customer_ref" → stamp customer_ref_file_id
+      - "extra"        → stamp extra file (butuh extra_id)
+    """
+    drawing = await db.drawings.find_one({"id": drawing_id})
+    if not drawing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    if drawing.get("approval_status") not in ("approved", "controlled"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Drawing status='{drawing.get('approval_status')}'. Stamp DC hanya setelah drawing approved.",
+        )
+    if not is_doc_control(current) and not is_admin_like(current):
+        raise HTTPException(status_code=403, detail="Hanya Document Control atau Admin yang boleh stamp")
+
+    target = (payload.target if payload else "mks") or "mks"
+    stamp_common = {
+        "name": current.get("name") or current.get("username"),
+        "user_id": current.get("id"),
+        "username": current.get("username"),
+        "role": current.get("role"),
+        "at": _now_iso(),
+        "notes": (payload.notes if payload else "") or "",
+    }
+    if payload and payload.stamp_x is not None:
+        stamp_common["x"] = float(payload.stamp_x)
+        stamp_common["y"] = float(payload.stamp_y or 0.15)
+
+    upd = {"updated_at": _now_iso()}
+
+    if target == "mks":
+        upd["dc_stamp"] = stamp_common
+        upd["controlled_at"] = _now_iso()
+    elif target == "customer_ref":
+        if not drawing.get("customer_ref_file_id"):
+            raise HTTPException(status_code=400, detail="Drawing ini tidak punya Customer Reference")
+        upd["customer_ref_dc_stamp"] = stamp_common
+        upd["customer_ref_controlled_at"] = _now_iso()
+    elif target == "extra":
+        eid = (payload.extra_id if payload else "") or ""
+        if not eid:
+            raise HTTPException(status_code=400, detail="extra_id wajib untuk target=extra")
+        extras = drawing.get("additional_files") or []
+        idx = next((i for i, x in enumerate(extras) if x.get("id") == eid), -1)
+        if idx < 0:
+            raise HTTPException(status_code=404, detail="Extra file tidak ditemukan")
+        extras[idx]["dc_stamp"] = stamp_common
+        extras[idx]["controlled_at"] = _now_iso()
+        upd["additional_files"] = extras
+    else:
+        raise HTTPException(status_code=400, detail=f"Target tidak valid: {target}")
+
+    # Cek apakah SEMUA dokumen sudah di-stamp → set status controlled
+    new_dc = upd.get("dc_stamp") or drawing.get("dc_stamp")
+    new_ref = upd.get("customer_ref_dc_stamp") or drawing.get("customer_ref_dc_stamp")
+    new_extras = upd.get("additional_files") or drawing.get("additional_files") or []
+
+    mks_ok = bool(new_dc)
+    ref_ok = (not drawing.get("customer_ref_file_id")) or bool(new_ref)
+    extras_ok = all(bool(x.get("dc_stamp")) for x in new_extras)
+
+    if mks_ok and ref_ok and extras_ok:
+        upd["approval_status"] = "controlled"
+
+    await db.drawings.update_one({"id": drawing_id}, {"$set": upd})
+    await log_action(current, "drawing_stamp_controlled", "drawings", drawing_id,
+                     {"drawing_no": drawing.get("drawing_no"), "target": target,
+                      "fully_controlled": upd.get("approval_status") == "controlled"})
+
+    updated = await db.drawings.find_one({"id": drawing_id}, {"_id": 0})
+    return {
+        "success": True,
+        "target": target,
+        "approval_status": updated.get("approval_status"),
+        "dc_stamp": updated.get("dc_stamp"),
+        "customer_ref_dc_stamp": updated.get("customer_ref_dc_stamp"),
+        "all_stamped": upd.get("approval_status") == "controlled",
+    }
+
+
+@router.post("/drawings/{drawing_id}/stamp-so")
+async def drawing_stamp_so(
+    drawing_id: str,
+    payload: SOStampIn,
+    current: dict = Depends(get_current_user),
+):
+    """Iter 20b — Salma apply SO stamp (kotak merah info SO/PO/Qty/Customer/Due Date)
+    untuk print ke Produksi. Hanya boleh setelah drawing controlled."""
+    drawing = await db.drawings.find_one({"id": drawing_id})
+    if not drawing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    if drawing.get("approval_status") != "controlled":
+        raise HTTPException(status_code=409, detail="Drawing belum controlled. SO stamp hanya setelah DC stamp selesai.")
+    if not is_doc_control(current) and not is_admin_like(current):
+        raise HTTPException(status_code=403, detail="Hanya Document Control yang boleh SO stamp")
+
+    so_stamp = {
+        "so_no": payload.so_no.strip(),
+        "po_no": payload.po_no.strip(),
+        "qty": payload.qty.strip(),
+        "customer": payload.customer.strip(),
+        "received_date": payload.received_date.strip(),
+        "due_date": payload.due_date.strip(),
+        "name": current.get("name") or current.get("username"),
+        "user_id": current.get("id"),
+        "username": current.get("username"),
+        "role": current.get("role"),
+        "at": _now_iso(),
+    }
+    if payload.stamp_x is not None:
+        so_stamp["x"] = float(payload.stamp_x)
+        so_stamp["y"] = float(payload.stamp_y or 0.25)
+
+    await db.drawings.update_one(
+        {"id": drawing_id},
+        {"$set": {"so_stamp": so_stamp, "so_stamped_at": _now_iso(),
+                  "approval_status": "released", "released_at": _now_iso()}},
+    )
+    await log_action(current, "drawing_stamp_so", "drawings", drawing_id,
+                     {"drawing_no": drawing.get("drawing_no"), "so_no": payload.so_no})
+    return {"success": True, "so_stamp": so_stamp, "approval_status": "released"}
+
+
+@router.get("/drawings/{drawing_id}/pdf-stamped")
+async def drawing_pdf_stamped(drawing_id: str, current: dict = Depends(get_current_user)):
+    """Return PDF drawing dengan overlay stamps (approval signatures + DC stamp bila ada).
+
+    Watermark 'UNCONTROLLED COPY WHEN PRINTED' otomatis muncul bila user BUKAN doc_control/admin
+    dan drawing sudah controlled. Print footer 'Printed by: [nama] | tgl | jam' selalu ada.
+    """
+    from fastapi.responses import StreamingResponse
+    drawing = await db.drawings.find_one({"id": drawing_id})
+    if not drawing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    file_id = drawing.get("file_id")
+    if not file_id:
+        raise HTTPException(status_code=404, detail="File PDF drawing belum di-upload")
+
+    # Load original PDF from GridFS (bucket "drawings")
+    try:
+        stream = await _fs().open_download_stream(ObjectId(file_id))
+        content = await stream.read()
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"File PDF tidak bisa dibaca: {e}")
+
+    # Uncontrolled watermark logic: only if drawing is controlled AND user is not DC/admin
+    is_dc_or_admin = is_doc_control(current) or is_admin_like(current)
+    show_uncontrolled_watermark = (
+        drawing.get("approval_status") == "controlled" and not is_dc_or_admin
+    )
+
+    # Iter 18 — Fetch signature PNG bytes untuk setiap approver yang punya user_id
+    signature_bytes_map: dict = {}
+    approvals = drawing.get("approvals") or []
+    sig_bucket = AsyncIOMotorGridFSBucket(db, bucket_name="signatures")
+    for appr in approvals:
+        uid = appr.get("user_id")
+        if not uid or uid in signature_bytes_map:
+            continue
+        u = await db.users.find_one({"id": uid}, {"signature_gridfs_id": 1})
+        sig_id = (u or {}).get("signature_gridfs_id")
+        if not sig_id:
+            continue
+        try:
+            s = await sig_bucket.open_download_stream(ObjectId(sig_id))
+            signature_bytes_map[uid] = await s.read()
+        except Exception:
+            pass
+
+    stamped = _apply_pdf_stamps(
+        content,
+        approvals=approvals,
+        dc_stamp=drawing.get("dc_stamp"),
+        watermark_uncontrolled=show_uncontrolled_watermark,
+        printed_by=current.get("name") or current.get("username") or "",
+        signature_bytes_map=signature_bytes_map,
+        so_stamp=drawing.get("so_stamp"),
+    )
+    # Iter 18 — audit trail print/preview history
+    try:
+        await log_action(current, "drawing_preview_stamped", "drawings", drawing_id, {
+            "drawing_no": drawing.get("drawing_no"),
+            "approval_status": drawing.get("approval_status"),
+            "watermarked": show_uncontrolled_watermark,
+        })
+    except Exception:
+        pass
+    filename = f"{drawing.get('drawing_no', drawing_id)}_stamped.pdf"
+    return StreamingResponse(
+        io.BytesIO(stamped),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@router.get("/drawings/pending-dc-stamp")
+async def list_pending_dc_stamp(current: dict = Depends(get_current_user)):
+    """List drawing yg sudah approved tapi belum di-stamp DC (untuk halaman Document Distribution Record)."""
+    if not is_doc_control(current) and not is_admin_like(current):
+        raise HTTPException(status_code=403, detail="Hanya Document Control atau Admin")
+    q = {"approval_status": "approved", "deleted_at": {"$exists": False}}
+    docs = await db.drawings.find(q, {"_id": 0}).sort([("approved_at", -1)]).to_list(length=200)
+    return {"items": [_clean(d) for d in docs], "total": len(docs)}
+
+
+@router.get("/drawings/my-signature-history")
+async def my_signature_history(current: dict = Depends(get_current_user)):
+    """Iter 22 — Riwayat TTD saya (bukti audit ISO): semua drawing yang pernah di-TTD user
+    sebagai submit/eng_head/qc/sales/dc/so_stamp. Return: drawing_no, project, tgl TTD, stage, status."""
+    uid = current.get("id")
+    uname = (current.get("username") or "").lower().strip()
+    if not uid and not uname:
+        raise HTTPException(status_code=401, detail="Unauthenticated")
+
+    q = {
+        "deleted_at": {"$exists": False},
+        "approvals": {
+            "$elemMatch": {
+                "$or": [
+                    {"user_id": uid} if uid else {"user_id": "__na__"},
+                    {"username": uname} if uname else {"username": "__na__"},
+                ]
+            }
+        },
+    }
+    docs = await db.drawings.find(q, {"_id": 0}).sort([("updated_at", -1)]).to_list(length=500)
+
+    history = []
+    for d in docs:
+        for a in d.get("approvals", []) or []:
+            match_id = uid and a.get("user_id") == uid
+            match_name = uname and (a.get("username") or "").lower().strip() == uname
+            if not (match_id or match_name):
+                continue
+            history.append({
+                "drawing_id": d.get("id"),
+                "drawing_no": d.get("drawing_no"),
+                "project_name": d.get("project_name") or d.get("title") or "",
+                "customer_name": d.get("customer_name") or d.get("customer_code") or "",
+                "so_no": d.get("so_no") or "",
+                "stage": a.get("stage"),
+                "signed_at": a.get("at") or a.get("filled_at"),
+                "signed_by": a.get("name"),
+                "notes": a.get("notes") or "",
+                "drawing_status_now": d.get("approval_status"),
+                "position": {"x": a.get("x"), "y": a.get("y"), "page": a.get("page")},
+                "has_pdf": bool(d.get("file_id")),
+            })
+    # sort desc by signed_at
+    history.sort(key=lambda x: (x.get("signed_at") or ""), reverse=True)
+    return {"items": history, "total": len(history)}
+
+
+@router.get("/drawings/{drawing_id}")
+async def get_drawing(drawing_id: str, current: dict = Depends(get_current_user)):
+    """Iter 22 — Fetch single drawing (untuk Engineering Work Order page).
+    Route ini di-taruh paling bawah agar tidak menangkap path spesifik seperti
+    /drawings/my-assignments, /drawings/pending-my-approval, /drawings/pending-dc-stamp."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    doc = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    return _clean(doc)
