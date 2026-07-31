@@ -302,6 +302,24 @@ def _draw_print_footer(page: fitz.Page, printed_by: str, printed_at: str = "") -
     )
 
 
+def _stamp_on_page(stamp: dict, pnum: int) -> bool:
+    """Tentukan apakah stamp/signature digambar di halaman `pnum`.
+
+    Aturan:
+      - Tidak ada key 'page' (None)           → SEMUA halaman (default).
+      - 'page' < 0 (mis. -1 = "all pages")    → SEMUA halaman.
+      - 'page' >= 0                            → hanya halaman itu.
+    """
+    pg = (stamp or {}).get("page")
+    if pg is None:
+        return True
+    try:
+        pg = int(pg)
+    except (TypeError, ValueError):
+        return True
+    return pg < 0 or pg == pnum
+
+
 def apply_stamps(
     pdf_bytes: bytes,
     approvals: Optional[List[dict]] = None,
@@ -324,18 +342,24 @@ def apply_stamps(
 
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     for pnum, page in enumerate(doc):
-        # 1. Render placed signatures (per page yang dipilih approver)
+        # 1. Render placed signatures.
+        #    page = -1 → SEMUA halaman; page None → halaman 0 (perilaku lama); selain itu halaman terpilih.
         for appr in placed:
-            appr_page = int(appr.get("page") or 0)
-            if appr_page == pnum:
+            ap = appr.get("page")
+            try:
+                ap_int = 0 if ap is None else int(ap)
+            except (TypeError, ValueError):
+                ap_int = 0
+            if ap_int < 0 or ap_int == pnum:
                 sig_bytes = signature_bytes_map.get(appr.get("user_id"))
                 _draw_placed_signature(page, appr, sig_bytes)
 
-        # 2. DC stamp hanya di halaman 1
-        if pnum == 0 and dc_stamp:
+        # 2. DC stamp — default SEMUA halaman (PDF multi-halaman wajib di-stamp tiap halaman).
+        #    Kalau dc_stamp punya 'page' >= 0 → hanya halaman itu.
+        if dc_stamp and _stamp_on_page(dc_stamp, pnum):
             _draw_dc_stamp(page, dc_stamp)
-        # 2b. SO stamp untuk Produksi (halaman 1 saja)
-        if pnum == 0 and so_stamp:
+        # 2b. SO stamp untuk Produksi — default SEMUA halaman.
+        if so_stamp and _stamp_on_page(so_stamp, pnum):
             _draw_so_stamp(page, so_stamp)
         # 3. Fallback strip di halaman 1 untuk approval tanpa posisi custom
         if pnum == 0 and fallback:

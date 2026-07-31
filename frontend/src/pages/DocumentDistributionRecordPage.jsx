@@ -9,6 +9,7 @@ import { Button } from "../components/ui/button";
 import { Stamp, MagnifyingGlass, ArrowClockwise, Eye, FileText, Paperclip } from "@phosphor-icons/react";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
+import PdfStampCanvas from "../components/PdfStampCanvas";
 
 /**
  * Document Distribution Record — Dashboard khusus Admin Document Control (Salma).
@@ -228,38 +229,33 @@ export default function DocumentDistributionRecordPage() {
  * Simplification: gunakan img/iframe + overlay click detector di parent div.
  */
 function StampPositionPicker({ mode, onConfirm, onClose }) {
-  const apiUrl = process.env.REACT_APP_BACKEND_URL;
   const { drawing, target, extra_id } = mode;
-  // URL preview sesuai target
-  const pdfUrl = target === "customer_ref"
-    ? `${apiUrl}/api/drawings/${drawing.id}/customer-ref/preview`
-    : target === "extra"
-    ? `${apiUrl}/api/drawings/${drawing.id}/extras/${extra_id}/preview`
-    : `${apiUrl}/api/drawings/${drawing.id}/pdf-stamped`;
   const targetLabel = target === "customer_ref" ? "Customer Drawing" : target === "extra" ? "Extra File" : "Drawing MKS";
   const [pos, setPos] = React.useState(null);
-  const containerRef = React.useRef();
 
-  const handleClick = (e) => {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const xRel = (e.clientX - rect.left) / rect.width;
-    const yRel = (e.clientY - rect.top) / rect.height;
-    setPos({ xRel, yRel });
-  };
+  const marker = (
+    <div
+      className="border-4 border-red-600 bg-red-500/20 flex flex-col items-center justify-center text-red-800 font-bold animate-pulse"
+      style={{ width: "120px", height: "92px" }}
+    >
+      <div className="text-2xl leading-none">MKS</div>
+      <div className="text-[9px] mt-1">{new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()}</div>
+      <div className="text-[8px] mt-1 font-black">DOCUMENT CONTROL</div>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/80 flex flex-col" data-testid="stamp-picker-modal">
-      <div className="flex items-center justify-between p-3 bg-red-900 text-white">
+      <div className="flex items-center justify-between p-3 bg-red-900 text-white shrink-0">
         <div>
           <div className="text-xs uppercase tracking-widest opacity-80">Pilih Posisi Stamp Document Control — {targetLabel}</div>
           <div className="font-mono font-bold">{drawing.drawing_no}</div>
         </div>
-        <div className="text-xs opacity-90">
+        <div className="text-xs opacity-90 text-center">
           {pos ? (
-            <span>Posisi: {(pos.xRel * 100).toFixed(0)}% × {(pos.yRel * 100).toFixed(0)}%</span>
+            <span>Posisi hal. {pos.page + 1}: {(pos.xRel * 100).toFixed(0)}% × {(pos.yRel * 100).toFixed(0)}% · <b className="text-amber-300">stamp otomatis di SEMUA halaman</b></span>
           ) : (
-            <span className="animate-pulse">👆 Klik area putih PDF untuk letakkan stamp</span>
+            <span className="animate-pulse">👆 Scroll & klik area PDF untuk letakkan stamp (berlaku ke semua halaman)</span>
           )}
         </div>
         <div className="flex gap-2">
@@ -279,35 +275,16 @@ function StampPositionPicker({ mode, onConfirm, onClose }) {
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-auto p-4 bg-slate-900 flex justify-center items-start">
-        <div
-          ref={containerRef}
-          onClick={handleClick}
-          className="relative bg-white shadow-2xl cursor-crosshair"
-          style={{ width: "min(1200px, 90vw)", aspectRatio: "1.414/1" }}
-          data-testid="stamp-picker-canvas"
-        >
-          <iframe
-            src={`${pdfUrl}#toolbar=0&navpanes=0`}
-            title="pdf-preview"
-            className="absolute inset-0 w-full h-full pointer-events-none"
-          />
-          {pos && (
-            <div
-              className="absolute border-4 border-red-600 bg-red-500/20 flex flex-col items-center justify-center text-red-800 font-bold pointer-events-none animate-pulse"
-              style={{
-                left: `${pos.xRel * 100}%`, top: `${pos.yRel * 100}%`,
-                width: "130px", height: "100px",
-                transform: "translate(-50%, -50%)",
-              }}
-              data-testid="stamp-preview-marker"
-            >
-              <div className="text-2xl leading-none">MKS</div>
-              <div className="text-[9px] mt-1">{new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()}</div>
-              <div className="text-[8px] mt-1 font-black">DOCUMENT CONTROL</div>
-            </div>
-          )}
-        </div>
+      <div className="flex-1 overflow-auto p-4 bg-slate-900">
+        <PdfStampCanvas
+          drawingId={drawing.id}
+          target={target}
+          extraId={extra_id || ""}
+          pos={pos}
+          allPages
+          onPick={(page, xRel, yRel) => setPos({ page, xRel, yRel })}
+          markerNode={marker}
+        />
       </div>
     </div>
   );

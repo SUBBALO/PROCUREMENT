@@ -1791,6 +1791,75 @@ async def drawing_pdf_stamped(drawing_id: str, current: dict = Depends(get_curre
     )
 
 
+async def _target_raw_bytes(drawing: dict, target: str, extra_id: str = "") -> bytes:
+    """Ambil bytes PDF asli sesuai target (mks / customer_ref / extra) untuk render halaman."""
+    if target == "customer_ref":
+        fid = drawing.get("customer_ref_file_id")
+        if not fid:
+            raise HTTPException(status_code=404, detail="Customer reference tidak ada")
+    elif target == "extra":
+        entry = next((f for f in (drawing.get("additional_files") or []) if f.get("id") == extra_id), None)
+        if not entry or not entry.get("file_id"):
+            raise HTTPException(status_code=404, detail="Extra file tidak ditemukan")
+        fid = entry["file_id"]
+    else:  # "mks" (default)
+        fid = drawing.get("file_id")
+        if not fid:
+            raise HTTPException(status_code=404, detail="File PDF drawing belum di-upload")
+    stream = await _fs().open_download_stream(ObjectId(fid))
+    return await stream.read()
+
+
+@router.get("/drawings/{drawing_id}/page-meta")
+async def drawing_page_meta(drawing_id: str, target: str = "mks", extra_id: str = "",
+                            current: dict = Depends(get_current_user)):
+    """Metadata halaman PDF (jumlah halaman + ukuran tiap halaman) — dipakai stamp picker
+    multi-halaman agar bisa render + scroll semua halaman."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    drawing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not drawing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    raw = await _target_raw_bytes(drawing, target, extra_id)
+    import fitz  # PyMuPDF
+    try:
+        doc = fitz.open(stream=raw, filetype="pdf")
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"File bukan PDF valid: {e}")
+    sizes = [{"w": round(p.rect.width, 2), "h": round(p.rect.height, 2)} for p in doc]
+    n = doc.page_count
+    doc.close()
+    return {"pages": n, "sizes": sizes}
+
+
+@router.get("/drawings/{drawing_id}/page-image")
+async def drawing_page_image(drawing_id: str, page: int = 0, target: str = "mks",
+                             extra_id: str = "", scale: float = 2.0,
+                             current: dict = Depends(get_current_user)):
+    """Render satu halaman PDF menjadi gambar PNG (untuk preview stamp picker yang bisa di-scroll)."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    drawing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not drawing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    raw = await _target_raw_bytes(drawing, target, extra_id)
+    import fitz  # PyMuPDF
+    try:
+        doc = fitz.open(stream=raw, filetype="pdf")
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"File bukan PDF valid: {e}")
+    if page < 0 or page >= doc.page_count:
+        doc.close()
+        raise HTTPException(status_code=404, detail="Halaman tidak ada")
+    scale = max(1.0, min(3.0, float(scale or 2.0)))
+    pg = doc.load_page(page)
+    pix = pg.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+    png = pix.tobytes("png")
+    doc.close()
+    return StreamingResponse(io.BytesIO(png), media_type="image/png",
+                             headers={"Cache-Control": "no-store"})
+
+
 @router.get("/drawings/pending-dc-stamp")
 async def list_pending_dc_stamp(current: dict = Depends(get_current_user)):
     """List drawing yg sudah approved tapi belum di-stamp DC (untuk halaman Document Distribution Record)."""

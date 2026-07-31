@@ -8,6 +8,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
+import PdfStampCanvas from "../components/PdfStampCanvas";
 import { Stamp, MagnifyingGlass, ArrowClockwise, Eye, CheckCircle, Warning, X } from "@phosphor-icons/react";
 
 /**
@@ -258,22 +259,10 @@ function SOStampFormDialog({ drawing, onClose, onNext }) {
 }
 
 
-/* PDF viewer untuk pilih posisi SO stamp */
+/* PDF viewer untuk pilih posisi SO stamp — multi-halaman & bisa di-scroll */
 function SOStampPositionPicker({ drawing, formData, onDone, onClose }) {
-  const apiUrl = process.env.REACT_APP_BACKEND_URL;
-  const pdfUrl = `${apiUrl}/api/drawings/${drawing.id}/pdf-stamped`;
   const [pos, setPos] = useState(null);
   const [busy, setBusy] = useState(false);
-  const containerRef = React.useRef();
-
-  const handleClick = (e) => {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    setPos({
-      xRel: (e.clientX - rect.left) / rect.width,
-      yRel: (e.clientY - rect.top) / rect.height,
-    });
-  };
 
   const confirm = async () => {
     setBusy(true);
@@ -281,58 +270,55 @@ function SOStampPositionPicker({ drawing, formData, onDone, onClose }) {
       const body = { ...formData };
       if (pos) { body.stamp_x = pos.xRel; body.stamp_y = pos.yRel; }
       await api.post(`/drawings/${drawing.id}/stamp-so`, body);
-      toast.success("✓ SO Stamp applied. Drawing sekarang RELEASED (siap ke Produksi).");
+      toast.success("✓ SO Stamp applied di semua halaman. Drawing sekarang RELEASED (siap ke Produksi).");
       onDone?.();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal apply SO stamp");
     } finally { setBusy(false); }
   };
 
+  const marker = (
+    <div className="border-2 border-amber-500 bg-amber-100/80 p-1 animate-pulse" style={{ width: "150px" }}>
+      <div className="text-[8px] text-amber-900 font-mono leading-tight">
+        <div className="font-bold">MKS S.O: {formData.so_no}</div>
+        <div>P/O: {formData.po_no || "-"}</div>
+        <div>Qty: {formData.qty}</div>
+        <div>Cust: {(formData.customer || "-").slice(0, 14)}</div>
+        <div>Due: {formData.due_date || "-"}</div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 z-[70] bg-black/85 flex flex-col" data-testid="sostamp-picker">
-      <div className="flex items-center justify-between p-3 bg-amber-900 text-white">
+      <div className="flex items-center justify-between p-3 bg-amber-900 text-white shrink-0">
         <div>
           <div className="text-xs uppercase tracking-widest opacity-80">Pilih Posisi SO Stamp — {drawing.drawing_no}</div>
           <div className="text-[10px] opacity-70">SO: {formData.so_no} · Qty: {formData.qty} · Customer: {formData.customer || "-"}</div>
         </div>
-        <div className="text-xs opacity-90">
+        <div className="text-xs opacity-90 text-center">
           {pos ? (
-            <span>Posisi: {(pos.xRel * 100).toFixed(0)}% × {(pos.yRel * 100).toFixed(0)}% <span className="text-emerald-300">(klik lagi untuk pindah)</span></span>
+            <span>Posisi hal. {pos.page + 1}: {(pos.xRel * 100).toFixed(0)}% × {(pos.yRel * 100).toFixed(0)}% · <b className="text-amber-300">stamp di SEMUA halaman</b></span>
           ) : (
-            <span className="animate-pulse">👆 Klik di PDF untuk letakkan SO stamp (opsional — bisa langsung Konfirmasi untuk default pojok kanan atas)</span>
+            <span className="animate-pulse">👆 Scroll & klik di PDF untuk letakkan SO stamp (berlaku semua halaman). Kosong = pojok kanan atas.</span>
           )}
         </div>
         <div className="flex gap-2">
           <button onClick={onClose} className="px-3 py-1 text-xs font-bold bg-slate-600 hover:bg-slate-500 text-white uppercase tracking-widest">✕ Batal</button>
-          <button onClick={confirm} disabled={busy} className="px-3 py-1 text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white uppercase tracking-widest disabled:opacity-40">
+          <button onClick={confirm} disabled={busy} className="px-3 py-1 text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white uppercase tracking-widest disabled:opacity-40" data-testid="sostamp-confirm-btn">
             {busy ? "..." : "✓ Konfirmasi & Stamp"}
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-auto p-4 bg-slate-950 flex justify-center">
-        <div ref={containerRef} onClick={handleClick} className="relative bg-white shadow-2xl cursor-crosshair" style={{ width: "min(1200px, 92vw)", aspectRatio: "1.414/1" }}>
-          <iframe src={`${pdfUrl}#toolbar=0&navpanes=0`} title="preview" className="absolute inset-0 w-full h-full pointer-events-none" />
-          {pos && (
-            <div
-              className="absolute border-2 border-amber-500 bg-amber-100/40 p-1 pointer-events-none animate-pulse"
-              style={{
-                left: `${pos.xRel * 100}%`,
-                top: `${pos.yRel * 100}%`,
-                width: "13%",
-                height: "10%",
-                transform: "translate(-50%, -50%)",
-              }}
-            >
-              <div className="text-[8px] text-amber-900 font-mono leading-tight">
-                <div className="font-bold">MKS S.O: {formData.so_no}</div>
-                <div>P/O: {formData.po_no || "-"}</div>
-                <div>Qty: {formData.qty}</div>
-                <div>Cust: {(formData.customer || "-").slice(0, 12)}</div>
-                <div>Due: {formData.due_date || "-"}</div>
-              </div>
-            </div>
-          )}
-        </div>
+      <div className="flex-1 overflow-auto p-4 bg-slate-950">
+        <PdfStampCanvas
+          drawingId={drawing.id}
+          target="mks"
+          pos={pos}
+          allPages
+          onPick={(page, xRel, yRel) => setPos({ page, xRel, yRel })}
+          markerNode={marker}
+        />
       </div>
     </div>
   );

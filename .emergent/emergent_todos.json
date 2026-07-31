@@ -1,0 +1,30 @@
+[
+  {
+    "content": "Backend: apply DC stamp & SO stamp to ALL pages in pdf_stamper.apply_stamps (support optional page key)",
+    "status": "completed"
+  },
+  {
+    "content": "Backend: add /page-meta & /page-image endpoints (render PDF pages as images via PyMuPDF)",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: create reusable scrollable multi-page PdfStampCanvas component",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: rewrite DC StampPositionPicker to use scrollable canvas + all-pages marker",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: rewrite SOStampPositionPicker to use scrollable canvas + all-pages marker",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: update SignaturePlacementModal for scroll + page selection + 'all pages' option",
+    "status": "completed"
+  },
+  {
+    "content": "Test: multi-page stamping (DC, SO, TTD) end-to-end - verified via API + UI (scroll + all-pages)",
+    "status": "completed"
+  }
+]
