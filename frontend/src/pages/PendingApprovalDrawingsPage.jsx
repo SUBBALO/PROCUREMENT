@@ -4,12 +4,13 @@ import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { ArrowClockwise, Eye, Stamp, FileText, MagnifyingGlass } from "@phosphor-icons/react";
+import { ArrowClockwise, Eye, Stamp, MagnifyingGlass, ClockClockwise } from "@phosphor-icons/react";
 import BackLink from "../components/BackLink";
 import { Input } from "../components/ui/input";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
-import DrawingViewOnlyModal from "../components/DrawingViewOnlyModal";
+import PdfPreviewModal from "../components/PdfPreviewModal";
+import SignatureHistoryPanel from "../components/SignatureHistoryPanel";
 
 const ROLE_STAGE_MAP = {
   eng_leader: "eng_head",
@@ -20,19 +21,19 @@ const ROLE_STAGE_MAP = {
 };
 
 /**
- * PendingApprovalDrawingsPage — halaman khusus approver (Eng Head / QC / Sales)
- * untuk lihat semua drawing yang menunggu TTD digital mereka.
- * Data source: GET /api/drawings/pending-my-approval
+ * PendingApprovalDrawingsPage — halaman approver (Eng Head / QC / Sales) dengan 2 tab:
+ *  - "Perlu TTD Saya": drawing menunggu TTD digital → preview (baca-saja) + TTD/Reject.
+ *  - "Riwayat TTD Saya": bukti audit drawing yang pernah di-TTD (gabungan dari kartu lama).
+ * Preview pakai PdfPreviewModal (image-based, tanpa buka tab baru / tanpa download).
  */
 export default function PendingApprovalDrawingsPage() {
   const { user } = useAuth();
+  const [tab, setTab] = useState("pending");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
   const [sigDrawing, setSigDrawing] = useState(null);
-  const [viewDrawing, setViewDrawing] = useState(null);
-  const apiUrl = process.env.REACT_APP_BACKEND_URL;
-  const isQC = user?.role === "qc";
+  const [preview, setPreview] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,125 +76,134 @@ export default function PendingApprovalDrawingsPage() {
     }
   };
 
+  const TabBtn = ({ id, icon: Icon, label, count }) => (
+    <button
+      onClick={() => setTab(id)}
+      className={`px-4 py-2.5 text-xs font-bold uppercase tracking-widest flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab === id ? "border-emerald-600 text-emerald-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
+      data-testid={`pending-tab-${id}`}
+    >
+      <Icon size={15} weight="fill" /> {label}
+      {typeof count === "number" && count > 0 && (
+        <span className="ml-1 px-1.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px]">{count}</span>
+      )}
+    </button>
+  );
+
   return (
     <div className="p-4 max-w-[1400px] mx-auto space-y-4">
       <BackLink />
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-emerald-700 mb-1">
-            <Stamp size={14} weight="fill" /> Review & Approval — {roleLabel}
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
-            Review & TTD Drawing dari Engineer
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Buka PDF & review isi drawing terlebih dahulu. Kalau OK klik <b>TTD & Approve</b> untuk lanjut ke tahap berikutnya. Kalau perlu revisi, klik <b>Reject</b> dengan catatan yang jelas.
-          </p>
+      <div>
+        <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-emerald-700 mb-1">
+          <Stamp size={14} weight="fill" /> Review & Approval — {roleLabel}
         </div>
+        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
+          Review & TTD Drawing
+        </h1>
+        <p className="text-sm text-slate-500 mt-1">
+          Tab <b>Perlu TTD Saya</b> untuk review & tanda tangan drawing baru. Tab <b>Riwayat TTD Saya</b> berisi bukti audit semua drawing yang pernah Anda TTD.
+        </p>
       </div>
 
-      <Card className="rounded-none border-slate-200 overflow-hidden">
-        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
-          <MagnifyingGlass size={14} className="text-slate-500" />
-          <Input
-            className="h-9 rounded-none border-slate-300 w-72"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Cari drawing no / project / customer / SO..."
-            data-testid="pending-search"
-          />
-          <Button variant="ghost" onClick={load} className="rounded-none h-9">
-            <ArrowClockwise size={14} weight="bold" />
-          </Button>
-          <div className="flex-1"></div>
-          <div className="text-xs text-slate-500">
-            <b className="text-emerald-700">{filtered.length}</b> drawing menunggu TTD Anda
-          </div>
-        </div>
+      {/* Tabs */}
+      <div className="flex border-b border-slate-200">
+        <TabBtn id="pending" icon={Stamp} label="Perlu TTD Saya" count={items.length} />
+        <TabBtn id="history" icon={ClockClockwise} label="Riwayat TTD Saya" />
+      </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-white border-b border-slate-200">
-              <tr className="text-[10px] uppercase tracking-[0.08em] font-bold text-slate-500">
-                <th className="text-left p-3">Drawing No</th>
-                <th className="text-left p-3">Title / Project</th>
-                <th className="text-left p-3">Customer</th>
-                <th className="text-left p-3">SO</th>
-                <th className="text-left p-3">Prepared By</th>
-                <th className="text-left p-3">Request Sales</th>
-                <th className="text-center p-3">Sudah TTD</th>
-                <th className="text-center p-3">Aksi</th>
-              </tr>
-            </thead>
-            <tbody data-testid="pending-approval-list">
-              {loading && (<tr><td colSpan={8} className="p-8 text-center text-slate-400">Memuat...</td></tr>)}
-              {!loading && filtered.length === 0 && (
-                <tr><td colSpan={8} className="p-12 text-center text-slate-400">
-                  🎉 Tidak ada drawing yang menunggu TTD Anda saat ini.
-                </td></tr>
-              )}
-              {pag.pagedData.map((d) => {
-                const approvedCount = (d.approvals || []).filter((a) => !a.stage?.startsWith("reject_") && a.stage !== "submit").length;
-                return (
-                  <tr key={d.id} className="border-b border-slate-100 hover:bg-emerald-50/40" data-testid={`pending-row-${d.drawing_no}`}>
-                    <td className="p-3 font-mono font-semibold text-slate-900">{d.drawing_no}</td>
-                    <td className="p-3 text-slate-800">
-                      <div className="font-semibold">{d.title || "-"}</div>
-                      <div className="text-xs text-slate-500">{d.project_name || ""}</div>
-                    </td>
-                    <td className="p-3 text-xs">{d.customer_name || d.customer_code || "-"}</td>
-                    <td className="p-3 font-mono text-xs">{d.so_no || "-"}</td>
-                    <td className="p-3 text-xs">{d.prepared_by || "-"}</td>
-                    <td className="p-3 text-xs">{d.request_by_sales || "-"}</td>
-                    <td className="p-3 text-center text-xs">
-                      <span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 font-bold">{approvedCount} / 3 ✓</span>
-                    </td>
-                    <td className="p-3 text-center">
-                      <div className="flex gap-1 justify-center">
-                        {isQC ? (
+      {tab === "pending" && (
+        <Card className="rounded-none border-slate-200 overflow-hidden">
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+            <MagnifyingGlass size={14} className="text-slate-500" />
+            <Input
+              className="h-9 rounded-none border-slate-300 w-72"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Cari drawing no / project / customer / SO..."
+              data-testid="pending-search"
+            />
+            <Button variant="ghost" onClick={load} className="rounded-none h-9">
+              <ArrowClockwise size={14} weight="bold" />
+            </Button>
+            <div className="flex-1"></div>
+            <div className="text-xs text-slate-500">
+              <b className="text-emerald-700">{filtered.length}</b> drawing menunggu TTD Anda
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-white border-b border-slate-200">
+                <tr className="text-[10px] uppercase tracking-[0.08em] font-bold text-slate-500">
+                  <th className="text-left p-3">Drawing No</th>
+                  <th className="text-left p-3">Title / Project</th>
+                  <th className="text-left p-3">Customer</th>
+                  <th className="text-left p-3">SO</th>
+                  <th className="text-left p-3">Prepared By</th>
+                  <th className="text-left p-3">Request Sales</th>
+                  <th className="text-center p-3">Sudah TTD</th>
+                  <th className="text-center p-3">Aksi</th>
+                </tr>
+              </thead>
+              <tbody data-testid="pending-approval-list">
+                {loading && (<tr><td colSpan={8} className="p-8 text-center text-slate-400">Memuat...</td></tr>)}
+                {!loading && filtered.length === 0 && (
+                  <tr><td colSpan={8} className="p-12 text-center text-slate-400">
+                    🎉 Tidak ada drawing yang menunggu TTD Anda saat ini.
+                  </td></tr>
+                )}
+                {pag.pagedData.map((d) => {
+                  const approvedCount = (d.approvals || []).filter((a) => !a.stage?.startsWith("reject_") && a.stage !== "submit").length;
+                  return (
+                    <tr key={d.id} className="border-b border-slate-100 hover:bg-emerald-50/40" data-testid={`pending-row-${d.drawing_no}`}>
+                      <td className="p-3 font-mono font-semibold text-slate-900">{d.drawing_no}</td>
+                      <td className="p-3 text-slate-800">
+                        <div className="font-semibold">{d.title || "-"}</div>
+                        <div className="text-xs text-slate-500">{d.project_name || ""}</div>
+                      </td>
+                      <td className="p-3 text-xs">{d.customer_name || d.customer_code || "-"}</td>
+                      <td className="p-3 font-mono text-xs">{d.so_no || "-"}</td>
+                      <td className="p-3 text-xs">{d.prepared_by || "-"}</td>
+                      <td className="p-3 text-xs">{d.request_by_sales || "-"}</td>
+                      <td className="p-3 text-center text-xs">
+                        <span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 font-bold">{approvedCount} / 3 ✓</span>
+                      </td>
+                      <td className="p-3 text-center">
+                        <div className="flex gap-1 justify-center">
                           <button
-                            onClick={() => setViewDrawing(d)}
+                            onClick={() => setPreview(d)}
                             className="inline-flex items-center px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-bold uppercase gap-0.5"
                             data-testid={`pending-view-${d.drawing_no}`}
                           >
                             <Eye size={11} weight="bold" /> Preview
                           </button>
-                        ) : (
-                          <a
-                            href={`${apiUrl}/api/drawings/${d.id}/pdf-stamped`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-bold uppercase gap-0.5"
-                            data-testid={`pending-view-${d.drawing_no}`}
+                          <button
+                            onClick={() => setSigDrawing(d)}
+                            disabled={!stage}
+                            className="inline-flex items-center px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase gap-0.5 disabled:opacity-50"
+                            data-testid={`pending-approve-${d.drawing_no}`}
                           >
-                            <Eye size={11} weight="bold" /> View PDF
-                          </a>
-                        )}
-                        <button
-                          onClick={() => setSigDrawing(d)}
-                          disabled={!stage}
-                          className="inline-flex items-center px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase gap-0.5 disabled:opacity-50"
-                          data-testid={`pending-approve-${d.drawing_no}`}
-                        >
-                          <Stamp size={11} weight="bold" /> TTD & Approve
-                        </button>
-                        <button
-                          onClick={() => doReject(d)}
-                          className="inline-flex items-center px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold uppercase"
-                          data-testid={`pending-reject-${d.drawing_no}`}
-                        >
-                          ✕ Reject
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <PaginationBar {...pag} label="drawing" testIdPrefix="pending-pag" />
-      </Card>
+                            <Stamp size={11} weight="bold" /> TTD & Approve
+                          </button>
+                          <button
+                            onClick={() => doReject(d)}
+                            className="inline-flex items-center px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold uppercase"
+                            data-testid={`pending-reject-${d.drawing_no}`}
+                          >
+                            ✕ Reject
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <PaginationBar {...pag} label="drawing" testIdPrefix="pending-pag" />
+        </Card>
+      )}
+
+      {tab === "history" && <SignatureHistoryPanel user={user} />}
 
       {sigDrawing && stage && (
         <SignaturePlacementModal
@@ -204,10 +214,17 @@ export default function PendingApprovalDrawingsPage() {
         />
       )}
 
-      {viewDrawing && (
-        <DrawingViewOnlyModal
-          drawing={viewDrawing}
-          onClose={() => setViewDrawing(null)}
+      {preview && (
+        <PdfPreviewModal
+          drawingId={preview.id}
+          targets={[
+            { key: "mks", label: "Drawing MKS" },
+            { key: "customer_ref", label: "Drawing Customer" },
+          ]}
+          stamped
+          title={preview.drawing_no}
+          subtitle={`${preview.title || ""}${preview.customer_name ? " · " + preview.customer_name : ""}`}
+          onClose={() => setPreview(null)}
         />
       )}
     </div>

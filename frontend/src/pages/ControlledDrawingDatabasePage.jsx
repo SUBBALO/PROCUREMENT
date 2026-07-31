@@ -7,7 +7,7 @@ import { Button } from "../components/ui/button";
 import { MagnifyingGlass, ArrowClockwise, Eye, FolderSimple, Printer, Paperclip } from "@phosphor-icons/react";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
-import { PdfViewerModal } from "./DocumentDistributionRecordPage";
+import PdfPreviewModal from "../components/PdfPreviewModal";
 
 /**
  * Controlled Drawing Database — Pusat penyimpanan drawing yang sudah controlled/released.
@@ -105,16 +105,14 @@ export default function ControlledDrawingDatabasePage() {
                   <td className="p-3 text-xs">{d.controlled_at ? new Date(d.controlled_at).toLocaleDateString("id-ID") : "-"}</td>
                   <td className="p-3 text-center">
                     {d.customer_ref_file_id ? (
-                      <a
-                        href={`${process.env.REACT_APP_BACKEND_URL}/api/drawings/${d.id}/customer-ref/preview`}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        onClick={() => setPdfModal({ d, order: "customer_ref" })}
                         className="inline-flex items-center gap-1 px-2 py-1 bg-amber-100 border border-amber-400 hover:bg-amber-200 text-amber-900 text-[10px] font-bold uppercase"
-                        title={d.customer_ref_filename || "Preview Customer Reference (dengan watermark)"}
+                        title={d.customer_ref_filename || "Preview Customer Reference"}
                         data-testid={`cdd-customer-ref-${d.drawing_no}`}
                       >
                         <Paperclip size={11} weight="bold" /> Customer Drawing
-                      </a>
+                      </button>
                     ) : (
                       <span className="text-slate-300 text-[10px] italic">—</span>
                     )}
@@ -122,7 +120,7 @@ export default function ControlledDrawingDatabasePage() {
                   <td className="p-3 text-center">
                     <Button
                       size="sm"
-                      onClick={() => setPdfModal(d)}
+                      onClick={() => setPdfModal({ d, order: "mks" })}
                       className="rounded-none h-7 px-2 bg-indigo-700 hover:bg-indigo-800 text-white text-[10px]"
                       data-testid={`cdd-view-${d.drawing_no}`}
                     >
@@ -137,7 +135,25 @@ export default function ControlledDrawingDatabasePage() {
         <PaginationBar {...pag} label="drawing" testIdPrefix="cdd-pag" />
       </Card>
 
-      {pdfModal && <PdfViewerModal drawing={pdfModal} onClose={() => setPdfModal(null)} />}
+      {pdfModal && (() => {
+        const d = pdfModal.d;
+        const mks = { key: "mks", label: "Drawing MKS" };
+        const cust = { key: "customer_ref", label: "Drawing Customer" };
+        const targets = pdfModal.order === "customer_ref"
+          ? (d.customer_ref_file_id ? [cust, mks] : [mks])
+          : (d.customer_ref_file_id ? [mks, cust] : [mks]);
+        return (
+          <PdfPreviewModal
+            drawingId={d.id}
+            targets={targets}
+            stamped
+            title={d.drawing_no}
+            subtitle={`${d.project_name || ""}${d.customer_name ? " · " + d.customer_name : ""}`}
+            downloadUrl={`${process.env.REACT_APP_BACKEND_URL}/api/drawings/${d.id}/pdf-stamped`}
+            onClose={() => setPdfModal(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

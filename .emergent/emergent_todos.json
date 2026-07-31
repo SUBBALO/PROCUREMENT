@@ -4,23 +4,31 @@
     "status": "completed"
   },
   {
-    "content": "Phase B1 — Backend: endpoint generik render PDF (drawing MKS/customer/extra/bom-att/MII/template) → page-meta + page-image",
+    "content": "Bugfix — exit Work Order tidak ke 'BOM Preparation'",
+    "status": "completed"
+  },
+  {
+    "content": "Sales #1 — Inquiry: 'Nama Project' + hapus field project terpisah",
+    "status": "completed"
+  },
+  {
+    "content": "Sales #2 — Riwayat TTD jadi tab di Review TTD; kartu terpisah dihapus",
+    "status": "completed"
+  },
+  {
+    "content": "Phase B — Universal PdfPreviewModal (image-based, no-download kecuali DC)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase B3 — Wire: PendingApproval, MySignatureHistory, SOStamp, MyAssignments, DRF, ControlledDB, MasterDrawing",
+    "status": "completed"
+  },
+  {
+    "content": "Phase B4 (defer) — Wire preview: extras/BOM-att, MII, template form, DocDistribution link",
+    "status": "pending"
+  },
+  {
+    "content": "Test — stamp per-halaman UI + universal preview + Sales changes + regression (repeat/QC)",
     "status": "in_progress"
-  },
-  {
-    "content": "Phase B2 — Frontend: komponen PdfPreviewModal image-based (scroll+zoom, no-download; download hanya Doc Control)",
-    "status": "pending"
-  },
-  {
-    "content": "Phase B3 — Wiring: ganti preview drawing (Engineering/QC/DocControl/MasterList/SOStamp/MyAssignments/SignatureHistory/DRF/Controlled) ke PdfPreviewModal",
-    "status": "pending"
-  },
-  {
-    "content": "Phase B4 — Wiring: BOM attachment + MII + template form preview",
-    "status": "pending"
-  },
-  {
-    "content": "Phase B5 — Test preview universal (no download kecuali Doc Control) + regressions",
-    "status": "pending"
   }
 ]

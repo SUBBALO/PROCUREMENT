@@ -8,6 +8,7 @@ import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import DrawingRequestFormDialog from "../components/DrawingRequestFormDialog";
+import PdfPreviewModal from "../components/PdfPreviewModal";
 import {
   Plus, ArrowClockwise, FileText, Eye, Trash, PaperPlaneTilt,
   MagnifyingGlass, CheckCircle, Clock, Warning
@@ -30,6 +31,7 @@ export default function DrawingRequestFormPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [showCreate, setShowCreate] = useState(false);
   const [editDrf, setEditDrf] = useState(null);
+  const [preview, setPreview] = useState(null);
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
 
   const load = useCallback(async () => {
@@ -225,16 +227,14 @@ export default function DrawingRequestFormPage() {
                           </button>
                         )}
                         {d.linked_drawing_id && d.status === "completed" && (
-                          <a
-                            href={`${apiUrl}/api/drawings/${d.linked_drawing_id}/pdf-stamped`}
-                            target="_blank"
-                            rel="noreferrer"
+                          <button
+                            onClick={() => setPreview({ id: d.linked_drawing_id, drawing_no: d.so_no || d.form_no, project_name: d.project_name, customer_name: d.customer_name })}
                             className="inline-flex items-center px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold uppercase gap-0.5"
                             data-testid={`drf-view-drawing-${d.form_no}`}
                             title="Lihat Drawing MKS yang sudah selesai"
                           >
                             <Eye size={11} weight="bold" /> Drawing
-                          </a>
+                          </button>
                         )}
                       </div>
                     </td>
@@ -252,6 +252,17 @@ export default function DrawingRequestFormPage() {
           initial={editDrf}
           onClose={() => { setShowCreate(false); setEditDrf(null); }}
           onSaved={() => { setShowCreate(false); setEditDrf(null); load(); }}
+        />
+      )}
+
+      {preview && (
+        <PdfPreviewModal
+          drawingId={preview.id}
+          target="mks"
+          stamped
+          title={preview.drawing_no}
+          subtitle={`${preview.project_name || ""}${preview.customer_name ? " · " + preview.customer_name : ""}`}
+          onClose={() => setPreview(null)}
         />
       )}
     </div>

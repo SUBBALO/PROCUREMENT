@@ -9,6 +9,7 @@ import { Label } from "../components/ui/label";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import PdfStampCanvas from "../components/PdfStampCanvas";
+import PdfPreviewModal from "../components/PdfPreviewModal";
 import { Stamp, MagnifyingGlass, ArrowClockwise, Eye, CheckCircle, Warning, X } from "@phosphor-icons/react";
 
 /**
@@ -24,6 +25,7 @@ export default function SOStampPage() {
   const [tab, setTab] = useState("pending"); // pending | released
   const [stampFor, setStampFor] = useState(null);
   const [stampPosMode, setStampPosMode] = useState(null);
+  const [preview, setPreview] = useState(null);
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
   const canAccess = ["doc_control", "document_control", "admin", "super_admin"].includes(user?.role);
 
@@ -137,15 +139,13 @@ export default function SOStampPage() {
                   </td>
                   <td className="p-3 text-center">
                     <div className="flex gap-1 justify-center">
-                      <a
-                        href={`${apiUrl}/api/drawings/${d.id}/pdf-stamped`}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        onClick={() => setPreview(d)}
                         className="inline-flex items-center px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-bold uppercase gap-0.5"
                         data-testid={`sostamp-view-${d.drawing_no}`}
                       >
                         <Eye size={11} weight="bold" /> Preview
-                      </a>
+                      </button>
                       <button
                         onClick={() => setStampFor(d)}
                         className={`inline-flex items-center px-2 py-1 text-white text-[10px] font-bold uppercase gap-0.5 ${d.so_stamp ? "bg-slate-600 hover:bg-slate-700" : "bg-amber-600 hover:bg-amber-700"}`}
@@ -176,6 +176,17 @@ export default function SOStampPage() {
           formData={stampPosMode.formData}
           onDone={() => { setStampFor(null); setStampPosMode(null); load(); }}
           onClose={() => setStampPosMode(null)}
+        />
+      )}
+      {preview && (
+        <PdfPreviewModal
+          drawingId={preview.id}
+          target="mks"
+          stamped
+          title={preview.drawing_no}
+          subtitle={`${preview.project_name || ""}${preview.customer_name ? " · " + preview.customer_name : ""}`}
+          downloadUrl={`${apiUrl}/api/drawings/${preview.id}/pdf-stamped`}
+          onClose={() => setPreview(null)}
         />
       )}
     </div>

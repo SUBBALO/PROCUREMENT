@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
 import api from "../lib/api";
-import { Storefront, FileText, Users, ClipboardText, PenNib, ClipboardText as ClipboardIcon } from "@phosphor-icons/react";
+import { Storefront, FileText, Users, ClipboardText, PenNib } from "@phosphor-icons/react";
 import { useNotifCount } from "../lib/useNotifCount";
 
 export default function SalesPortalPage() {
@@ -24,7 +24,7 @@ export default function SalesPortalPage() {
       key: "pending-approval",
       label: "Review & TTD Drawing (Sales Approval)",
       stats: "Cek final · Isi SO Data · TTD",
-      description: "Drawing sudah di-approve Engineering & QC — Anda review terakhir sebagai Sales. Cek data project sesuai order → klik TTD & Approve → isi SO/PO/Qty/Customer untuk SO Stamp Produksi.",
+      description: "Drawing sudah di-approve Engineering & QC — Anda review terakhir sebagai Sales. Preview drawing (baca-saja), klik TTD & Approve → isi SO/PO/Qty/Customer untuk SO Stamp Produksi. Tab 'Riwayat TTD Saya' berisi semua drawing yang pernah Anda tanda tangani (bukti audit).",
       icon: PenNib,
       href: "/drawings/pending-my-approval",
       accent: "from-orange-500 via-amber-500 to-yellow-500",
@@ -60,16 +60,6 @@ export default function SalesPortalPage() {
       description: "Kelola master data customer: nama, alamat, PIC. Autocomplete saat buat quotation.",
       icon: Users, href: "/sales/customers",
       accent: "from-sky-500 via-blue-500 to-indigo-500", accentText: "text-sky-400",
-    },
-    {
-      key: "sig-history",
-      label: "Riwayat TTD Saya",
-      stats: "Bukti Audit · ISO 9001",
-      description: "Semua drawing yang pernah Anda TTD sebagai Sales. Lengkap dengan tanggal, jam, dan link preview PDF — bukti audit yang bisa dicetak untuk auditor.",
-      icon: ClipboardIcon,
-      href: "/my/signature-history",
-      accent: "from-indigo-500 via-purple-500 to-fuchsia-500",
-      accentText: "text-indigo-400",
     },
     {
       key: "bom-view", label: "BOM (View Only)", stats: "Bahan Baku · Reference",

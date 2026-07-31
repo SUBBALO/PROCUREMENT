@@ -12,6 +12,7 @@ import { FileText, MagnifyingGlass, Plus, PencilSimple, Trash, ArrowClockwise, U
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
+import PdfPreviewModal from "../components/PdfPreviewModal";
 import { useAuth } from "../lib/auth";
 
 const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-sky-600 text-sm";
@@ -1739,43 +1740,18 @@ function UploadDialog({ item, onClose, onDone }) {
 
 /* ============ PREVIEW DIALOG ============ */
 function PreviewDialog({ item, onClose }) {
-  const src = `${process.env.REACT_APP_BACKEND_URL}/api/drawings/${item.id}/preview`;
-
-  const download = () => {
-    const url = `${process.env.REACT_APP_BACKEND_URL}/api/drawings/${item.id}/download`;
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = item.filename || `${item.drawing_no}.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  };
-
+  const targets = [{ key: "mks", label: "Drawing MKS" }];
+  if (item.customer_ref_file_id) targets.push({ key: "customer_ref", label: "Drawing Customer" });
   return (
-    <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="rounded-none max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Eye size={18} weight="bold" /> Preview — {item.drawing_no} · Rev {item.revision}
-          </DialogTitle>
-          <DialogDescription>{item.title} · {item.filename}</DialogDescription>
-        </DialogHeader>
-        <div className="flex-1 min-h-[70vh] border border-slate-200 bg-slate-100 overflow-hidden">
-          <iframe
-            title={item.drawing_no}
-            src={src}
-            className="w-full h-full min-h-[70vh]"
-            style={{ border: 0 }}
-          />
-        </div>
-        <DialogFooter className="gap-2">
-          <Button type="button" variant="outline" onClick={onClose} className="rounded-none">Tutup</Button>
-          <Button type="button" onClick={download} className="rounded-none bg-sky-700 hover:bg-sky-800 text-white">
-            <DownloadSimple size={14} weight="bold" className="mr-1" /> Download
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <PdfPreviewModal
+      drawingId={item.id}
+      targets={targets}
+      stamped
+      title={`${item.drawing_no} · Rev ${item.revision}`}
+      subtitle={`${item.title || ""}${item.project_name ? " · " + item.project_name : ""}`}
+      downloadUrl={`${process.env.REACT_APP_BACKEND_URL}/api/drawings/${item.id}/download`}
+      onClose={onClose}
+    />
   );
 }
 
@@ -1835,31 +1811,16 @@ function CustomerRefUploadDialog({ item, onClose, onDone }) {
 }
 
 function CustomerRefPreviewDialog({ item, onClose }) {
-  const src = `${process.env.REACT_APP_BACKEND_URL}/api/drawings/${item.id}/customer-ref/preview`;
-  const downloadUrl = `${process.env.REACT_APP_BACKEND_URL}/api/drawings/${item.id}/customer-ref/download`;
-
   return (
-    <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="rounded-none max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <FileText size={18} weight="fill" className="text-blue-600" /> Customer Reference — {item.drawing_no}
-          </DialogTitle>
-          <DialogDescription>{item.customer_ref_filename}</DialogDescription>
-        </DialogHeader>
-        <div className="flex-1 min-h-[70vh] border border-slate-200 bg-slate-100 overflow-hidden">
-          <iframe title="customer-ref" src={src} className="w-full h-full min-h-[70vh]" style={{ border: 0 }} />
-        </div>
-        <DialogFooter className="gap-2">
-          <Button type="button" variant="outline" onClick={onClose} className="rounded-none">Tutup</Button>
-          <a href={downloadUrl} target="_blank" rel="noopener noreferrer">
-            <Button type="button" className="rounded-none bg-blue-700 hover:bg-blue-800 text-white">
-              <DownloadSimple size={14} weight="bold" className="mr-1" /> Download
-            </Button>
-          </a>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <PdfPreviewModal
+      drawingId={item.id}
+      target="customer_ref"
+      stamped
+      title={`Customer Reference — ${item.drawing_no}`}
+      subtitle={item.customer_ref_filename || ""}
+      downloadUrl={`${process.env.REACT_APP_BACKEND_URL}/api/drawings/${item.id}/customer-ref/download`}
+      onClose={onClose}
+    />
   );
 }
 
@@ -2111,6 +2072,7 @@ function DrawingApprovalBadge({ drawing, onChanged }) {
   const [showApprovals, setShowApprovals] = React.useState(false);
   const [showSigPicker, setShowSigPicker] = React.useState(false);
   const [showSubmitSig, setShowSubmitSig] = React.useState(false);
+  const [showPreview, setShowPreview] = React.useState(false);
   const status = drawing.approval_status || "draft";
   const meta = APPROVAL_BADGE[status] || APPROVAL_BADGE.draft;
   const role = user?.role;
@@ -2150,10 +2112,7 @@ function DrawingApprovalBadge({ drawing, onChanged }) {
     } finally { setBusy(false); }
   };
 
-  const previewStamped = () => {
-    const api_url = process.env.REACT_APP_BACKEND_URL;
-    window.open(`${api_url}/api/drawings/${drawing.id}/pdf-stamped`, "_blank");
-  };
+  const previewStamped = () => setShowPreview(true);
 
   return (
     <div className="flex flex-col items-center gap-1">
@@ -2237,6 +2196,17 @@ function DrawingApprovalBadge({ drawing, onChanged }) {
           stage="submit"
           onDone={() => { setShowSubmitSig(false); onChanged?.(); }}
           onClose={() => setShowSubmitSig(false)}
+        />
+      )}
+      {showPreview && (
+        <PdfPreviewModal
+          drawingId={drawing.id}
+          target="mks"
+          stamped
+          title={drawing.drawing_no}
+          subtitle={`${drawing.title || ""}${drawing.project_name ? " · " + drawing.project_name : ""}`}
+          downloadUrl={`${process.env.REACT_APP_BACKEND_URL}/api/drawings/${drawing.id}/pdf-stamped`}
+          onClose={() => setShowPreview(false)}
         />
       )}
     </div>

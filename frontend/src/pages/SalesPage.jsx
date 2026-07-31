@@ -501,7 +501,7 @@ export default function SalesPage() {
                     <td className="p-3 font-mono font-semibold text-slate-900">{r.inquiry_no}</td>
                     <td className="p-3 text-slate-800 max-w-[280px]" title={r.title}>
                       <div className="truncate font-semibold">{r.title}</div>
-                      {r.project_name && <div className="text-[11px] text-slate-500 truncate">🏗️ {r.project_name}</div>}
+                      {r.project_name && r.project_name !== r.title && <div className="text-[11px] text-slate-500 truncate">🏗️ {r.project_name}</div>}
                     </td>
                     <td className="p-3 text-slate-700">{r.customer_name}</td>
                     <td className="p-3 text-xs">
@@ -616,7 +616,7 @@ function CreateInquiryDialog({ onClose, onCreated, initial = null, existingId = 
   const rmItem = (i) => setItems((p) => (p.length === 1 ? p : p.filter((_, idx) => idx !== i)));
 
   const doSave = async (submitNow = false) => {
-    if (!title.trim()) return toast.error("Judul wajib diisi");
+    if (!title.trim()) return toast.error("Nama Project wajib diisi");
     if (!customer.trim()) return toast.error("Customer wajib diisi");
     // Guard: kalau user ketik nama customer tapi belum di-confirm dari master, tolak dan minta register
     if (!customerConfirmed && !exactMatch) {
@@ -629,7 +629,7 @@ function CreateInquiryDialog({ onClose, onCreated, initial = null, existingId = 
       let inquiryId = existingId;
       const payloadCore = {
         title, customer_name: customer,
-        project_name: projectName,
+        project_name: (projectName && projectName.trim()) ? projectName : title,
         customer_deadline: deadline || null,
         description, items: items.filter((i) => i.item_name.trim()),
       };
@@ -666,7 +666,7 @@ function CreateInquiryDialog({ onClose, onCreated, initial = null, existingId = 
         <div className="grid gap-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Judul Inquiry *</Label>
+              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nama Project *</Label>
               <Input data-testid="inq-title" className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="mis. Float Ring INC 825 for SPM" />
             </div>
             <div>
@@ -715,10 +715,6 @@ function CreateInquiryDialog({ onClose, onCreated, initial = null, existingId = 
                   </button>
                 </div>
               )}
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nama Project</Label>
-              <Input data-testid="inq-project" className={inputCls} value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="mis. SPM Phase 2 Refit" />
             </div>
             <div>
               <Label className="text-xs font-semibold text-slate-600 mb-1 block">Deadline Customer</Label>

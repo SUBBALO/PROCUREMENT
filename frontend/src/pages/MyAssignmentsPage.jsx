@@ -6,6 +6,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
+import PdfPreviewModal from "../components/PdfPreviewModal";
 import { ArrowClockwise, ClipboardText, Eye, MagnifyingGlass, Pencil, UploadSimple } from "@phosphor-icons/react";
 
 const APPROVAL_LABEL = {
@@ -27,6 +28,7 @@ export default function MyAssignmentsPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
+  const [preview, setPreview] = useState(null);
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
 
   const load = useCallback(async () => {
@@ -146,14 +148,13 @@ export default function MyAssignmentsPage() {
                           <Pencil size={11} weight="bold" /> {isDone ? "Master List" : "Work Order"}
                         </a>
                         {d.file_id && (
-                          <a
-                            href={`${apiUrl}/api/drawings/${d.id}/pdf-stamped`}
-                            target="_blank"
-                            rel="noreferrer"
+                          <button
+                            onClick={() => setPreview(d)}
                             className="inline-flex items-center px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-bold uppercase gap-0.5"
+                            data-testid={`myassign-view-${d.drawing_no}`}
                           >
                             <Eye size={11} weight="bold" /> Preview
-                          </a>
+                          </button>
                         )}
                         {!d.file_id && (
                           <span className="inline-flex items-center px-2 py-1 bg-amber-100 text-amber-800 border border-amber-400 text-[10px] font-bold uppercase gap-0.5">
@@ -170,6 +171,17 @@ export default function MyAssignmentsPage() {
         </div>
         <PaginationBar {...pag} label="drawing" testIdPrefix="myassign-pag" />
       </Card>
+
+      {preview && (
+        <PdfPreviewModal
+          drawingId={preview.id}
+          target="mks"
+          stamped
+          title={preview.drawing_no}
+          subtitle={`${preview.title || ""}${preview.customer_name ? " · " + preview.customer_name : ""}`}
+          onClose={() => setPreview(null)}
+        />
+      )}
     </div>
   );
 }

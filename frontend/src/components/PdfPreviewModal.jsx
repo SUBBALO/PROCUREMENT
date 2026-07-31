@@ -8,22 +8,23 @@ import { X, MagnifyingGlassPlus, MagnifyingGlassMinus, DownloadSimple, ArrowCloc
  * Menggantikan "buka tab baru" yang sering kena blokir popup / dicegat IDM.
  *
  * - Semua halaman dirender sebagai <img> (tidak bisa di-download langsung / tidak dicegat IDM).
- * - Zoom in/out + scroll.
- * - TANPA tombol download, KECUALI role Document Control (Salma) → tombol download muncul bila downloadUrl diberikan.
+ * - Zoom in/out + scroll. Bisa banyak dokumen via tab (mis. Drawing MKS + Drawing Customer).
+ * - TANPA tombol download, KECUALI role Document Control → tombol download muncul bila downloadUrl diberikan.
  *
  * Props:
- *   - drawingId   : id drawing (sumber via endpoint /drawings/{id}/page-*)
- *   - target      : "mks" | "customer_ref" | "extra"
+ *   - drawingId   : id drawing
+ *   - target      : "mks" | "customer_ref" | "extra" (dipakai kalau `targets` tidak diberikan)
+ *   - targets     : [{ key, label, extraId? }] — tampilkan pemilih tab dokumen (opsional)
  *   - extraId     : id extra file (kalau target="extra")
  *   - stamped     : bool (default true) — tampilkan versi ber-stamp
- *   - title       : judul header
- *   - subtitle    : sub judul (opsional)
+ *   - title/subtitle : header
  *   - downloadUrl : URL download (hanya dipakai bila user doc_control)
  *   - onClose     : tutup
  */
 export default function PdfPreviewModal({
   drawingId,
   target = "mks",
+  targets = null,
   extraId = "",
   stamped = true,
   title = "Preview Dokumen",
@@ -34,6 +35,9 @@ export default function PdfPreviewModal({
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
   const { user } = useAuth();
   const isDocControl = ["doc_control", "document_control"].includes(user?.role);
+  const tabList = (targets && targets.length) ? targets : [{ key: target, label: "Dokumen", extraId }];
+  const [activeKey, setActiveKey] = useState(tabList[0].key);
+  const active = tabList.find((t) => t.key === activeKey) || tabList[0];
   const [meta, setMeta] = useState(null);
   const [err, setErr] = useState("");
   const [zoom, setZoom] = useState(1);
@@ -41,20 +45,20 @@ export default function PdfPreviewModal({
   const load = useCallback(async () => {
     setMeta(null); setErr("");
     try {
-      const params = { target };
-      if (extraId) params.extra_id = extraId;
+      const params = { target: active.key };
+      if (active.extraId) params.extra_id = active.extraId;
       const { data } = await api.get(`/drawings/${drawingId}/page-meta`, { params });
       setMeta(data);
     } catch (e) {
-      setErr(e.response?.data?.detail || "Gagal memuat dokumen");
+      setErr(e.response?.data?.detail || "Dokumen tidak tersedia");
     }
-  }, [drawingId, target, extraId]);
+  }, [drawingId, active.key, active.extraId]);
 
   useEffect(() => { load(); }, [load]);
 
   const imgUrl = (n) => {
-    const p = new URLSearchParams({ target, page: String(n), scale: "2" });
-    if (extraId) p.set("extra_id", extraId);
+    const p = new URLSearchParams({ target: active.key, page: String(n), scale: "2" });
+    if (active.extraId) p.set("extra_id", active.extraId);
     if (stamped) p.set("stamped", "1");
     return `${apiUrl}/api/drawings/${drawingId}/page-image?${p.toString()}`;
   };
@@ -81,6 +85,22 @@ export default function PdfPreviewModal({
         </div>
       </div>
 
+      {/* Doc tabs */}
+      {tabList.length > 1 && (
+        <div className="flex bg-slate-800 border-b border-slate-700 shrink-0">
+          {tabList.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => { setActiveKey(t.key); setZoom(1); }}
+              className={`px-4 py-2 text-xs font-bold uppercase tracking-widest border-b-2 -mb-px ${activeKey === t.key ? "border-emerald-400 text-emerald-300" : "border-transparent text-slate-400 hover:text-slate-200"}`}
+              data-testid={`pdf-tab-${t.key}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Body */}
       <div className="flex-1 overflow-auto p-4 bg-slate-950">
         {err && (
@@ -97,7 +117,7 @@ export default function PdfPreviewModal({
             {Array.from({ length: meta.pages }).map((_, n) => {
               const size = (meta.sizes && meta.sizes[n]) || { w: 210, h: 297 };
               return (
-                <div key={n} className="flex flex-col items-center">
+                <div key={`${active.key}-${n}`} className="flex flex-col items-center">
                   <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Halaman {n + 1} / {meta.pages}</div>
                   <div className="bg-white shadow-2xl" style={{ width: `min(${1000 * zoom}px, ${95 * zoom}vw)`, aspectRatio: `${size.w} / ${size.h}` }}>
                     <img src={imgUrl(n)} alt={`Halaman ${n + 1}`} className="w-full h-full object-contain select-none pointer-events-none" draggable={false} data-testid={`pdf-preview-page-${n}`} />
