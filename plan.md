@@ -67,7 +67,29 @@ POC Exit: semua endpoints berfungsi, permission enforced, dan tidak ada regresi.
    - `PendingApprovalDrawingsPage` dibuat role-aware: untuk role `qc`, ganti link "View PDF" (bisa di-download) dengan **modal preview embed** (MKS stamped + Customer ref) memakai `#toolbar=0&navpanes=0` → tanpa tombol download. Tetap ada TTD & Approve + Reject.
    - Role lain tetap perilaku existing (tidak diubah).
 
-End of Phase 2: repeat order auto-pull + fallback berjalan; QC preview view-only tanpa download + TTD → Sales.
+## Phase 3+ (User pivot) — Stamp per-halaman & Universal PDF Preview
+
+### Phase A — Stamp per-halaman (SELESAI ✅)
+Masalah: stamp hal.1 kiri, hal.2 ingin kanan, tetapi semua halaman ikut satu posisi.
+Solusi: dukung `placements[]` (list {page,x,y,size}) di seluruh alur stamp.
+- ✅ `utils/pdf_stamper.py`: signature, DC stamp, SO stamp render posisi berbeda per halaman (page -1 = semua halaman). Backward compatible dgn x/y/page lama.
+- ✅ Backend endpoints: `ApprovalActionIn`, `DCStampIn`, `SOStampIn` terima `placements[]` + helper `_norm_placements`/`_apply_placement_to_stamp`.
+- ✅ `PdfStampCanvas`: render marker per halaman dari `placements`.
+- ✅ `SignaturePlacementModal`: klik tiap halaman → posisi sendiri; opsi "Posisi sama di semua halaman"; daftar halaman + hapus.
+- ✅ `DocumentDistributionRecordPage` (DC stamp) & `SOStampPage` (SO stamp): per-halaman placements + toggle sama-semua.
+- ✅ Verified end-to-end via API: hal.1 x≈70 (kiri), hal.2 x≈487 (kanan).
+
+### Phase B — Universal image-based PDF Preview (BERIKUTNYA)
+Masalah: preview PDF buka tab baru → kena blok popup / dicegat IDM (auto-download).
+Solusi: viewer baca-saja berbasis GAMBAR (reuse `page-image`/`page-meta` seperti stamp), scroll semua halaman + zoom, TANPA tombol download.
+Keputusan user:
+- Cakupan: SEMUA preview (drawing MKS/Customer/Nesting/Extra, BOM attachment, MII, template form) — bertahap: drawing dulu, lalu MII/template.
+- Excel: nanti.
+- Tanpa download untuk semua KECUALI Document Control (Salma) tetap bisa download.
+Rencana:
+1. Backend: endpoint render generik "render PDF apa pun (dari file_id/GridFS/endpoint internal) → page images" agar viewer bisa dipakai lintas modul; atau perluas page-image agar terima sumber generik.
+2. Frontend: komponen `PdfPreviewModal` (image-based, zoom, scroll, no-download; tombol download hanya utk role doc_control).
+3. Ganti semua `target=_blank` / `window.open` preview → buka `PdfPreviewModal`.
 
 ---
 

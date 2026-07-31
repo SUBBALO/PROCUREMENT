@@ -261,16 +261,31 @@ function SOStampFormDialog({ drawing, onClose, onNext }) {
 
 /* PDF viewer untuk pilih posisi SO stamp — multi-halaman & bisa di-scroll */
 function SOStampPositionPicker({ drawing, formData, onDone, onClose }) {
-  const [pos, setPos] = useState(null);
+  const [placements, setPlacements] = useState({}); // {page:{x,y}}, key "-1" = semua halaman
+  const [sameAll, setSameAll] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const placementList = Object.entries(placements).map(([p, v]) => ({ page: Number(p), x: v.x, y: v.y }));
+  const hasPlacement = placementList.length > 0;
+
+  const onPick = (page, xRel, yRel) => {
+    if (sameAll) setPlacements({ "-1": { x: xRel, y: yRel } });
+    else setPlacements((prev) => ({ ...prev, [page]: { x: xRel, y: yRel } }));
+  };
+  const removePlacement = (page) => setPlacements((prev) => { const n = { ...prev }; delete n[page]; return n; });
+  const toggleSameAll = (c) => { setSameAll(c); setPlacements({}); };
 
   const confirm = async () => {
     setBusy(true);
     try {
       const body = { ...formData };
-      if (pos) { body.stamp_x = pos.xRel; body.stamp_y = pos.yRel; }
+      if (hasPlacement) {
+        body.placements = placementList.map((p) => ({ page: p.page, x: p.x, y: p.y }));
+        body.stamp_x = placementList[0].x;
+        body.stamp_y = placementList[0].y;
+      }
       await api.post(`/drawings/${drawing.id}/stamp-so`, body);
-      toast.success("✓ SO Stamp applied di semua halaman. Drawing sekarang RELEASED (siap ke Produksi).");
+      toast.success("✓ SO Stamp applied. Drawing sekarang RELEASED (siap ke Produksi).");
       onDone?.();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal apply SO stamp");
@@ -278,7 +293,7 @@ function SOStampPositionPicker({ drawing, formData, onDone, onClose }) {
   };
 
   const marker = (
-    <div className="border-2 border-amber-500 bg-amber-100/80 p-1 animate-pulse" style={{ width: "150px" }}>
+    <div className="border-2 border-amber-500 bg-amber-100/80 p-1" style={{ width: "150px" }}>
       <div className="text-[8px] text-amber-900 font-mono leading-tight">
         <div className="font-bold">MKS S.O: {formData.so_no}</div>
         <div>P/O: {formData.po_no || "-"}</div>
@@ -297,26 +312,42 @@ function SOStampPositionPicker({ drawing, formData, onDone, onClose }) {
           <div className="text-[10px] opacity-70">SO: {formData.so_no} · Qty: {formData.qty} · Customer: {formData.customer || "-"}</div>
         </div>
         <div className="text-xs opacity-90 text-center">
-          {pos ? (
-            <span>Posisi hal. {pos.page + 1}: {(pos.xRel * 100).toFixed(0)}% × {(pos.yRel * 100).toFixed(0)}% · <b className="text-amber-300">stamp di SEMUA halaman</b></span>
+          {!hasPlacement ? (
+            <span className="animate-pulse">👆 Klik di PDF untuk letakkan SO stamp (boleh beda posisi tiap halaman). Kosong = pojok kanan atas.</span>
+          ) : sameAll ? (
+            <span>Posisi <b className="text-amber-300">SAMA di semua halaman</b></span>
           ) : (
-            <span className="animate-pulse">👆 Scroll & klik di PDF untuk letakkan SO stamp (berlaku semua halaman). Kosong = pojok kanan atas.</span>
+            <span>Stamp di <b className="text-amber-300">{placementList.length}</b> halaman: {placementList.map((p) => `Hal.${p.page + 1}`).join(", ")}</span>
           )}
         </div>
         <div className="flex gap-2">
+          <label className="flex items-center gap-1.5 cursor-pointer select-none text-[10px]" title="Stamp di semua halaman pada posisi sama">
+            <input type="checkbox" checked={sameAll} onChange={(e) => toggleSameAll(e.target.checked)} className="accent-amber-400 w-3.5 h-3.5" data-testid="sostamp-same-all" />
+            <span className="uppercase tracking-widest font-bold text-amber-200">Sama semua hal.</span>
+          </label>
           <button onClick={onClose} className="px-3 py-1 text-xs font-bold bg-slate-600 hover:bg-slate-500 text-white uppercase tracking-widest">✕ Batal</button>
           <button onClick={confirm} disabled={busy} className="px-3 py-1 text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white uppercase tracking-widest disabled:opacity-40" data-testid="sostamp-confirm-btn">
             {busy ? "..." : "✓ Konfirmasi & Stamp"}
           </button>
         </div>
       </div>
+      {!sameAll && hasPlacement && (
+        <div className="px-4 py-1.5 bg-slate-900 text-white flex items-center gap-2 flex-wrap border-b border-slate-700">
+          <span className="text-[10px] uppercase tracking-widest text-slate-400">Sudah ditempel:</span>
+          {placementList.sort((a, b) => a.page - b.page).map((p) => (
+            <span key={p.page} className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-700 text-white text-[10px] font-bold uppercase">
+              Hal. {p.page + 1}
+              <button onClick={() => removePlacement(p.page)} className="hover:text-amber-200" title="Hapus stamp halaman ini">✕</button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="flex-1 overflow-auto p-4 bg-slate-950">
         <PdfStampCanvas
           drawingId={drawing.id}
           target="mks"
-          pos={pos}
-          allPages
-          onPick={(page, xRel, yRel) => setPos({ page, xRel, yRel })}
+          placements={placementList}
+          onPick={onPick}
           markerNode={marker}
         />
       </div>

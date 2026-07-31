@@ -336,34 +336,83 @@ def apply_stamps(
     """
     signature_bytes_map = signature_bytes_map or {}
     approvals = approvals or []
-    # Pisah approval dengan posisi custom vs fallback (no position)
-    placed = [a for a in approvals if a.get("x") is not None and a.get("y") is not None and not (a.get("stage") or "").startswith("reject_")]
-    fallback = [a for a in approvals if a.get("x") is None or a.get("y") is None]
+    # Pisah approval dengan posisi custom vs fallback (no position).
+    # Iter 40 — dukung `placements`: list [{page,x,y,size?}] agar tiap halaman bisa beda posisi.
+    def _has_pos(a: dict) -> bool:
+        if a.get("placements"):
+            return True
+        return a.get("x") is not None and a.get("y") is not None
+    placed = [a for a in approvals if _has_pos(a) and not (a.get("stage") or "").startswith("reject_")]
+    # Reject tetap digambar sebagai kotak (punya posisi atau placements)
+    placed += [a for a in approvals if _has_pos(a) and (a.get("stage") or "").startswith("reject_")]
+    fallback = [a for a in approvals if not _has_pos(a)]
+
+    def _placements_for(obj: dict):
+        """Balikkan list placement untuk sebuah stamp/approval.
+        - Kalau ada `placements` → pakai itu.
+        - Kalau tidak → satu placement dari x/y/page/size legacy.
+        """
+        pls = obj.get("placements")
+        if pls:
+            out = []
+            for pl in pls:
+                if pl is None:
+                    continue
+                out.append({
+                    "page": pl.get("page"),
+                    "x": pl.get("x"),
+                    "y": pl.get("y"),
+                    "size": pl.get("size") or obj.get("size"),
+                })
+            return out
+        return [{
+            "page": obj.get("page"),
+            "x": obj.get("x"),
+            "y": obj.get("y"),
+            "size": obj.get("size"),
+        }]
+
+    def _pl_on_page(pl: dict, pnum: int) -> bool:
+        pg = pl.get("page")
+        if pg is None:
+            return True
+        try:
+            pg = int(pg)
+        except (TypeError, ValueError):
+            return True
+        return pg < 0 or pg == pnum
 
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     for pnum, page in enumerate(doc):
-        # 1. Render placed signatures.
-        #    page = -1 → SEMUA halaman; page None → halaman 0 (perilaku lama); selain itu halaman terpilih.
+        # 1. Render placed signatures — dukung posisi berbeda tiap halaman via placements.
         for appr in placed:
-            ap = appr.get("page")
-            try:
-                ap_int = 0 if ap is None else int(ap)
-            except (TypeError, ValueError):
-                ap_int = 0
-            if ap_int < 0 or ap_int == pnum:
-                sig_bytes = signature_bytes_map.get(appr.get("user_id"))
-                _draw_placed_signature(page, appr, sig_bytes)
+            sig_bytes = signature_bytes_map.get(appr.get("user_id"))
+            for pl in _placements_for(appr):
+                if pl.get("x") is None or pl.get("y") is None:
+                    continue
+                if _pl_on_page(pl, pnum):
+                    merged = {**appr, "x": pl.get("x"), "y": pl.get("y"), "size": pl.get("size") or appr.get("size")}
+                    _draw_placed_signature(page, merged, sig_bytes)
 
-        # 2. DC stamp — default SEMUA halaman (PDF multi-halaman wajib di-stamp tiap halaman).
-        #    Kalau dc_stamp punya 'page' >= 0 → hanya halaman itu.
-        if dc_stamp and _stamp_on_page(dc_stamp, pnum):
-            _draw_dc_stamp(page, dc_stamp)
-        # 2b. SO stamp untuk Produksi — default SEMUA halaman.
-        if so_stamp and _stamp_on_page(so_stamp, pnum):
-            _draw_so_stamp(page, so_stamp)
+        # 2. DC stamp — dukung placements per halaman; default SEMUA halaman.
+        if dc_stamp:
+            for pl in _placements_for(dc_stamp):
+                if _pl_on_page(pl, pnum):
+                    if pl.get("x") is not None and pl.get("y") is not None:
+                        _draw_dc_stamp(page, {**dc_stamp, "x": pl.get("x"), "y": pl.get("y")})
+                    else:
+                        _draw_dc_stamp(page, {k: v for k, v in dc_stamp.items() if k not in ("x", "y")})
+        # 2b. SO stamp untuk Produksi — dukung placements per halaman; default SEMUA halaman.
+        if so_stamp:
+            for pl in _placements_for(so_stamp):
+                if _pl_on_page(pl, pnum):
+                    if pl.get("x") is not None and pl.get("y") is not None:
+                        _draw_so_stamp(page, {**so_stamp, "x": pl.get("x"), "y": pl.get("y")})
+                    else:
+                        _draw_so_stamp(page, {k: v for k, v in so_stamp.items() if k not in ("x", "y")})
         # 3. Fallback strip di halaman 1 untuk approval tanpa posisi custom
         if pnum == 0 and fallback:
-            _draw_approval_strip(page, fallback)
+            _draw_approval_strip(page, [a for a in fallback if not (a.get("stage") or "").startswith("reject_")])
 
         # 4. Watermark di semua halaman (kalau uncontrolled)
         if watermark_uncontrolled:

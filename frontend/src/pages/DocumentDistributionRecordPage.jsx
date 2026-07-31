@@ -62,12 +62,16 @@ export default function DocumentDistributionRecordPage() {
   const openStampPicker = (drawing, target = "mks", extra_id = "") =>
     setStampMode({ drawing, target, extra_id, x: null, y: null });
 
-  const doStamp = async (mode, x = null, y = null) => {
+  const doStamp = async (mode, placements = []) => {
     const notes = window.prompt("Notes verifikasi (opsional):") || "";
     try {
       const body = { notes, target: mode.target };
       if (mode.extra_id) body.extra_id = mode.extra_id;
-      if (x !== null && y !== null) { body.stamp_x = x; body.stamp_y = y; }
+      if (placements && placements.length) {
+        body.placements = placements;
+        body.stamp_x = placements[0].x;
+        body.stamp_y = placements[0].y;
+      }
       const { data } = await api.post(`/drawings/${mode.drawing.id}/stamp-controlled`, body);
       const label = mode.target === "mks" ? "Drawing MKS" : mode.target === "customer_ref" ? "Customer Ref" : "Extra File";
       if (data.all_stamped) {
@@ -217,7 +221,7 @@ export default function DocumentDistributionRecordPage() {
       </Card>
 
       {pdfModal && <PdfViewerModal drawing={pdfModal} onClose={() => setPdfModal(null)} />}
-      {stampMode && <StampPositionPicker mode={stampMode} onConfirm={(x, y) => doStamp(stampMode, x, y)} onClose={() => setStampMode(null)} />}
+      {stampMode && <StampPositionPicker mode={stampMode} onConfirm={(placements) => doStamp(stampMode, placements)} onClose={() => setStampMode(null)} />}
     </div>
   );
 }
@@ -231,11 +235,22 @@ export default function DocumentDistributionRecordPage() {
 function StampPositionPicker({ mode, onConfirm, onClose }) {
   const { drawing, target, extra_id } = mode;
   const targetLabel = target === "customer_ref" ? "Customer Drawing" : target === "extra" ? "Extra File" : "Drawing MKS";
-  const [pos, setPos] = React.useState(null);
+  const [placements, setPlacements] = React.useState({}); // {page: {x,y}}, key "-1" = semua halaman
+  const [sameAll, setSameAll] = React.useState(false);
+
+  const placementList = Object.entries(placements).map(([p, v]) => ({ page: Number(p), x: v.x, y: v.y }));
+  const hasPlacement = placementList.length > 0;
+
+  const onPick = (page, xRel, yRel) => {
+    if (sameAll) setPlacements({ "-1": { x: xRel, y: yRel } });
+    else setPlacements((prev) => ({ ...prev, [page]: { x: xRel, y: yRel } }));
+  };
+  const removePlacement = (page) => setPlacements((prev) => { const n = { ...prev }; delete n[page]; return n; });
+  const toggleSameAll = (c) => { setSameAll(c); setPlacements({}); };
 
   const marker = (
     <div
-      className="border-4 border-red-600 bg-red-500/20 flex flex-col items-center justify-center text-red-800 font-bold animate-pulse"
+      className="border-4 border-red-600 bg-red-500/20 flex flex-col items-center justify-center text-red-800 font-bold"
       style={{ width: "120px", height: "92px" }}
     >
       <div className="text-2xl leading-none">MKS</div>
@@ -252,13 +267,19 @@ function StampPositionPicker({ mode, onConfirm, onClose }) {
           <div className="font-mono font-bold">{drawing.drawing_no}</div>
         </div>
         <div className="text-xs opacity-90 text-center">
-          {pos ? (
-            <span>Posisi hal. {pos.page + 1}: {(pos.xRel * 100).toFixed(0)}% × {(pos.yRel * 100).toFixed(0)}% · <b className="text-amber-300">stamp otomatis di SEMUA halaman</b></span>
+          {!hasPlacement ? (
+            <span className="animate-pulse">👆 Scroll & klik area PDF untuk letakkan stamp (boleh beda posisi tiap halaman)</span>
+          ) : sameAll ? (
+            <span>Posisi <b className="text-amber-300">SAMA di semua halaman</b></span>
           ) : (
-            <span className="animate-pulse">👆 Scroll & klik area PDF untuk letakkan stamp (berlaku ke semua halaman)</span>
+            <span>Stamp di <b className="text-amber-300">{placementList.length}</b> halaman: {placementList.map((p) => `Hal.${p.page + 1}`).join(", ")}</span>
           )}
         </div>
         <div className="flex gap-2">
+          <label className="flex items-center gap-1.5 cursor-pointer select-none text-[10px]" title="Stamp di semua halaman pada posisi sama">
+            <input type="checkbox" checked={sameAll} onChange={(e) => toggleSameAll(e.target.checked)} className="accent-red-400 w-3.5 h-3.5" data-testid="stamp-same-all" />
+            <span className="uppercase tracking-widest font-bold text-amber-200">Sama semua hal.</span>
+          </label>
           <button
             onClick={onClose}
             className="px-3 py-1 text-xs font-bold bg-slate-600 hover:bg-slate-500 text-white uppercase tracking-widest"
@@ -266,8 +287,8 @@ function StampPositionPicker({ mode, onConfirm, onClose }) {
             ✕ Batal
           </button>
           <button
-            onClick={() => pos && onConfirm(pos.xRel, pos.yRel)}
-            disabled={!pos}
+            onClick={() => hasPlacement && onConfirm(placementList.map((p) => ({ page: p.page, x: p.x, y: p.y })))}
+            disabled={!hasPlacement}
             className="px-3 py-1 text-xs font-bold bg-red-700 hover:bg-red-600 text-white uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed"
             data-testid="stamp-confirm-btn"
           >
@@ -275,14 +296,24 @@ function StampPositionPicker({ mode, onConfirm, onClose }) {
           </button>
         </div>
       </div>
+      {!sameAll && hasPlacement && (
+        <div className="px-4 py-1.5 bg-slate-900 text-white flex items-center gap-2 flex-wrap border-b border-slate-700">
+          <span className="text-[10px] uppercase tracking-widest text-slate-400">Sudah ditempel:</span>
+          {placementList.sort((a, b) => a.page - b.page).map((p) => (
+            <span key={p.page} className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-700 text-white text-[10px] font-bold uppercase">
+              Hal. {p.page + 1}
+              <button onClick={() => removePlacement(p.page)} className="hover:text-amber-300" title="Hapus stamp halaman ini">✕</button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="flex-1 overflow-auto p-4 bg-slate-900">
         <PdfStampCanvas
           drawingId={drawing.id}
           target={target}
           extraId={extra_id || ""}
-          pos={pos}
-          allPages
-          onPick={(page, xRel, yRel) => setPos({ page, xRel, yRel })}
+          placements={placementList}
+          onPick={onPick}
           markerNode={marker}
         />
       </div>

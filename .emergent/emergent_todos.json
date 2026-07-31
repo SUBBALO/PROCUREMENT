@@ -1,22 +1,26 @@
 [
   {
-    "content": "Backend: GET /drawings/repeat-search",
+    "content": "Phase A — Stamp per-halaman (TTD/DC/SO) + verified",
     "status": "completed"
   },
   {
-    "content": "Backend: POST /drawing-requests/{drf_id}/pull-repeat",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: RepeatOrderPanel di EngineeringDrfWorkPage",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: QC view-only preview modal + role-aware PendingApprovalDrawingsPage",
-    "status": "completed"
-  },
-  {
-    "content": "Test backend (repeat-search + pull-repeat) & QC flow via testing agent",
+    "content": "Phase B1 — Backend: endpoint generik render PDF (drawing MKS/customer/extra/bom-att/MII/template) → page-meta + page-image",
     "status": "in_progress"
+  },
+  {
+    "content": "Phase B2 — Frontend: komponen PdfPreviewModal image-based (scroll+zoom, no-download; download hanya Doc Control)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase B3 — Wiring: ganti preview drawing (Engineering/QC/DocControl/MasterList/SOStamp/MyAssignments/SignatureHistory/DRF/Controlled) ke PdfPreviewModal",
+    "status": "pending"
+  },
+  {
+    "content": "Phase B4 — Wiring: BOM attachment + MII + template form preview",
+    "status": "pending"
+  },
+  {
+    "content": "Phase B5 — Test preview universal (no download kecuali Doc Control) + regressions",
+    "status": "pending"
   }
 ]

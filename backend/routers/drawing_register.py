@@ -1366,8 +1366,54 @@ class ApprovalActionIn(BaseModel):
     stamp_y: Optional[float] = None
     stamp_page: Optional[int] = 0     # halaman (0-indexed). Default 0 = halaman pertama.
     stamp_size: Optional[str] = "M"    # "S" | "M" | "L" — untuk kolom TTD yang beda-beda ukuran
+    # Iter 40 — Posisi berbeda tiap halaman: list [{page,x,y,size?}] (page -1 = semua halaman)
+    placements: Optional[List[dict]] = None
     # Iter 20d — Data SO Stamp Produksi (dipakai saat Sales TTD, auto-terisi ke Salma)
     so_stamp_data: Optional[dict] = None
+
+
+def _norm_placements(raw) -> list:
+    """Normalisasi list placement stamp → [{page:int, x:float, y:float, size:str}].
+    Abaikan entri tanpa x/y. page default 0."""
+    out = []
+    for pl in (raw or []):
+        if not isinstance(pl, dict):
+            continue
+        x = pl.get("x"); y = pl.get("y")
+        if x is None or y is None:
+            continue
+        try:
+            page = int(pl.get("page")) if pl.get("page") is not None else 0
+        except (TypeError, ValueError):
+            page = 0
+        out.append({
+            "page": page,
+            "x": float(x),
+            "y": float(y),
+            "size": (str(pl.get("size")).upper() if pl.get("size") else "M"),
+        })
+    return out
+
+
+def _apply_placement_to_stamp(stamp: dict, payload) -> None:
+    """Terapkan info posisi dari payload ke dict stamp.
+    Prioritas: payload.placements (per-halaman). Fallback: stamp_x/stamp_y/stamp_page legacy.
+    Selalu isi x/y/page/size legacy dari placement pertama agar riwayat & backward-compat tetap jalan.
+    """
+    pls = _norm_placements(getattr(payload, "placements", None)) if payload else []
+    if pls:
+        stamp["placements"] = pls
+        first = pls[0]
+        stamp["x"] = first["x"]
+        stamp["y"] = first["y"]
+        stamp["page"] = first["page"]
+        stamp["size"] = first["size"]
+        return
+    if payload:
+        if payload.stamp_x is not None: stamp["x"] = float(payload.stamp_x)
+        if payload.stamp_y is not None: stamp["y"] = float(payload.stamp_y)
+        if payload.stamp_page is not None: stamp["page"] = int(payload.stamp_page)
+        if payload.stamp_size: stamp["size"] = str(payload.stamp_size).upper()
 
 
 @router.post("/drawings/{drawing_id}/submit-for-approval")
@@ -1396,12 +1442,8 @@ async def drawing_submit_for_approval(
 
     stamp = _sig_stamp(current, notes=(payload.notes if payload else ""))
     stamp["stage"] = "submit"
-    # Iter 22 — Prepared By juga TTD digital di PDF pada posisi yang dipilih
-    if payload:
-        if payload.stamp_x is not None: stamp["x"] = float(payload.stamp_x)
-        if payload.stamp_y is not None: stamp["y"] = float(payload.stamp_y)
-        if payload.stamp_page is not None: stamp["page"] = int(payload.stamp_page)
-        if payload.stamp_size: stamp["size"] = str(payload.stamp_size).upper()
+    # Iter 22/40 — Prepared By TTD digital di posisi terpilih (dukung per-halaman placements)
+    _apply_placement_to_stamp(stamp, payload)
     await db.drawings.update_one(
         {"id": drawing_id},
         {"$set": {"approval_status": "pending_eng_head", "submitted_at": _now_iso(),
@@ -1484,12 +1526,8 @@ async def drawing_approve_stage(
 
     stamp = _sig_stamp(current, notes=(payload.notes if payload else ""))
     stamp["stage"] = stage
-    # Iter 18 — simpan posisi stamp digital untuk pdf-stamper
-    if payload:
-        if payload.stamp_x is not None: stamp["x"] = float(payload.stamp_x)
-        if payload.stamp_y is not None: stamp["y"] = float(payload.stamp_y)
-        if payload.stamp_page is not None: stamp["page"] = int(payload.stamp_page)
-        if payload.stamp_size: stamp["size"] = str(payload.stamp_size).upper()
+    # Iter 18/40 — simpan posisi stamp digital (dukung per-halaman placements) untuk pdf-stamper
+    _apply_placement_to_stamp(stamp, payload)
     next_status = NEXT_STATUS_AFTER[current_status]
     update = {
         "approval_status": next_status,
@@ -1638,6 +1676,8 @@ class DCStampIn(BaseModel):
     stamp_y: Optional[float] = None
     target: Optional[str] = "mks"
     extra_id: Optional[str] = ""
+    # Iter 40 — posisi berbeda tiap halaman
+    placements: Optional[List[dict]] = None
 
 
 class SOStampIn(BaseModel):
@@ -1650,6 +1690,8 @@ class SOStampIn(BaseModel):
     due_date: str = ""
     stamp_x: Optional[float] = None
     stamp_y: Optional[float] = None
+    # Iter 40 — posisi berbeda tiap halaman
+    placements: Optional[List[dict]] = None
 
 
 @router.post("/drawings/{drawing_id}/stamp-controlled")
@@ -1690,6 +1732,12 @@ async def drawing_stamp_controlled(
     if payload and payload.stamp_x is not None:
         stamp_common["x"] = float(payload.stamp_x)
         stamp_common["y"] = float(payload.stamp_y or 0.15)
+    if payload and payload.placements:
+        _pls = _norm_placements(payload.placements)
+        if _pls:
+            stamp_common["placements"] = _pls
+            stamp_common["x"] = _pls[0]["x"]
+            stamp_common["y"] = _pls[0]["y"]
 
     upd = {"updated_at": _now_iso()}
 
@@ -1775,6 +1823,12 @@ async def drawing_stamp_so(
     if payload.stamp_x is not None:
         so_stamp["x"] = float(payload.stamp_x)
         so_stamp["y"] = float(payload.stamp_y or 0.25)
+    if payload.placements:
+        _pls = _norm_placements(payload.placements)
+        if _pls:
+            so_stamp["placements"] = _pls
+            so_stamp["x"] = _pls[0]["x"]
+            so_stamp["y"] = _pls[0]["y"]
 
     await db.drawings.update_one(
         {"id": drawing_id},
@@ -1877,6 +1931,52 @@ async def _target_raw_bytes(drawing: dict, target: str, extra_id: str = "") -> b
     return await stream.read()
 
 
+async def _build_signature_map(approvals: list) -> dict:
+    """Fetch signature PNG bytes untuk tiap approver (dipakai render stamp)."""
+    signature_bytes_map: dict = {}
+    sig_bucket = AsyncIOMotorGridFSBucket(db, bucket_name="signatures")
+    for appr in (approvals or []):
+        uid = appr.get("user_id")
+        if not uid or uid in signature_bytes_map:
+            continue
+        u = await db.users.find_one({"id": uid}, {"signature_gridfs_id": 1})
+        sig_id = (u or {}).get("signature_gridfs_id")
+        if not sig_id:
+            continue
+        try:
+            s = await sig_bucket.open_download_stream(ObjectId(sig_id))
+            signature_bytes_map[uid] = await s.read()
+        except Exception:
+            pass
+    return signature_bytes_map
+
+
+async def _build_stamped_for_target(drawing: dict, target: str, extra_id: str, raw: bytes, current: dict) -> bytes:
+    """Terapkan overlay stamp yang sesuai untuk preview per target (mks/customer_ref/extra).
+    Meniru perilaku endpoint pdf-stamped / customer-ref preview / extras preview."""
+    is_dc_or_admin = is_doc_control(current) or is_admin_like(current)
+    printed_by = current.get("name") or current.get("username") or ""
+    try:
+        if target == "customer_ref":
+            show_wm = drawing.get("approval_status") in ("controlled", "approved") and not is_dc_or_admin
+            return _apply_pdf_stamps(raw, approvals=[], dc_stamp=drawing.get("customer_ref_dc_stamp"),
+                                     watermark_uncontrolled=show_wm, printed_by=printed_by)
+        if target == "extra":
+            entry = next((f for f in (drawing.get("additional_files") or []) if f.get("id") == extra_id), None)
+            show_wm = drawing.get("approval_status") in ("controlled", "approved") and not is_dc_or_admin
+            return _apply_pdf_stamps(raw, approvals=[], dc_stamp=(entry or {}).get("dc_stamp"),
+                                     watermark_uncontrolled=show_wm, printed_by=printed_by)
+        # default mks — full stamps (approvals + dc + so + watermark)
+        show_wm = drawing.get("approval_status") == "controlled" and not is_dc_or_admin
+        approvals = drawing.get("approvals") or []
+        sig_map = await _build_signature_map(approvals)
+        return _apply_pdf_stamps(raw, approvals=approvals, dc_stamp=drawing.get("dc_stamp"),
+                                 watermark_uncontrolled=show_wm, printed_by=printed_by,
+                                 signature_bytes_map=sig_map, so_stamp=drawing.get("so_stamp"))
+    except Exception:
+        return raw  # fallback ke raw kalau gagal stamp
+
+
 @router.get("/drawings/{drawing_id}/page-meta")
 async def drawing_page_meta(drawing_id: str, target: str = "mks", extra_id: str = "",
                             current: dict = Depends(get_current_user)):
@@ -1901,15 +2001,18 @@ async def drawing_page_meta(drawing_id: str, target: str = "mks", extra_id: str 
 
 @router.get("/drawings/{drawing_id}/page-image")
 async def drawing_page_image(drawing_id: str, page: int = 0, target: str = "mks",
-                             extra_id: str = "", scale: float = 2.0,
+                             extra_id: str = "", scale: float = 2.0, stamped: bool = False,
                              current: dict = Depends(get_current_user)):
-    """Render satu halaman PDF menjadi gambar PNG (untuk preview stamp picker yang bisa di-scroll)."""
+    """Render satu halaman PDF menjadi gambar PNG (untuk preview stamp picker & viewer baca-saja).
+    stamped=1 → tampilkan versi ber-stamp (approval/DC/SO + watermark) sesuai role."""
     if not _can_view(current):
         raise HTTPException(status_code=403, detail="Akses ditolak")
     drawing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
     if not drawing:
         raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
     raw = await _target_raw_bytes(drawing, target, extra_id)
+    if stamped:
+        raw = await _build_stamped_for_target(drawing, target, extra_id, raw, current)
     import fitz  # PyMuPDF
     try:
         doc = fitz.open(stream=raw, filetype="pdf")

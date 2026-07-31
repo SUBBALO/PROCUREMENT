@@ -688,7 +688,7 @@ function NewOrderForm() {
       if (data.bom_id) {
         nav(`/engineering/bom-entry/${data.bom_id}?just_created=1`);
       } else {
-        nav("/engineering/master-list");
+        nav(-1);
       }
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal buat drawing");
@@ -698,9 +698,9 @@ function NewOrderForm() {
   return (
     <div className="max-w-4xl mx-auto p-4 lg:p-6 space-y-4">
       <div>
-        <Link to="/engineering/master-list" className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900">
-          <ArrowLeft size={14} weight="bold" /> Kembali ke BOM Preparation
-        </Link>
+        <button type="button" onClick={() => nav(-1)} className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900">
+          <ArrowLeft size={14} weight="bold" /> Kembali ke Halaman Sebelumnya
+        </button>
         <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight mt-1">
           <ClipboardText className="inline-block mr-2 mb-1" size={26} weight="bold" />
           Register Drawing + Order Baru
@@ -926,9 +926,9 @@ function NewOrderForm() {
 
       {/* Action */}
       <div className="flex items-center justify-end gap-2">
-        <Link to="/engineering/master-list" className="inline-flex items-center gap-1 px-4 h-10 border-2 border-slate-400 text-slate-700 hover:bg-slate-50 text-sm font-bold">
+        <button type="button" onClick={() => nav(-1)} className="inline-flex items-center gap-1 px-4 h-10 border-2 border-slate-400 text-slate-700 hover:bg-slate-50 text-sm font-bold">
           Batal
-        </Link>
+        </button>
         <Button
           className="h-10 rounded-none bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-4"
           onClick={submit}
@@ -1027,7 +1027,7 @@ function WorkOrderView() {
       }
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal muat BOM");
-      nav("/engineering/master-list");
+      nav(-1);
     } finally {
       setLoading(false);
     }
@@ -1186,9 +1186,9 @@ function WorkOrderView() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <Link to="/engineering/master-list" className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900">
-            <ArrowLeft size={14} weight="bold" /> Kembali ke BOM Preparation
-          </Link>
+          <button type="button" onClick={() => nav(-1)} className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900">
+            <ArrowLeft size={14} weight="bold" /> Kembali ke Halaman Sebelumnya
+          </button>
           <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
             <ClipboardText className="inline-block mr-2 mb-1" size={26} weight="bold" />
             Engineering Work Order — {bom.bom_no}

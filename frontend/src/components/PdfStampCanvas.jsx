@@ -13,10 +13,11 @@ import api from "../lib/api";
  *   - drawingId          : id drawing
  *   - target             : "mks" | "customer_ref" | "extra"
  *   - extraId            : id file extra (kalau target="extra")
- *   - pos                : { page, xRel, yRel } | null  — posisi yang dipilih
+ *   - pos                : { page, xRel, yRel } | null  — (legacy) posisi tunggal
+ *   - placements         : [{ page, x, y }] — posisi berbeda tiap halaman (page -1 = semua halaman)
  *   - onPick(page, x, y) : callback saat user klik area PDF
  *   - markerNode         : elemen React untuk ditampilkan sebagai preview stamp
- *   - allPages           : bool — tampilkan marker di SEMUA halaman (DC / SO stamp)
+ *   - allPages           : bool — tampilkan marker di SEMUA halaman (mode posisi sama)
  *   - accent             : warna border marker halaman aktif (opsional)
  */
 export default function PdfStampCanvas({
@@ -24,6 +25,7 @@ export default function PdfStampCanvas({
   target = "mks",
   extraId = "",
   pos,
+  placements = null,
   onPick,
   markerNode,
   allPages = false,
@@ -73,12 +75,24 @@ export default function PdfStampCanvas({
     <div className="flex flex-col items-center gap-5 pb-16 w-full" data-testid="stamp-canvas">
       {Array.from({ length: meta.pages }).map((_, n) => {
         const size = (meta.sizes && meta.sizes[n]) || { w: 210, h: 297 };
-        const showMarker = pos && (allPages || pos.page === n);
-        const isActive = pos && pos.page === n;
+        // Mode baru: placements[] — cari placement utk halaman ini (atau page=-1 = semua halaman)
+        let marker = null;
+        let isActive = false;
+        if (placements && placements.length) {
+          const pl = placements.find((p) => p.page === n) || placements.find((p) => p.page === -1);
+          if (pl) {
+            marker = { xRel: pl.x, yRel: pl.y };
+            isActive = placements.some((p) => p.page === n);
+          }
+        } else if (pos && (allPages || pos.page === n)) {
+          marker = { xRel: pos.xRel, yRel: pos.yRel };
+          isActive = pos.page === n;
+        }
         return (
           <div key={n} className="flex flex-col items-center w-full">
             <div className="text-[10px] text-slate-300 uppercase tracking-widest mb-1">
               Halaman {n + 1} / {meta.pages}
+              {isActive && <span className="ml-2 text-emerald-400 font-bold">● ada stamp</span>}
             </div>
             <div
               className={`relative bg-white shadow-2xl cursor-crosshair ${isActive ? "ring-2 ring-emerald-400" : ""}`}
@@ -92,12 +106,12 @@ export default function PdfStampCanvas({
                 className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
                 draggable={false}
               />
-              {showMarker && (
+              {marker && (
                 <div
                   className="absolute pointer-events-none"
                   style={{
-                    left: `${pos.xRel * 100}%`,
-                    top: `${pos.yRel * 100}%`,
+                    left: `${marker.xRel * 100}%`,
+                    top: `${marker.yRel * 100}%`,
                     transform: "translate(-50%, -50%)",
                   }}
                   data-testid={`stamp-marker-page-${n}`}
