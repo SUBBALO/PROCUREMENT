@@ -179,6 +179,7 @@ class DrawingIn(BaseModel):
     title: str = ""
     revision: str = "Rev-0"
     discipline: str = "Mechanical"
+    customer_drawing_no: str = ""     # Nomor DWG dari customer (opsional) — dikaitkan dengan DWG MKS
     so_no: str = ""
     project_name: str = ""
     class_material: str = ""          # deskripsi paket order — mis. "RAW MATERIAL FOR QTY 1 PCS"
@@ -359,6 +360,7 @@ async def list_drawings(
     discipline: Optional[str] = None,
     status: Optional[str] = None,
     so_no: Optional[str] = None,
+    from_drf_id: Optional[str] = None,
     limit: int = 500,
     current: dict = Depends(get_current_user),
 ):
@@ -368,11 +370,13 @@ async def list_drawings(
     if discipline: filt["discipline"] = discipline
     if status: filt["status"] = status
     if so_no: filt["so_no"] = so_no
+    if from_drf_id: filt["from_drf_id"] = from_drf_id
     if q and q.strip():
         rx = {"$regex": re.escape(q.strip()), "$options": "i"}
         filt["$or"] = [
             {"drawing_no": rx}, {"title": rx}, {"project_name": rx},
             {"so_no": rx}, {"prepared_by": rx}, {"remark": rx},
+            {"customer_drawing_no": rx}, {"customer_name": rx},
         ]
     docs = await db.drawings.find(filt, {"_id": 0}).sort("updated_at", -1).limit(limit).to_list(length=limit)
     return {"items": docs, "total": len(docs), "disciplines": VALID_DISCIPLINES, "statuses": VALID_STATUS}

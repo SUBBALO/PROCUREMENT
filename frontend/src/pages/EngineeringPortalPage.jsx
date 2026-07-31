@@ -56,6 +56,17 @@ export default function EngineeringPortalPage() {
       badgeCount: drfPending,
     }] : []),
     ...(isEngUser ? [{
+      key: "my-drf",
+      label: "DRF Ditugaskan ke Saya",
+      stats: "New Order · Generate Drawing · BOM · TTD",
+      description: "Drawing Request yang ditugaskan Eng Leader kepada Anda. Buka untuk generate nomor drawing (bisa >1 dalam 1 request, berbagi 1 BOM), upload dokumen (bisa banyak: MKS, customer dwg, nesting), isi BOM, lalu TTD & submit ke Eng Leader.",
+      icon: Kanban,
+      href: "/engineering/my-drf",
+      accent: "from-teal-500 via-cyan-500 to-sky-500",
+      accentText: "text-teal-400",
+      badgeCount: myTasks,
+    }] : []),
+    ...(isEngUser ? [{
       key: "my-assignments",
       label: "Tugas Drawing Saya",
       stats: "Yang di-Assign ke Anda",
@@ -85,10 +96,10 @@ export default function EngineeringPortalPage() {
       accent: "from-violet-500 via-purple-500 to-fuchsia-500", accentText: "text-violet-400",
     },
     {
-      key: "master-list", label: "BOM Preparation & Approval", stats: "Draft · Review Eng Leader · Approved",
-      description: "Ruang kerja Engineering untuk siapkan & review BOM. Draft diisi engineer → di-approve Engineering Leader → otomatis masuk BOM (halaman Purchasing).",
-      icon: ClipboardText, href: "/engineering/master-list",
-      accent: "from-emerald-500 via-teal-500 to-cyan-500", accentText: "text-emerald-400",
+      key: "ecn", label: "Perubahan Drawing — ECR & ECN", stats: "ECR (Customer) · ECN (Internal MKS)",
+      description: "Pengajuan perubahan drawing/BOM. ECR = perubahan diminta customer; ECN = perubahan internal MKS dari engineer. Submit ke Eng Leader untuk review & approve.",
+      icon: ClipboardIcon, href: "/engineering/ecn",
+      accent: "from-rose-500 via-pink-500 to-fuchsia-500", accentText: "text-rose-400",
     },
     {
       key: "bom", label: "Bill of Material (BOM)", stats: "Untuk Purchasing · Yang sudah approved saja",

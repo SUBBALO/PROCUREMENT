@@ -8,18 +8,22 @@ import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import DrawingRequestFormDialog from "../components/DrawingRequestFormDialog";
-import { ArrowClockwise, FileText, CheckCircle, Eye, MagnifyingGlass, Wrench } from "@phosphor-icons/react";
+import { useAuth } from "../lib/auth";
+import { ArrowClockwise, FileText, CheckCircle, Eye, MagnifyingGlass, Wrench, UserPlus } from "@phosphor-icons/react";
 
 /**
- * DrawingRequestInboxPage — halaman Engineering Head (Riski) untuk lihat & accept
- * DRF submitted dari Sales, lalu navigate ke Register Drawing yg pre-filled dari DRF.
+ * DrawingRequestInboxPage — Engineering Leader (Riski) melihat DRF submitted dari Sales.
+ * Leader HANYA menugaskan engineer yang mengerjakan (accept + assign). Tidak isi kolom lain.
+ * Engineer yang ditugaskan lalu membuka Work Group untuk generate drawing + BOM + upload + TTD.
  */
 export default function DrawingRequestInboxPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [viewDrf, setViewDrf] = useState(null);
+  const [assignDrf, setAssignDrf] = useState(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,48 +42,6 @@ export default function DrawingRequestInboxPage() {
     : items;
   const pag = usePagination(filtered, 20);
 
-  const doAccept = async (drf) => {
-    // Kalau sudah accepted (belum ada linked drawing) → skip accept API, langsung navigate ke form
-    if (drf.status === "accepted" && !drf.linked_drawing_id) {
-      const params = new URLSearchParams({
-        from_drf_id: drf.id,
-        so_no: drf.so_no,
-        project_name: drf.project_name || "",
-        customer_name: drf.customer_name || "",
-        customer_code: drf.customer_code || "",
-        class_material: drf.material || "TBA",
-        request_by_sales: (drf.requested_by?.name || ""),
-      });
-      if (drf.request_type === "repeat_order" && drf.referenced_drawings?.length) {
-        params.set("source_drawing_id", drf.referenced_drawings[0]);
-      }
-      toast.info("Melanjutkan buat drawing...");
-      navigate(`/engineering/drawings?${params.toString()}`);
-      return;
-    }
-
-    if (!window.confirm(`Terima DRF ${drf.form_no} dan mulai buat drawing? Auto-TTD "Received By" dengan nama & tgl Anda.`)) return;
-    try {
-      await api.post(`/drawing-requests/${drf.id}/accept`);
-      toast.success(`✓ DRF diterima. Membuka form Register Drawing...`);
-      const params = new URLSearchParams({
-        from_drf_id: drf.id,
-        so_no: drf.so_no,
-        project_name: drf.project_name || "",
-        customer_name: drf.customer_name || "",
-        customer_code: drf.customer_code || "",
-        class_material: drf.material || "TBA",
-        request_by_sales: (drf.requested_by?.name || ""),
-      });
-      if (drf.request_type === "repeat_order" && drf.referenced_drawings?.length) {
-        params.set("source_drawing_id", drf.referenced_drawings[0]);
-      }
-      navigate(`/engineering/drawings?${params.toString()}`);
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Gagal accept");
-    }
-  };
-
   return (
     <div className="p-4 max-w-[1400px] mx-auto space-y-4">
       <BackLink />
@@ -91,7 +53,8 @@ export default function DrawingRequestInboxPage() {
           Drawing Request dari Sales
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          List DRF yang menunggu Anda proses: (1) status <b>submitted</b> — perlu Accept, atau (2) sudah <b>accepted</b> tapi drawing belum dibuat — klik <b>Lanjut Buat Drawing</b> untuk kembali ke form Register Drawing.
+          DRF dari Sales. Sebagai <b>Eng Leader</b>, Anda cukup <b>Accept & tunjuk engineer</b> yang mengerjakan.
+          Engineer yang ditugaskan lalu membuka <b>Work Group</b> untuk generate nomor drawing, isi BOM, upload & TTD.
         </p>
       </div>
 
@@ -138,16 +101,17 @@ export default function DrawingRequestInboxPage() {
                 </td></tr>
               )}
               {pag.pagedData.map((d) => {
-                const isAlreadyAccepted = d.status === "accepted" && !d.linked_drawing_id;
+                const isAssigned = !!d.assigned_engineer_id;
                 const isInProgress = d.status === "in_progress";
+                const isAccepted = d.status === "accepted";
                 return (
                 <tr key={d.id} className="border-b border-slate-100 hover:bg-amber-50/40" data-testid={`drf-inbox-row-${d.form_no}`}>
                   <td className="p-3 font-mono font-semibold text-slate-900 text-xs">
                     {d.form_no}
-                    {isAlreadyAccepted && (
+                    {isAssigned && (
                       <div className="mt-1">
-                        <span className="px-1 py-0.5 bg-sky-100 text-sky-800 border border-sky-400 text-[9px] font-bold uppercase">
-                          Diterima · Belum Ada Drawing
+                        <span className="px-1 py-0.5 bg-teal-100 text-teal-800 border border-teal-400 text-[9px] font-bold uppercase">
+                          → {d.assigned_engineer_name}
                         </span>
                       </div>
                     )}
@@ -183,25 +147,32 @@ export default function DrawingRequestInboxPage() {
                       >
                         <Eye size={11} weight="bold" /> Detail
                       </button>
-                      {isInProgress ? (
-                        <a
-                          href={d.linked_drawing_id ? `/engineering/drawings` : "#"}
+                      {(isAssigned || isInProgress) ? (
+                        <button
+                          onClick={() => navigate(`/engineering/drf/${d.id}`)}
                           className="inline-flex items-center px-2 py-1 bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-bold uppercase gap-0.5"
-                          data-testid={`drf-inbox-track-${d.form_no}`}
-                          title="Track progress drawing di Master List"
+                          data-testid={`drf-inbox-open-${d.form_no}`}
+                          title="Buka Work Group"
                         >
-                          <Eye size={11} weight="bold" /> Track Drawing
-                        </a>
+                          <Eye size={11} weight="bold" /> Buka Work Group
+                        </button>
                       ) : (
                         <button
-                          onClick={() => doAccept(d)}
-                          className={`inline-flex items-center px-2 py-1 text-white text-[10px] font-bold uppercase gap-0.5 ${
-                            isAlreadyAccepted ? "bg-sky-600 hover:bg-sky-700" : "bg-emerald-600 hover:bg-emerald-700"
-                          }`}
+                          onClick={() => setAssignDrf(d)}
+                          className="inline-flex items-center px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase gap-0.5"
                           data-testid={`drf-inbox-accept-${d.form_no}`}
                         >
-                          <CheckCircle size={11} weight="bold" />
-                          {isAlreadyAccepted ? "Lanjut Buat Drawing →" : "Accept & Buat Drawing"}
+                          <UserPlus size={11} weight="bold" /> Accept & Assign
+                        </button>
+                      )}
+                      {isAccepted && (
+                        <button
+                          onClick={() => setAssignDrf(d)}
+                          className="inline-flex items-center px-2 py-1 bg-sky-600 hover:bg-sky-700 text-white text-[10px] font-bold uppercase gap-0.5"
+                          data-testid={`drf-inbox-reassign-${d.form_no}`}
+                          title="Ganti engineer"
+                        >
+                          <UserPlus size={11} weight="bold" /> Ubah
                         </button>
                       )}
                     </div>
@@ -222,6 +193,87 @@ export default function DrawingRequestInboxPage() {
           onSaved={() => { setViewDrf(null); load(); }}
         />
       )}
+
+      {assignDrf && (
+        <AssignEngineerDialog
+          drf={assignDrf}
+          onClose={() => setAssignDrf(null)}
+          onAssigned={(drfId, assignedId) => {
+            setAssignDrf(null);
+            load();
+            // Riski hanya menunjuk. Kalau dia menunjuk DIRINYA SENDIRI → langsung ke Work Group untuk generate.
+            if (assignedId && assignedId === user?.id) {
+              navigate(`/engineering/drf/${drfId}`);
+            } else {
+              toast.success("Engineer sudah ditugaskan. Mereka akan mengerjakan dari menu 'DRF Ditugaskan ke Saya'.");
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Assign Engineer Dialog ---------------- */
+function AssignEngineerDialog({ drf, onClose, onAssigned }) {
+  const [engineers, setEngineers] = useState([]);
+  const [selected, setSelected] = useState(drf.assigned_engineer_id || "");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.get("/drawing-requests/engineering-users")
+      .then(({ data }) => setEngineers(data.items || []))
+      .catch((e) => toast.error(e.response?.data?.detail || "Gagal muat daftar engineer"));
+  }, []);
+
+  const submit = async () => {
+    if (!selected) return toast.error("Pilih engineer dulu");
+    setBusy(true);
+    try {
+      await api.post(`/drawing-requests/${drf.id}/accept-assign`, { assigned_engineer_id: selected });
+      const name = engineers.find((e) => e.id === selected)?.name || "engineer";
+      toast.success(`✓ DRF diterima & ditugaskan ke ${name}`);
+      onAssigned?.(drf.id, selected);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal assign");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4" data-testid="assign-dialog">
+      <Card className="rounded-none border-slate-300 w-full max-w-md bg-white">
+        <div className="px-4 py-3 bg-emerald-700 text-white">
+          <div className="text-[10px] uppercase tracking-widest opacity-80">Accept & Assign Engineer</div>
+          <div className="font-mono font-bold">{drf.form_no}</div>
+          <div className="text-[11px] opacity-90">SO {drf.so_no} · {drf.customer_name || "-"} · {drf.request_type === "new_order" ? "New Order" : "Repeat Order"}</div>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="text-sm text-slate-600">
+            Sebagai Eng Leader, Anda cukup menunjuk <b>siapa</b> yang mengerjakan. Detail drawing/BOM diisi oleh engineer.
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-1">Pilih Engineer</div>
+            <div className="max-h-60 overflow-y-auto border border-slate-200 divide-y">
+              {engineers.length === 0 && <div className="p-3 text-xs text-slate-400 italic">Tidak ada user Engineering. Buat user role eng_staff dulu di Admin.</div>}
+              {engineers.map((e) => (
+                <label key={e.id} className={`flex items-center gap-2 p-2.5 cursor-pointer hover:bg-emerald-50 ${selected === e.id ? "bg-emerald-100" : ""}`} data-testid={`assign-eng-${e.username}`}>
+                  <input type="radio" name="eng" checked={selected === e.id} onChange={() => setSelected(e.id)} />
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">{e.name || e.username}</div>
+                    <div className="text-[10px] text-slate-500 uppercase">{e.role}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={onClose} className="rounded-none">Batal</Button>
+            <Button onClick={submit} disabled={busy || !selected} className="rounded-none bg-emerald-700 hover:bg-emerald-800 text-white disabled:opacity-40" data-testid="assign-submit">
+              <CheckCircle size={14} weight="bold" className="mr-1" /> {busy ? "..." : "Accept & Assign"}
+            </Button>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }

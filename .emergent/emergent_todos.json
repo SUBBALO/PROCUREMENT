@@ -1,30 +1,30 @@
 [
   {
-    "content": "Backend: apply DC stamp & SO stamp to ALL pages in pdf_stamper.apply_stamps (support optional page key)",
+    "content": "Multi-page stamping fix (DC/SO/TTD all pages + scrollable picker) - DONE",
     "status": "completed"
   },
   {
-    "content": "Backend: add /page-meta & /page-image endpoints (render PDF pages as images via PyMuPDF)",
+    "content": "Phase 1: DRF Work Group (Riski accept+assign only, self-assign redirect; engineer generates N drawings sharing 1 BOM)",
     "status": "completed"
   },
   {
-    "content": "Frontend: create reusable scrollable multi-page PdfStampCanvas component",
+    "content": "Customer DWG No field on drawings + Master List column + search by SO",
     "status": "completed"
   },
   {
-    "content": "Frontend: rewrite DC StampPositionPicker to use scrollable canvas + all-pages marker",
+    "content": "Generate panel: next-number preview + recent numbers list (verify sequence)",
     "status": "completed"
   },
   {
-    "content": "Frontend: rewrite SOStampPositionPicker to use scrollable canvas + all-pages marker",
+    "content": "Master List Drawing = view-only (no edit/upload)",
     "status": "completed"
   },
   {
-    "content": "Frontend: update SignaturePlacementModal for scroll + page selection + 'all pages' option",
+    "content": "ECR & ECN module (customer vs internal change) + portal card (removed BOM Prep card)",
     "status": "completed"
   },
   {
-    "content": "Test: multi-page stamping (DC, SO, TTD) end-to-end - verified via API + UI (scroll + all-pages)",
-    "status": "completed"
+    "content": "Comprehensive testing of all Engineering changes via testing_agent",
+    "status": "in_progress"
   }
 ]

@@ -50,6 +50,9 @@ import PendingApprovalDrawingsPage from "./pages/PendingApprovalDrawingsPage";
 import DrawingRequestFormPage from "./pages/DrawingRequestFormPage";
 import DrawingRequestInboxPage from "./pages/DrawingRequestInboxPage";
 import MyAssignmentsPage from "./pages/MyAssignmentsPage";
+import EngineeringDrfWorkPage from "./pages/EngineeringDrfWorkPage";
+import MyDrfWorkListPage from "./pages/MyDrfWorkListPage";
+import ECNPage from "./pages/ECNPage";
 import SOStampPage from "./pages/SOStampPage";
 import DocumentControlPortalPage from "./pages/DocumentControlPortalPage";
 import "./App.css";
@@ -197,6 +200,9 @@ function AppRoutes() {
       <Route path="/sales/drawing-requests" element={<ProtectedRoute><DrawingRequestFormPage /></ProtectedRoute>} />
       <Route path="/engineering/drawing-request-inbox" element={<ProtectedRoute><DrawingRequestInboxPage /></ProtectedRoute>} />
       <Route path="/engineering/my-assignments" element={<ProtectedRoute><MyAssignmentsPage /></ProtectedRoute>} />
+      <Route path="/engineering/my-drf" element={<ProtectedRoute><MyDrfWorkListPage /></ProtectedRoute>} />
+      <Route path="/engineering/drf/:drfId" element={<ProtectedRoute><EngineeringDrfWorkPage /></ProtectedRoute>} />
+      <Route path="/engineering/ecn" element={<ProtectedRoute><ECNPage /></ProtectedRoute>} />
       <Route path="/engineering/work-order/:drawingId" element={<ProtectedRoute><EngineeringWorkOrderPage /></ProtectedRoute>} />
       <Route path="/my/signature-history" element={<ProtectedRoute><MySignatureHistoryPage /></ProtectedRoute>} />
       <Route path="/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />

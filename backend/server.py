@@ -36,6 +36,7 @@ from routers import material_costing as material_costing_router
 from routers import bom_attachments as bom_attachments_router
 from routers import drawing_register as drawing_register_router
 from routers import drawing_requests as drawing_requests_router
+from routers import ecn as ecn_router
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -65,6 +66,7 @@ api_router.include_router(material_costing_router.router)
 api_router.include_router(bom_attachments_router.router)
 api_router.include_router(drawing_register_router.router)
 api_router.include_router(drawing_requests_router.router)
+api_router.include_router(ecn_router.router)
 
 
 # SO Requests — Engineering asks Sales/Admin to create SO

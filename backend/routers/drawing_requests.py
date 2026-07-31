@@ -42,7 +42,7 @@ from pydantic import BaseModel, Field
 from db import db
 from deps import (
     ENGINEERING_HEAD_ROLES, SALES_ROLES,
-    get_current_user, is_admin_like, is_eng_head, log_action,
+    get_current_user, is_admin_like, is_eng_head, is_engineering, log_action,
 )
 
 router = APIRouter(tags=["drawing_request"])
@@ -211,6 +211,20 @@ async def pending_count_for_eng(current: dict = Depends(get_current_user)):
     return {"count": n}
 
 
+@router.get("/drawing-requests/engineering-users")
+async def drf_engineering_users(current: dict = Depends(get_current_user)):
+    """Daftar user Engineering untuk dropdown assign (dipakai Eng Leader saat accept DRF).
+    Didefinisikan SEBELUM route /{drf_id} agar tidak tertangkap sebagai id."""
+    if not (is_eng_head(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Eng Leader/Admin")
+    from deps import ENGINEERING_ROLES
+    users = await db.users.find(
+        {"role": {"$in": list(ENGINEERING_ROLES)}, "active": {"$ne": False}},
+        {"_id": 0, "id": 1, "username": 1, "name": 1, "role": 1},
+    ).sort("name", 1).to_list(length=200)
+    return {"items": users}
+
+
 @router.get("/drawing-requests/{drf_id}")
 async def get_drawing_request(drf_id: str, current: dict = Depends(get_current_user)):
     doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}}, {"_id": 0})
@@ -287,6 +301,136 @@ async def accept_drawing_request(drf_id: str, current: dict = Depends(get_curren
     await log_action(current, "drf_accept", "drawing_requests", drf_id, {"form_no": doc.get("form_no")})
     out = await db.drawing_requests.find_one({"id": drf_id}, {"_id": 0})
     return out
+
+
+class AcceptAssignIn(BaseModel):
+    assigned_engineer_id: str
+    assigned_engineer_name: Optional[str] = ""
+
+
+@router.post("/drawing-requests/{drf_id}/accept-assign")
+async def accept_and_assign_drf(
+    drf_id: str,
+    payload: AcceptAssignIn,
+    current: dict = Depends(get_current_user),
+):
+    """Eng Leader accept DRF + langsung tunjuk 1 engineer yang mengerjakan.
+    Eng Leader TIDAK mengisi kolom lain — hanya menugaskan siapa yang kerja."""
+    if not (is_eng_head(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering Leader yang boleh accept & assign")
+    doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="DRF tidak ditemukan")
+    if doc["status"] not in ("submitted", "accepted"):
+        raise HTTPException(status_code=400, detail=f"DRF status = {doc['status']}, harus 'submitted' dulu")
+    eng = await db.users.find_one({"id": payload.assigned_engineer_id})
+    if not eng:
+        raise HTTPException(status_code=404, detail="Engineer tidak ditemukan")
+    if not is_engineering(eng):
+        raise HTTPException(status_code=400, detail="User yang dipilih bukan Engineering")
+
+    upd = {
+        "status": "accepted",
+        "assigned_engineer_id": eng["id"],
+        "assigned_engineer_name": payload.assigned_engineer_name or eng.get("name") or eng.get("username"),
+        "assigned_by": current.get("name") or current.get("username"),
+        "assigned_at": _now_iso(),
+        "updated_at": _now_iso(),
+    }
+    if not doc.get("received_by"):
+        upd["received_by"] = _sig(current)
+        upd["accepted_at"] = _now_iso()
+    await db.drawing_requests.update_one({"id": drf_id}, {"$set": upd})
+    await log_action(current, "drf_accept_assign", "drawing_requests", drf_id,
+                     {"form_no": doc.get("form_no"), "engineer": upd["assigned_engineer_name"]})
+    out = await db.drawing_requests.find_one({"id": drf_id}, {"_id": 0})
+    return _clean(out)
+
+
+class GenerateDrawingIn(BaseModel):
+    project_initial: str = ""
+    drawing_type: str = "Assembly"   # Assembly | Part
+    title: str = ""
+    discipline: str = "Mechanical"
+    customer_drawing_no: str = ""    # Nomor DWG customer (opsional)
+
+
+class GenerateDrawingsIn(BaseModel):
+    drawings: List[GenerateDrawingIn]
+    class_material: str = ""
+
+
+@router.post("/drawing-requests/{drf_id}/generate-drawings")
+async def generate_drawings_for_drf(
+    drf_id: str,
+    payload: GenerateDrawingsIn,
+    current: dict = Depends(get_current_user),
+):
+    """Engineer yang ditugaskan generate 1+ nomor drawing untuk DRF ini.
+    Semua drawing berbagi SATU BOM (1 BOM bisa untuk banyak drawing).
+    New Order: user tentukan mau berapa drawing → generate nomor sebanyak itu."""
+    doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="DRF tidak ditemukan")
+    # Hanya engineer yang ditugaskan (atau Eng Leader/Admin) yang boleh
+    assignee = doc.get("assigned_engineer_id")
+    is_assignee = assignee and current.get("id") == assignee
+    if not (is_assignee or is_eng_head(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya engineer yang ditugaskan yang boleh mengerjakan DRF ini")
+    if doc["status"] not in ("accepted", "in_progress"):
+        raise HTTPException(status_code=400, detail=f"DRF harus di-accept & di-assign dulu (status sekarang: {doc['status']})")
+    if not payload.drawings:
+        raise HTTPException(status_code=400, detail="Minimal 1 drawing")
+
+    # Lazy import untuk hindari circular import
+    from routers.drawing_register import create_drawing, DrawingIn
+
+    assigned_name = doc.get("assigned_engineer_name") or (current.get("name") or current.get("username"))
+    customer_code = (doc.get("customer_code") or "MKS").upper().strip() or "MKS"
+    created = []
+    shared_bom_id = ""
+    for idx, d in enumerate(payload.drawings):
+        if idx == 0:
+            bom_mode, bom_id = "create_new", ""
+        else:
+            bom_mode, bom_id = ("existing", shared_bom_id) if shared_bom_id else ("none", "")
+        din = DrawingIn(
+            customer_code=customer_code,
+            customer_name=doc.get("customer_name") or "",
+            project_initial=(d.project_initial or "").strip(),
+            drawing_type=d.drawing_type or "Assembly",
+            title=d.title or "",
+            discipline=d.discipline or "Mechanical",
+            customer_drawing_no=(d.customer_drawing_no or "").strip(),
+            so_no=doc.get("so_no") or "",
+            project_name=doc.get("project_name") or "",
+            class_material=payload.class_material or "",
+            prepared_by=assigned_name,
+            from_drf_id=drf_id,
+            assigned_to_user_id=assignee or current.get("id"),
+            assigned_to_name=assigned_name,
+            bom_link_mode=bom_mode,
+            bom_id=bom_id,
+        )
+        dr = await create_drawing(din, current)
+        if idx == 0:
+            shared_bom_id = dr.get("bom_id") or ""
+        created.append(dr)
+
+    linked_ids = [d["id"] for d in created]
+    await db.drawing_requests.update_one(
+        {"id": drf_id},
+        {"$set": {
+            "status": "in_progress",
+            "linked_drawing_id": linked_ids[0] if linked_ids else None,
+            "linked_drawing_ids": (doc.get("linked_drawing_ids") or []) + linked_ids,
+            "shared_bom_id": shared_bom_id,
+            "updated_at": _now_iso(),
+        }},
+    )
+    await log_action(current, "drf_generate_drawings", "drawing_requests", drf_id,
+                     {"form_no": doc.get("form_no"), "count": len(created)})
+    return {"success": True, "drawings": created, "shared_bom_id": shared_bom_id}
 
 
 @router.post("/drawing-requests/{drf_id}/link-drawing")

@@ -110,7 +110,7 @@ export default function MasterDrawingPage() {
           MKS-F-ENG-005 Drawing Master List
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Register semua nomor drawing + upload file PDF-nya. Sistem otomatis <b>verifikasi isi PDF</b> — kalau nomor drawing di file tidak sama dengan yang di-register, muncul <span className="text-amber-700 font-semibold">warning kuning</span>.
+          <b>Katalog view-only</b> semua drawing (DWG MKS + No. DWG Customer terkait). Cari cukup dengan <b>Nomor SO</b> untuk melihat drawing MKS beserta drawing customer-nya. Pengerjaan drawing (upload/BOM/TTD) dilakukan di <b>DRF Ditugaskan ke Saya → Work Group</b>, bukan di sini.
         </p>
       </div>
 
@@ -159,6 +159,7 @@ export default function MasterDrawingPage() {
             <thead className="bg-white border-b border-slate-200">
               <tr className="text-[10px] uppercase tracking-[0.08em] font-bold text-slate-500">
                 <th className="text-left p-3">Drawing No</th>
+                <th className="text-left p-3">Cust DWG No</th>
                 <th className="text-left p-3">Title</th>
                 <th className="text-left p-3">Rev</th>
                 <th className="text-left p-3">Discipline</th>
@@ -174,39 +175,22 @@ export default function MasterDrawingPage() {
               </tr>
             </thead>
             <tbody data-testid="dw-list">
-              {loading && (<tr><td colSpan={13} className="p-8 text-center text-slate-400">Memuat...</td></tr>)}
-              {!loading && items.length === 0 && (<tr><td colSpan={13} className="p-8 text-center text-slate-400">Belum ada drawing. Alur register drawing baru: <b>Sales buat DRF (MKS-F-ENG-001)</b> → Eng Head Accept → Assign Engineer.</td></tr>)}
+              {loading && (<tr><td colSpan={14} className="p-8 text-center text-slate-400">Memuat...</td></tr>)}
+              {!loading && items.length === 0 && (<tr><td colSpan={14} className="p-8 text-center text-slate-400">Belum ada drawing. Alur register drawing baru: <b>Sales buat DRF (MKS-F-ENG-001)</b> → Eng Head Accept → Assign Engineer.</td></tr>)}
               {items.length > 0 && pag.pagedData.map((it) => (
                 <tr
                   key={it.id}
                   className="border-b border-slate-100 hover:bg-sky-50/60 cursor-pointer"
                   onClick={() => {
-                    // Iter 22 — Klik row: arahkan berdasarkan status drawing
-                    //   - Draft (belum submit): ke Work Order (input BOM + upload file)
-                    //   - Sedang approval (pending_xxx) / approved / controlled: ke halaman review + preview PDF
-                    //   - Bila belum ada bom_id sama sekali: buka edit dialog (Register)
-                    const isDone = ["approved", "controlled", "released"].includes(it.approval_status);
-                    const isPending = (it.approval_status || "").startsWith("pending_");
-                    if (isPending || isDone) {
-                      // Untuk approver/reviewer — buka Work Order (ada preview & status TTD)
-                      window.location.href = `/engineering/work-order/${it.id}`;
-                    } else if (it.bom_id) {
-                      window.location.href = `/engineering/work-order/${it.id}`;
-                    } else {
-                      setEditItem(it); setShowForm(true);
-                    }
+                    // Master List = VIEW-ONLY (hanya daftar data). Klik row → preview PDF kalau ada.
+                    // Edit/upload/generate dilakukan di Work Group (DRF), bukan di sini.
+                    if (it.file_id) setPreviewItem(it);
                   }}
                   data-testid={`dw-row-${it.id}`}
-                  title={(() => {
-                    const isDone = ["approved", "controlled", "released"].includes(it.approval_status);
-                    const isPending = (it.approval_status || "").startsWith("pending_");
-                    if (isPending) return "Klik untuk review + TTD approval (posisi & status TTD)";
-                    if (isDone) return "Klik untuk lihat drawing yang sudah approved";
-                    if (it.bom_id) return "Klik untuk buka Work Order Engineer (input BOM + upload file)";
-                    return "Klik untuk edit drawing (belum ada BOM linked)";
-                  })()}
+                  title={it.file_id ? "Klik untuk preview PDF (view-only)" : "Master List hanya untuk melihat data"}
                 >
                   <td className="p-3 font-mono font-semibold text-slate-900 hover:underline hover:text-sky-800">{it.drawing_no}</td>
+                  <td className="p-3 font-mono text-xs text-slate-700">{it.customer_drawing_no || <span className="text-slate-300">-</span>}</td>
                   <td className="p-3 text-slate-800">{it.title || "-"}</td>
                   <td className="p-3 text-xs text-slate-600">{it.revision}</td>
                   <td className="p-3 text-xs">{it.discipline}</td>
@@ -251,11 +235,11 @@ export default function MasterDrawingPage() {
                   </td>
                   <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-center gap-1">
-                      <button onClick={() => { setEditItem(it); setShowForm(true); }} data-testid={`dw-edit-${it.id}`} className="p-1 text-sky-600 hover:bg-sky-50" title="Edit / Upload / Replace / Delete file"><PencilSimple size={13} /></button>
-                      {it.file_id && (
-                        <button onClick={() => setPreviewItem(it)} data-testid={`dw-preview-${it.id}`} className="p-1 text-violet-700 hover:bg-violet-50" title="Preview"><Eye size={13} /></button>
+                      {it.file_id ? (
+                        <button onClick={() => setPreviewItem(it)} data-testid={`dw-preview-${it.id}`} className="p-1 text-violet-700 hover:bg-violet-50" title="Preview (view-only)"><Eye size={13} /></button>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 italic">view-only</span>
                       )}
-                      <button onClick={() => del(it)} data-testid={`dw-del-${it.id}`} className="p-1 text-rose-600 hover:bg-rose-50" title="Hapus"><Trash size={13} /></button>
                     </div>
                   </td>
                 </tr>
