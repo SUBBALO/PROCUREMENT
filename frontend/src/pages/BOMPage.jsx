@@ -43,6 +43,7 @@ export default function BOMPage() {
   const [selectedBom, setSelectedBom] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState([]);
+  const [expandedRevId, setExpandedRevId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [listRows, setListRows] = useState([]);
   const [sortBy, setSortBy] = useState("uploaded_desc");
@@ -393,7 +394,7 @@ export default function BOMPage() {
 
       {/* History dialog */}
       <Dialog open={showHistory} onOpenChange={setShowHistory}>
-        <DialogContent className="rounded-none max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="rounded-none max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Histori Revisi</DialogTitle>
             <DialogDescription>Semua revisi BOM untuk SO ini, terbaru dulu.</DialogDescription>
@@ -413,14 +414,22 @@ export default function BOMPage() {
               </thead>
               <tbody>
                 {history.map((h) => (
-                  <tr key={h.id} className="border-b border-slate-100">
+                  <React.Fragment key={h.id}>
+                  <tr className="border-b border-slate-100">
                     <td className="p-2"><b>Rev.{h.rev_no}</b></td>
                     <td className="p-2 text-xs text-slate-600">{(h.uploaded_at || "").slice(0, 19).replace("T", " ")}</td>
                     <td className="p-2 text-slate-800 font-semibold">{h.prepared_by || "-"}</td>
                     <td className="p-2 text-slate-700 text-xs">{h.uploaded_by_name}</td>
                     <td className="p-2 text-slate-600 text-xs italic">{h.revision_reason || "(upload awal)"}</td>
                     <td className="p-2 text-right tabular-nums">{(h.items || []).length}</td>
-                    <td className="p-2 text-center">
+                    <td className="p-2 text-center whitespace-nowrap">
+                      <button
+                        onClick={() => setExpandedRevId(expandedRevId === h.id ? null : h.id)}
+                        data-testid={`rev-view-items-${h.rev_no}`}
+                        className="text-[10px] uppercase tracking-[0.05em] font-semibold text-slate-700 border border-slate-300 hover:bg-slate-50 px-2 py-1 rounded-none mr-1"
+                      >
+                        {expandedRevId === h.id ? "Tutup" : "Lihat Item"}
+                      </button>
                       <button
                         onClick={() => { openBom(h); setShowHistory(false); }}
                         className="text-[10px] uppercase tracking-[0.05em] font-semibold text-sky-700 border border-sky-300 hover:bg-sky-50 px-2 py-1 rounded-none"
@@ -429,6 +438,46 @@ export default function BOMPage() {
                       </button>
                     </td>
                   </tr>
+                  {expandedRevId === h.id && (
+                    <tr className="bg-slate-50/70">
+                      <td colSpan={7} className="p-2">
+                        <div className="border border-slate-200 bg-white" data-testid={`rev-items-${h.rev_no}`}>
+                          <div className="px-2 py-1 bg-slate-100 text-[10px] uppercase tracking-wider font-bold text-slate-500">
+                            Isi Item BOM — Rev.{h.rev_no} {h.revision_reason ? `· ${h.revision_reason}` : ""}
+                          </div>
+                          {(h.items || []).length === 0 ? (
+                            <div className="p-3 text-xs italic text-slate-400">Tidak ada item pada revisi ini.</div>
+                          ) : (
+                            <table className="w-full text-xs">
+                              <thead className="bg-slate-50 text-slate-500">
+                                <tr>
+                                  <th className="text-left p-1.5 w-8">#</th>
+                                  <th className="text-left p-1.5">Nama Item</th>
+                                  <th className="text-left p-1.5">Spesifikasi</th>
+                                  <th className="text-right p-1.5">Qty</th>
+                                  <th className="text-left p-1.5">Unit</th>
+                                  <th className="text-left p-1.5">Material</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(h.items || []).map((it, i) => (
+                                  <tr key={i} className="border-t border-slate-100">
+                                    <td className="p-1.5 text-slate-500">{it.item_no || i + 1}</td>
+                                    <td className="p-1.5 text-slate-800">{it.item_name || "-"}</td>
+                                    <td className="p-1.5 text-slate-600">{it.item_specification || "-"}</td>
+                                    <td className="p-1.5 text-right tabular-nums">{it.qty ?? "-"}</td>
+                                    <td className="p-1.5 text-slate-600">{it.uom || "-"}</td>
+                                    <td className="p-1.5 text-slate-600">{it.material || "-"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>

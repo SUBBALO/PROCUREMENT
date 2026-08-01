@@ -1020,6 +1020,25 @@ async def download_drawing(drawing_id: str, current: dict = Depends(get_current_
         raise HTTPException(status_code=404, detail="File tidak ditemukan")
     stream = await _fs().open_download_stream(ObjectId(doc["file_id"]))
     raw = await stream.read()
+    # Watermark UNCONTROLLED COPY untuk role non-DC/Admin (mis. Produksi/Store/QC) + footer printed-by.
+    is_dc_or_admin = is_doc_control(current) or is_admin_like(current)
+    show_watermark = doc.get("approval_status") in ("controlled", "approved") and not is_dc_or_admin
+    printed_by = current.get("name") or current.get("username") or ""
+    dc_stamp = doc.get("dc_stamp")
+    if raw[:5].startswith(b"%PDF") and (show_watermark or printed_by or dc_stamp):
+        try:
+            raw = _apply_pdf_stamps(
+                raw, approvals=[], dc_stamp=dc_stamp,
+                watermark_uncontrolled=show_watermark, printed_by=printed_by,
+            )
+        except Exception:
+            pass
+    try:
+        await log_action(current, "drawing_download", "drawings", drawing_id, {
+            "drawing_no": doc.get("drawing_no"), "watermarked": show_watermark,
+        })
+    except Exception:
+        pass
     return StreamingResponse(
         io.BytesIO(raw),
         media_type="application/pdf",
