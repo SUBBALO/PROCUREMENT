@@ -272,7 +272,7 @@ export default function AppShell({ children }) {
                   activePath={location.pathname}
                 />
               )}
-              {(!isLanding || isFullAdmin) && showBom && (
+              {showBom && (
                 <NavLink
                   to="/bom"
                   data-testid="nav-bom-top"

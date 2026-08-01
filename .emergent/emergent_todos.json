@@ -12,15 +12,15 @@
     "status": "completed"
   },
   {
-    "content": "Fix caption BOM Utama (hapus link lama) + bersihkan data test — DONE",
+    "content": "Fix caption BOM Utama + bersihkan data test — DONE",
     "status": "completed"
   },
   {
-    "content": "RBAC BOM: costing/purchase-history gating + DWG/customer preview-only — backend+frontend DONE, verified via API",
+    "content": "RBAC BOM: costing/purchase gating + DWG/customer preview-only — DONE & tested (backend 100%)",
     "status": "completed"
   },
   {
-    "content": "Verifikasi UI RBAC (QC vs Sales/Admin) + alur revisi BOM via testing agent",
-    "status": "in_progress"
+    "content": "Akses menu BOM untuk semua departemen (QC dll) + fix 500→400 — DONE",
+    "status": "completed"
   }
 ]

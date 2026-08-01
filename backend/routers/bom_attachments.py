@@ -623,7 +623,12 @@ async def attachment_page_meta(bom_id: str, attach_id: str, current: dict = Depe
     """Metadata halaman untuk viewer image-based (PDF & Excel)."""
     from utils.pdf_render import pdf_page_meta
     raw = await _attachment_pdf_bytes(bom_id, attach_id, current)
-    return pdf_page_meta(raw)
+    try:
+        return pdf_page_meta(raw)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="File tidak dapat dirender sebagai halaman gambar (format tidak valid)")
 
 
 @router.get("/bom/{bom_id}/attachments/{attach_id}/page-image")
@@ -636,6 +641,10 @@ async def attachment_page_image(bom_id: str, attach_id: str, page: int = 0, scal
         png = pdf_page_png(raw, page, scale)
     except IndexError:
         raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="File tidak dapat dirender sebagai halaman gambar (format tidak valid)")
     return StreamingResponse(io.BytesIO(png), media_type="image/png",
                              headers={"Cache-Control": "private, max-age=300"})
 
