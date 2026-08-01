@@ -45,7 +45,7 @@ def _guard_drawing_download(doc: dict, current: dict):
     if doc.get("category") in DRAWING_ATTACHMENT_CATEGORIES and is_drawing_preview_only(current):
         raise HTTPException(status_code=403, detail="File Drawing/Customer hanya bisa dipreview (tanpa download) untuk role Anda.")
 
-VALID_CATEGORIES = {"drawing", "customer_ref", "nesting", "nesting_price", "costing", "costing_prev", "revision"}
+VALID_CATEGORIES = {"drawing", "customer_ref", "nesting", "nesting_price", "costing", "costing_prev", "revision", "cad"}
 CATEGORY_LABELS = {
     "drawing": "Drawing PDF (MKS)",
     "customer_ref": "Customer Reference",
@@ -54,6 +54,7 @@ CATEGORY_LABELS = {
     "costing": "Costing (current)",
     "costing_prev": "Costing Sebelumnya",
     "revision": "Revision (dari Engineering Leader)",
+    "cad": "File AutoCAD / CAD (DWG)",
 }
 CATEGORY_ALLOWED_EXT = {
     "drawing": {".pdf", ".doc", ".docx"},
@@ -63,6 +64,9 @@ CATEGORY_ALLOWED_EXT = {
     "costing": {".xlsx", ".xls", ".pdf"},
     "costing_prev": {".xlsx", ".xls", ".pdf"},
     "revision": {".pdf", ".jpg", ".jpeg", ".png", ".xlsx", ".xls", ".doc", ".docx"},
+    # File native CAD (Inventor/AutoCAD/SolidWorks/STEP) — download-only, tidak bisa preview gambar.
+    "cad": {".dwg", ".dxf", ".dwf", ".ipt", ".iam", ".idw", ".sldprt", ".sldasm",
+            ".step", ".stp", ".iges", ".igs", ".stl", ".zip", ".rar", ".7z"},
 }
 
 _gridfs: Optional[AsyncIOMotorGridFSBucket] = None

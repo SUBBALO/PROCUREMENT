@@ -1407,6 +1407,25 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
   const [showHist, setShowHist] = useState(false);
   const [ocrSuggestion, setOcrSuggestion] = useState("");
   const [mismatchInfo, setMismatchInfo] = useState(null); // popup nomor DWG salah (New Order strict)
+  // Popup konfirmasi/manual "No. Drawing Customer" setelah upload Customer Ref PDF
+  const [custNoPopup, setCustNoPopup] = useState(null); // { value, candidates, detected, source }
+  const [custNoSaving, setCustNoSaving] = useState(false);
+  const saveCustNo = async () => {
+    const val = (custNoPopup?.value || "").trim();
+    setCustNoSaving(true);
+    try {
+      await api.patch(`/drawings/${activeDwg.id}/basic-info`, { customer_drawing_no: val });
+      setLocalDrawing((d) => ({ ...d, customer_drawing_no: val }));
+      onDrawingUpdated?.({ customer_drawing_no: val });
+      toast.success(val ? `No. Drawing Customer disimpan → ${val}` : "No. Drawing Customer dikosongkan");
+      setCustNoPopup(null);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal menyimpan No. Drawing Customer");
+    } finally {
+      setCustNoSaving(false);
+    }
+  };
+
   const applyOcrSuggestion = async () => {
     const val = (ocrSuggestion || "").trim();
     if (!val) return;
@@ -1562,11 +1581,23 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      await api.post(`/drawings/${activeDwg.id}/upload-customer-ref`, fd);
+      const { data } = await api.post(`/drawings/${activeDwg.id}/upload-customer-ref`, fd);
       toast.success("Customer Ref ter-upload");
       const patch = { customer_ref_file_id: "temp", customer_ref_filename: file.name };
       setLocalDrawing((d) => ({ ...d, ...patch }));
       onDrawingUpdated?.(patch);
+
+      // Auto-baca "No. Drawing Customer" dari isi PDF. Selalu tampilkan popup:
+      // - terbaca → prefill (bisa dikoreksi)
+      // - tidak terbaca → input manual (autofill kosong + kandidat sbg saran)
+      const detected = (data?.detected_customer_drawing_no || "").trim();
+      const existing = (data?.existing_customer_drawing_no || activeDwg.customer_drawing_no || "").trim();
+      setCustNoPopup({
+        value: detected || existing || "",
+        candidates: data?.customer_drawing_candidates || [],
+        detected,
+        source: data?.detected_source || "none",
+      });
     } catch (e) { toast.error(e.response?.data?.detail || "Gagal upload"); }
     finally { setUploading(null); }
   };
@@ -1930,6 +1961,63 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
           </div>
         </div>
       )}
+
+      {/* Popup: konfirmasi / input manual "No. Drawing Customer" setelah upload Customer Ref */}
+      <Dialog open={!!custNoPopup} onOpenChange={(o) => { if (!o) setCustNoPopup(null); }}>
+        <DialogContent className="sm:max-w-[480px] rounded-none" data-testid="dw-custno-modal">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText size={18} weight="bold" className="text-blue-600" /> No. Drawing Customer
+            </DialogTitle>
+            <DialogDescription>
+              {custNoPopup?.detected
+                ? <>Nomor terbaca otomatis dari PDF customer{custNoPopup?.source === "ocr" ? " (via OCR — mohon verifikasi)" : ""}. Konfirmasi atau koreksi bila perlu.</>
+                : <>Nomor tidak terbaca otomatis dari PDF. Silakan ketik manual (boleh dikosongkan bila memang tidak ada).</>}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="custno-input">No. Drawing Customer</Label>
+              <Input
+                id="custno-input"
+                value={custNoPopup?.value || ""}
+                onChange={(e) => setCustNoPopup((p) => ({ ...p, value: e.target.value }))}
+                placeholder="cth: CUST-DRW-00123"
+                className="rounded-none font-mono"
+                data-testid="dw-custno-input"
+                autoFocus
+              />
+            </div>
+            {custNoPopup?.candidates?.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="text-[11px] uppercase tracking-wider font-bold text-slate-500">Saran dari PDF (klik untuk pakai)</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {custNoPopup.candidates.slice(0, 8).map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setCustNoPopup((p) => ({ ...p, value: c }))}
+                      className="px-2 py-1 border border-slate-300 bg-slate-50 hover:bg-blue-50 hover:border-blue-400 text-[11px] font-mono"
+                      data-testid={`dw-custno-cand-${c}`}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" className="rounded-none" onClick={() => setCustNoPopup(null)} disabled={custNoSaving} data-testid="dw-custno-skip">
+              Lewati
+            </Button>
+            <Button className="rounded-none bg-blue-600 hover:bg-blue-700 text-white" onClick={saveCustNo} disabled={custNoSaving} data-testid="dw-custno-save">
+              {custNoSaving ? "Menyimpan..." : "Simpan Nomor"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {/* Drawing PDF slot */}

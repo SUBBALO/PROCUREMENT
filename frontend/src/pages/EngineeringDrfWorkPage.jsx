@@ -16,6 +16,7 @@ import {
 } from "../components/ui/alert-dialog";
 import BackLink from "../components/BackLink";
 import PdfPreviewModal from "../components/PdfPreviewModal";
+import SoDocsPanel from "../components/SoDocsPanel";
 import {
   Wrench, ArrowClockwise, Plus, Trash, FileText, Package,
   CheckCircle, PaperPlaneRight, PencilSimple, Lock, ArrowRight, Eye,
@@ -290,6 +291,12 @@ export default function EngineeringDrfWorkPage() {
           })}
         </div>
       </div>
+
+      {/* ---------- Dokumen SO (level SO/BOM): Nesting · AutoCAD · Costing ---------- */}
+      {drawings.length > 0 && (
+        <SoDocsPanel bomId={sharedBomId} bomNo={sharedBomNo} canEdit={canEdit} />
+      )}
+
 
       {drawings.length > 0 && canEdit && (
         <div className="border-2 border-sky-500 bg-sky-50 p-4 text-sm text-slate-700">

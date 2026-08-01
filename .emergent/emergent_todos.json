@@ -1,18 +1,22 @@
 [
   {
-    "content": "Add Edit Modal (Dialog) UI in EngineeringDrfWorkPage.jsx bound to editDwg",
+    "content": "Backend: tambah kategori 'cad' di bom_attachments.py (VALID_CATEGORIES, labels, allowed ext)",
     "status": "completed"
   },
   {
-    "content": "Add styled Delete confirmation dialog (AlertDialog)",
+    "content": "Backend: upload-customer-ref deteksi customer_drawing_no + return suggestion",
     "status": "completed"
   },
   {
-    "content": "Compile check (esbuild) + fix errors",
+    "content": "Frontend: komponen SoDocsPanel (Nesting/CAD/Costing) di DRF Work page bawah daftar drawing",
     "status": "completed"
   },
   {
-    "content": "Test Edit/Delete flow (backend + frontend)",
+    "content": "Frontend: popup konfirmasi/manual customer_drawing_no saat upload Customer Ref",
+    "status": "completed"
+  },
+  {
+    "content": "Compile check (esbuild) + test backend & frontend",
     "status": "completed"
   }
 ]

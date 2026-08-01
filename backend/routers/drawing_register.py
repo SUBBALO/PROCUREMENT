@@ -360,6 +360,55 @@ def _check_drawing_no_in_text(drawing_no: str, pdf_text: str, source: str = "nat
     }
 
 
+# ---- Deteksi "No. Drawing Customer" dari PDF referensi customer ----
+# Customer PDF tidak punya format baku, jadi kita cari label umum lalu ambil kode di sebelahnya.
+_CUST_DNO_LABELS = [
+    r"DRAWING\s*(?:NO|NUMBER|NUM)\.?",
+    r"DWG\s*(?:NO|NUMBER)\.?",
+    r"DRG\s*(?:NO|NUMBER)\.?",
+    r"DOC(?:UMENT)?\s*(?:NO|NUMBER)\.?",
+    r"PART\s*(?:NO|NUMBER)\.?",
+    r"P\s*/\s*N\.?",
+    r"NO\.?\s*GAMBAR",
+    r"NOMOR\s*GAMBAR",
+]
+# token kode: huruf/angka dgn - / _ . , minimal 4 char, wajib ada minimal 1 digit.
+_CUST_CODE_TOKEN = r"([A-Za-z0-9][A-Za-z0-9\-/_.]{3,40}[A-Za-z0-9])"
+_CUST_LABEL_RE = re.compile(
+    r"(?:%s)[\s:._-]*%s" % ("|".join(_CUST_DNO_LABELS), _CUST_CODE_TOKEN),
+    re.IGNORECASE,
+)
+
+
+def _detect_customer_dwg_no(text: str):
+    """Return (detected_no, candidates[]) dari teks PDF customer.
+    detected_no = tebakan terbaik (di sebelah label 'Drawing No' dst) atau '' bila tak ada."""
+    if not text or not text.strip():
+        return "", []
+    detected = ""
+    for m in _CUST_LABEL_RE.finditer(text):
+        cand = (m.group(1) or "").strip(" .:-_")
+        # buang token yang cuma angka murni pendek atau kata umum
+        if cand and any(c.isdigit() for c in cand) and len(cand) >= 4:
+            detected = cand.upper()
+            break
+    # Kandidat umum (untuk dropdown/manual autofill) — kode alfanumerik yang "mirip nomor".
+    candidates = []
+    seen = set()
+    for m in re.findall(r"[A-Za-z0-9][A-Za-z0-9\-/_.]{4,30}[A-Za-z0-9]", text):
+        c = m.strip()
+        norm = c.upper()
+        if norm in seen:
+            continue
+        if any(ch.isalpha() for ch in c) and any(ch.isdigit() for ch in c) and 5 <= len(c) <= 30:
+            seen.add(norm)
+            candidates.append(c)
+        if len(candidates) >= 10:
+            break
+    return detected, candidates
+
+
+
 @router.get("/drawings/config")
 async def get_drawing_config(current: dict = Depends(get_current_user)):
     if not _can_view(current):
@@ -1536,7 +1585,25 @@ async def upload_customer_ref(
     }
     await db.drawings.update_one({"id": drawing_id}, {"$set": update})
     await log_action(current, "drawing_customer_ref_upload", "drawings", drawing_id, {"filename": file.filename})
-    return {"success": True, **update}
+
+    # Auto-baca "No. Drawing Customer" dari isi PDF (native → OCR fallback).
+    detected_cust_no, cust_candidates = "", []
+    try:
+        txt, src = _extract_pdf_text_with_source(content, ocr_fallback=True)
+        detected_cust_no, cust_candidates = _detect_customer_dwg_no(txt)
+    except Exception:
+        src = "none"
+    already = (existing.get("customer_drawing_no") or "").strip()
+    return {
+        "success": True,
+        **update,
+        "detected_customer_drawing_no": detected_cust_no,
+        "customer_drawing_candidates": cust_candidates,
+        "detected_source": src if detected_cust_no else "none",
+        "existing_customer_drawing_no": already,
+        # Frontend pakai flag ini untuk tentukan: prefill popup atau minta input manual.
+        "needs_manual_customer_no": (not detected_cust_no) and (not already),
+    }
 
 
 @router.get("/drawings/{drawing_id}/customer-ref/preview")
