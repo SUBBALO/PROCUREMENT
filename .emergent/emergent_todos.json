@@ -1,30 +1,22 @@
 [
   {
-    "content": "Verify Legacy Import flow (BOM upload -> auto-detect -> multiple DWG) frontend+backend",
+    "content": "Sales Repeat Manual: input manual SO lama + nama customer saat data lama tak ditemukan (Sales DRF form)",
     "status": "completed"
   },
   {
-    "content": "Explore MasterDrawingPage.jsx + related APIs (drawing status, DC stamp, previews)",
+    "content": "OCR Fallback: baca nomor DWG dari PDF scan (tesseract) dgn graceful degrade + saran (tidak auto-apply)",
     "status": "completed"
   },
   {
-    "content": "Backend: add hide_so param to page-image + _build_stamped_for_target",
+    "content": "Preview Nesting/Costing lama di daftar repeat (chip clickable)",
     "status": "completed"
   },
   {
-    "content": "rbac.js: add isEngineeringRole/canPrint helpers",
+    "content": "Riwayat Ganti Nomor DWG: simpan rename_history + tampilkan di UI",
     "status": "completed"
   },
   {
-    "content": "PdfPreviewModal.jsx: add hideSo + autoPrint prop wiring",
-    "status": "completed"
-  },
-  {
-    "content": "MasterDrawingPage.jsx: DrawingMasterRow (Status column + 4 inline previews + Print button)",
-    "status": "completed"
-  },
-  {
-    "content": "Test: backend hide_so + frontend UI (screenshot + testing agent)",
+    "content": "Verifikasi akhir: compile semua + screenshot DRF manual + health check",
     "status": "completed"
   }
 ]

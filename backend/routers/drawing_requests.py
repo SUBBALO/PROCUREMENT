@@ -113,6 +113,7 @@ class DrawingRequestCreate(BaseModel):
     request_type: str = Field(..., pattern="^(new_order|repeat_order)$")
     so_no: str
     ref_so_no: Optional[str] = ""  # untuk repeat order
+    ref_so_manual: Optional[bool] = False  # True bila SO lama diinput manual (tidak ada di master)
     date: Optional[str] = ""  # kosong = today
     project_name: str = ""
     customer_code: str = ""
@@ -143,6 +144,7 @@ async def create_drawing_request(
         "request_type": payload.request_type,
         "so_no": payload.so_no.strip(),
         "ref_so_no": (payload.ref_so_no or "").strip(),
+        "ref_so_manual": bool(payload.ref_so_manual),
         "date": payload.date or now[:10],
         "project_name": payload.project_name.strip(),
         "customer_code": payload.customer_code.strip(),

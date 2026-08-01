@@ -23,6 +23,8 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
   const [drawings, setDrawings] = useState([]); // list drawing MKS for reference (repeat order)
   const [drawingQ, setDrawingQ] = useState("");
   const [saving, setSaving] = useState(false);
+  const [refManual, setRefManual] = useState(!!initial?.ref_so_manual);
+  const [refManualSo, setRefManualSo] = useState(initial?.ref_so_manual ? (initial?.ref_so_no || "") : "");
   const [attachments, setAttachments] = useState(initial?.attached_files || []);
   const fileRef = useRef();
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
@@ -40,6 +42,7 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
     expected_due_date: initial?.expected_due_date || "",
     notes: initial?.notes || "",
     referenced_drawings: initial?.referenced_drawings || [],
+    ref_so_manual: initial?.ref_so_manual || false,
   });
 
   // Load SO list
@@ -203,18 +206,64 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
               {form.ref_so_no ? (
                 <div className="flex items-center gap-2 bg-blue-50 border border-blue-300 p-2">
                   <div className="font-mono font-bold text-blue-900 text-sm">{form.ref_so_no}</div>
-                  {!isLocked && <button onClick={() => setForm((f) => ({ ...f, ref_so_no: "" }))} className="text-blue-700 text-xs underline">Ganti</button>}
+                  {form.ref_so_manual && (
+                    <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-bold uppercase tracking-wider" data-testid="drf-ref-manual-badge">Input Manual</span>
+                  )}
+                  {!isLocked && <button onClick={() => { setForm((f) => ({ ...f, ref_so_no: "", ref_so_manual: false })); setRefManual(false); setRefManualSo(""); }} className="text-blue-700 text-xs underline" data-testid="drf-ref-change">Ganti</button>}
                 </div>
               ) : !isLocked && (
                 <>
-                  <Input value={refSoQ} onChange={(e) => setRefSoQ(e.target.value)} placeholder="Cari SO lama..." className="rounded-none border-slate-300" data-testid="drf-ref-so-search" />
-                  {refSoQ && (
-                    <div className="border border-slate-300 max-h-48 overflow-auto bg-white">
-                      {refSoMatches.map((s) => (
-                        <button key={s.id} onClick={() => pickSO(s, true)} className="w-full text-left px-3 py-1.5 hover:bg-blue-50 border-b border-slate-100 text-xs">
-                          <b className="font-mono">{s.so_no}</b> · {s.customer} · {s.description}
-                        </button>
-                      ))}
+                  {!refManual ? (
+                    <>
+                      <Input value={refSoQ} onChange={(e) => setRefSoQ(e.target.value)} placeholder="Cari SO lama..." className="rounded-none border-slate-300" data-testid="drf-ref-so-search" />
+                      {refSoQ && (
+                        <div className="border border-slate-300 max-h-48 overflow-auto bg-white">
+                          {refSoMatches.map((s) => (
+                            <button key={s.id} onClick={() => pickSO(s, true)} className="w-full text-left px-3 py-1.5 hover:bg-blue-50 border-b border-slate-100 text-xs">
+                              <b className="font-mono">{s.so_no}</b> · {s.customer} · {s.description}
+                            </button>
+                          ))}
+                          {refSoMatches.length === 0 && (
+                            <div className="p-3 text-center text-xs text-slate-500">
+                              SO lama tidak ditemukan.
+                              <button onClick={() => { setRefManual(true); setRefManualSo(refSoQ); }} className="ml-1 text-blue-700 underline font-bold" data-testid="drf-ref-manual-from-empty">Input manual →</button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <button onClick={() => { setRefManual(true); setRefManualSo(refSoQ); }} className="text-[11px] text-blue-700 underline" data-testid="drf-ref-manual-toggle">
+                        SO lama tidak ada di daftar? Input manual →
+                      </button>
+                    </>
+                  ) : (
+                    <div className="space-y-2 bg-amber-50 border border-amber-300 p-3" data-testid="drf-ref-manual-box">
+                      <div className="text-[11px] text-amber-800 font-semibold">Input manual SO lama (data lama tidak ada di sistem)</div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-[10px]">No. SO Lama <span className="text-red-500">*</span></Label>
+                          <Input value={refManualSo} onChange={(e) => setRefManualSo(e.target.value)} placeholder="mis. 004521" className="rounded-none border-slate-300 font-mono" data-testid="drf-ref-manual-so" />
+                        </div>
+                        <div>
+                          <Label className="text-[10px]">Nama Customer <span className="text-red-500">*</span></Label>
+                          <Input value={form.customer_name} onChange={(e) => setForm((f) => ({ ...f, customer_name: e.target.value }))} placeholder="mis. THIES, PT" className="rounded-none border-slate-300" data-testid="drf-ref-manual-customer" />
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            const v = (refManualSo || "").trim();
+                            if (!v) return toast.error("No. SO lama wajib diisi");
+                            if (!(form.customer_name || "").trim()) return toast.error("Nama customer wajib diisi");
+                            setForm((f) => ({ ...f, ref_so_no: v, ref_so_manual: true }));
+                          }}
+                          className="rounded-none bg-amber-600 hover:bg-amber-700 text-white h-7 text-xs"
+                          data-testid="drf-ref-manual-apply"
+                        >
+                          Pakai SO Manual
+                        </Button>
+                        <button onClick={() => { setRefManual(false); setRefManualSo(""); }} className="text-xs text-slate-600 underline" data-testid="drf-ref-manual-cancel">Batal / cari lagi</button>
+                      </div>
                     </div>
                   )}
                 </>

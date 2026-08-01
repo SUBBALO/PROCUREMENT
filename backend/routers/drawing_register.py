@@ -212,9 +212,35 @@ def _normalize_dno(s: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", (s or "").upper())
 
 
-def _extract_pdf_text(pdf_bytes: bytes) -> str:
-    """Best-effort text extraction. Utama pakai PyMuPDF (fitz) yang andal & sudah terpasang;
-    fallback ke pypdf bila ada. Return empty string on error (mis. PDF scan/gambar)."""
+def _ocr_pdf_text(pdf_bytes: bytes, max_pages: int = 3, dpi: int = 220) -> str:
+    """OCR fallback untuk PDF hasil scan/gambar (tidak ada teks embedded).
+    Render halaman via PyMuPDF → OCR via Tesseract. Butuh binary 'tesseract' terpasang
+    (di Windows: install Tesseract-OCR & pastikan ada di PATH). Degrade aman bila tak ada."""
+    try:
+        import fitz  # PyMuPDF
+        import pytesseract
+        from PIL import Image
+        import io as _io
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        chunks = []
+        for i, page in enumerate(doc):
+            if i >= max_pages:
+                break
+            try:
+                pix = page.get_pixmap(dpi=dpi)
+                img = Image.open(_io.BytesIO(pix.tobytes("png")))
+                chunks.append(pytesseract.image_to_string(img) or "")
+            except Exception:
+                pass
+        doc.close()
+        return "\n".join(chunks)
+    except Exception:
+        return ""
+
+
+def _extract_pdf_text_with_source(pdf_bytes: bytes, ocr_fallback: bool = True):
+    """Return (text, source). source ∈ {'native','ocr','none'}.
+    native = teks embedded (fitz/pypdf, akurat); ocr = hasil Tesseract (bisa kurang akurat)."""
     # Primary: PyMuPDF (fitz)
     try:
         import fitz  # PyMuPDF
@@ -230,7 +256,7 @@ def _extract_pdf_text(pdf_bytes: bytes) -> str:
         doc.close()
         txt = "\n".join(chunks)
         if txt.strip():
-            return txt
+            return txt, "native"
     except Exception:
         pass
     # Fallback: pypdf (opsional)
@@ -245,42 +271,67 @@ def _extract_pdf_text(pdf_bytes: bytes) -> str:
                 chunks.append(page.extract_text() or "")
             except Exception:
                 pass
-        return "\n".join(chunks)
+        txt = "\n".join(chunks)
+        if txt.strip():
+            return txt, "native"
     except Exception:
-        return ""
+        pass
+    # Fallback terakhir: OCR untuk PDF scan/gambar
+    if ocr_fallback:
+        octxt = _ocr_pdf_text(pdf_bytes)
+        if octxt.strip():
+            return octxt, "ocr"
+    return "", "none"
+
+
+def _extract_pdf_text(pdf_bytes: bytes, ocr_fallback: bool = True) -> str:
+    """Best-effort text extraction (native → pypdf → OCR). Return '' bila gagal."""
+    txt, _src = _extract_pdf_text_with_source(pdf_bytes, ocr_fallback=ocr_fallback)
+    return txt
 
 
 _MKS_DNO_RE = re.compile(
     r"DWG\.\d{2}\.\d{2}\.\d{2}_[A-Za-z0-9]+(?:\.[A-Za-z0-9]+){2,4}",
     re.IGNORECASE,
 )
+# Loose pattern untuk hasil OCR (tanda baca sering meleset). Hasilnya = SARAN (bisa kurang akurat).
+_MKS_DNO_LOOSE_RE = re.compile(
+    r"DWG[.\s_]{0,2}\d{2}[.\s_]{0,2}\d{2}[.\s_]{0,2}\d{2}[.\s_]{0,2}[A-Za-z0-9]+(?:[.\s_]{0,2}[A-Za-z0-9]+){2,4}",
+    re.IGNORECASE,
+)
 
 
-def _detect_mks_dno(text: str) -> str:
+def _detect_mks_dno(text: str, loose: bool = False) -> str:
     """Deteksi nomor DWG format MKS (mis. 'DWG.26.07.03_THIES.FL.A.03') di dalam teks PDF.
-    Toleran terhadap spasi tipis di sekitar titik/underscore saat extract teks."""
+    loose=True → toleran hasil OCR (nomor hasilnya bisa kurang akurat, dipakai sbg saran)."""
     if not text:
         return ""
     cleaned = re.sub(r"\s*([._])\s*", r"\1", text)
     m = _MKS_DNO_RE.search(cleaned)
-    return m.group(0).upper() if m else ""
+    if m:
+        return m.group(0).upper()
+    if loose:
+        m2 = _MKS_DNO_LOOSE_RE.search(text)
+        if m2:
+            return re.sub(r"\s+", "", m2.group(0)).upper()
+    return ""
 
 
-def _check_drawing_no_in_text(drawing_no: str, pdf_text: str) -> dict:
-    """Return {match, extracted_candidates, note, detected_no}.
+def _check_drawing_no_in_text(drawing_no: str, pdf_text: str, source: str = "native") -> dict:
+    """Return {match, extracted_candidates, note, detected_no, detected_source}.
 
-    detected_no = nomor format MKS (DWG.YY.MM.NN_CUST.INIT.TYPE.NN) yang terdeteksi di isi
-    PDF (dipakai fitur auto-deteksi nomor untuk repeat/manual upload)."""
+    detected_no = nomor format MKS (DWG.YY.MM.NN_CUST.INIT.TYPE.NN) yang terdeteksi di isi PDF.
+    source='ocr' → pakai deteksi loose (hasil bisa kurang akurat → jadi SARAN, bukan auto-apply)."""
     if not drawing_no:
-        return {"match": False, "extracted_candidates": [], "note": "drawing_no register kosong", "detected_no": ""}
+        return {"match": False, "extracted_candidates": [], "note": "drawing_no register kosong", "detected_no": "", "detected_source": source}
     if not pdf_text.strip():
-        return {"match": False, "extracted_candidates": [], "note": "Tidak bisa extract teks dari PDF (mungkin scan/gambar)", "detected_no": ""}
+        return {"match": False, "extracted_candidates": [], "note": "Tidak bisa extract teks dari PDF (mungkin scan/gambar)", "detected_no": "", "detected_source": "none"}
 
-    detected_no = _detect_mks_dno(pdf_text)
+    detected_no = _detect_mks_dno(pdf_text, loose=(source == "ocr"))
     target = _normalize_dno(drawing_no)
     haystack = _normalize_dno(pdf_text)
     if target in haystack:
-        return {"match": True, "extracted_candidates": [drawing_no], "note": "Nomor drawing ditemukan di PDF", "detected_no": detected_no or drawing_no}
+        return {"match": True, "extracted_candidates": [drawing_no], "note": "Nomor drawing ditemukan di PDF", "detected_no": detected_no or drawing_no, "detected_source": source}
 
     # Try to detect any drawing-number-like patterns in text as suggestions
     candidates = set()
@@ -291,11 +342,21 @@ def _check_drawing_no_in_text(drawing_no: str, pdf_text: str) -> dict:
             candidates.add(m.strip())
     # Keep at most 8 unique candidates
     candidates_list = sorted(candidates)[:8]
+    # OCR fallback: bila loose gagal, ambil kandidat yang diawali 'DWG' sebagai saran nomor.
+    if source == "ocr" and not detected_no:
+        for c in candidates_list:
+            if c.upper().replace(" ", "").startswith("DWG"):
+                detected_no = c.upper().replace(" ", "")
+                break
+    note = f"Nomor register '{drawing_no}' tidak ditemukan di isi PDF"
+    if source == "ocr":
+        note += " (dibaca via OCR — mohon verifikasi)"
     return {
         "match": False,
         "extracted_candidates": candidates_list,
-        "note": f"Nomor register '{drawing_no}' tidak ditemukan di isi PDF",
+        "note": note,
         "detected_no": detected_no,
+        "detected_source": source,
     }
 
 
@@ -1151,8 +1212,8 @@ async def verify_pdf(
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="File kosong")
-    text = _extract_pdf_text(content)
-    result = _check_drawing_no_in_text(drawing_no, text)
+    text, src = _extract_pdf_text_with_source(content)
+    result = _check_drawing_no_in_text(drawing_no, text, source=src)
     result["text_extracted_chars"] = len(text)
     return result
 
@@ -1185,8 +1246,8 @@ async def upload_drawing_pdf(
         raise HTTPException(status_code=400, detail="File > 100 MB tidak diizinkan")
 
     # Verify content
-    text = _extract_pdf_text(content)
-    check = _check_drawing_no_in_text(existing["drawing_no"], text)
+    text, src = _extract_pdf_text_with_source(content)
+    check = _check_drawing_no_in_text(existing["drawing_no"], text, source=src)
 
     # Replace old file if any
     if existing.get("file_id"):
@@ -1211,6 +1272,7 @@ async def upload_drawing_pdf(
         "pdf_match_note": check["note"],
         "pdf_extracted_candidates": check["extracted_candidates"],
         "pdf_detected_no": check.get("detected_no") or "",
+        "pdf_detected_source": check.get("detected_source") or "native",
         "updated_at": _now_iso(),
         "updated_by": user_name,
     }
@@ -1231,6 +1293,7 @@ async def upload_drawing_pdf(
         "note": check["note"],
         "extracted_candidates": check["extracted_candidates"],
         "detected_no": check.get("detected_no") or "",
+        "detected_source": check.get("detected_source") or "native",
         "current_drawing_no": existing["drawing_no"],
         "file_uploaded_at": update["file_uploaded_at"],
         "filename": file.filename,
@@ -1272,9 +1335,11 @@ async def rename_drawing_no(drawing_id: str, payload: RenameDrawingIn, current: 
 
     old_no = existing.get("drawing_no")
     user_name = current.get("username") or current.get("name")
+    now_iso = _now_iso()
+    hist_entry = {"from": old_no, "to": new_no, "by": user_name, "at": now_iso}
     set_fields = {
-        "drawing_no": new_no, "updated_at": _now_iso(), "updated_by": user_name,
-        "renamed_from": old_no, "renamed_at": _now_iso(),
+        "drawing_no": new_no, "updated_at": now_iso, "updated_by": user_name,
+        "renamed_from": old_no, "renamed_at": now_iso,
     }
     # Re-verify status match terhadap isi PDF (bila sudah ada file) supaya warning konsisten.
     if existing.get("file_id"):
@@ -1289,7 +1354,7 @@ async def rename_drawing_no(drawing_id: str, payload: RenameDrawingIn, current: 
             set_fields["pdf_detected_no"] = check.get("detected_no") or ""
         except Exception:
             pass
-    await db.drawings.update_one({"id": drawing_id}, {"$set": set_fields})
+    await db.drawings.update_one({"id": drawing_id}, {"$set": set_fields, "$push": {"rename_history": hist_entry}})
     # Sinkronkan project_dwg di BOM terkait bila menunjuk nomor lama.
     if existing.get("bom_id"):
         try:
@@ -1301,7 +1366,8 @@ async def rename_drawing_no(drawing_id: str, payload: RenameDrawingIn, current: 
             pass
     await log_action(current, "drawing_rename", "drawings", drawing_id,
                      {"from": old_no, "to": new_no})
-    return {"success": True, "drawing_no": new_no, "from": old_no}
+    return {"success": True, "drawing_no": new_no, "from": old_no,
+            "rename_history": (existing.get("rename_history") or []) + [hist_entry]}
 
 
 @router.get("/drawings/{drawing_id}/preview")

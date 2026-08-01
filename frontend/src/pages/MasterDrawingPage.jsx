@@ -1360,15 +1360,32 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
   const [editingNo, setEditingNo] = useState(false);
   const [noInput, setNoInput] = useState("");
   const [savingNo, setSavingNo] = useState(false);
+  const [showHist, setShowHist] = useState(false);
+  const [ocrSuggestion, setOcrSuggestion] = useState("");
+  const applyOcrSuggestion = async () => {
+    const val = (ocrSuggestion || "").trim();
+    if (!val) return;
+    setSavingNo(true);
+    try {
+      const { data: rn } = await api.post(`/drawings/${activeDwg.id}/rename`, { new_drawing_no: val });
+      setLocalDrawing((d) => ({ ...d, drawing_no: rn.drawing_no, rename_history: rn.rename_history || d.rename_history }));
+      onDrawingUpdated?.({ drawing_no: rn.drawing_no });
+      setOcrSuggestion("");
+      toast.success(`✓ Nomor DWG (OCR) dipakai → ${rn.drawing_no}`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal memakai nomor OCR");
+    } finally { setSavingNo(false); }
+  };
   const saveDwgNo = async () => {
     const val = (noInput || "").trim();
     if (!val) return toast.error("Nomor DWG tidak boleh kosong");
     setSavingNo(true);
     try {
       const { data: rn } = await api.post(`/drawings/${activeDwg.id}/rename`, { new_drawing_no: val });
-      setLocalDrawing((d) => ({ ...d, drawing_no: rn.drawing_no }));
+      setLocalDrawing((d) => ({ ...d, drawing_no: rn.drawing_no, rename_history: rn.rename_history || d.rename_history }));
       onDrawingUpdated?.({ drawing_no: rn.drawing_no });
       setEditingNo(false);
+      setOcrSuggestion("");
       toast.success(`✓ Nomor DWG disimpan → ${rn.drawing_no}`);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal menyimpan nomor DWG");
@@ -1421,14 +1438,18 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
       };
       setLocalDrawing((d) => ({ ...d, ...patch }));
 
-      // Auto-baca nomor DWG dari isi PDF (repeat/manual upload): jika nomor format MKS yang
-      // tercetak di PDF terdeteksi & BEDA dengan nomor drawing → LANGSUNG pakai nomor dari PDF.
+      // Auto-baca nomor DWG dari isi PDF (repeat/manual upload).
       const detected = (data?.detected_no || "").trim();
+      const source = data?.detected_source || "native";
       const norm = (s) => (s || "").replace(/\s+/g, "").toUpperCase();
-      if (detected && norm(detected) !== norm(activeDwg.drawing_no)) {
+      const differs = detected && norm(detected) !== norm(activeDwg.drawing_no);
+
+      // Sumber NATIVE (teks embedded, akurat) & beda → LANGSUNG pakai nomor dari PDF.
+      if (differs && source === "native") {
         try {
           const { data: rn } = await api.post(`/drawings/${activeDwg.id}/rename`, { new_drawing_no: detected });
-          setLocalDrawing((d) => ({ ...d, ...patch, drawing_no: rn.drawing_no, pdf_match_status: "verified", pdf_match_note: "Nomor drawing dibaca otomatis dari isi PDF" }));
+          setLocalDrawing((d) => ({ ...d, ...patch, drawing_no: rn.drawing_no, pdf_match_status: "verified", pdf_match_note: "Nomor drawing dibaca otomatis dari isi PDF", rename_history: rn.rename_history || d.rename_history }));
+          setOcrSuggestion("");
           toast.success(`✓ Nomor DWG dibaca dari PDF → ${rn.drawing_no}`, {
             description: `Sebelumnya: ${activeDwg.drawing_no}. Otomatis disamakan dengan isi PDF.`,
             duration: 8000,
@@ -1436,14 +1457,23 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
           onDrawingUpdated?.({ drawing_no: rn.drawing_no });
           return;
         } catch (e2) {
-          // Gagal rename (mis. nomor sudah dipakai) → tetap lanjut, beri tahu.
           toast.error(`Nomor di PDF (${detected}) terdeteksi tapi gagal dipakai: ${e2.response?.data?.detail || "error"}. Bisa ketik manual.`, { duration: 9000 });
         }
       }
 
+      // Sumber OCR (PDF scan) → jadikan SARAN (bisa kurang akurat), user konfirmasi/koreksi manual.
+      if (differs && source === "ocr") {
+        setOcrSuggestion(detected);
+        toast.warning(`Nomor DWG terbaca via OCR: ${detected}`, {
+          description: "PDF berupa scan — nomor mungkin kurang akurat. Klik 'Pakai' untuk memakainya, atau 'Ubah manual' untuk mengetik sendiri.",
+          duration: 12000,
+        });
+      } else {
+        setOcrSuggestion("");
+      }
+
       onDrawingUpdated?.(patch);
       if (data?.match === false && !detected) {
-        // Tidak ada nomor format MKS terbaca & tidak match → warning (mungkin scan/gambar).
         const extracted = (data?.extracted_candidates || []).slice(0, 5).join(", ") || "-";
         toast.error(
           `⚠ Nomor DWG tidak terbaca otomatis. Kandidat di PDF: ${extracted} · Nomor sekarang: ${activeDwg.drawing_no}`,
@@ -1451,7 +1481,7 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
         );
       } else if (data?.match) {
         toast.success(data?.status_auto_promoted ? "Drawing PDF ter-upload — nomor MATCH · status otomatis Issued" : "Drawing PDF ter-upload — nomor MATCH ✓");
-      } else {
+      } else if (source !== "ocr") {
         toast.success("Drawing PDF ter-upload ✓");
       }
     } catch (e) { toast.error(e.response?.data?.detail || "Gagal upload drawing PDF"); }
@@ -1708,6 +1738,16 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
               <PencilSimple size={12} /> Ubah manual
             </button>
             <span className="text-[10px] text-slate-400 italic">Nomor otomatis dibaca dari isi PDF saat upload; ubah di sini bila salah.</span>
+            {(activeDwg.rename_history || []).length > 0 && (
+              <button
+                onClick={() => setShowHist((v) => !v)}
+                className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider border border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+                data-testid="dw-no-history-btn"
+                title="Lihat riwayat perubahan nomor DWG"
+              >
+                <ArrowClockwise size={11} /> Riwayat ({(activeDwg.rename_history || []).length})
+              </button>
+            )}
           </>
         ) : (
           <div className="flex items-center gap-2 flex-wrap">
@@ -1727,6 +1767,38 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
           </div>
         )}
       </div>
+
+      {/* Saran nomor via OCR (PDF scan) — tidak diterapkan otomatis */}
+      {ocrSuggestion && (
+        <div className="flex flex-wrap items-center gap-2 border border-amber-300 bg-amber-50 px-3 py-2" data-testid="dw-ocr-suggestion">
+          <span className="text-[10px] uppercase tracking-widest font-bold text-amber-700">OCR</span>
+          <span className="text-xs text-amber-800">Nomor terbaca dari scan (cek dulu, bisa kurang akurat):</span>
+          <span className="font-mono font-bold text-amber-900 text-sm">{ocrSuggestion}</span>
+          <Button onClick={applyOcrSuggestion} disabled={savingNo} className="h-7 rounded-none bg-amber-600 hover:bg-amber-700 text-white text-xs" data-testid="dw-ocr-apply">Pakai</Button>
+          <button onClick={() => { setNoInput(ocrSuggestion); setEditingNo(true); }} className="text-[11px] text-amber-700 underline" data-testid="dw-ocr-edit">Koreksi manual</button>
+          <button onClick={() => setOcrSuggestion("")} className="text-[11px] text-slate-500 underline">Abaikan</button>
+        </div>
+      )}
+
+      {/* Riwayat ganti nomor DWG */}
+      {showHist && (activeDwg.rename_history || []).length > 0 && (
+        <div className="border border-indigo-200 bg-indigo-50/60 px-3 py-2" data-testid="dw-no-history-list">
+          <div className="text-[10px] uppercase tracking-widest font-bold text-indigo-700 mb-1">Riwayat Perubahan Nomor DWG</div>
+          <div className="space-y-1">
+            {[...(activeDwg.rename_history || [])].reverse().map((h, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-700">
+                <span className="font-mono line-through text-slate-400">{h.from || "-"}</span>
+                <span className="text-slate-400">→</span>
+                <span className="font-mono font-bold text-slate-900">{h.to || "-"}</span>
+                <span className="text-slate-400">·</span>
+                <span className="text-slate-500">{h.by || "-"}</span>
+                <span className="text-slate-400">·</span>
+                <span className="text-slate-500">{h.at ? new Date(h.at).toLocaleString("id-ID") : "-"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* PROMINENT MISMATCH WARNING */}
       {activeDwg.file_id && activeDwg.pdf_match_status === "warning" && (
