@@ -53,6 +53,7 @@ const ATTACH_SLOTS = [
   { key: "drawing",      label: "Drawing PDF (MKS)",       accept: ".pdf",                    color: "violet" },
   { key: "customer_ref", label: "Customer Reference",       accept: ".pdf,.jpg,.jpeg,.png",   color: "sky" },
   { key: "nesting",      label: "Nesting",                  accept: ".pdf,.xlsx,.xls",        color: "amber" },
+  { key: "nesting_price", label: "Nesting Price",           accept: ".pdf,.xlsx,.xls,.doc,.docx", color: "cyan" },
   { key: "costing_prev", label: "Costing Sebelumnya",       accept: ".xlsx,.xls,.pdf",        color: "rose" },
 ];
 
@@ -1042,7 +1043,7 @@ function WorkOrderView() {
   }, [justCreated, bom?.bom_no]);
 
   const attachmentsByCategory = useMemo(() => {
-    const m = { drawing: [], customer_ref: [], nesting: [], costing: [], costing_prev: [], revision: [] };
+    const m = { drawing: [], customer_ref: [], nesting: [], nesting_price: [], costing: [], costing_prev: [], revision: [] };
     attachments.forEach((a) => {
       if (m[a.category]) m[a.category].push(a);
     });

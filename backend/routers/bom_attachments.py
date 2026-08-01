@@ -23,19 +23,21 @@ from routers.drawing_register import _normalize_dno
 
 router = APIRouter(tags=["bom-attachments"])
 
-VALID_CATEGORIES = {"drawing", "customer_ref", "nesting", "costing", "costing_prev", "revision"}
+VALID_CATEGORIES = {"drawing", "customer_ref", "nesting", "nesting_price", "costing", "costing_prev", "revision"}
 CATEGORY_LABELS = {
     "drawing": "Drawing PDF (MKS)",
     "customer_ref": "Customer Reference",
     "nesting": "Nesting",
+    "nesting_price": "Nesting Price",
     "costing": "Costing (current)",
     "costing_prev": "Costing Sebelumnya",
     "revision": "Revision (dari Engineering Leader)",
 }
 CATEGORY_ALLOWED_EXT = {
-    "drawing": {".pdf"},
-    "customer_ref": {".pdf", ".jpg", ".jpeg", ".png"},
-    "nesting": {".pdf", ".xlsx", ".xls"},
+    "drawing": {".pdf", ".doc", ".docx"},
+    "customer_ref": {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"},
+    "nesting": {".pdf", ".xlsx", ".xls", ".doc", ".docx"},
+    "nesting_price": {".pdf", ".xlsx", ".xls", ".doc", ".docx"},
     "costing": {".xlsx", ".xls", ".pdf"},
     "costing_prev": {".xlsx", ".xls", ".pdf"},
     "revision": {".pdf", ".jpg", ".jpeg", ".png", ".xlsx", ".xls", ".doc", ".docx"},

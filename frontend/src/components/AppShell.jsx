@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import GlobalSearch from "./GlobalSearch";
 import {
   ChartBar, Plus, MagnifyingGlass, SignOut, Package, ChartLineUp, ShieldStar, Warehouse, ArrowDown, ArrowUp,
-  ClipboardText, CaretDown, ShoppingCart, Storefront, Truck, ClockCounterClockwise, Bell, HardDrives,
+  ClipboardText, CaretDown, ShoppingCart, Storefront, Truck, ClockCounterClockwise, Bell, HardDrives, UploadSimple,
 } from "@phosphor-icons/react";
 
 // ─── PURCHASING ─────────────────────────────────────────
@@ -42,6 +42,7 @@ const ADMIN_ITEM_USERS = { to: "/admin", label: "Kelola User", icon: ShieldStar,
 const ADMIN_ITEM_LOGS = { to: "/admin?tab=logs", label: "Log Aktivitas", icon: ClockCounterClockwise, testid: "nav-logs" };
 const ADMIN_ITEM_STORAGE = { to: "/admin/storage", label: "Kelola Storage", icon: HardDrives, testid: "nav-storage" };
 const ADMIN_ITEM_TEMPLATES = { to: "/admin/form-templates", label: "Template Form (MCL, dll)", icon: ClipboardText, testid: "nav-form-templates" };
+const ADMIN_ITEM_LEGACY = { to: "/admin/legacy-import", label: "Import Data Lama (Master List)", icon: UploadSimple, testid: "nav-legacy-import" };
 
 function isPathMatch(current, target) {
   const t = target.split("?")[0];
@@ -267,7 +268,7 @@ export default function AppShell({ children }) {
                   label="Admin"
                   icon={ShieldStar}
                   testid="dept-admin"
-                  items={[ADMIN_ITEM_USERS, ADMIN_ITEM_LOGS, ADMIN_ITEM_STORAGE, ADMIN_ITEM_TEMPLATES]}
+                  items={[ADMIN_ITEM_USERS, ADMIN_ITEM_LOGS, ADMIN_ITEM_STORAGE, ADMIN_ITEM_TEMPLATES, ADMIN_ITEM_LEGACY]}
                   activePath={location.pathname}
                 />
               )}
@@ -295,6 +296,20 @@ export default function AppShell({ children }) {
                   }
                 >
                   <ClipboardText size={14} weight="duotone" /> Inquiries
+                </NavLink>
+              )}
+              {!isLanding && ["engineering", "eng_leader", "eng_head"].includes(role) && (
+                <NavLink
+                  to="/admin/legacy-import"
+                  data-testid="nav-legacy-import-eng"
+                  className={({ isActive }) =>
+                    `text-xs uppercase tracking-[0.05em] font-semibold px-3 h-9 flex items-center gap-2 border-b-2 transition-colors ${
+                      isActive ? "border-rose-600 text-rose-700" : "border-transparent text-slate-600 hover:text-slate-900"
+                    }`
+                  }
+                  title="Import Data Lama ke Drawing Master List"
+                >
+                  <UploadSimple size={14} weight="duotone" /> Import Data Lama
                 </NavLink>
               )}
               {/* Material Costing shortcut — visible for purchasing (Fiana) & finance so they can maintain Master List Harga */}

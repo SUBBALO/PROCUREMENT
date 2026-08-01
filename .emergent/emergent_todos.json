@@ -1,14 +1,30 @@
 [
   {
-    "content": "Excel preview as image pages + wiring viewer (Inquiry/BOM/Form/Excel templates) — DONE & tested 100%",
+    "content": "Excel preview + wiring viewer — DONE & tested",
     "status": "completed"
   },
   {
-    "content": "SO 6-digit: normalize_so_no zero-pad, validasi, migrasi data lama, frontend input QuotationPage",
+    "content": "SO 6-digit normalize + migrasi + frontend — DONE",
     "status": "completed"
   },
   {
-    "content": "Bulk Import Data Lama (BOM+DWG MKS+DWG Customer) → Master List (final/approved) — MENUNGGU konfirmasi desain",
-    "status": "pending"
+    "content": "Backend: kategori nesting_price + izin Word + drawing render Word→PDF — DONE",
+    "status": "completed"
+  },
+  {
+    "content": "Backend: legacy_import/commit slot Eng DWG/Customer/Nesting/Nesting Price/BOM — DONE",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: LegacyImportPage + route + menu (Admin & Eng Leader) — DONE",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: tampilkan nesting_price di Master List/BOM read-only/BOM entry — DONE",
+    "status": "completed"
+  },
+  {
+    "content": "Test backend legacy import (analyze+commit) + SO 6-digit + frontend screenshot",
+    "status": "in_progress"
   }
 ]

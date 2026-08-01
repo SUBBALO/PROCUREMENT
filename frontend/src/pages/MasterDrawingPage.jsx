@@ -1416,6 +1416,16 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
     },
     downloadUrl: `${backendUrl}/api/bom/${activeDwg.bom_id}/attachments/${a.id}/download`,
   }));
+  const nestingPriceList = (bomAttachments.nesting_price || []).map((a) => ({
+    ...a,
+    previewUrl: `${backendUrl}/api/bom/${activeDwg.bom_id}/attachments/${a.id}/preview`,
+    viewer: {
+      metaUrl: `/bom/${activeDwg.bom_id}/attachments/${a.id}/page-meta`,
+      pageBase: `${backendUrl}/api/bom/${activeDwg.bom_id}/attachments/${a.id}/page-image`,
+      downloadUrl: `${backendUrl}/api/bom/${activeDwg.bom_id}/attachments/${a.id}/download`,
+    },
+    downloadUrl: `${backendUrl}/api/bom/${activeDwg.bom_id}/attachments/${a.id}/download`,
+  }));
 
   return (
     <div className="border-2 border-slate-300 bg-slate-50 p-3 space-y-3" data-testid="dw-attachments-panel">
@@ -1500,6 +1510,25 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
         ) : (
           <div className="border-2 border-dashed border-slate-300 bg-white/50 p-3 flex flex-col items-center justify-center text-center">
             <div className="text-[11px] uppercase tracking-wider font-bold text-slate-400 mb-1">Nesting PDF</div>
+            <div className="text-[11px] text-slate-500 italic">Link ke BOM dulu untuk mengaktifkan.</div>
+          </div>
+        )}
+
+        {/* Nesting Price slot (via BOM) */}
+        {activeDwg.bom_id ? (
+          <Slot
+            label="Nesting Price"
+            icon={FileText}
+            accent="cyan"
+            files={nestingPriceList}
+            onUpload={(f) => uploadBomAttachment("nesting_price", f)}
+            category="nesting_price"
+            allowMulti
+            allowedExt=".pdf,.xlsx,.xls,.doc,.docx"
+          />
+        ) : (
+          <div className="border-2 border-dashed border-slate-300 bg-white/50 p-3 flex flex-col items-center justify-center text-center">
+            <div className="text-[11px] uppercase tracking-wider font-bold text-slate-400 mb-1">Nesting Price</div>
             <div className="text-[11px] text-slate-500 italic">Link ke BOM dulu untuk mengaktifkan.</div>
           </div>
         )}

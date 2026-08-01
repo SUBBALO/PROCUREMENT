@@ -2069,7 +2069,21 @@ async def _target_raw_bytes(drawing: dict, target: str, extra_id: str = "") -> b
         if not fid:
             raise HTTPException(status_code=404, detail="File PDF drawing belum di-upload")
     stream = await _fs().open_download_stream(ObjectId(fid))
-    return await stream.read()
+    raw = await stream.read()
+    # Legacy import: Eng DWG / Customer bisa berupa Word (.docx) → konversi ke PDF agar bisa dirender.
+    if not raw[:5].startswith(b"%PDF"):
+        if target == "customer_ref":
+            fname = drawing.get("customer_ref_filename") or ""
+        elif target == "extra":
+            entry = next((f for f in (drawing.get("additional_files") or []) if f.get("id") == extra_id), None)
+            fname = (entry or {}).get("filename") or ""
+        else:
+            fname = drawing.get("filename") or ""
+        ext = fname.lower().rsplit(".", 1)[-1] if "." in fname else ""
+        from utils.office_render import is_office_ext, office_to_pdf
+        if is_office_ext(ext):
+            raw = office_to_pdf(raw, ext)
+    return raw
 
 
 async def _build_signature_map(approvals: list) -> dict:

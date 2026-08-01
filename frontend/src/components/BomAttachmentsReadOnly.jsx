@@ -84,6 +84,19 @@ export default function BomAttachmentsReadOnly({ bom }) {
       source: "BOM Attachments",
       uploaded_by: a.uploaded_by, uploaded_at: a.uploaded_at,
     }));
+    (bomAtt.nesting_price || []).forEach((a) => out.push({
+      kind: "Nesting Price",
+      accent: "cyan",
+      name: a.filename,
+      url: `${backendUrl}/api/bom/${bom.id}/attachments/${a.id}/preview`,
+      viewer: {
+        metaUrl: `/bom/${bom.id}/attachments/${a.id}/page-meta`,
+        pageBase: `${backendUrl}/api/bom/${bom.id}/attachments/${a.id}/page-image`,
+        downloadUrl: `${backendUrl}/api/bom/${bom.id}/attachments/${a.id}/download`,
+      },
+      source: "BOM Attachments",
+      uploaded_by: a.uploaded_by, uploaded_at: a.uploaded_at,
+    }));
     (bomAtt.costing || []).forEach((a) => out.push({
       kind: "Costing Excel",
       accent: "amber",

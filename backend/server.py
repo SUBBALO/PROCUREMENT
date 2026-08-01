@@ -73,6 +73,10 @@ api_router.include_router(ecn_router.router)
 from routers import so_requests as so_requests_router  # noqa: E402
 api_router.include_router(so_requests_router.router)
 
+# Legacy Import — bulk import data lama (BOM + DWG MKS + DWG Customer) ke Master List
+from routers import legacy_import as legacy_import_router  # noqa: E402
+api_router.include_router(legacy_import_router.router)
+
 
 @api_router.get("/")
 async def root():

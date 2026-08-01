@@ -25,6 +25,7 @@ import BulkTransaksiPage from "./pages/BulkTransaksiPage";
 import SOMasterPage from "./pages/SOMasterPage";
 import BOMPage from "./pages/BOMPage";
 import FormTemplatesPage from "./pages/FormTemplatesPage";
+import LegacyImportPage from "./pages/LegacyImportPage";
 import FormTemplateEditorPage from "./pages/FormTemplateEditorPage";
 import LandingPage from "./pages/LandingPage";
 import SalesPage from "./pages/SalesPage";
@@ -173,6 +174,7 @@ function AppRoutes() {
       <Route path="/kpi" element={<ProtectedRoute><KPIReportPage /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
       <Route path="/admin/storage" element={<ProtectedRoute><StoragePage /></ProtectedRoute>} />
+      <Route path="/admin/legacy-import" element={<ProtectedRoute><LegacyImportPage /></ProtectedRoute>} />
       <Route path="/store/receive" element={<ProtectedRoute><StoreReceivePage /></ProtectedRoute>} />
       <Route path="/store/issue" element={<ProtectedRoute><StoreIssuePage /></ProtectedRoute>} />
       <Route path="/store/stock" element={<ProtectedRoute><StoreStockPage /></ProtectedRoute>} />
