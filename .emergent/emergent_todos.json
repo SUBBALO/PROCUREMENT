@@ -1,30 +1,10 @@
 [
   {
-    "content": "Fix bug parser BOM (could not convert '-' to float) + dukung .xls — DONE & verified",
-    "status": "completed"
+    "content": "Verify Legacy Import flow (BOM upload -> auto-detect -> multiple DWG) frontend+backend",
+    "status": "in_progress"
   },
   {
-    "content": "Import Daftar SO dari Excel (backend + UI di Legacy Import) — DONE & verified (629 SO)",
-    "status": "completed"
-  },
-  {
-    "content": "Watermark UNCONTROLLED COPY di /drawings/{id}/download untuk produksi/store/qc — DONE",
-    "status": "completed"
-  },
-  {
-    "content": "Histori Revisi BOM: lihat isi item revisi lama inline (BOMPage) — DONE",
-    "status": "completed"
-  },
-  {
-    "content": "Master Drawing List: kolom Status + preview 4 file per baris + DC-stamped only + print (eng) — PENDING (perlu konfirmasi)",
-    "status": "pending"
-  },
-  {
-    "content": "Legacy Import: multiple DWG per entri (kolom DWG bertambah) — PENDING (perlu konfirmasi)",
-    "status": "pending"
-  },
-  {
-    "content": "Keputusan akses Purchasing untuk Costing/Riwayat Pembelian — PENDING (tanya user)",
+    "content": "Redesign MasterDrawingPage.jsx: Status column, 4 inline previews, DC-stamped rendering, restricted Print button",
     "status": "pending"
   }
 ]
