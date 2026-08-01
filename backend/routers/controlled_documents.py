@@ -194,6 +194,81 @@ async def controlled_document_counts(current: dict = Depends(get_current_user)):
     return {"pending": pending, "controlled": controlled, "obsolete": obsolete}
 
 
+@router.get("/controlled-documents/export")
+async def export_controlled_documents(
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    q: Optional[str] = None,
+    format: str = "xlsx",
+    current: dict = Depends(get_current_user),
+):
+    """Ekspor daftar dokumen terkontrol (untuk audit ISO) ke Excel (.xlsx) atau PDF."""
+    fmt = (format or "xlsx").lower()
+    if fmt not in ("xlsx", "pdf"):
+        raise HTTPException(status_code=400, detail="Format harus 'xlsx' atau 'pdf'")
+
+    query: dict = {"deleted_at": {"$exists": False}}
+    if category:
+        query["category"] = category.lower()
+    if status:
+        query["status"] = status
+    if q:
+        rx = {"$regex": q, "$options": "i"}
+        query["$or"] = [{"doc_no": rx}, {"title": rx}, {"doc_type": rx}]
+    docs = await db.controlled_documents.find(query, {"_id": 0}).sort("doc_no", 1).to_list(length=5000)
+
+    st_label = {"pending": "Menunggu Stamp DC", "controlled": "Controlled", "obsolete": "Obsolete"}
+
+    def _fmt(iso: str) -> str:
+        if not iso:
+            return "-"
+        try:
+            from datetime import timedelta
+            d = datetime.fromisoformat(iso.replace("Z", "+00:00")) + timedelta(hours=7)
+            return d.strftime("%d %b %Y %H:%M")
+        except Exception:
+            return (iso or "")[:16].replace("T", " ")
+
+    rows = []
+    for d in docs:
+        dc = d.get("dc_stamp") or {}
+        rows.append({
+            "doc_no": d.get("doc_no", "-"),
+            "title": d.get("title", "-"),
+            "doc_type": d.get("doc_type", "-"),
+            "rev_label": d.get("rev_label", "-"),
+            "status": st_label.get(d.get("status"), d.get("status", "-")),
+            "uploaded_by": (d.get("uploaded_by") or {}).get("name", "-"),
+            "created": _fmt(d.get("created_at")),
+            "controlled": _fmt(d.get("controlled_at")),
+            "stamped_by": dc.get("name", "-") if dc else "-",
+            "notes": d.get("notes", ""),
+        })
+
+    now = datetime.now(timezone.utc)
+    from datetime import timedelta as _td
+    wib_now = (now + _td(hours=7)).strftime("%d %b %Y %H:%M")
+    exported_by = current.get("name") or current.get("username") or "-"
+    scope_status = st_label.get(status, "Semua Status") if status else "Semua Status"
+    scope = f"{(category or 'semua').upper()} · {scope_status}"
+    meta_line = f"{scope} | Total {len(rows)} dokumen | Diekspor oleh {exported_by} | {wib_now} WIB"
+    ts = now.strftime("%Y%m%d_%H%M")
+
+    if fmt == "xlsx":
+        data = _build_docs_xlsx(rows, meta_line)
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="ControlledDocumentRegister_{ts}.xlsx"'},
+        )
+    data = _build_docs_pdf(rows, meta_line)
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="ControlledDocumentRegister_{ts}.pdf"'},
+    )
+
+
 @router.get("/controlled-documents/{doc_id}")
 async def get_controlled_document(doc_id: str, current: dict = Depends(get_current_user)):
     return await _get_doc(doc_id)
@@ -362,3 +437,98 @@ async def controlled_doc_download(doc_id: str, current: dict = Depends(get_curre
         media_type=doc.get("content_type") or "application/pdf",
         headers={"Content-Disposition": f'inline; filename="{doc.get("doc_no","doc")}-{doc.get("rev_label","")}.pdf"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Export builders (Excel / PDF) — audit ISO
+# ---------------------------------------------------------------------------
+_EXPORT_COLS = [
+    ("doc_no", "No. Dokumen"),
+    ("title", "Judul Dokumen"),
+    ("doc_type", "Tipe"),
+    ("rev_label", "Revisi"),
+    ("status", "Status"),
+    ("uploaded_by", "Dibuat Oleh"),
+    ("created", "Tgl Dibuat"),
+    ("controlled", "Tgl Controlled"),
+    ("stamped_by", "Di-stamp Oleh"),
+    ("notes", "Catatan"),
+]
+
+
+def _build_docs_xlsx(rows: list, meta_line: str) -> bytes:
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Controlled Documents"
+    ws.cell(row=1, column=1, value="Controlled Document Register — Audit ISO").font = Font(bold=True, size=13, color="1E293B")
+    ws.cell(row=2, column=1, value=meta_line).font = Font(size=9, italic=True, color="64748B")
+
+    header_row = 4
+    header_fill = PatternFill("solid", fgColor="7F1D1D")
+    header_font = Font(bold=True, color="FFFFFF", size=9)
+    thin = Side(style="thin", color="CBD5E1")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for ci, (_, label) in enumerate(_EXPORT_COLS, start=1):
+        c = ws.cell(row=header_row, column=ci, value=label)
+        c.fill = header_fill
+        c.font = header_font
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        c.border = border
+    for ri, row in enumerate(rows, start=header_row + 1):
+        for ci, (key, _) in enumerate(_EXPORT_COLS, start=1):
+            c = ws.cell(row=ri, column=ci, value=row.get(key, ""))
+            c.font = Font(size=9)
+            c.alignment = Alignment(vertical="top", wrap_text=True)
+            c.border = border
+    widths = [20, 34, 14, 9, 18, 18, 16, 16, 18, 30]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _build_docs_pdf(rows: list, meta_line: str) -> bytes:
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
+                            leftMargin=10 * mm, rightMargin=10 * mm, topMargin=10 * mm, bottomMargin=10 * mm)
+    styles = getSampleStyleSheet()
+    cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=7, leading=8)
+    head_style = ParagraphStyle("head", parent=styles["Normal"], fontSize=7.5, leading=9,
+                                textColor=colors.white, fontName="Helvetica-Bold")
+    elems = [
+        Paragraph("Controlled Document Register — Audit ISO",
+                  ParagraphStyle("t", parent=styles["Title"], fontSize=15, spaceAfter=2)),
+        Paragraph(meta_line, ParagraphStyle("m", parent=styles["Normal"], fontSize=8, textColor=colors.HexColor("#64748B"))),
+        Spacer(1, 6),
+    ]
+    data = [[Paragraph(label, head_style) for _, label in _EXPORT_COLS]]
+    for row in rows:
+        data.append([Paragraph(str(row.get(key, "") or "-"), cell_style) for key, _ in _EXPORT_COLS])
+    col_widths = [w * mm for w in [26, 46, 18, 12, 24, 24, 22, 22, 24, 40]]
+    table = Table(data, colWidths=col_widths, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#7F1D1D")),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FEF2F2")]),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    elems.append(table)
+    doc.build(elems)
+    return buf.getvalue()
+

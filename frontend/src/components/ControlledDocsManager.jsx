@@ -76,6 +76,22 @@ export default function ControlledDocsManager({ view = "pending", onChanged }) {
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari No. Dokumen / Judul / Tipe..." className="h-9 rounded-none border-slate-300 w-64" data-testid="iso-search" />
         </div>
         <button onClick={load} className="p-2 border border-slate-300 hover:bg-slate-50" title="Segarkan" data-testid="iso-refresh"><ArrowClockwise size={14} weight="bold" /></button>
+        <a
+          href={`${apiUrl}/api/controlled-documents/export?category=iso&status=${view}&format=xlsx`}
+          target="_blank" rel="noreferrer"
+          className="inline-flex items-center gap-1 px-2.5 py-2 border border-emerald-300 text-emerald-700 hover:bg-emerald-50 text-xs font-bold uppercase tracking-wider"
+          title="Ekspor daftar ke Excel (audit ISO)" data-testid="iso-export-xlsx"
+        >
+          <DownloadSimple size={13} weight="bold" /> Excel
+        </a>
+        <a
+          href={`${apiUrl}/api/controlled-documents/export?category=iso&status=${view}&format=pdf`}
+          target="_blank" rel="noreferrer"
+          className="inline-flex items-center gap-1 px-2.5 py-2 border border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-bold uppercase tracking-wider"
+          title="Ekspor daftar ke PDF (audit ISO)" data-testid="iso-export-pdf"
+        >
+          <DownloadSimple size={13} weight="bold" /> PDF
+        </a>
         <div className="flex-1" />
         {view === "pending" && canManage && (
           <Button onClick={() => setUploadOpen(true)} className="rounded-none bg-red-700 hover:bg-red-800 text-white h-9" data-testid="iso-upload-btn">
