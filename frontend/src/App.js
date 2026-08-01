@@ -54,6 +54,7 @@ import DrawingRequestInboxPage from "./pages/DrawingRequestInboxPage";
 import MyAssignmentsPage from "./pages/MyAssignmentsPage";
 import EngineeringDrfWorkPage from "./pages/EngineeringDrfWorkPage";
 import EngineeringMyQueuePage from "./pages/EngineeringMyQueuePage";
+import EngineeringInquiryMasterlistPage from "./pages/EngineeringInquiryMasterlistPage";
 import MyDrfWorkListPage from "./pages/MyDrfWorkListPage";
 import ECNPage from "./pages/ECNPage";
 import WorkOrderEngineeringPage from "./pages/WorkOrderEngineeringPage";
@@ -210,6 +211,7 @@ function AppRoutes() {
       <Route path="/engineering/my-drf" element={<ProtectedRoute><MyDrfWorkListPage /></ProtectedRoute>} />
       <Route path="/engineering/drf/:drfId" element={<ProtectedRoute><EngineeringDrfWorkPage /></ProtectedRoute>} />
       <Route path="/engineering/my-queue" element={<ProtectedRoute><EngineeringMyQueuePage /></ProtectedRoute>} />
+      <Route path="/engineering/inquiry-masterlist" element={<ProtectedRoute><EngineeringInquiryMasterlistPage /></ProtectedRoute>} />
       <Route path="/engineering/ecn" element={<ProtectedRoute><ECNPage /></ProtectedRoute>} />
       <Route path="/engineering/work-orders" element={<ProtectedRoute><WorkOrderEngineeringPage /></ProtectedRoute>} />
       <Route path="/engineering/work-order/:drawingId" element={<ProtectedRoute><EngineeringWorkOrderPage /></ProtectedRoute>} />

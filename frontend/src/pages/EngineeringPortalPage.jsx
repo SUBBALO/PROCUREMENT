@@ -40,6 +40,12 @@ export default function EngineeringPortalPage() {
       accent: "from-rose-500 via-red-500 to-orange-500", accentText: "text-rose-400",
     },
     {
+      key: "inquiry-masterlist", label: "Masterlist Inquiry", stats: "Kategori · Tgl Terima · Tgl Selesai",
+      description: "Rekap seluruh inquiry costing: kategori pekerjaan (Simple/Moderate/Complex), tanggal terima, dan tanggal selesai. View-only untuk pantau progress.",
+      icon: ClipboardIcon, href: "/engineering/inquiry-masterlist",
+      accent: "from-amber-500 via-orange-500 to-red-500", accentText: "text-amber-400",
+    },
+    {
       key: "material-costing", label: "Engineering Masterlist Material Price", stats: "Raw · Std Parts · Consumable · Subcon",
       description: "Katalog harga referensi untuk estimasi project. Purchasing input harga → auto-hitung berat & harga/Kg.",
       icon: CurrencyCircleDollar, href: "/engineering/material-costing",

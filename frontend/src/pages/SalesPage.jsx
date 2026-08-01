@@ -880,6 +880,7 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
   const [actInput, setActInput] = useState("");
   const [actNote, setActNote] = useState("");
   const [pendingEngFiles, setPendingEngFiles] = useState([]);
+  const [workCat, setWorkCat] = useState("");  // kategori kerja: simple|moderate|complex (wajib saat kirim hasil)
   const [processing, setProcessing] = useState(false);
 
   const role = user?.role;
@@ -918,12 +919,16 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
         if (!actInput.trim()) { setProcessing(false); return toast.error("Nama PIC Engineer wajib diisi"); }
         await api.post(`/inquiries/${inquiryId}/accept`, { pic_engineer_name: actInput.trim() });
       } else if (a === "complete") {
+        if (!["simple", "moderate", "complex"].includes(workCat)) {
+          setProcessing(false);
+          return toast.error("Pilih Kategori Pekerjaan (SIMPLE / MODERATE / COMPLEX) dulu");
+        }
         // Eng Staff: upload files + kirim ke Head untuk internal review
         for (const f of pendingEngFiles) {
           const fd = new FormData(); fd.append("file", f); fd.append("slot", "engineer");
           await api.post(`/inquiries/${inquiryId}/attachments`, fd, { headers: { "Content-Type": "multipart/form-data" } });
         }
-        await api.post(`/inquiries/${inquiryId}/submit-to-head`, new URLSearchParams({ note: actNote }), {
+        await api.post(`/inquiries/${inquiryId}/submit-to-head`, new URLSearchParams({ note: actNote, work_category: workCat }), {
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
         });
       } else if (a === "head-approve") {
@@ -1195,6 +1200,26 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
                       ))}
                     </div>
                   )}
+                  <Label className="text-xs font-semibold text-emerald-900">
+                    Kategori Pekerjaan <span className="text-rose-600">*wajib</span>
+                  </Label>
+                  <div className="grid grid-cols-3 gap-2" data-testid="inq-workcat-select">
+                    {[
+                      { key: "simple", label: "SIMPLE", on: "bg-emerald-600 text-white border-emerald-700", off: "bg-white text-slate-600 border-slate-300 hover:border-emerald-400" },
+                      { key: "moderate", label: "MODERATE", on: "bg-amber-600 text-white border-amber-700", off: "bg-white text-slate-600 border-slate-300 hover:border-amber-400" },
+                      { key: "complex", label: "COMPLEX", on: "bg-rose-600 text-white border-rose-700", off: "bg-white text-slate-600 border-slate-300 hover:border-rose-400" },
+                    ].map((o) => (
+                      <button
+                        key={o.key}
+                        type="button"
+                        onClick={() => setWorkCat(o.key)}
+                        className={`py-2 text-[11px] font-bold uppercase tracking-wider border ${workCat === o.key ? o.on : o.off}`}
+                        data-testid={`inq-workcat-${o.key}`}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
                   <Label className="text-xs font-semibold text-emerald-900">
                     {isEngHead && data.assigned_to_id === user?.id ? "Catatan untuk Sales" : "Catatan untuk Engineering Leader"}
                   </Label>

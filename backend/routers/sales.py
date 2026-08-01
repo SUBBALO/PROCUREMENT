@@ -167,6 +167,7 @@ async def create_inquiry(payload: InquiryCreate, current: dict = Depends(get_cur
         "engineer_response_files": [],  # list of attachment ids
         "engineer_response_note": "",
         "completed_at": None,
+        "work_category": "",            # simple|moderate|complex — dipilih saat kirim hasil ke review
         # Sales review
         "sales_reviews": [],            # list of {at, by, approve, note}
         "final_status": "",             # accepted / revision_requested (last review)
@@ -291,6 +292,37 @@ async def list_engineers(current: dict = Depends(get_current_user)):
          "deleted_at": {"$exists": False}},
         {"id": 1, "username": 1, "name": 1, "role": 1, "_id": 0},
     ).sort("name", 1).to_list(length=None)
+
+
+@router.get("/inquiries/masterlist")
+async def inquiries_masterlist(
+    q: Optional[str] = None,
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 500,
+    current: dict = Depends(get_current_user),
+):
+    """Masterlist Inquiry untuk Engineering — semua inquiry (kecuali draft) dengan
+    kategori kerja + tanggal terima (accepted_at) + tanggal selesai (completed_at).
+    Bisa dilihat semua user Engineering + Admin.
+    Didefinisikan SEBELUM /inquiries/{inq_id} agar tidak tertangkap sebagai id."""
+    if not (is_engineering(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering/Admin")
+    filt = {"status": {"$ne": "draft"}}
+    if status and status != "all":
+        filt["status"] = status
+    if category and category != "all":
+        filt["work_category"] = category
+    if q and q.strip():
+        rx = {"$regex": re.escape(q.strip()), "$options": "i"}
+        filt["$or"] = [
+            {"inquiry_no": rx}, {"title": rx}, {"customer_name": rx},
+            {"project_name": rx}, {"assigned_to_name": rx}, {"pic_engineer_name": rx},
+        ]
+    docs = await db.inquiries.find(merged(filt, NOT_DELETED_FILTER)).sort("created_at", -1).limit(limit).to_list(length=limit)
+    return {"items": [_clean(d) for d in docs], "total": len(docs)}
+
+
     return {"items": engineers}
 
 
@@ -480,13 +512,17 @@ async def add_progress(inq_id: str, payload: InquiryProgress, current: dict = De
 
 
 @router.post("/inquiries/{inq_id}/submit-to-head")
-async def submit_to_head(inq_id: str, note: str = Form(""), current: dict = Depends(get_current_user)):
+async def submit_to_head(inq_id: str, note: str = Form(""), work_category: str = Form(""), current: dict = Depends(get_current_user)):
     """Eng Staff (or admin) marks costing done → sends to Eng Head for internal review.
     Status flow: in_progress OR head_revision → pending_head_review.
     Shortcut: if the current user IS an eng_head/admin AND is the assignee → skip head review
-    and go directly to awaiting_review (Sales)."""
+    and go directly to awaiting_review (Sales).
+    work_category (simple|moderate|complex) WAJIB dipilih saat kirim hasil."""
     if not (is_engineering(current) or is_admin_like(current)):
         raise HTTPException(status_code=403, detail="Hanya Engineering yang bisa submit ke Head")
+    wc = (work_category or "").strip().lower()
+    if wc not in ("simple", "moderate", "complex"):
+        raise HTTPException(status_code=400, detail="Pilih Kategori Pekerjaan (SIMPLE / MODERATE / COMPLEX) sebelum kirim hasil.")
     d = await db.inquiries.find_one({"id": inq_id})
     if not d:
         raise HTTPException(status_code=404, detail="Inquiry tidak ditemukan")
@@ -513,6 +549,7 @@ async def submit_to_head(inq_id: str, note: str = Form(""), current: dict = Depe
                 "head_reviewed_by_name": who,
                 "completed_at": now,
                 "submitted_to_head_at": now,
+                "work_category": wc,
                 "updated_at": now,
             }, "$push": {"history": entry}},
         )
@@ -525,6 +562,7 @@ async def submit_to_head(inq_id: str, note: str = Form(""), current: dict = Depe
                 "status": "pending_head_review",
                 "engineer_response_note": note.strip(),
                 "submitted_to_head_at": now,
+                "work_category": wc,
                 "updated_at": now,
             }, "$push": {"history": entry}},
         )
