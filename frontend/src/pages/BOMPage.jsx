@@ -573,7 +573,7 @@ function BomDetail({ bom, annotations, canAnnotate, savingAnn, onBack, onUpdate,
             </button>
           )}
           {!canAddItem && (
-            <div className="text-[10px] text-slate-500 italic">Add/edit item hanya lewat <a href="/engineering/master-list" className="underline text-emerald-700">BOM Preparation & Approval</a></div>
+            <div className="text-[10px] text-slate-500 italic">Untuk menambah/mengubah item, ajukan <b>Revisi BOM</b> ke Engineering Leader melalui halaman Work Order (Drawing Master List → buka BOM). Perubahan langsung tidak diizinkan.</div>
           )}
         </div>
         <div className="overflow-x-auto">
