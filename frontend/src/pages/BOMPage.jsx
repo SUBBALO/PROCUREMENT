@@ -252,7 +252,18 @@ export default function BOMPage() {
                 {sortedList.length > 0 && listPag.pagedData.map((b) => (
                   <tr key={b.id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="p-3 font-mono font-semibold text-slate-900">{b.so_no}</td>
-                    <td className="p-3 font-mono text-xs text-slate-600">{b.bom_no || "-"}</td>
+                    <td className="p-3 font-mono text-xs text-slate-600">
+                      {b.bom_no || "-"}
+                      {b.purchase_ready && (
+                        <span
+                          className="mt-1 flex items-center gap-1 w-fit px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-green-100 text-green-800 border border-green-300"
+                          title={b.purchase_ready_reason || "BOM ditandai siap dibeli oleh Engineering"}
+                          data-testid={`bom-buyready-${b.so_no}`}
+                        >
+                          ● Siap Dibeli
+                        </span>
+                      )}
+                    </td>
                     <td className="p-3">
                       <span className="inline-flex items-center px-2 py-0.5 bg-sky-50 border border-sky-200 text-sky-700 text-[10px] uppercase tracking-[0.05em] font-bold">
                         Rev.{b.rev_no}

@@ -22,6 +22,16 @@ export default function EngineeringPortalPage() {
       accentText: "text-teal-400",
     }] : []),
     ...(isEngUser ? [{
+      key: "so-tracker",
+      label: "SO Document Tracker",
+      stats: "Progress per-SO · Terbit Partial · BOM Siap Beli",
+      description: "Pantau progress tiap SO: status BOM & drawing bisa terbit bertahap. Tandai drawing terbit partial atau BOM siap dibeli untuk Purchasing.",
+      icon: Kanban,
+      href: "/engineering/so-tracker",
+      accent: "from-cyan-500 via-teal-500 to-emerald-500",
+      accentText: "text-cyan-400",
+    }] : []),
+    ...(isEngUser ? [{
       key: "work-orders",
       label: "Work Order Engineering",
       stats: isHead ? "Terima DRF · Assign · Pantau" : "DRF Ditugaskan ke Saya",

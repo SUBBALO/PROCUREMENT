@@ -36,6 +36,7 @@ from routers import material_costing as material_costing_router
 from routers import bom_attachments as bom_attachments_router
 from routers import drawing_register as drawing_register_router
 from routers import drawing_requests as drawing_requests_router
+from routers import so_tracker as so_tracker_router
 from routers import controlled_documents as controlled_documents_router
 from routers import ecn as ecn_router
 
@@ -67,6 +68,7 @@ api_router.include_router(material_costing_router.router)
 api_router.include_router(bom_attachments_router.router)
 api_router.include_router(drawing_register_router.router)
 api_router.include_router(drawing_requests_router.router)
+api_router.include_router(so_tracker_router.router)
 api_router.include_router(controlled_documents_router.router)
 api_router.include_router(ecn_router.router)
 

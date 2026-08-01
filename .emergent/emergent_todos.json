@@ -1,34 +1,26 @@
 [
   {
-    "content": "Backend: endpoint start-work + my-queue",
+    "content": "Backend: start-work + my-queue + work_category + work_completed_at + denormalisasi",
     "status": "completed"
   },
   {
-    "content": "Backend: work_category endpoint + blok submit-for-approval",
+    "content": "Frontend: work-category popup/selector/gate + Antrian Job + Master Drawing List kolom",
     "status": "completed"
   },
   {
-    "content": "Backend: work_completed_at saat eng_head approve + denormalisasi tanggal",
+    "content": "Inquiry: masterlist page + mandatory kategori saat kirim hasil",
     "status": "completed"
   },
   {
-    "content": "Frontend: popup wajib kategori kerja + selector inline + blokir submit",
+    "content": "SO Tracker: backend (list/detail/partial/purchase-ready) + list & detail page + card",
     "status": "completed"
   },
   {
-    "content": "Frontend: Antrian Job (panel dashboard + halaman + route/menu) + gate Terima di DRF Work",
+    "content": "Penanda Purchasing: badge 'Siap Dibeli' di BOM list",
     "status": "completed"
   },
   {
-    "content": "Frontend: kolom Master Drawing List (kategori + tgl terima/start/selesai) + detail modal",
+    "content": "Verifikasi end-to-end (backend curl + screenshots)",
     "status": "completed"
-  },
-  {
-    "content": "Test drawing feature end-to-end (frontend)",
-    "status": "in_progress"
-  },
-  {
-    "content": "NEW: Masterlist Inquiry Engineering (kategori + tgl terima/selesai) - explore & plan",
-    "status": "pending"
   }
 ]
