@@ -46,6 +46,7 @@ export default function EngineeringDrfWorkPage() {
   const [editBusy, setEditBusy] = useState(false);
   const [delDwg, setDelDwg] = useState(null); // drawing yang akan dihapus (konfirmasi)
   const [delBusy, setDelBusy] = useState(false);
+  const [accepting, setAccepting] = useState(false);
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
 
   const openEdit = (d) => {
@@ -133,6 +134,22 @@ export default function EngineeringDrfWorkPage() {
   };
   const sharedBomNo = drawings[0]?.bom_no || "";
 
+  // Gate "Terima Job": assignee harus klik TERIMA dulu (catat tanggal start kerja)
+  const needAccept = isAssignee && !drf.work_started_at;
+  const canWork = canEdit && !needAccept; // admin non-assignee tetap bisa
+  const startWork = async () => {
+    setAccepting(true);
+    try {
+      await api.post(`/drawing-requests/${drfId}/start-work`);
+      toast.success("Job diterima — tanggal mulai kerja tercatat");
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal menerima job");
+    } finally {
+      setAccepting(false);
+    }
+  };
+
   return (
     <div className="p-4 max-w-[1400px] mx-auto space-y-4">
       <BackLink />
@@ -177,6 +194,26 @@ export default function EngineeringDrfWorkPage() {
         </div>
       )}
 
+      {/* Gate: Terima Job dulu (catat tanggal start kerja) */}
+      {needAccept && (
+        <div className="border-2 border-emerald-500 bg-emerald-50 p-4 flex flex-wrap items-center justify-between gap-3" data-testid="drf-accept-gate">
+          <div className="text-sm text-slate-700 flex-1 min-w-[240px]">
+            <b className="text-emerald-800">Job ini ditugaskan ke Anda oleh {drf.assigned_by || "Eng Leader"}.</b><br />
+            Klik <b>TERIMA JOB</b> untuk mulai bekerja — tanggal mulai kerja akan tercatat. Setelah itu Anda bisa generate drawing, upload, dan isi BOM.
+          </div>
+          <button
+            onClick={startWork}
+            disabled={accepting}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold uppercase tracking-wider disabled:opacity-60"
+            data-testid="drf-accept-btn"
+          >
+            {accepting
+              ? <><ArrowClockwise size={16} className="animate-spin" /> Memproses...</>
+              : <><CheckCircle size={16} weight="bold" /> Terima Job</>}
+          </button>
+        </div>
+      )}
+
       {isRepeat && (
         <div className="border-2 border-blue-300 bg-blue-50 p-3 text-sm text-blue-800">
           <b>Repeat Order:</b> tarik-otomatis <b>Drawing + BOM + Nesting + Costing</b> dari order lama (cari via SO / No. DWG). Hasil tarikan auto-attach & BOM autofill — <b>editable bila Qty berubah</b>. Kalau data lama tidak ketemu, tetap bisa generate drawing baru & upload manual di bawah.
@@ -184,12 +221,12 @@ export default function EngineeringDrfWorkPage() {
       )}
 
       {/* Repeat Order: auto-pull panel */}
-      {canEdit && isRepeat && (
+      {canWork && isRepeat && (
         <RepeatPullPanel drf={drf} onDone={load} />
       )}
 
       {/* Generate drawings */}
-      {canEdit && (
+      {canWork && (
         <GenerateDrawingsPanel drf={drf} existingCount={drawings.length} onDone={load} />
       )}
 
@@ -266,7 +303,7 @@ export default function EngineeringDrfWorkPage() {
               >
                 <PencilSimple size={13} weight="bold" /> Upload & TTD <ArrowRight size={12} />
               </button>
-              {canEdit && isDraftDwg(d) && (
+              {canWork && isDraftDwg(d) && (
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => openEdit(d)}
@@ -294,7 +331,7 @@ export default function EngineeringDrfWorkPage() {
 
       {/* ---------- Dokumen SO (level SO/BOM): Nesting · AutoCAD · Costing ---------- */}
       {drawings.length > 0 && (
-        <SoDocsPanel bomId={sharedBomId} bomNo={sharedBomNo} canEdit={canEdit} />
+        <SoDocsPanel bomId={sharedBomId} bomNo={sharedBomNo} canEdit={canWork} />
       )}
 
 

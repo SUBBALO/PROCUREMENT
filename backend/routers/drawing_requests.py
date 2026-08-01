@@ -227,6 +227,33 @@ async def drf_engineering_users(current: dict = Depends(get_current_user)):
     return {"items": users}
 
 
+@router.get("/drawing-requests/my-queue")
+async def my_job_queue(current: dict = Depends(get_current_user)):
+    """Antrian job untuk eng staff yang login: DRF yang di-assign ke dia.
+    - pending (accepted, belum start) → perlu klik TERIMA
+    - in_progress → sudah diterima, sedang dikerjakan.
+    Didefinisikan SEBELUM route /{drf_id} agar tidak tertangkap sebagai id."""
+    uid = current.get("id")
+    if not uid:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    docs = await db.drawing_requests.find(
+        {"assigned_engineer_id": uid,
+         "status": {"$in": ["accepted", "in_progress"]},
+         "deleted_at": {"$exists": False}},
+        {"_id": 0},
+    ).sort("assigned_at", -1).to_list(length=200)
+    pending, working = [], []
+    for d in docs:
+        d = _clean(d)
+        if d.get("work_started_at"):
+            working.append(d)
+        else:
+            pending.append(d)
+    return {"pending": pending, "in_progress": working,
+            "pending_count": len(pending), "in_progress_count": len(working)}
+
+
+
 @router.get("/drawing-requests/{drf_id}")
 async def get_drawing_request(drf_id: str, current: dict = Depends(get_current_user)):
     doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}}, {"_id": 0})
@@ -347,6 +374,47 @@ async def accept_and_assign_drf(
                      {"form_no": doc.get("form_no"), "engineer": upd["assigned_engineer_name"]})
     out = await db.drawing_requests.find_one({"id": drf_id}, {"_id": 0})
     return _clean(out)
+
+
+@router.post("/drawing-requests/{drf_id}/start-work")
+async def start_work_drf(drf_id: str, current: dict = Depends(get_current_user)):
+    """Eng staff (yang di-assign) KLIK TERIMA → mulai kerja.
+    Set work_started_at (Tanggal Start Kerja) + status in_progress.
+    Per SO: sekali terima = start kerja untuk semua drawing di SO ini."""
+    doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="DRF tidak ditemukan")
+    assignee = doc.get("assigned_engineer_id")
+    is_assignee = assignee and current.get("id") == assignee
+    if not (is_assignee or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya engineer yang ditugaskan yang bisa menerima job ini")
+    if not assignee:
+        raise HTTPException(status_code=400, detail="DRF belum di-assign ke engineer manapun")
+    if doc.get("status") not in ("accepted", "in_progress"):
+        raise HTTPException(status_code=400, detail=f"DRF harus sudah di-accept & di-assign dulu (status: {doc.get('status')})")
+    # Idempotent: kalau sudah pernah start, jangan overwrite tanggalnya.
+    if doc.get("work_started_at"):
+        return _clean(doc)
+    now = _now_iso()
+    upd = {
+        "status": "in_progress",
+        "work_started_at": now,
+        "work_started_by": current.get("name") or current.get("username"),
+        "updated_at": now,
+    }
+    await db.drawing_requests.update_one({"id": drf_id}, {"$set": upd})
+    # Denormalisasi tanggal ke drawing yang sudah ada (jika sudah di-generate sebelumnya)
+    await db.drawings.update_many(
+        {"from_drf_id": drf_id, "deleted_at": {"$exists": False}},
+        {"$set": {"work_started_at": now,
+                  "request_received_at": doc.get("accepted_at"),
+                  "updated_at": now}},
+    )
+    await log_action(current, "drf_start_work", "drawing_requests", drf_id, {"form_no": doc.get("form_no")})
+    out = await db.drawing_requests.find_one({"id": drf_id}, {"_id": 0})
+    return _clean(out)
+
+
 
 
 class GenerateDrawingIn(BaseModel):

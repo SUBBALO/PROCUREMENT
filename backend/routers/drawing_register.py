@@ -987,6 +987,17 @@ async def create_drawing(payload: DrawingIn, current: dict = Depends(get_current
     # Sequential: draft → pending_eng_head → pending_qc → pending_sales → approved → controlled → released
     doc["approval_status"] = "draft"
     doc["approvals"] = []  # array of {stage, name, role, user_id, username, at, notes}
+    # Work-progress tracking (untuk Master Drawing List)
+    doc["work_category"] = ""        # simple|moderate|complex — WAJIB dipilih saat upload MKS
+    doc["work_completed_at"] = None  # di-set saat Eng Leader (eng_head) approve hasil kerja
+    doc["request_received_at"] = None  # = DRF.accepted_at (Riski terima request dari Sales)
+    doc["work_started_at"] = None      # = DRF.work_started_at (eng staff klik TERIMA)
+    if payload.from_drf_id:
+        _drf = await db.drawing_requests.find_one(
+            {"id": payload.from_drf_id}, {"_id": 0, "accepted_at": 1, "work_started_at": 1})
+        if _drf:
+            doc["request_received_at"] = _drf.get("accepted_at")
+            doc["work_started_at"] = _drf.get("work_started_at")
     # Iter 19 — Link back to Drawing Request Form (kalau dibuat dari DRF)
     if payload.from_drf_id:
         doc["from_drf_id"] = payload.from_drf_id
@@ -1122,6 +1133,37 @@ async def update_drawing_basic(drawing_id: str, payload: DrawingBasicIn, current
     await db.drawings.update_one({"id": drawing_id}, {"$set": upd})
     await log_action(current, "drawing_edit_basic", "drawings", drawing_id, upd)
     return {"success": True}
+
+
+VALID_WORK_CATEGORIES = {"simple", "moderate", "complex"}
+
+
+class WorkCategoryIn(BaseModel):
+    work_category: str
+
+
+@router.post("/drawings/{drawing_id}/work-category")
+async def set_work_category(drawing_id: str, payload: WorkCategoryIn, current: dict = Depends(get_current_user)):
+    """Engineer pilih kategori pekerjaan drawing: SIMPLE / MODERATE / COMPLEX.
+    Wajib diisi sebelum submit ke Eng Leader. Engineer yang menggambar paling tahu."""
+    cat = (payload.work_category or "").strip().lower()
+    if cat not in VALID_WORK_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Kategori harus salah satu: simple, moderate, complex")
+    existing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    if not (is_engineering(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+    if not _can_modify_drawing(current, existing):
+        raise HTTPException(status_code=403, detail=f"Drawing di-assign ke {existing.get('assigned_to_name','-')}. Hanya orang tsb / Eng Head yang bisa ubah.")
+    await db.drawings.update_one(
+        {"id": drawing_id},
+        {"$set": {"work_category": cat, "updated_at": _now_iso(),
+                  "updated_by": current.get("username") or current.get("name")}},
+    )
+    await log_action(current, "drawing_set_work_category", "drawings", drawing_id, {"work_category": cat})
+    return {"success": True, "work_category": cat}
+
 
 
 # =========================================================================
@@ -2068,6 +2110,8 @@ async def drawing_submit_for_approval(
         raise HTTPException(status_code=409, detail=f"Drawing sudah dalam status '{status}', tidak bisa submit ulang")
     if not drawing.get("file_id"):
         raise HTTPException(status_code=400, detail="Upload PDF drawing terlebih dahulu sebelum submit approval")
+    if (drawing.get("work_category") or "").strip().lower() not in ("simple", "moderate", "complex"):
+        raise HTTPException(status_code=400, detail="Pilih dulu Kategori Pekerjaan (SIMPLE / MODERATE / COMPLEX) sebelum submit ke Eng Leader.")
     if not is_engineering(current) and not is_admin_like(current):
         raise HTTPException(status_code=403, detail="Hanya Engineering yang boleh submit drawing untuk approval")
     if not _can_modify_drawing(current, drawing):
@@ -2169,6 +2213,10 @@ async def drawing_approve_stage(
     }
     if next_status == "approved":
         update["approved_at"] = _now_iso()
+    # Iter — "Tanggal Selesai Kerja": saat Eng Leader (eng_head) approve hasil kerja engineer.
+    # Dianggap SELESAI walaupun QC/Sales belum TTD.
+    if stage == "eng_head":
+        update["work_completed_at"] = _now_iso()
     # Iter 20d — Sales stage: simpan so_stamp_draft untuk auto-fill di Salma SO Stamp form
     if stage == "sales" and payload and payload.so_stamp_data:
         _sd = payload.so_stamp_data or {}

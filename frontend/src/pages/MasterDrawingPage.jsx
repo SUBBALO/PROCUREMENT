@@ -212,12 +212,13 @@ export default function MasterDrawingPage() {
                 <th className="text-left p-3">Drawing</th>
                 <th className="text-left p-3">Title / Project</th>
                 <th className="text-left p-3">Status &amp; TTD</th>
+                <th className="text-left p-3">Kategori &amp; Progres</th>
                 <th className="text-right p-3"></th>
               </tr>
             </thead>
             <tbody data-testid="dw-list">
-              {loading && (<tr><td colSpan={4} className="p-8 text-center text-slate-400">Memuat...</td></tr>)}
-              {!loading && items.length === 0 && (<tr><td colSpan={4} className="p-8 text-center text-slate-400">Belum ada drawing. Alur register drawing baru: <b>Sales buat DRF (MKS-F-ENG-001)</b> → Eng Head Accept → Assign Engineer.</td></tr>)}
+              {loading && (<tr><td colSpan={5} className="p-8 text-center text-slate-400">Memuat...</td></tr>)}
+              {!loading && items.length === 0 && (<tr><td colSpan={5} className="p-8 text-center text-slate-400">Belum ada drawing. Alur register drawing baru: <b>Sales buat DRF (MKS-F-ENG-001)</b> → Eng Head Accept → Assign Engineer.</td></tr>)}
               {items.length > 0 && pag.pagedData.map((it) => (
                 <DrawingMasterRow
                   key={it.id}
@@ -305,6 +306,46 @@ function PreviewTile({ label, tone, available, loading, onClick, testid }) {
 
 const _TTD_STAGE = { submit: "Prepared", eng_head: "Eng Head", qc: "QC", sales: "Sales" };
 
+const WORKCAT_STYLE = {
+  simple: "bg-emerald-100 text-emerald-800 border-emerald-300",
+  moderate: "bg-amber-100 text-amber-800 border-amber-300",
+  complex: "bg-rose-100 text-rose-800 border-rose-300",
+};
+
+function _fmtDate(iso) {
+  if (!iso) return null;
+  try { return new Date(iso).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }); }
+  catch { return null; }
+}
+
+function WorkProgressCell({ it }) {
+  const cat = (it.work_category || "").toLowerCase();
+  const rows = [
+    { label: "Terima", val: _fmtDate(it.request_received_at), color: "text-slate-600" },
+    { label: "Mulai", val: _fmtDate(it.work_started_at), color: "text-sky-700" },
+    { label: "Selesai", val: _fmtDate(it.work_completed_at), color: "text-emerald-700" },
+  ];
+  return (
+    <div className="space-y-1" data-testid={`dw-progress-${it.id}`}>
+      {cat ? (
+        <span className={`inline-block px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${WORKCAT_STYLE[cat] || "bg-slate-100 text-slate-600 border-slate-300"}`} data-testid={`dw-workcat-badge-${it.id}`}>
+          {cat}
+        </span>
+      ) : (
+        <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-slate-100 text-slate-400 border border-slate-200">no kategori</span>
+      )}
+      <div className="space-y-0.5">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-center gap-1 text-[10px]">
+            <span className="text-slate-400 w-[42px] shrink-0">{r.label}</span>
+            <span className={`font-medium ${r.val ? r.color : "text-slate-300"}`}>{r.val || "—"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function DrawingMasterRow({ it, onDetail }) {
   // Baris minimalis — detail lengkap & preview dokumen ada di popup (klik baris).
   const approvals = (it.approvals || []).filter((a) => !String(a.stage || "").startsWith("reject_"));
@@ -357,6 +398,11 @@ function DrawingMasterRow({ it, onDetail }) {
             <span className="text-[10px] text-slate-400 italic">Belum TTD</span>
           )}
         </div>
+      </td>
+
+      {/* Buka detail */}
+      <td className="p-3">
+        <WorkProgressCell it={it} />
       </td>
 
       {/* Buka detail */}
@@ -471,6 +517,10 @@ function DrawingDetailModal({ it, previewOnly, onView, onClose }) {
             <Row label="Assigned Eng" value={it.assigned_to_name} />
             <Row label="Request (Sales)" value={it.request_by_sales} />
             <Row label="Status Dokumen" value={it.status} />
+            <Row label="Kategori Kerja" value={(it.work_category || "").toUpperCase() || "-"} />
+            <Row label="Tgl Terima Request" value={_fmtDate(it.request_received_at) || "-"} />
+            <Row label="Tgl Mulai Kerja" value={_fmtDate(it.work_started_at) || "-"} />
+            <Row label="Tgl Selesai (Eng Leader)" value={_fmtDate(it.work_completed_at) || "-"} />
           </div>
 
           <div>
@@ -1410,6 +1460,23 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
   // Popup konfirmasi/manual "No. Drawing Customer" setelah upload Customer Ref PDF
   const [custNoPopup, setCustNoPopup] = useState(null); // { value, candidates, detected, source }
   const [custNoSaving, setCustNoSaving] = useState(false);
+  // Kategori Pekerjaan (SIMPLE/MODERATE/COMPLEX) — wajib sebelum submit ke Eng Leader
+  const [workCatPopup, setWorkCatPopup] = useState(false);
+  const [savingCat, setSavingCat] = useState(false);
+  const saveWorkCategory = async (cat) => {
+    setSavingCat(true);
+    try {
+      await api.post(`/drawings/${activeDwg.id}/work-category`, { work_category: cat });
+      setLocalDrawing((d) => ({ ...d, work_category: cat }));
+      onDrawingUpdated?.({ work_category: cat });
+      toast.success(`Kategori pekerjaan: ${cat.toUpperCase()}`);
+      setWorkCatPopup(false);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal simpan kategori");
+    } finally {
+      setSavingCat(false);
+    }
+  };
   const saveCustNo = async () => {
     const val = (custNoPopup?.value || "").trim();
     setCustNoSaving(true);
@@ -1501,6 +1568,9 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
         status: data?.status || activeDwg.status,
       };
       setLocalDrawing((d) => ({ ...d, ...patch }));
+
+      // Wajib pilih Kategori Pekerjaan setelah upload MKS (kalau belum ada).
+      if (!activeDwg.work_category) setWorkCatPopup(true);
 
       // Auto-baca nomor DWG dari isi PDF (repeat/manual upload).
       const detected = (data?.detected_no || "").trim();
@@ -1878,6 +1948,34 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
         )}
       </div>
 
+      {/* Kategori Pekerjaan Drawing — WAJIB sebelum submit ke Eng Leader */}
+      <div className={`flex flex-wrap items-center gap-2 border px-3 py-2 ${activeDwg.work_category ? "border-slate-300 bg-white" : "border-rose-300 bg-rose-50"}`} data-testid="dw-workcat-editor">
+        <span className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Kategori Pekerjaan</span>
+        {["simple", "moderate", "complex"].map((c) => {
+          const active = (activeDwg.work_category || "") === c;
+          const styleMap = {
+            simple: { on: "bg-emerald-600 text-white border-emerald-700", off: "bg-white text-slate-600 border-slate-300 hover:border-emerald-400 hover:text-emerald-700" },
+            moderate: { on: "bg-amber-600 text-white border-amber-700", off: "bg-white text-slate-600 border-slate-300 hover:border-amber-400 hover:text-amber-700" },
+            complex: { on: "bg-rose-600 text-white border-rose-700", off: "bg-white text-slate-600 border-slate-300 hover:border-rose-400 hover:text-rose-700" },
+          };
+          return (
+            <button
+              key={c}
+              onClick={() => saveWorkCategory(c)}
+              disabled={savingCat}
+              className={`px-3 py-1 text-[11px] font-bold uppercase tracking-wider border transition-colors ${active ? styleMap[c].on : styleMap[c].off}`}
+              data-testid={`dw-workcat-${c}`}
+            >
+              {c}
+            </button>
+          );
+        })}
+        {!activeDwg.work_category && (
+          <span className="text-[11px] text-rose-700 font-semibold">← wajib dipilih sebelum submit</span>
+        )}
+      </div>
+
+
       {/* Saran nomor via OCR (PDF scan) — tidak diterapkan otomatis */}
       {ocrSuggestion && (
         <div className="flex flex-wrap items-center gap-2 border border-amber-300 bg-amber-50 px-3 py-2" data-testid="dw-ocr-suggestion">
@@ -1961,6 +2059,36 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
           </div>
         </div>
       )}
+
+      {/* Popup WAJIB: pilih Kategori Pekerjaan setelah upload MKS */}
+      <Dialog open={workCatPopup} onOpenChange={(o) => { if (!o) setWorkCatPopup(false); }}>
+        <DialogContent className="sm:max-w-[460px] rounded-none" data-testid="dw-workcat-modal">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">Kategori Pekerjaan Drawing</DialogTitle>
+            <DialogDescription>
+              Pilih tingkat kesulitan drawing ini. Wajib diisi — engineer yang menggambar paling tahu. Nomor: <b className="font-mono">{activeDwg.drawing_no}</b>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-3 gap-2 py-2">
+            {[
+              { key: "simple", label: "SIMPLE", desc: "Mudah / cepat", cls: "border-emerald-400 hover:bg-emerald-50 text-emerald-700" },
+              { key: "moderate", label: "MODERATE", desc: "Sedang", cls: "border-amber-400 hover:bg-amber-50 text-amber-700" },
+              { key: "complex", label: "COMPLEX", desc: "Rumit / lama", cls: "border-rose-400 hover:bg-rose-50 text-rose-700" },
+            ].map((o) => (
+              <button
+                key={o.key}
+                onClick={() => saveWorkCategory(o.key)}
+                disabled={savingCat}
+                className={`flex flex-col items-center gap-1 border-2 rounded-none py-4 px-2 bg-white ${o.cls} disabled:opacity-50`}
+                data-testid={`dw-workcat-modal-${o.key}`}
+              >
+                <span className="text-sm font-bold tracking-wider">{o.label}</span>
+                <span className="text-[10px] text-slate-500">{o.desc}</span>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Popup: konfirmasi / input manual "No. Drawing Customer" setelah upload Customer Ref */}
       <Dialog open={!!custNoPopup} onOpenChange={(o) => { if (!o) setCustNoPopup(null); }}>

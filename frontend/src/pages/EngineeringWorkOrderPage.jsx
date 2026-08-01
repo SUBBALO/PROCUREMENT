@@ -56,7 +56,8 @@ export default function EngineeringWorkOrderPage() {
 
   const isDraft = drawing.approval_status === "draft" || !drawing.approval_status;
   const isPending = (drawing.approval_status || "").startsWith("pending_");
-  const canSubmit = isDraft && drawing.file_id;
+  const hasWorkCat = ["simple", "moderate", "complex"].includes((drawing.work_category || "").toLowerCase());
+  const canSubmit = isDraft && drawing.file_id && hasWorkCat;
 
   return (
     <div className="p-4 max-w-[1400px] mx-auto space-y-4">
@@ -120,6 +121,9 @@ export default function EngineeringWorkOrderPage() {
               posisi <b>Prepared By</b> pada PDF, lalu drawing otomatis dikirim ke Eng Head untuk approval.
               {!drawing.file_id && (
                 <div className="mt-1 text-rose-700 font-bold">⚠ Upload PDF Drawing dulu di Step 2 sebelum submit.</div>
+              )}
+              {drawing.file_id && !hasWorkCat && (
+                <div className="mt-1 text-rose-700 font-bold">⚠ Pilih Kategori Pekerjaan (SIMPLE / MODERATE / COMPLEX) dulu di Step 2 sebelum submit.</div>
               )}
             </div>
             <Button

@@ -1,7 +1,8 @@
 import React from "react";
 import DeptPortal from "../components/DeptPortal";
 import EngineeringQueuePanel from "../components/EngineeringQueuePanel";
-import { Wrench, Package, CurrencyCircleDollar, FileText, Kanban, ClipboardText as ClipboardIcon } from "@phosphor-icons/react";
+import MyJobQueuePanel from "../components/MyJobQueuePanel";
+import { Wrench, Package, CurrencyCircleDollar, FileText, Kanban, ClipboardText as ClipboardIcon, Tray } from "@phosphor-icons/react";
 import { useAuth } from "../lib/auth";
 
 export default function EngineeringPortalPage() {
@@ -10,6 +11,16 @@ export default function EngineeringPortalPage() {
   const isEngUser = ["eng_head", "eng_leader", "engineering", "eng_staff", "admin", "super_admin", "supervisor"].includes(user?.role);
 
   const CARDS = [
+    ...(isEngUser ? [{
+      key: "my-queue",
+      label: "Antrian Job Saya",
+      stats: "Terima Job · Mulai Kerja",
+      description: "Job yang ditugaskan Eng Leader kepada Anda. Klik Terima untuk mulai kerja (tanggal start tercatat), lalu buka Work Order saat siap.",
+      icon: Tray,
+      href: "/engineering/my-queue",
+      accent: "from-teal-500 via-emerald-500 to-green-500",
+      accentText: "text-teal-400",
+    }] : []),
     ...(isEngUser ? [{
       key: "work-orders",
       label: "Work Order Engineering",
@@ -56,6 +67,7 @@ export default function EngineeringPortalPage() {
 
   return (
     <DeptPortal deptLabel="Engineering Department" deptTagline="Drawing Request · Tugas Saya · Costing · BOM · Master Drawing" accentColor="amber" cards={CARDS}>
+      {isEngUser && <MyJobQueuePanel compact />}
       <EngineeringQueuePanel isHead={isHead} isEngUser={isEngUser} />
     </DeptPortal>
   );

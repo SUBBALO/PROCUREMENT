@@ -1,22 +1,34 @@
 [
   {
-    "content": "Backend: tambah kategori 'cad' di bom_attachments.py (VALID_CATEGORIES, labels, allowed ext)",
+    "content": "Backend: endpoint start-work + my-queue",
     "status": "completed"
   },
   {
-    "content": "Backend: upload-customer-ref deteksi customer_drawing_no + return suggestion",
+    "content": "Backend: work_category endpoint + blok submit-for-approval",
     "status": "completed"
   },
   {
-    "content": "Frontend: komponen SoDocsPanel (Nesting/CAD/Costing) di DRF Work page bawah daftar drawing",
+    "content": "Backend: work_completed_at saat eng_head approve + denormalisasi tanggal",
     "status": "completed"
   },
   {
-    "content": "Frontend: popup konfirmasi/manual customer_drawing_no saat upload Customer Ref",
+    "content": "Frontend: popup wajib kategori kerja + selector inline + blokir submit",
     "status": "completed"
   },
   {
-    "content": "Compile check (esbuild) + test backend & frontend",
+    "content": "Frontend: Antrian Job (panel dashboard + halaman + route/menu) + gate Terima di DRF Work",
     "status": "completed"
+  },
+  {
+    "content": "Frontend: kolom Master Drawing List (kategori + tgl terima/start/selesai) + detail modal",
+    "status": "completed"
+  },
+  {
+    "content": "Test drawing feature end-to-end (frontend)",
+    "status": "in_progress"
+  },
+  {
+    "content": "NEW: Masterlist Inquiry Engineering (kategori + tgl terima/selesai) - explore & plan",
+    "status": "pending"
   }
 ]
