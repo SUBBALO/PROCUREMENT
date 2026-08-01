@@ -1018,17 +1018,60 @@ async def delete_drawing(drawing_id: str, current: dict = Depends(get_current_us
     existing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
     if not existing:
         raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
-    # Delete GridFS file if any
+    # Hanya boleh hapus saat masih DRAFT / revisi (belum masuk approval / sudah dikembalikan)
+    if existing.get("approval_status") not in (None, "", "draft"):
+        raise HTTPException(status_code=409, detail="Hanya drawing berstatus DRAFT/revisi yang bisa dihapus. Minta Eng Leader kembalikan untuk revisi dulu.")
+    # Hapus semua file GridFS terkait (MKS, customer ref, extras, CAD)
+    fids = []
     if existing.get("file_id"):
+        fids.append(existing["file_id"])
+    if existing.get("customer_ref_file_id"):
+        fids.append(existing["customer_ref_file_id"])
+    for f in (existing.get("additional_files") or []):
+        if f.get("file_id"):
+            fids.append(f["file_id"])
+    for f in (existing.get("cad_files") or []):
+        if f.get("file_id"):
+            fids.append(f["file_id"])
+    for fid in fids:
         try:
-            await _fs().delete(ObjectId(existing["file_id"]))
+            await _fs().delete(ObjectId(fid))
         except Exception:
             pass
     await db.drawings.update_one(
         {"id": drawing_id},
         {"$set": {"deleted_at": _now_iso(), "deleted_by": current.get("username")}},
     )
-    await log_action(current, "drawing_delete", "drawings", drawing_id, {})
+    await log_action(current, "drawing_delete", "drawings", drawing_id, {"drawing_no": existing.get("drawing_no")})
+    return {"success": True}
+
+
+class DrawingBasicIn(BaseModel):
+    title: Optional[str] = None
+    drawing_type: Optional[str] = None
+    customer_drawing_no: Optional[str] = None
+    project_name: Optional[str] = None
+
+
+@router.patch("/drawings/{drawing_id}/basic-info")
+async def update_drawing_basic(drawing_id: str, payload: DrawingBasicIn, current: dict = Depends(get_current_user)):
+    """Edit ringan (judul/type/cust dwg no/project) — hanya saat DRAFT/revisi. Untuk rapikan data new order."""
+    if not _can_edit(current):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+    existing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    if not _can_modify_drawing(current, existing):
+        raise HTTPException(status_code=403, detail=f"Drawing di-assign ke {existing.get('assigned_to_name','-')}. Hanya orang tsb / Eng Head yang bisa edit.")
+    if existing.get("approval_status") not in (None, "", "draft"):
+        raise HTTPException(status_code=409, detail="Hanya drawing DRAFT/revisi yang bisa diedit di sini.")
+    upd = {k: (v.strip() if isinstance(v, str) else v) for k, v in payload.model_dump().items() if v is not None}
+    if not upd:
+        return {"success": True, "unchanged": True}
+    upd["updated_at"] = _now_iso()
+    upd["updated_by"] = current.get("username") or current.get("name")
+    await db.drawings.update_one({"id": drawing_id}, {"$set": upd})
+    await log_action(current, "drawing_edit_basic", "drawings", drawing_id, upd)
     return {"success": True}
 
 

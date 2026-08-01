@@ -32,6 +32,7 @@ export default function EngineeringDrfWorkPage() {
   const [drawings, setDrawings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewer, setViewer] = useState(null); // { drawingId, target, extraId, title, subtitle }
+  const [editDwg, setEditDwg] = useState(null); // drawing yang sedang diedit (draft)
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
 
   const load = useCallback(async () => {
@@ -70,6 +71,17 @@ export default function EngineeringDrfWorkPage() {
   const canEdit = isAssignee || isTrueAdmin;
   const isRepeat = drf.request_type === "repeat_order";
   const sharedBomId = drawings[0]?.bom_id || drf.shared_bom_id || "";
+
+  // Drawing masih bisa Edit/Hapus selama DRAFT / dikembalikan untuk revisi (belum masuk approval)
+  const isDraftDwg = (d) => !d?.approval_status || d.approval_status === "draft";
+  const deleteDrawing = async (d) => {
+    if (!window.confirm(`Hapus drawing ${d.drawing_no}?\nSemua file (MKS/Customer/Nesting/CAD) drawing ini ikut terhapus permanen.`)) return;
+    try {
+      await api.delete(`/drawings/${d.id}`);
+      toast.success(`Drawing ${d.drawing_no} dihapus`);
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal hapus drawing"); }
+  };
   const sharedBomNo = drawings[0]?.bom_no || "";
 
   return (
@@ -205,6 +217,26 @@ export default function EngineeringDrfWorkPage() {
               >
                 <PencilSimple size={13} weight="bold" /> Upload & TTD <ArrowRight size={12} />
               </button>
+              {canEdit && isDraftDwg(d) && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setEditDwg(d)}
+                    className="inline-flex items-center gap-1 px-2 py-1.5 border border-amber-400 text-amber-700 hover:bg-amber-50 text-[11px] font-bold uppercase tracking-wider"
+                    title="Edit data drawing"
+                    data-testid={`drf-edit-${d.drawing_no}`}
+                  >
+                    <PencilSimple size={12} weight="bold" /> Edit
+                  </button>
+                  <button
+                    onClick={() => deleteDrawing(d)}
+                    className="inline-flex items-center gap-1 px-2 py-1.5 border border-rose-400 text-rose-700 hover:bg-rose-50 text-[11px] font-bold uppercase tracking-wider"
+                    title="Hapus drawing (permanen)"
+                    data-testid={`drf-delete-${d.drawing_no}`}
+                  >
+                    <Trash size={12} weight="bold" /> Hapus
+                  </button>
+                </div>
+              )}
             </div>
             );
           })}
