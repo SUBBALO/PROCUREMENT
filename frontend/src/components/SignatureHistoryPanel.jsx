@@ -4,6 +4,7 @@ import api from "../lib/api";
 import { Card } from "./ui/card";
 import { PenNib, ArrowClockwise, Eye, Printer, CheckCircle } from "@phosphor-icons/react";
 import PdfPreviewModal from "./PdfPreviewModal";
+import PaginationBar, { usePagination } from "./PaginationBar";
 
 const STAGE_LABEL = {
   submit: { text: "Prepared By", cls: "bg-sky-100 text-sky-800 border-sky-500" },
@@ -69,6 +70,7 @@ export default function SignatureHistoryPanel({ user, showPrint = true }) {
   });
 
   const stats = items.reduce((acc, h) => { acc.total = (acc.total || 0) + 1; acc[h.stage] = (acc[h.stage] || 0) + 1; return acc; }, {});
+  const pag = usePagination(filtered, 20);
 
   return (
     <div className="space-y-4">
@@ -133,7 +135,7 @@ export default function SignatureHistoryPanel({ user, showPrint = true }) {
                 Belum ada riwayat TTD. Setelah Anda TTD drawing pertama, akan tampil di sini sebagai bukti audit.
               </td></tr>
             )}
-            {!loading && filtered.map((h, i) => {
+            {!loading && pag.pagedData.map((h, i) => {
               const stage = STAGE_LABEL[h.stage] || { text: h.stage, cls: "bg-slate-100 text-slate-700 border-slate-400" };
               return (
                 <tr key={`${h.drawing_id}-${h.stage}-${i}`} className="border-b border-slate-100 hover:bg-indigo-50/40" data-testid={`sig-row-${i}`}>
@@ -161,6 +163,8 @@ export default function SignatureHistoryPanel({ user, showPrint = true }) {
           </tbody>
         </table>
       </Card>
+
+      <PaginationBar {...pag} label="TTD" testIdPrefix="sig-pag" />
 
       <div className="text-[10px] text-slate-400 text-center pt-2">
         Total {filtered.length} dari {items.length} riwayat TTD · Ditandatangani secara digital & tersimpan permanen · Untuk audit ISO 9001

@@ -42,6 +42,7 @@ import MasterDrawingPage from "./pages/MasterDrawingPage";import EngineeringMast
 import BomEntryGridPage from "./pages/BomEntryGridPage";
 import DocumentDistributionRecordPage from "./pages/DocumentDistributionRecordPage";
 import ControlledDrawingDatabasePage from "./pages/ControlledDrawingDatabasePage";
+import ControlledDocumentRegisterPage from "./pages/ControlledDocumentRegisterPage";
 import MyProfilePage from "./pages/MyProfilePage";
 import EngineeringWorkOrderPage from "./pages/EngineeringWorkOrderPage";
 import MySignatureHistoryPage from "./pages/MySignatureHistoryPage";
@@ -105,6 +106,7 @@ function ProtectedRoute({ children, storeRoleTo = "/store/stock", blockStore = f
     location.pathname.startsWith("/change-password") ||
     location.pathname.startsWith("/drawings/pending-my-approval") ||
     location.pathname.startsWith("/drawings/controlled") ||
+    location.pathname.startsWith("/documents/register") ||
     location.pathname.startsWith("/document-control");
 
   if (ENG_ROLES.includes(user.role)) {
@@ -198,6 +200,7 @@ function AppRoutes() {
       <Route path="/document-control/distribution" element={<ProtectedRoute><DocumentDistributionRecordPage /></ProtectedRoute>} />
       <Route path="/document-control/so-stamp" element={<ProtectedRoute><SOStampPage /></ProtectedRoute>} />
       <Route path="/drawings/controlled" element={<ProtectedRoute><ControlledDrawingDatabasePage /></ProtectedRoute>} />
+      <Route path="/documents/register" element={<ProtectedRoute><ControlledDocumentRegisterPage /></ProtectedRoute>} />
       <Route path="/profile/signature" element={<ProtectedRoute><MyProfilePage /></ProtectedRoute>} />
       <Route path="/drawings/pending-my-approval" element={<ProtectedRoute><PendingApprovalDrawingsPage /></ProtectedRoute>} />
       <Route path="/sales/drawing-requests" element={<ProtectedRoute><DrawingRequestFormPage /></ProtectedRoute>} />

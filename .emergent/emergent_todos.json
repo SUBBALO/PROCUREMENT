@@ -1,22 +1,38 @@
 [
   {
-    "content": "Backend: endpoint preview lampiran DRF (page-meta + page-image) view-only",
+    "content": "Part B: WorkOrder 4 tab pagination + search SO/Customer Riwayat TTD",
     "status": "completed"
   },
   {
-    "content": "Buat DrfDetailModal: info DRF + preview lampiran view-only + dokumen drawing + progres",
+    "content": "Part B: SignatureHistoryPanel pagination",
     "status": "completed"
   },
   {
-    "content": "DrfDetailModal: aksi Terima & Assign engineer (submitted) + link Work Order (in_progress)",
+    "content": "Part A Backend: modul controlled_documents (ISO) + obsolete overlay",
     "status": "completed"
   },
   {
-    "content": "Ubah EngineeringQueuePanel: tile jadi filter inline + tombol Buka -> popup",
+    "content": "Part A: register router server.py + verifikasi curl",
     "status": "completed"
   },
   {
-    "content": "Verifikasi compile + screenshot: filter tile & popup detail/preview/assign",
+    "content": "Part A: extend PdfStampCanvas (prop generic) untuk stamp ISO",
+    "status": "completed"
+  },
+  {
+    "content": "Part A: ControlledDocsManager (list+upload+stamp+preview+revisi)",
+    "status": "completed"
+  },
+  {
+    "content": "Part A: DC portal 3 kartu + routes + Menunggu Stamp DC (tab Drawing+ISO)",
+    "status": "completed"
+  },
+  {
+    "content": "Part A: Controlled Document Register (tab Drawing/ISO/Obsolete)",
+    "status": "completed"
+  },
+  {
+    "content": "Verifikasi compile + screenshot + cleanup",
     "status": "completed"
   }
 ]

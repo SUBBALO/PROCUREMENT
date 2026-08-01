@@ -29,6 +29,8 @@ export default function PdfStampCanvas({
   onPick,
   markerNode,
   allPages = false,
+  metaUrl = null,        // override: path relatif meta (mis. /controlled-documents/{id}/page-meta)
+  imgUrlBuilder = null,  // override: (n) => absolute image url
 }) {
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
   const [meta, setMeta] = useState(null);
@@ -40,16 +42,21 @@ export default function PdfStampCanvas({
     setErr("");
     (async () => {
       try {
-        const params = { target };
-        if (extraId) params.extra_id = extraId;
-        const { data } = await api.get(`/drawings/${drawingId}/page-meta`, { params });
+        let data;
+        if (metaUrl) {
+          ({ data } = await api.get(metaUrl));
+        } else {
+          const params = { target };
+          if (extraId) params.extra_id = extraId;
+          ({ data } = await api.get(`/drawings/${drawingId}/page-meta`, { params }));
+        }
         if (alive) setMeta(data);
       } catch (e) {
         if (alive) setErr(e.response?.data?.detail || "Gagal memuat halaman PDF");
       }
     })();
     return () => { alive = false; };
-  }, [drawingId, target, extraId]);
+  }, [drawingId, target, extraId, metaUrl]);
 
   const handleClick = (pageIdx, e) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -59,6 +66,7 @@ export default function PdfStampCanvas({
   };
 
   const imgUrl = (n) => {
+    if (imgUrlBuilder) return imgUrlBuilder(n);
     const p = new URLSearchParams({ target, page: String(n), scale: "2" });
     if (extraId) p.set("extra_id", extraId);
     return `${apiUrl}/api/drawings/${drawingId}/page-image?${p.toString()}`;

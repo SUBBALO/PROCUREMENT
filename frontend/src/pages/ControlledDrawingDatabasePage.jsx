@@ -14,7 +14,7 @@ import PdfPreviewModal from "../components/PdfPreviewModal";
  * Semua user login bisa lihat & preview (dengan watermark bila non-DC saat print).
  * Search by drawing_no / project / customer / part number.
  */
-export default function ControlledDrawingDatabasePage() {
+export default function ControlledDrawingDatabasePage({ embedded = false }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
@@ -44,17 +44,19 @@ export default function ControlledDrawingDatabasePage() {
   const pag = usePagination(items, 20);
 
   return (
-    <div className="p-4 max-w-[1400px] mx-auto space-y-4">
-      <BackLink to="/" />
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
-          Controlled Drawing Database
-        </h1>
-        <div className="text-xs text-slate-500 mt-1">
-          Master repository semua drawing yang sudah melalui Document Control — dapat diakses semua user berdasarkan hak akses.
-          Hasil print oleh non-DC akan otomatis diberi watermark "UNCONTROLLED COPY WHEN PRINTED".
+    <div className={embedded ? "space-y-4" : "p-4 max-w-[1400px] mx-auto space-y-4"}>
+      {!embedded && <BackLink to="/" />}
+      {!embedded && (
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
+            Controlled Drawing Database
+          </h1>
+          <div className="text-xs text-slate-500 mt-1">
+            Master repository semua drawing yang sudah melalui Document Control — dapat diakses semua user berdasarkan hak akses.
+            Hasil print oleh non-DC akan otomatis diberi watermark "UNCONTROLLED COPY WHEN PRINTED".
+          </div>
         </div>
-      </div>
+      )}
 
       <Card className="rounded-none border-slate-200 overflow-hidden">
         <div className="px-4 py-2 bg-indigo-50 border-b border-indigo-200 flex items-center gap-2">

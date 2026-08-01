@@ -7,6 +7,7 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
+import PaginationBar, { usePagination } from "../components/PaginationBar";
 import { Wrench, ArrowClockwise, MagnifyingGlass, UserPlus, ArrowRight, Eye, CheckCircle, Tray, Gear, PencilSimple, ClockCounterClockwise } from "@phosphor-icons/react";
 
 const LEADER_ROLES = ["eng_head", "eng_leader", "admin", "super_admin", "supervisor"];
@@ -69,6 +70,15 @@ export default function WorkOrderEngineeringPage() {
 
   const shown = isLeader ? (tab === "assign" ? needAssign : inProgress) : inProgress;
 
+  // Part B — search Riwayat TTD (SO/Customer/Drawing) + pagination semua tab
+  const [histQ, setHistQ] = useState("");
+  const histFiltered = histQ.trim()
+    ? history.filter((h) => `${h.drawing_no} ${h.so_no} ${h.customer_name} ${h.project_name} ${h.signed_by}`.toLowerCase().includes(histQ.toLowerCase()))
+    : history;
+  const pagShown = usePagination(shown, 20);
+  const pagTtd = usePagination(pendingTtd, 20);
+  const pagHist = usePagination(histFiltered, 20);
+
   return (
     <div className="p-4 max-w-[1300px] mx-auto space-y-4">
       <BackLink />
@@ -125,11 +135,10 @@ export default function WorkOrderEngineeringPage() {
                   {isLeader && tab === "assign" ? "Tidak ada DRF baru yang perlu di-assign." : "Belum ada DRF di sini."}
                 </td></tr>
               )}
-              {shown.map((d) => {
+              {pagShown.pagedData.map((d) => {
                 return (
                   <tr key={d.id} className="border-b border-slate-100 hover:bg-teal-50/40" data-testid={`wo-row-${d.form_no}`}>
-                    <td className="p-3 font-mono font-semibold text-slate-900 text-xs">{d.form_no}</td>
-                    <td className="p-3">
+                    <td className="p-3 font-mono font-semibold text-slate-900 text-xs">{d.form_no}</td>                    <td className="p-3">
                       <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase ${d.request_type === "new_order" ? "bg-emerald-100 text-emerald-800 border border-emerald-400" : "bg-blue-100 text-blue-800 border border-blue-400"}`}>
                         {d.request_type === "new_order" ? "New" : "Repeat"}
                       </span>
@@ -165,6 +174,7 @@ export default function WorkOrderEngineeringPage() {
             </tbody>
           </table>
         </div>
+        <PaginationBar {...pagShown} label="DRF" testIdPrefix="wo-pag" />
       </Card>
       )}
 
@@ -189,7 +199,7 @@ export default function WorkOrderEngineeringPage() {
               <tbody data-testid="wo-pendingttd-list">
                 {subLoading && <tr><td colSpan={6} className="p-8 text-center text-slate-400">Memuat...</td></tr>}
                 {!subLoading && pendingTtd.length === 0 && <tr><td colSpan={6} className="p-12 text-center text-slate-400">Tidak ada drawing yang menunggu TTD Anda.</td></tr>}
-                {pendingTtd.map((d) => (
+                {pagTtd.pagedData.map((d) => (
                   <tr key={d.id} className="border-b border-slate-100 hover:bg-amber-50/40" data-testid={`wo-ttd-row-${d.drawing_no}`}>
                     <td className="p-3 font-mono font-bold text-xs">{d.drawing_no}</td>
                     <td className="p-3 text-xs">{d.title || d.project_name || "-"}</td>
@@ -206,14 +216,18 @@ export default function WorkOrderEngineeringPage() {
               </tbody>
             </table>
           </div>
+          <PaginationBar {...pagTtd} label="drawing" testIdPrefix="wo-ttd-pag" />
         </Card>
       )}
 
       {/* Riwayat TTD */}
       {tab === "history" && (
         <Card className="rounded-none border-slate-200 overflow-hidden">
-          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-500">
-            {isLeader ? "Riwayat TTD SEMUA user (audit ISO)." : "Riwayat TTD Anda (audit ISO)."} Read-only.
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+            <MagnifyingGlass size={14} className="text-slate-500" />
+            <Input className="h-9 rounded-none border-slate-300 w-72" value={histQ} onChange={(e) => setHistQ(e.target.value)} placeholder="Cari SO / Customer / Drawing No..." data-testid="wo-history-search" />
+            <div className="flex-1" />
+            <div className="text-xs text-slate-500">{isLeader ? "Riwayat TTD SEMUA user (audit ISO)." : "Riwayat TTD Anda (audit ISO)."} Read-only.</div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -230,7 +244,8 @@ export default function WorkOrderEngineeringPage() {
               <tbody data-testid="wo-history-list">
                 {subLoading && <tr><td colSpan={6} className="p-8 text-center text-slate-400">Memuat...</td></tr>}
                 {!subLoading && history.length === 0 && <tr><td colSpan={6} className="p-12 text-center text-slate-400">Belum ada riwayat TTD.</td></tr>}
-                {history.map((h, i) => (
+                {!subLoading && history.length > 0 && histFiltered.length === 0 && <tr><td colSpan={6} className="p-12 text-center text-slate-400">Tidak ada hasil untuk pencarian ini.</td></tr>}
+                {pagHist.pagedData.map((h, i) => (
                   <tr key={i} className="border-b border-slate-100 hover:bg-slate-50" data-testid={`wo-hist-row-${i}`}>
                     <td className="p-3 text-xs">{h.signed_at ? new Date(h.signed_at).toLocaleString("id-ID") : "-"}</td>
                     <td className="p-3 font-mono font-bold text-xs">{h.drawing_no}</td>
@@ -245,6 +260,7 @@ export default function WorkOrderEngineeringPage() {
               </tbody>
             </table>
           </div>
+          <PaginationBar {...pagHist} label="TTD" testIdPrefix="wo-hist-pag" />
         </Card>
       )}
 

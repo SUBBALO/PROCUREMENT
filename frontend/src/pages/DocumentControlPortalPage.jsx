@@ -6,9 +6,9 @@ export default function DocumentControlPortalPage() {
   const CARDS = [
     {
       key: "distribution",
-      label: "Document Distribution Record",
-      stats: "DC Stamp · Verifikasi Dokumen",
-      description: "Stamp digital untuk drawing MKS + Customer Ref + Extras yang sudah approved. Klik posisi stamp di PDF viewer per dokumen.",
+      label: "Menunggu Stamp DC",
+      stats: "Drawing + Dokumen ISO",
+      description: "Antrian dokumen yang perlu di-stamp Document Control: Drawing MKS yang sudah approved & Dokumen ISO yang diupload manual. Klik posisi stamp di PDF viewer.",
       icon: FileText,
       href: "/document-control/distribution",
       accent: "from-red-500 via-rose-500 to-pink-500",
@@ -26,11 +26,11 @@ export default function DocumentControlPortalPage() {
     },
     {
       key: "controlled-db",
-      label: "Controlled Drawing Database",
-      stats: "Master Repository",
-      description: "Akses seluruh drawing yang sudah melalui Document Control. Search, preview, print history.",
+      label: "Controlled Document Register",
+      stats: "Drawing · Dokumen ISO · Obsolete",
+      description: "Register dokumen terkontrol: tab Drawing, Dokumen ISO, dan arsip Obsolete. Preview view-only, buat revisi (versi lama otomatis OBSOLETE), & riwayat.",
       icon: Database,
-      href: "/drawings/controlled",
+      href: "/documents/register",
       accent: "from-indigo-500 via-blue-500 to-cyan-500",
       accentText: "text-indigo-400",
     },

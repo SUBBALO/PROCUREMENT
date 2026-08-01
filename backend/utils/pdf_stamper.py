@@ -437,3 +437,29 @@ def apply_stamps(
     doc.save(out, deflate=True)
     doc.close()
     return out.getvalue()
+
+
+
+# ============================================================================
+# OBSOLETE overlay — dipakai Controlled Document Register saat dokumen direvisi.
+# Versi lama otomatis diberi cap "OBSOLETE" merah diagonal (view-only).
+# ============================================================================
+def _draw_obsolete(page: "fitz.Page", text: str = "OBSOLETE") -> None:
+    pw, ph = page.rect.width, page.rect.height
+    fontsize = min(pw, ph) / 7
+    text_len = len(text) * fontsize * 0.55
+    cx, cy = pw / 2, ph / 2
+    tw = fitz.TextWriter(page.rect, color=(0.80, 0.12, 0.12), opacity=0.30)
+    tw.append(fitz.Point(cx - text_len / 2, cy), text, fontsize=fontsize, font=fitz.Font("hebo"))
+    tw.write_text(page, morph=(fitz.Point(cx, cy), fitz.Matrix(-35)))
+
+
+def apply_obsolete(pdf_bytes: bytes, text: str = "OBSOLETE") -> bytes:
+    """Overlay cap OBSOLETE merah diagonal di semua halaman."""
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    for page in doc:
+        _draw_obsolete(page, text)
+    out = io.BytesIO()
+    doc.save(out, deflate=True)
+    doc.close()
+    return out.getvalue()
