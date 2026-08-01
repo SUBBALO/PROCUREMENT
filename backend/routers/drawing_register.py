@@ -213,12 +213,31 @@ def _normalize_dno(s: str) -> str:
 
 
 def _extract_pdf_text(pdf_bytes: bytes) -> str:
-    """Best-effort text extraction (pypdf). Return empty string on error."""
+    """Best-effort text extraction. Utama pakai PyMuPDF (fitz) yang andal & sudah terpasang;
+    fallback ke pypdf bila ada. Return empty string on error (mis. PDF scan/gambar)."""
+    # Primary: PyMuPDF (fitz)
+    try:
+        import fitz  # PyMuPDF
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        chunks = []
+        for i, page in enumerate(doc):
+            if i >= 5:  # judul/nomor drawing biasanya di halaman awal
+                break
+            try:
+                chunks.append(page.get_text() or "")
+            except Exception:
+                pass
+        doc.close()
+        txt = "\n".join(chunks)
+        if txt.strip():
+            return txt
+    except Exception:
+        pass
+    # Fallback: pypdf (opsional)
     try:
         import pypdf
         reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
         chunks = []
-        # Only scan first 5 pages (drawing title usually on page 1)
         for i, page in enumerate(reader.pages):
             if i >= 5:
                 break
@@ -231,17 +250,37 @@ def _extract_pdf_text(pdf_bytes: bytes) -> str:
         return ""
 
 
-def _check_drawing_no_in_text(drawing_no: str, pdf_text: str) -> dict:
-    """Return {match, extracted_candidates, note}."""
-    if not drawing_no:
-        return {"match": False, "extracted_candidates": [], "note": "drawing_no register kosong"}
-    if not pdf_text.strip():
-        return {"match": False, "extracted_candidates": [], "note": "Tidak bisa extract teks dari PDF (mungkin scan/gambar)"}
+_MKS_DNO_RE = re.compile(
+    r"DWG\.\d{2}\.\d{2}\.\d{2}_[A-Za-z0-9]+(?:\.[A-Za-z0-9]+){2,4}",
+    re.IGNORECASE,
+)
 
+
+def _detect_mks_dno(text: str) -> str:
+    """Deteksi nomor DWG format MKS (mis. 'DWG.26.07.03_THIES.FL.A.03') di dalam teks PDF.
+    Toleran terhadap spasi tipis di sekitar titik/underscore saat extract teks."""
+    if not text:
+        return ""
+    cleaned = re.sub(r"\s*([._])\s*", r"\1", text)
+    m = _MKS_DNO_RE.search(cleaned)
+    return m.group(0).upper() if m else ""
+
+
+def _check_drawing_no_in_text(drawing_no: str, pdf_text: str) -> dict:
+    """Return {match, extracted_candidates, note, detected_no}.
+
+    detected_no = nomor format MKS (DWG.YY.MM.NN_CUST.INIT.TYPE.NN) yang terdeteksi di isi
+    PDF (dipakai fitur auto-deteksi nomor untuk repeat/manual upload)."""
+    if not drawing_no:
+        return {"match": False, "extracted_candidates": [], "note": "drawing_no register kosong", "detected_no": ""}
+    if not pdf_text.strip():
+        return {"match": False, "extracted_candidates": [], "note": "Tidak bisa extract teks dari PDF (mungkin scan/gambar)", "detected_no": ""}
+
+    detected_no = _detect_mks_dno(pdf_text)
     target = _normalize_dno(drawing_no)
     haystack = _normalize_dno(pdf_text)
     if target in haystack:
-        return {"match": True, "extracted_candidates": [drawing_no], "note": "Nomor drawing ditemukan di PDF"}
+        return {"match": True, "extracted_candidates": [drawing_no], "note": "Nomor drawing ditemukan di PDF", "detected_no": detected_no or drawing_no}
 
     # Try to detect any drawing-number-like patterns in text as suggestions
     candidates = set()
@@ -256,6 +295,7 @@ def _check_drawing_no_in_text(drawing_no: str, pdf_text: str) -> dict:
         "match": False,
         "extracted_candidates": candidates_list,
         "note": f"Nomor register '{drawing_no}' tidak ditemukan di isi PDF",
+        "detected_no": detected_no,
     }
 
 
@@ -1170,6 +1210,7 @@ async def upload_drawing_pdf(
         "pdf_match_status": "verified" if check["match"] else "warning",
         "pdf_match_note": check["note"],
         "pdf_extracted_candidates": check["extracted_candidates"],
+        "pdf_detected_no": check.get("detected_no") or "",
         "updated_at": _now_iso(),
         "updated_by": user_name,
     }
@@ -1189,11 +1230,78 @@ async def upload_drawing_pdf(
         "match": check["match"],
         "note": check["note"],
         "extracted_candidates": check["extracted_candidates"],
+        "detected_no": check.get("detected_no") or "",
+        "current_drawing_no": existing["drawing_no"],
         "file_uploaded_at": update["file_uploaded_at"],
         "filename": file.filename,
         "status": update.get("status") or prev_status,
         "status_auto_promoted": prev_status.lower() == "draft",
     }
+
+
+class RenameDrawingIn(BaseModel):
+    new_drawing_no: str
+
+
+@router.post("/drawings/{drawing_id}/rename")
+async def rename_drawing_no(drawing_id: str, payload: RenameDrawingIn, current: dict = Depends(get_current_user)):
+    """Ganti nomor drawing agar sama dengan nomor yang terdeteksi/tercetak di PDF (repeat/manual upload).
+    Cek keunikan (drawing_no + revision) & update dokumen terkait (project_dwg di BOM)."""
+    if not _can_edit(current):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+    existing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    if not _can_modify_drawing(current, existing):
+        assigned_name = existing.get("assigned_to_name", "-")
+        raise HTTPException(status_code=403, detail=f"Drawing di-assign ke {assigned_name} — Anda tidak berhak")
+
+    new_no = (payload.new_drawing_no or "").strip()
+    if not new_no:
+        raise HTTPException(status_code=400, detail="Nomor drawing baru wajib diisi")
+    if new_no == existing.get("drawing_no"):
+        return {"success": True, "drawing_no": new_no, "unchanged": True}
+
+    revision = existing.get("revision") or "Rev-0"
+    dup = await db.drawings.find_one({
+        "drawing_no": new_no, "revision": revision,
+        "id": {"$ne": drawing_id}, "deleted_at": {"$exists": False},
+    })
+    if dup:
+        raise HTTPException(status_code=409, detail=f"Nomor '{new_no}' {revision} sudah dipakai drawing lain")
+
+    old_no = existing.get("drawing_no")
+    user_name = current.get("username") or current.get("name")
+    set_fields = {
+        "drawing_no": new_no, "updated_at": _now_iso(), "updated_by": user_name,
+        "renamed_from": old_no, "renamed_at": _now_iso(),
+    }
+    # Re-verify status match terhadap isi PDF (bila sudah ada file) supaya warning konsisten.
+    if existing.get("file_id"):
+        try:
+            existing["drawing_no"] = new_no
+            raw = await _target_raw_bytes(existing, "mks", "")
+            text = _extract_pdf_text(raw)
+            check = _check_drawing_no_in_text(new_no, text)
+            set_fields["pdf_match_status"] = "verified" if check["match"] else "warning"
+            set_fields["pdf_match_note"] = check["note"]
+            set_fields["pdf_extracted_candidates"] = check["extracted_candidates"]
+            set_fields["pdf_detected_no"] = check.get("detected_no") or ""
+        except Exception:
+            pass
+    await db.drawings.update_one({"id": drawing_id}, {"$set": set_fields})
+    # Sinkronkan project_dwg di BOM terkait bila menunjuk nomor lama.
+    if existing.get("bom_id"):
+        try:
+            await db.boms.update_one(
+                {"id": existing["bom_id"], "project_dwg": old_no},
+                {"$set": {"project_dwg": new_no, "updated_at": _now_iso()}},
+            )
+        except Exception:
+            pass
+    await log_action(current, "drawing_rename", "drawings", drawing_id,
+                     {"from": old_no, "to": new_no})
+    return {"success": True, "drawing_no": new_no, "from": old_no}
 
 
 @router.get("/drawings/{drawing_id}/preview")

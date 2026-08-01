@@ -1356,6 +1356,25 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
   useEffect(() => { setLocalDrawing(drawing); }, [drawing]);
   const activeDwg = localDrawing;
 
+  // Editor manual Nomor DWG (koreksi bila auto-detect salah / tidak terbaca)
+  const [editingNo, setEditingNo] = useState(false);
+  const [noInput, setNoInput] = useState("");
+  const [savingNo, setSavingNo] = useState(false);
+  const saveDwgNo = async () => {
+    const val = (noInput || "").trim();
+    if (!val) return toast.error("Nomor DWG tidak boleh kosong");
+    setSavingNo(true);
+    try {
+      const { data: rn } = await api.post(`/drawings/${activeDwg.id}/rename`, { new_drawing_no: val });
+      setLocalDrawing((d) => ({ ...d, drawing_no: rn.drawing_no }));
+      onDrawingUpdated?.({ drawing_no: rn.drawing_no });
+      setEditingNo(false);
+      toast.success(`✓ Nomor DWG disimpan → ${rn.drawing_no}`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal menyimpan nomor DWG");
+    } finally { setSavingNo(false); }
+  };
+
   // Load BOM attachments if drawing has bom_id
   useEffect(() => {
     if (!activeDwg.bom_id) return;
@@ -1391,7 +1410,7 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
       const fd = new FormData();
       fd.append("file", file);
       const { data } = await api.post(`/drawings/${activeDwg.id}/upload`, fd);
-      // Update local drawing state
+      // Local patch (tidak reload parent dulu — hindari flash warning bila akan auto-rename)
       const patch = {
         file_id: "temp",
         filename: file.name,
@@ -1401,17 +1420,39 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
         status: data?.status || activeDwg.status,
       };
       setLocalDrawing((d) => ({ ...d, ...patch }));
-      onDrawingUpdated?.(patch);
 
-      if (data?.match === false) {
-        // Prominent WARNING — nomor drawing di PDF tidak match dengan registered drawing_no
+      // Auto-baca nomor DWG dari isi PDF (repeat/manual upload): jika nomor format MKS yang
+      // tercetak di PDF terdeteksi & BEDA dengan nomor drawing → LANGSUNG pakai nomor dari PDF.
+      const detected = (data?.detected_no || "").trim();
+      const norm = (s) => (s || "").replace(/\s+/g, "").toUpperCase();
+      if (detected && norm(detected) !== norm(activeDwg.drawing_no)) {
+        try {
+          const { data: rn } = await api.post(`/drawings/${activeDwg.id}/rename`, { new_drawing_no: detected });
+          setLocalDrawing((d) => ({ ...d, ...patch, drawing_no: rn.drawing_no, pdf_match_status: "verified", pdf_match_note: "Nomor drawing dibaca otomatis dari isi PDF" }));
+          toast.success(`✓ Nomor DWG dibaca dari PDF → ${rn.drawing_no}`, {
+            description: `Sebelumnya: ${activeDwg.drawing_no}. Otomatis disamakan dengan isi PDF.`,
+            duration: 8000,
+          });
+          onDrawingUpdated?.({ drawing_no: rn.drawing_no });
+          return;
+        } catch (e2) {
+          // Gagal rename (mis. nomor sudah dipakai) → tetap lanjut, beri tahu.
+          toast.error(`Nomor di PDF (${detected}) terdeteksi tapi gagal dipakai: ${e2.response?.data?.detail || "error"}. Bisa ketik manual.`, { duration: 9000 });
+        }
+      }
+
+      onDrawingUpdated?.(patch);
+      if (data?.match === false && !detected) {
+        // Tidak ada nomor format MKS terbaca & tidak match → warning (mungkin scan/gambar).
         const extracted = (data?.extracted_candidates || []).slice(0, 5).join(", ") || "-";
         toast.error(
-          `⚠ NOMOR DRAWING TIDAK MATCH! PDF berisi: ${extracted} · Registered: ${activeDwg.drawing_no}`,
-          { duration: 10000, description: "Silakan cek — apakah PDF salah upload? Klik Replace untuk upload ulang atau Hapus & coba lagi." }
+          `⚠ Nomor DWG tidak terbaca otomatis. Kandidat di PDF: ${extracted} · Nomor sekarang: ${activeDwg.drawing_no}`,
+          { duration: 10000, description: "PDF mungkin scan/gambar. Klik 'Ubah manual' untuk ketik nomor DWG bila perlu." }
         );
-      } else {
+      } else if (data?.match) {
         toast.success(data?.status_auto_promoted ? "Drawing PDF ter-upload — nomor MATCH · status otomatis Issued" : "Drawing PDF ter-upload — nomor MATCH ✓");
+      } else {
+        toast.success("Drawing PDF ter-upload ✓");
       }
     } catch (e) { toast.error(e.response?.data?.detail || "Gagal upload drawing PDF"); }
     finally { setUploading(null); }
@@ -1650,6 +1691,41 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Nomor DWG — auto-baca dari PDF saat upload, bisa dikoreksi manual */}
+      <div className="flex flex-wrap items-center gap-2 border border-slate-300 bg-white px-3 py-2" data-testid="dw-no-editor">
+        <span className="text-[10px] uppercase tracking-widest font-bold text-slate-500">No. DWG</span>
+        {!editingNo ? (
+          <>
+            <span className="font-mono font-bold text-slate-900 text-sm" data-testid="dw-no-value">{activeDwg.drawing_no || "(belum ada)"}</span>
+            <button
+              onClick={() => { setNoInput(activeDwg.drawing_no || ""); setEditingNo(true); }}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider border border-slate-300 text-slate-600 hover:bg-slate-100"
+              data-testid="dw-no-edit-btn"
+              title="Ketik/koreksi nomor DWG manual (bila auto-baca salah / tidak terbaca)"
+            >
+              <PencilSimple size={12} /> Ubah manual
+            </button>
+            <span className="text-[10px] text-slate-400 italic">Nomor otomatis dibaca dari isi PDF saat upload; ubah di sini bila salah.</span>
+          </>
+        ) : (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Input
+              value={noInput}
+              onChange={(e) => setNoInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") saveDwgNo(); if (e.key === "Escape") setEditingNo(false); }}
+              placeholder="mis. DWG.26.07.03_THIES.FL.A.03"
+              className="h-8 w-[320px] font-mono text-sm rounded-none"
+              autoFocus
+              data-testid="dw-no-input"
+            />
+            <Button onClick={saveDwgNo} disabled={savingNo} className="h-8 rounded-none bg-emerald-600 hover:bg-emerald-700" data-testid="dw-no-save-btn">
+              {savingNo ? "..." : "Simpan"}
+            </Button>
+            <Button variant="ghost" onClick={() => setEditingNo(false)} disabled={savingNo} className="h-8 rounded-none" data-testid="dw-no-cancel-btn">Batal</Button>
+          </div>
+        )}
       </div>
 
       {/* PROMINENT MISMATCH WARNING */}
