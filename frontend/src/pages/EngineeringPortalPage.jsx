@@ -82,9 +82,9 @@ export default function EngineeringPortalPage() {
   ];
 
   return (
-    <DeptPortal deptLabel="Engineering Department" deptTagline="Drawing Request · Tugas Saya · Costing · BOM · Master Drawing" accentColor="amber" cards={CARDS}>
-      {isEngUser && <MyJobQueuePanel compact />}
+    <DeptPortal deptLabel="Engineering Department" deptTagline="Antrian Drawing Request · Tugas Saya · Costing · BOM · Master Drawing" accentColor="amber" cards={CARDS} compactCards>
       <EngineeringQueuePanel isHead={isHead} isEngUser={isEngUser} />
+      {isEngUser && <MyJobQueuePanel compact />}
     </DeptPortal>
   );
 }

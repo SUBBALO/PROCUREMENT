@@ -5,7 +5,7 @@ import { ArrowRight, ArrowLeft, Sparkle } from "@phosphor-icons/react";
 /**
  * Reusable department sub-portal (LIGHT theme, 1-screen compact).
  */
-export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky", cards, children }) {
+export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky", cards, children, compactCards = false }) {
   const navigate = useNavigate();
 
   return (
@@ -37,9 +37,14 @@ export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky"
 
         {children && <div className="mb-5">{children}</div>}
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        {compactCards && (
+          <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-400 mb-2">Menu Engineering</div>
+        )}
+        <div className={compactCards
+          ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2"
+          : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3"}>
           {cards.map((c, idx) => (
-            <Card key={c.key} card={c} onEnter={() => c.href && c.href !== "#" && !c.comingSoon && navigate(c.href)} delay={idx * 60} />
+            <Card key={c.key} card={c} compact={compactCards} onEnter={() => c.href && c.href !== "#" && !c.comingSoon && navigate(c.href)} delay={idx * 60} />
           ))}
         </div>
       </div>
@@ -48,10 +53,35 @@ export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky"
 }
 
 
-function Card({ card, onEnter, delay }) {
+function Card({ card, onEnter, delay, compact = false }) {
   const Icon = card.icon;
   // Convert -400 text tokens to -600 for readability on white
   const accentText = (card.accentText || "").replace(/-4\d\d/, "-600");
+  if (compact) {
+    return (
+      <button
+        data-testid={`subcard-${card.key}`}
+        onClick={onEnter}
+        disabled={card.comingSoon || !card.href || card.href === "#"}
+        className="group relative text-left bg-white border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all duration-300 overflow-hidden disabled:cursor-not-allowed hover:-translate-y-0.5"
+        style={{ animationDelay: `${delay}ms`, animationName: "fadeSlideIn", animationDuration: "400ms", animationFillMode: "backwards" }}
+        title={card.description}
+      >
+        <div className={`absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${card.accent} opacity-70 group-hover:opacity-100 transition-opacity`} />
+        {!card.comingSoon && card.badgeCount > 0 && (
+          <div className="absolute top-1.5 right-1.5 min-w-[20px] h-5 px-1 flex items-center justify-center bg-red-600 text-white text-[10px] font-bold rounded-full" data-testid={`subcard-badge-${card.key}`}>
+            {card.badgeCount > 99 ? "99+" : card.badgeCount}
+          </div>
+        )}
+        <div className="p-2.5 flex flex-col items-start gap-1.5">
+          <div className="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-200 group-hover:bg-slate-100 transition-colors">
+            <Icon size={16} weight="duotone" className={accentText} />
+          </div>
+          <h3 className="text-[12px] font-bold tracking-tight text-slate-900 leading-tight" style={{ fontFamily: "Chivo, sans-serif" }}>{card.label}</h3>
+        </div>
+      </button>
+    );
+  }
   return (
     <button
       data-testid={`subcard-${card.key}`}

@@ -4,10 +4,31 @@ import api from "../lib/api";
 import DrfDetailModal from "./DrfDetailModal";
 import {
   PaperPlaneTilt, Stamp, Kanban, ArrowRight, ArrowClockwise,
-  CheckCircle, Gear, Tray, Tray as TrayIcon, ListChecks, Eye,
+  CheckCircle, Gear, Tray, Tray as TrayIcon, ListChecks, Eye, MagnifyingGlass,
 } from "@phosphor-icons/react";
 
 const TYPE_LABEL = { new_order: "New", repeat_order: "Repeat" };
+
+// Badge Due Date: merah = lewat/overdue, kuning = ≤3 hari lagi, hijau = masih lama.
+function DueBadge({ value }) {
+  if (!value) return <span className="text-[11px] text-slate-300">—</span>;
+  const t = Date.parse(value);
+  if (isNaN(t)) return <span className="text-[11px] text-slate-400">{value}</span>;
+  const now = Date.now();
+  const days = Math.ceil((t - now) / 86400000);
+  const label = new Date(t).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+  let cls = "bg-emerald-50 text-emerald-700 border-emerald-300";
+  let suffix = "";
+  if (days < 0) { cls = "bg-rose-100 text-rose-800 border-rose-300"; suffix = ` · telat ${Math.abs(days)}h`; }
+  else if (days === 0) { cls = "bg-rose-50 text-rose-700 border-rose-300"; suffix = " · hari ini"; }
+  else if (days <= 3) { cls = "bg-amber-50 text-amber-800 border-amber-300"; suffix = ` · ${days}h lagi`; }
+  return (
+    <span className={`inline-block px-1.5 py-0.5 text-[10px] font-bold border whitespace-nowrap ${cls}`} title={`Due: ${label}`}>
+      {label}{suffix}
+    </span>
+  );
+}
+
 const STATUS_META = {
   submitted: { label: "Perlu Diterima", cls: "bg-amber-100 text-amber-800 border-amber-300" },
   accepted: { label: "Diterima", cls: "bg-sky-100 text-sky-800 border-sky-300" },
@@ -28,6 +49,7 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
   const [myTasks, setMyTasks] = useState(0);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
   const [detailDrf, setDetailDrf] = useState(null);
 
   const fetchAll = useCallback(async () => {
@@ -74,10 +96,27 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
     { key: "in_progress", label: "Sedang Dikerjakan", icon: Gear, accent: "text-violet-600", ring: "border-l-violet-500" },
   ];
 
-  // Urutan antrian: submitted → accepted → in_progress
+  // PRIORITAS: urutkan berdasarkan DUE DATE terdekat duluan (yang kosong ditaruh paling akhir),
+  // lalu berdasarkan status (submitted → accepted → in_progress).
   const order = { submitted: 0, accepted: 1, in_progress: 2 };
-  const sorted = [...drfs].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
-  const filtered = filter === "all" ? sorted : sorted.filter((d) => d.status === filter);
+  const dueMs = (d) => {
+    const v = d.expected_due_date || d.due_date || "";
+    if (!v) return Infinity;
+    const t = Date.parse(v);
+    return isNaN(t) ? Infinity : t;
+  };
+  const sorted = [...drfs].sort((a, b) => {
+    const da = dueMs(a), dbb = dueMs(b);
+    if (da !== dbb) return da - dbb;
+    return (order[a.status] ?? 9) - (order[b.status] ?? 9);
+  });
+  const qLower = search.trim().toLowerCase();
+  const filtered = sorted.filter((d) => {
+    if (filter !== "all" && d.status !== filter) return false;
+    if (!qLower) return true;
+    return [d.form_no, d.so_no, d.customer_name, d.project_name, d.assigned_engineer_name]
+      .some((x) => (x || "").toLowerCase().includes(qLower));
+  });
 
   return (
     <div className="bg-white border border-slate-200 shadow-sm" data-testid="eng-queue-panel">
@@ -130,15 +169,28 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
 
           {/* List (terfilter) */}
           <div className="p-3">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-slate-400">
                 {filter === "all" ? "Semua DRF di antrian" : `Filter: ${STATUS_META[filter]?.label || filter}`} · {filtered.length}
+                <span className="ml-2 normal-case tracking-normal text-slate-400 font-normal">(urut: due date terdekat)</span>
               </div>
-              {filter !== "all" && (
-                <button onClick={() => setFilter("all")} className="text-[10px] uppercase tracking-widest font-bold text-amber-700 hover:text-amber-900" data-testid="eng-queue-clear-filter">
-                  Tampilkan semua
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <MagnifyingGlass size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Cari form / SO / customer / engineer..."
+                    className="h-8 w-[230px] max-w-full pl-7 pr-2 text-xs border border-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                    data-testid="eng-queue-search"
+                  />
+                </div>
+                {filter !== "all" && (
+                  <button onClick={() => setFilter("all")} className="text-[10px] uppercase tracking-widest font-bold text-amber-700 hover:text-amber-900" data-testid="eng-queue-clear-filter">
+                    Semua
+                  </button>
+                )}
+              </div>
             </div>
             {filtered.length === 0 ? (
               <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-400" data-testid="eng-queue-empty">
@@ -151,6 +203,7 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
                   <thead className="sticky top-0 bg-white z-[1]">
                     <tr className="text-[9px] uppercase tracking-[0.1em] font-bold text-slate-400 border-b border-slate-100">
                       <th className="text-left py-1.5 px-2">Form No</th>
+                      <th className="text-left py-1.5 px-2">Due Date</th>
                       <th className="text-left py-1.5 px-2">Tipe</th>
                       <th className="text-left py-1.5 px-2">SO</th>
                       <th className="text-left py-1.5 px-2">Customer / Project</th>
@@ -170,6 +223,7 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
                           data-testid={`eng-queue-row-${d.form_no}`}
                         >
                           <td className="py-1.5 px-2 font-mono text-xs font-semibold text-slate-800 whitespace-nowrap">{d.form_no}</td>
+                          <td className="py-1.5 px-2 whitespace-nowrap"><DueBadge value={d.expected_due_date || d.due_date} /></td>
                           <td className="py-1.5 px-2">
                             <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${d.request_type === "repeat_order" ? "bg-blue-50 text-blue-700 border-blue-300" : "bg-emerald-50 text-emerald-700 border-emerald-300"}`}>
                               {TYPE_LABEL[d.request_type] || d.request_type}
