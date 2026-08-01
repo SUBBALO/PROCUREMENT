@@ -1602,6 +1602,33 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
     } catch (e) { toast.error(e.response?.data?.detail || "Gagal hapus"); }
   };
 
+  // DWG CAD (File Asli) — file sumber gambar engineer (AutoCAD/Inventor/dll). Terpisah dari extras.
+  const uploadCadFile = async (file) => {
+    setUploading("cad");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post(`/drawings/${activeDwg.id}/cad-files`, fd);
+      toast.success(`✓ File CAD "${file.name}" terupload`);
+      const list = [...(activeDwg.cad_files || []), data.file];
+      setLocalDrawing((d) => ({ ...d, cad_files: list }));
+      onDrawingUpdated?.({ cad_files: list });
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal upload CAD");
+    } finally { setUploading(null); }
+  };
+
+  const deleteCadFile = async (cadId) => {
+    if (!window.confirm("Hapus file CAD ini?")) return;
+    try {
+      await api.delete(`/drawings/${activeDwg.id}/cad-files/${cadId}`);
+      toast.success("File CAD dihapus");
+      const list = (activeDwg.cad_files || []).filter((f) => f.id !== cadId);
+      setLocalDrawing((d) => ({ ...d, cad_files: list }));
+      onDrawingUpdated?.({ cad_files: list });
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal hapus"); }
+  };
+
   const Slot = ({ label, icon: Icon, accent, files, onUpload, category, allowMulti = false, allowedExt = ".pdf" }) => (
     <div className={`border-2 border-${accent}-300 bg-${accent}-50/40 p-3 space-y-2`}>
       <div className="flex items-center justify-between gap-2">
@@ -1968,6 +1995,64 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
                     className="p-1 text-rose-600 hover:bg-rose-50"
                     title="Hapus"
                     data-testid={`dw-att-delete-extra-${f.id}`}
+                  >
+                    <Trash size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* DWG CAD (File Asli) — file sumber gambar engineer (AutoCAD/Inventor/Solidworks/STEP dll) */}
+        <div className="md:col-span-2 border-2 border-purple-400 bg-purple-50/50 p-3 space-y-2" data-testid="dw-cad-slot">
+          <div className="flex items-center justify-between gap-2">
+            <div className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.12em] font-bold text-purple-800">
+              <FileText size={14} weight="bold" /> DWG CAD — File Asli ({(activeDwg.cad_files || []).length})
+            </div>
+            <label className={`inline-flex items-center gap-1 px-2 h-7 text-[11px] font-bold cursor-pointer whitespace-nowrap bg-purple-700 hover:bg-purple-800 text-white ${uploading === "cad" ? "opacity-60 pointer-events-none" : ""}`}>
+              <UploadSimple size={12} weight="bold" />
+              {uploading === "cad" ? "Uploading..." : "+ Upload CAD"}
+              <input
+                type="file"
+                accept=".dwg,.dxf,.ipt,.iam,.idw,.sldprt,.sldasm,.slddrw,.step,.stp,.iges,.igs,.x_t,.x_b,.prt,.catpart,.catproduct,.3dm,.f3d,.sat,.stl,.zip,.rar,.7z"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCadFile(f); e.target.value = ""; }}
+                data-testid="dw-att-upload-cad"
+              />
+            </label>
+          </div>
+          <div className="text-[10px] text-slate-500 italic">
+            File asli gambar engineer (native) — AutoCAD (.dwg/.dxf), Inventor (.ipt/.iam/.idw), Solidworks, STEP/IGES, atau ZIP. Untuk arsip file sumber, tidak dipreview (unduh saja).
+          </div>
+          {((activeDwg.cad_files || []).length === 0) ? (
+            <div className="text-[11px] text-slate-400 italic">Belum ada file CAD di-upload.</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+              {(activeDwg.cad_files || []).map((f) => (
+                <div key={f.id} className="flex items-center gap-2 bg-white border border-purple-200 p-1.5 text-xs">
+                  <FileText size={13} className="text-purple-700 flex-none" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-mono" title={f.filename}>{f.filename}</div>
+                    <div className="text-[10px] text-slate-400">
+                      {((f.size || 0) / 1024).toFixed(1)} KB · {f.uploaded_by || "-"} · {fmtShortDate(f.uploaded_at)}
+                    </div>
+                  </div>
+                  <a
+                    href={`${backendUrl}/api/drawings/${activeDwg.id}/cad-files/${f.id}/download`}
+                    target="_blank" rel="noreferrer"
+                    className="p-1 text-purple-700 hover:bg-purple-50"
+                    title="Unduh file CAD"
+                    data-testid={`dw-cad-download-${f.id}`}
+                  >
+                    <DownloadSimple size={13} />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => deleteCadFile(f.id)}
+                    className="p-1 text-rose-600 hover:bg-rose-50"
+                    title="Hapus"
+                    data-testid={`dw-cad-delete-${f.id}`}
                   >
                     <Trash size={13} />
                   </button>

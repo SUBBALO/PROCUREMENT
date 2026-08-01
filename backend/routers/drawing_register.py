@@ -1712,6 +1712,112 @@ async def delete_extra_file(drawing_id: str, extra_id: str, current: dict = Depe
     return {"success": True}
 
 
+# ============================================================================
+# DWG CAD (File Asli) — file sumber gambar engineer (AutoCAD/Inventor/Solidworks/STEP dll).
+# Disimpan terpisah dari additional_files (extras/nesting) agar tidak tercampur.
+# Tidak dipreview (format native) — hanya list & download.
+# ============================================================================
+CAD_ALLOWED_EXT = {
+    ".dwg", ".dxf", ".ipt", ".iam", ".idw", ".sldprt", ".sldasm", ".slddrw",
+    ".step", ".stp", ".iges", ".igs", ".x_t", ".x_b", ".prt", ".catpart",
+    ".catproduct", ".3dm", ".f3d", ".sat", ".stl", ".zip", ".rar", ".7z",
+}
+CAD_MAX_MB = 150
+
+
+@router.post("/drawings/{drawing_id}/cad-files")
+async def upload_cad_file(
+    drawing_id: str,
+    file: UploadFile = File(...),
+    label: str = Form(""),
+    current: dict = Depends(get_current_user),
+):
+    """Upload file CAD asli (AutoCAD/Inventor/dll). Bisa lebih dari 1 file."""
+    if not _can_edit(current):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+    existing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in CAD_ALLOWED_EXT:
+        raise HTTPException(status_code=400, detail=f"Ekstensi {ext} tidak diizinkan untuk CAD. Boleh: {sorted(CAD_ALLOWED_EXT)}")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="File kosong")
+    if len(content) > CAD_MAX_MB * 1024 * 1024:
+        raise HTTPException(status_code=400, detail=f"File > {CAD_MAX_MB} MB tidak diizinkan")
+
+    fs = _fs()
+    file_id = await fs.upload_from_stream(
+        file.filename, content,
+        metadata={"content_type": file.content_type or "application/octet-stream", "drawing_id": drawing_id, "type": "cad"},
+    )
+    entry = {
+        "id": str(uuid.uuid4()),
+        "file_id": str(file_id),
+        "filename": file.filename,
+        "label": (label or "").strip(),
+        "ext": ext,
+        "size": len(content),
+        "content_type": file.content_type or "application/octet-stream",
+        "uploaded_at": _now_iso(),
+        "uploaded_by": current.get("username") or current.get("name"),
+    }
+    await db.drawings.update_one(
+        {"id": drawing_id},
+        {"$push": {"cad_files": entry}, "$set": {"updated_at": _now_iso()}},
+    )
+    await log_action(current, "drawing_upload_cad", "drawings", drawing_id, {"filename": file.filename, "ext": ext})
+    return {"success": True, "file": entry}
+
+
+@router.get("/drawings/{drawing_id}/cad-files/{cad_id}/download")
+async def download_cad_file(drawing_id: str, cad_id: str, current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    doc = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    entry = next((f for f in (doc.get("cad_files") or []) if f.get("id") == cad_id), None)
+    if not entry:
+        raise HTTPException(status_code=404, detail="File CAD tidak ditemukan")
+    try:
+        stream = await _fs().open_download_stream(ObjectId(entry["file_id"]))
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"File gagal dibaca: {e}")
+    raw = await stream.read()
+    return StreamingResponse(
+        io.BytesIO(raw),
+        media_type=entry.get("content_type") or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{entry.get("filename")}"'},
+    )
+
+
+@router.delete("/drawings/{drawing_id}/cad-files/{cad_id}")
+async def delete_cad_file(drawing_id: str, cad_id: str, current: dict = Depends(get_current_user)):
+    if not _can_edit(current):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+    doc = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    entry = next((f for f in (doc.get("cad_files") or []) if f.get("id") == cad_id), None)
+    if not entry:
+        raise HTTPException(status_code=404, detail="File CAD tidak ditemukan")
+    try:
+        await _fs().delete(ObjectId(entry["file_id"]))
+    except Exception:
+        pass
+    await db.drawings.update_one(
+        {"id": drawing_id},
+        {"$pull": {"cad_files": {"id": cad_id}}, "$set": {"updated_at": _now_iso()}},
+    )
+    await log_action(current, "drawing_delete_cad", "drawings", drawing_id, {"cad_id": cad_id})
+    return {"success": True}
+
+
+
 
 # ============================================================================
 # Iter 16 — Digital Approval Workflow untuk Drawing
