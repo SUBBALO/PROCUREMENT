@@ -7,9 +7,10 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
+import PdfPreviewModal from "../components/PdfPreviewModal";
 import {
   Wrench, ArrowClockwise, Plus, Trash, FileText, Package,
-  CheckCircle, PaperPlaneRight, PencilSimple, Lock, ArrowRight,
+  CheckCircle, PaperPlaneRight, PencilSimple, Lock, ArrowRight, Eye,
 } from "@phosphor-icons/react";
 
 /**
@@ -30,6 +31,8 @@ export default function EngineeringDrfWorkPage() {
   const [drf, setDrf] = useState(null);
   const [drawings, setDrawings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [viewer, setViewer] = useState(null); // { drawingId, target, extraId, title, subtitle }
+  const apiUrl = process.env.REACT_APP_BACKEND_URL;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -162,7 +165,10 @@ export default function EngineeringDrfWorkPage() {
               Belum ada drawing. {canEdit ? "Generate nomor drawing di atas untuk mulai." : ""}
             </div>
           )}
-          {drawings.map((d) => (
+          {drawings.map((d) => {
+            const extras = d.additional_files || d.extras || [];
+            const subtitle = `${d.title || d.project_name || ""} · ${d.drawing_type || ""}`;
+            return (
             <div key={d.id} className="p-3 flex flex-wrap items-center gap-3 hover:bg-teal-50/40" data-testid={`drf-drawing-${d.drawing_no}`}>
               <div className="flex-1 min-w-[220px]">
                 <div className="font-mono font-bold text-slate-900 text-sm">{d.drawing_no}</div>
@@ -172,9 +178,24 @@ export default function EngineeringDrfWorkPage() {
                 )}
               </div>
               <div className="flex items-center gap-2 text-[11px]">
-                <Chip ok={!!d.file_id} label={d.file_id ? "MKS ✓" : "MKS ✗"} />
-                <Chip ok={!!d.customer_ref_file_id} label="Cust Dwg" neutral={!d.customer_ref_file_id} />
-                <Chip ok={(d.extras || []).length > 0} label={`Nesting/Extra (${(d.extras || []).length})`} neutral={(d.extras || []).length === 0} />
+                <PreviewChip
+                  available={!!d.file_id}
+                  okLabel="MKS ✓" offLabel="MKS ✗"
+                  onClick={() => setViewer({ drawingId: d.id, target: "mks", title: `${d.drawing_no} · DWG MKS`, subtitle })}
+                  testid={`drf-preview-mks-${d.drawing_no}`}
+                />
+                <PreviewChip
+                  available={!!d.customer_ref_file_id}
+                  okLabel="Cust Dwg 👁" offLabel="Cust Dwg"
+                  onClick={() => setViewer({ drawingId: d.id, target: "customer_ref", title: `${d.drawing_no} · Customer DWG`, subtitle })}
+                  testid={`drf-preview-cust-${d.drawing_no}`}
+                />
+                <PreviewChip
+                  available={extras.length > 0}
+                  okLabel={`Nesting/Extra (${extras.length}) 👁`} offLabel={`Nesting/Extra (${extras.length})`}
+                  onClick={() => setViewer({ drawingId: d.id, target: "extra", extraId: extras[0]?.id, title: `${d.drawing_no} · ${extras[0]?.filename || "Nesting/Extra"}`, subtitle })}
+                  testid={`drf-preview-extra-${d.drawing_no}`}
+                />
               </div>
               <StatusBadge status={d.approval_status} />
               <button
@@ -185,7 +206,8 @@ export default function EngineeringDrfWorkPage() {
                 <PencilSimple size={13} weight="bold" /> Upload & TTD <ArrowRight size={12} />
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -193,6 +215,18 @@ export default function EngineeringDrfWorkPage() {
         <div className="border-2 border-sky-500 bg-sky-50 p-4 text-sm text-slate-700">
           <b>Langkah berikutnya:</b> untuk tiap drawing klik <b>Upload & TTD</b> → upload PDF MKS (bisa lebih dari 1 dokumen: customer dwg & nesting), isi BOM bersama, lalu <b>TTD & Submit ke Eng Leader</b>. Drawing lama (repeat order tanpa dwg baru) tidak perlu TTD.
         </div>
+      )}
+
+      {viewer && (
+        <PdfPreviewModal
+          drawingId={viewer.drawingId}
+          target={viewer.target}
+          extraId={viewer.extraId || ""}
+          stamped={false}
+          title={viewer.title}
+          subtitle={viewer.subtitle}
+          onClose={() => setViewer(null)}
+        />
       )}
     </div>
   );
@@ -386,6 +420,34 @@ function RepeatPullPanel({ drf, onDone }) {
   const [classMaterial, setClassMaterial] = useState(drf.material ? `RAW MATERIAL FOR ${drf.qty_order} ${drf.unit}` : "");
   const [busy, setBusy] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [viewer, setViewer] = useState(null);
+  const apiUrl = process.env.REACT_APP_BACKEND_URL;
+
+  const openDrawing = (r, target, label) => setViewer({
+    mode: "drawing", drawingId: r.id, target,
+    title: `${r.drawing_no} · ${label}`, subtitle: `${r.title || ""} · SO ${r.so_no || "-"}`,
+  });
+
+  const openBomAtt = async (r, category, label) => {
+    if (!r.bom_id) return toast.error("Drawing lama ini tidak punya BOM terkait");
+    try {
+      const { data } = await api.get(`/bom/${r.bom_id}/attachments`);
+      const groups = data.attachments || {};
+      let list = [];
+      if (category === "nesting") list = groups.nesting || [];
+      else list = [...(groups.costing || []), ...(groups.costing_prev || []), ...(groups.nesting_price || [])];
+      const att = list[0];
+      if (!att) return toast.error(`Tidak ada file ${label}`);
+      setViewer({
+        mode: "generic",
+        metaUrl: `/bom/${r.bom_id}/attachments/${att.id}/page-meta`,
+        pageBase: `${apiUrl}/api/bom/${r.bom_id}/attachments/${att.id}/page-image`,
+        title: `${r.drawing_no} · ${label}`, subtitle: att.filename || "",
+      });
+    } catch (e) {
+      toast.error(e.response?.data?.detail || `Gagal buka ${label}`);
+    }
+  };
 
   const doSearch = useCallback(async () => {
     if (!q.trim()) return toast.error("Isi SO / No. DWG untuk mencari");
@@ -468,11 +530,31 @@ function RepeatPullPanel({ drf, onDone }) {
                   <div className="text-xs text-slate-500 truncate">{r.title || "-"} · {r.drawing_type} · SO {r.so_no || "-"} · {r.customer_name || "-"}</div>
                   {r.customer_drawing_no && <div className="text-[10px] text-slate-500">Cust DWG: <span className="font-mono">{r.customer_drawing_no}</span></div>}
                 </div>
-                <div className="flex flex-wrap gap-1 justify-end">
-                  <Chip ok={r.has_mks} label="MKS" neutral={!r.has_mks} />
-                  <Chip ok={r.has_customer_ref} label="Cust Dwg" neutral={!r.has_customer_ref} />
-                  <Chip ok={r.has_nesting} label="Nesting" neutral={!r.has_nesting} />
-                  <Chip ok={r.has_costing} label="Costing" neutral={!r.has_costing} />
+                <div className="flex flex-wrap gap-1 justify-end" onClick={(e) => e.preventDefault()}>
+                  <PreviewChip
+                    available={r.has_mks}
+                    okLabel="MKS 👁" offLabel="MKS"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); openDrawing(r, "mks", "DWG MKS"); }}
+                    testid={`repeat-preview-mks-${r.drawing_no}`}
+                  />
+                  <PreviewChip
+                    available={r.has_customer_ref}
+                    okLabel="Cust Dwg 👁" offLabel="Cust Dwg"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); openDrawing(r, "customer_ref", "Customer DWG"); }}
+                    testid={`repeat-preview-cust-${r.drawing_no}`}
+                  />
+                  <PreviewChip
+                    available={r.has_nesting}
+                    okLabel="Nesting 👁" offLabel="Nesting"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); openBomAtt(r, "nesting", "Nesting"); }}
+                    testid={`repeat-preview-nesting-${r.drawing_no}`}
+                  />
+                  <PreviewChip
+                    available={r.has_costing}
+                    okLabel="Costing 👁" offLabel="Costing"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); openBomAtt(r, "costing", "Costing"); }}
+                    testid={`repeat-preview-costing-${r.drawing_no}`}
+                  />
                   <Chip ok={!!r.bom_no} label={r.bom_no || "No BOM"} neutral={!r.bom_no} />
                 </div>
               </label>
@@ -494,6 +576,17 @@ function RepeatPullPanel({ drf, onDone }) {
           Data yang ditarik: Drawing (MKS + Customer), BOM (item + costing lama sebagai referensi), & Nesting. Semua auto-attach di tiap Work Order. BOM bersama bisa diedit bila Qty berubah.
         </div>
       </div>
+
+      {viewer && (
+        <PdfPreviewModal
+          {...(viewer.mode === "drawing"
+            ? { drawingId: viewer.drawingId, target: viewer.target, stamped: false }
+            : { metaUrl: viewer.metaUrl, pageUrlBuilder: (n) => `${viewer.pageBase}?page=${n}&scale=2` })}
+          title={viewer.title}
+          subtitle={viewer.subtitle}
+          onClose={() => setViewer(null)}
+        />
+      )}
     </div>
   );
 }
@@ -514,6 +607,32 @@ function Chip({ ok, label, neutral }) {
     ? "bg-emerald-100 text-emerald-800 border-emerald-400"
     : "bg-rose-100 text-rose-800 border-rose-400";
   return <span className={`px-1.5 py-0.5 text-[10px] font-bold uppercase border ${cls}`}>{label}</span>;
+}
+
+/** Chip yang bisa diklik untuk PREVIEW dokumen bila file tersedia (verifikasi sebelum submit). */
+function PreviewChip({ available, okLabel, offLabel, onClick, testid }) {
+  if (!available) {
+    return (
+      <span
+        className="px-1.5 py-0.5 text-[10px] font-bold uppercase border bg-slate-100 text-slate-400 border-slate-300 cursor-not-allowed"
+        title="Belum ada file"
+        data-testid={`${testid}-off`}
+      >
+        {offLabel}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-testid={testid}
+      title="Klik untuk preview dokumen (view-only)"
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold uppercase border bg-emerald-100 text-emerald-800 border-emerald-400 hover:bg-emerald-200 hover:border-emerald-500 transition-colors cursor-pointer"
+    >
+      <Eye size={11} weight="bold" /> {okLabel}
+    </button>
+  );
 }
 
 function StatusBadge({ status }) {

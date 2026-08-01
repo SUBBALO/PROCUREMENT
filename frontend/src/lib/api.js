@@ -76,3 +76,23 @@ export async function downloadXlsx(path, params = {}, filename = "export.xlsx") 
 }
 
 export default api;
+
+/** Generic authenticated file download (xlsx/pdf/etc) via fetch + cookie credentials. */
+export async function downloadFile(path, params = {}, filename = "export.bin") {
+  const url = new URL(`${API}${path}`);
+  Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v); });
+  const res = await fetch(url.toString(), { credentials: "include" });
+  if (!res.ok) {
+    let msg = "Gagal export";
+    try { const j = await res.json(); msg = j.detail || msg; } catch {}
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+}

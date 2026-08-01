@@ -382,6 +382,207 @@ async def list_drawings(
     return {"items": docs, "total": len(docs), "disciplines": VALID_DISCIPLINES, "statuses": VALID_STATUS}
 
 
+_EXPORT_TTD_STAGE = {"submit": "Prepared", "eng_head": "Eng Head", "qc": "QC", "sales": "Sales"}
+
+
+def _export_rows(docs: list) -> list:
+    """Ubah dokumen drawing → baris siap-ekspor (ringkasan status + TTD + DC stamp)."""
+    rows = []
+    for d in docs:
+        approvals = [a for a in (d.get("approvals") or []) if not str(a.get("stage") or "").startswith("reject_")]
+        ttd_map = {}
+        for a in approvals:
+            st = a.get("stage")
+            if st in _EXPORT_TTD_STAGE and st not in ttd_map:
+                ttd_map[st] = a.get("name") or ""
+        ttd_str = "; ".join(f"{_EXPORT_TTD_STAGE[s]}: {n}" for s, n in ttd_map.items()) or "-"
+        dc = d.get("dc_stamp") or {}
+        rows.append({
+            "drawing_no": d.get("drawing_no") or "-",
+            "customer_drawing_no": d.get("customer_drawing_no") or "-",
+            "title": d.get("title") or "-",
+            "revision": d.get("revision") or "-",
+            "discipline": d.get("discipline") or "-",
+            "so_no": d.get("so_no") or "-",
+            "bom_no": d.get("bom_no") or "-",
+            "project_name": d.get("project_name") or "-",
+            "prepared_by": d.get("prepared_by") or "-",
+            "request_by_sales": d.get("request_by_sales") or "-",
+            "status": d.get("status") or "-",
+            "approval_status": d.get("approval_status") or "draft",
+            "dc_stamp_by": dc.get("name") or "-",
+            "ttd": ttd_str,
+        })
+    return rows
+
+
+_EXPORT_COLS = [
+    ("drawing_no", "Drawing No"),
+    ("customer_drawing_no", "Cust DWG No"),
+    ("title", "Title"),
+    ("revision", "Rev"),
+    ("discipline", "Discipline"),
+    ("so_no", "SO"),
+    ("bom_no", "BOM"),
+    ("project_name", "Project"),
+    ("prepared_by", "Prepared By"),
+    ("request_by_sales", "Request By (Sales)"),
+    ("status", "Status"),
+    ("approval_status", "Approval"),
+    ("dc_stamp_by", "DC Stamp By"),
+    ("ttd", "TTD"),
+]
+
+
+def _build_export_xlsx(rows: list, meta_line: str) -> bytes:
+    import io as _io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Drawing Master List"
+
+    ws.cell(row=1, column=1, value="MKS-F-ENG-005 Drawing Master List").font = Font(bold=True, size=13, color="1E293B")
+    ws.cell(row=2, column=1, value=meta_line).font = Font(size=9, italic=True, color="64748B")
+
+    header_row = 4
+    header_fill = PatternFill("solid", fgColor="0F172A")
+    header_font = Font(bold=True, color="FFFFFF", size=9)
+    thin = Side(style="thin", color="CBD5E1")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    for ci, (_, label) in enumerate(_EXPORT_COLS, start=1):
+        c = ws.cell(row=header_row, column=ci, value=label)
+        c.fill = header_fill
+        c.font = header_font
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        c.border = border
+
+    for ri, row in enumerate(rows, start=header_row + 1):
+        for ci, (key, _) in enumerate(_EXPORT_COLS, start=1):
+            c = ws.cell(row=ri, column=ci, value=row.get(key, ""))
+            c.font = Font(size=9)
+            c.alignment = Alignment(vertical="top", wrap_text=True)
+            c.border = border
+
+    widths = [22, 16, 26, 7, 12, 10, 12, 24, 16, 16, 11, 12, 16, 30]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _build_export_pdf(rows: list, meta_line: str) -> bytes:
+    import io as _io
+    from reportlab.lib.pagesizes import A3, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A3),
+                            leftMargin=10 * mm, rightMargin=10 * mm,
+                            topMargin=10 * mm, bottomMargin=10 * mm)
+    styles = getSampleStyleSheet()
+    cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=7, leading=8)
+    head_style = ParagraphStyle("head", parent=styles["Normal"], fontSize=7.5, leading=9,
+                                textColor=colors.white, fontName="Helvetica-Bold")
+
+    elems = [
+        Paragraph("MKS-F-ENG-005 Drawing Master List",
+                  ParagraphStyle("t", parent=styles["Title"], fontSize=15, spaceAfter=2)),
+        Paragraph(meta_line, ParagraphStyle("m", parent=styles["Normal"], fontSize=8,
+                                            textColor=colors.HexColor("#64748B"))),
+        Spacer(1, 6),
+    ]
+
+    data = [[Paragraph(label, head_style) for _, label in _EXPORT_COLS]]
+    for row in rows:
+        data.append([Paragraph(str(row.get(key, "") or "-"), cell_style) for key, _ in _EXPORT_COLS])
+
+    col_widths = [w * mm for w in [26, 20, 34, 8, 16, 14, 16, 32, 20, 20, 14, 16, 22, 40]]
+    table = Table(data, colWidths=col_widths, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0F172A")),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    elems.append(table)
+    doc.build(elems)
+    return buf.getvalue()
+
+
+@router.get("/drawings/export")
+async def export_drawings(
+    q: Optional[str] = None,
+    discipline: Optional[str] = None,
+    status: Optional[str] = None,
+    so_no: Optional[str] = None,
+    format: str = "xlsx",
+    current: dict = Depends(get_current_user),
+):
+    """Ekspor Master Drawing List (mengikuti filter aktif) ke Excel (.xlsx) atau PDF untuk arsip Engineering."""
+    from fastapi.responses import StreamingResponse
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    fmt = (format or "xlsx").lower()
+    if fmt not in ("xlsx", "pdf"):
+        raise HTTPException(status_code=400, detail="Format harus 'xlsx' atau 'pdf'")
+
+    filt = {"deleted_at": {"$exists": False}}
+    if discipline: filt["discipline"] = discipline
+    if status: filt["status"] = status
+    if so_no: filt["so_no"] = so_no
+    if q and q.strip():
+        rx = {"$regex": re.escape(q.strip()), "$options": "i"}
+        filt["$or"] = [
+            {"drawing_no": rx}, {"title": rx}, {"project_name": rx},
+            {"so_no": rx}, {"prepared_by": rx}, {"remark": rx},
+            {"customer_drawing_no": rx}, {"customer_name": rx},
+        ]
+    docs = await db.drawings.find(filt, {"_id": 0}).sort("updated_at", -1).limit(5000).to_list(length=5000)
+    rows = _export_rows(docs)
+
+    now = datetime.now(timezone.utc)
+    exported_by = current.get("name") or current.get("username") or "-"
+    meta_line = (f"Total {len(rows)} entri | Diekspor oleh {exported_by} | "
+                 f"{now.strftime('%d %b %Y %H:%M')} UTC")
+    ts = now.strftime("%Y%m%d_%H%M")
+
+    try:
+        await log_action(current, "drawing_export", "drawings", "-",
+                         {"format": fmt, "count": len(rows)})
+    except Exception:
+        pass
+
+    if fmt == "xlsx":
+        data = _build_export_xlsx(rows, meta_line)
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="MasterDrawingList_{ts}.xlsx"'},
+        )
+    data = _build_export_pdf(rows, meta_line)
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="MasterDrawingList_{ts}.pdf"'},
+    )
+
+
+
 @router.get("/drawings/repeat-search")
 async def repeat_search_drawings(
     q: Optional[str] = None,

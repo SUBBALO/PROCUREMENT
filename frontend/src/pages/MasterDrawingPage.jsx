@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
-import api from "../lib/api";
+import api, { downloadFile } from "../lib/api";
 import { toast } from "sonner";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { FileText, MagnifyingGlass, Plus, PencilSimple, Trash, ArrowClockwise, UploadSimple, Eye, DownloadSimple, Warning, CheckCircle, Printer, Stamp } from "@phosphor-icons/react";
+import { FileText, MagnifyingGlass, Plus, PencilSimple, Trash, ArrowClockwise, UploadSimple, Eye, DownloadSimple, Warning, CheckCircle, Printer, Stamp, FileXls, FilePdf } from "@phosphor-icons/react";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
@@ -105,6 +105,23 @@ export default function MasterDrawingPage() {
     } catch (e) { toast.error(e.response?.data?.detail || "Gagal hapus"); }
   };
 
+  const [exporting, setExporting] = useState("");
+  const doExport = async (fmt) => {
+    setExporting(fmt);
+    try {
+      const params = { format: fmt };
+      if (q.trim()) params.q = q.trim();
+      if (discipline) params.discipline = discipline;
+      if (status) params.status = status;
+      const ext = fmt === "pdf" ? "pdf" : "xlsx";
+      const ts = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      await downloadFile("/drawings/export", params, `MasterDrawingList_${ts}.${ext}`);
+      toast.success(`Daftar drawing diekspor ke ${ext.toUpperCase()}`);
+    } catch (e) {
+      toast.error(e.message || "Gagal export");
+    } finally { setExporting(""); }
+  };
+
   return (
     <div className="space-y-6">
       <BackLink />
@@ -143,6 +160,29 @@ export default function MasterDrawingPage() {
         <Button variant="outline" onClick={load} className="rounded-none h-9"><MagnifyingGlass size={14} weight="bold" className="mr-1" /> Cari</Button>
         <Button variant="ghost" onClick={load} className="rounded-none h-9" title="Refresh"><ArrowClockwise size={14} weight="bold" /></Button>
         <div className="flex-1"></div>
+        {canPrint && (
+          <div className="inline-flex items-center gap-0 border border-slate-300 rounded-none overflow-hidden" data-testid="dw-export-group">
+            <span className="px-2 h-9 inline-flex items-center bg-slate-100 text-[10px] uppercase tracking-widest font-bold text-slate-500">Ekspor Arsip</span>
+            <button
+              onClick={() => doExport("xlsx")}
+              disabled={!!exporting}
+              className="px-3 h-9 inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 border-l border-slate-300"
+              data-testid="dw-export-xlsx"
+              title="Ekspor daftar (mengikuti filter) ke Excel"
+            >
+              <FileXls size={15} weight="fill" /> {exporting === "xlsx" ? "..." : "Excel"}
+            </button>
+            <button
+              onClick={() => doExport("pdf")}
+              disabled={!!exporting}
+              className="px-3 h-9 inline-flex items-center gap-1 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50 border-l border-slate-300"
+              data-testid="dw-export-pdf"
+              title="Ekspor daftar (mengikuti filter) ke PDF"
+            >
+              <FilePdf size={15} weight="fill" /> {exporting === "pdf" ? "..." : "PDF"}
+            </button>
+          </div>
+        )}
         <div
           className="inline-flex items-center gap-2 h-9 px-3 rounded-none bg-slate-100 border border-slate-300 text-slate-600 text-xs"
           data-testid="dw-register-info"

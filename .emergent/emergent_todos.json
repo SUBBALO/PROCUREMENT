@@ -24,7 +24,7 @@
     "status": "completed"
   },
   {
-    "content": "Test: frontend UI (screenshot + testing agent)",
-    "status": "in_progress"
+    "content": "Test: backend hide_so + frontend UI (screenshot + testing agent)",
+    "status": "completed"
   }
 ]
