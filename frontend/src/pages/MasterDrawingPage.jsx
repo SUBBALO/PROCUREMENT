@@ -430,6 +430,34 @@ function DrawingDetailModal({ it, previewOnly, onView, onClose }) {
             </div>
           </div>
 
+          {/* DWG CAD — File Asli (native, unduh saja) */}
+          <div data-testid="dw-detail-cad">
+            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">
+              DWG CAD — File Asli ({(it.cad_files || []).length})
+            </div>
+            {((it.cad_files || []).length === 0) ? (
+              <div className="text-xs text-slate-400 italic">Tidak ada file CAD asli.</div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {(it.cad_files || []).map((f) => (
+                  <a
+                    key={f.id}
+                    href={`${backendUrl}/api/drawings/${it.id}/cad-files/${f.id}/download`}
+                    target="_blank" rel="noreferrer"
+                    className="flex items-center gap-2 bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2 text-xs transition-colors"
+                    title="Unduh file CAD asli"
+                    data-testid={`dw-detail-cad-${f.id}`}
+                  >
+                    <FileText size={14} className="text-purple-700 flex-none" />
+                    <span className="flex-1 truncate font-mono">{f.filename}</span>
+                    <span className="text-[10px] text-slate-400 whitespace-nowrap">{((f.size || 0) / 1024).toFixed(0)} KB</span>
+                    <DownloadSimple size={13} className="text-purple-700 flex-none" />
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div>
             <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-1">Informasi</div>
             <Row label="Judul" value={it.title} />

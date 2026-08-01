@@ -218,7 +218,19 @@ export default function DrfDetailModal({ drf, isHead, onClose, onChanged }) {
                               testid={`drf-detail-dwg-extra-${ex.id}`}
                             />
                           ))}
-                          {!d.file_id && !d.customer_ref_file_id && extras.length === 0 && (
+                          {(d.cad_files || []).map((f) => (
+                            <a
+                              key={f.id}
+                              href={`${apiUrl}/api/drawings/${d.id}/cad-files/${f.id}/download`}
+                              target="_blank" rel="noreferrer"
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 hover:bg-purple-200 border border-purple-300 text-[11px] font-semibold text-purple-800 transition-colors"
+                              title="Unduh file CAD asli"
+                              data-testid={`drf-detail-cad-${f.id}`}
+                            >
+                              <FileText size={11} weight="bold" /> CAD: {f.filename}
+                            </a>
+                          ))}
+                          {!d.file_id && !d.customer_ref_file_id && extras.length === 0 && (d.cad_files || []).length === 0 && (
                             <span className="text-[11px] text-slate-400 italic">Belum ada dokumen diupload</span>
                           )}
                         </div>
