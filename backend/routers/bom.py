@@ -83,6 +83,34 @@ def _clean_str(v) -> str:
     return str(v).strip().lstrip(":").strip()
 
 
+def _to_float(v, default: float = 0.0):
+    """Konversi nilai sel Excel → float dengan aman.
+
+    Menangani placeholder umum di BOM: '-', '', 'N/A', spasi, pemisah ribuan (1.234,50 / 1,234.50).
+    """
+    if v is None:
+        return default
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip()
+    if s in ("", "-", "--", "N/A", "n/a", "NA", "na", "#", "."):
+        return default
+    # buang karakter mata uang/spasi
+    s = s.replace(" ", "").replace("Rp", "").replace("rp", "")
+    # tangani format ribuan: jika ada koma & titik, koma dianggap desimal ala ID kalau titik lebih dulu
+    if s.count(",") and s.count("."):
+        if s.rfind(",") > s.rfind("."):   # 1.234,56 → ID
+            s = s.replace(".", "").replace(",", ".")
+        else:                              # 1,234.56 → EN
+            s = s.replace(",", "")
+    else:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return default
+
+
 def normalize_so_no(v) -> str:
     """Normalise Sales Order number → kanonik 6 digit (zero-padded).
 
@@ -162,19 +190,20 @@ def _parse_bom_workbook(rows: List[List]) -> dict:
         if all((_clean_str(cell(r, c)) == "") for c in range(1, min(18, len(rows[r - 1]) + 1) if rows[r - 1] else 1)):
             continue
         try:
-            item_no = int(float(no_raw)) if no_raw not in ("", None) else None
+            item_no = int(_to_float(no_raw, default=None)) if no_raw not in ("", None) else None
         except (ValueError, TypeError):
             item_no = None
         if item_no is None:
             continue
+        _w = _to_float(cell(r, 12), default=None) if _clean_str(cell(r, 12)) else None
         items.append({
             "item_no": item_no,
             "item_name": _clean_str(cell(r, 2)),
             "item_specification": _clean_str(cell(r, 3)),
-            "qty": float(cell(r, 8) or 0),
+            "qty": _to_float(cell(r, 8), 0),
             "uom": _clean_str(cell(r, 9)),
             "material": _clean_str(cell(r, 11)),
-            "weight_kg": (float(cell(r, 12)) if cell(r, 12) not in ("", None) else None),
+            "weight_kg": _w,
             "remark": _clean_str(cell(r, 17)),
         })
 

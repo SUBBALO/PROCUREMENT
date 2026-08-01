@@ -1437,6 +1437,95 @@ async def so_autocomplete(q: Optional[str] = None, limit: int = 20, current: dic
     return {"items": docs}
 
 
+@router.post("/sales-orders/import-list")
+async def import_so_list(file: UploadFile = File(...), current: dict = Depends(get_current_user)):
+    """Import daftar SO dari file Excel (kolom: SO number, Date, Customer, Description).
+
+    - Nomor SO dinormalisasi ke 6 digit (mis. 4640 -> 004640).
+    - Upsert by so_no: yang belum ada dibuat; yang sudah ada dilengkapi (customer/description/date bila kosong).
+    """
+    if not (is_admin_like(current) or (current.get("role") in ("sales", "supervisor"))):
+        raise HTTPException(status_code=403, detail="Hanya Admin/Supervisor/Sales yang boleh import daftar SO")
+    from routers.bom import _read_workbook, _clean_str, normalize_so_no, _excel_serial_to_iso
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="File kosong")
+    try:
+        rows = _read_workbook(content, file.filename)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Gagal membaca file: {e}")
+    if not rows:
+        raise HTTPException(status_code=400, detail="File tidak berisi data")
+
+    def norm(s):
+        return _clean_str(s).lower()
+
+    header_idx, col = 0, {"so": 0, "date": None, "customer": None, "desc": None}
+    for i, r in enumerate(rows[:10]):
+        cells = [norm(c) for c in r]
+        joined = " ".join(cells)
+        if "so" in joined and ("customer" in joined or "description" in joined or "date" in joined):
+            for j, c in enumerate(cells):
+                if ("so number" in c) or c in ("so", "so no", "so no.", "so.no", "no so"):
+                    col["so"] = j
+                elif "date" in c or "tanggal" in c:
+                    col["date"] = j
+                elif "customer" in c or "pelanggan" in c:
+                    col["customer"] = j
+                elif "desc" in c or "keterangan" in c or "project" in c:
+                    col["desc"] = j
+            header_idx = i
+            break
+
+    now = datetime.utcnow().isoformat()
+    created = updated = skipped = 0
+    for r in rows[header_idx + 1:]:
+        so_raw = _clean_str(r[col["so"]]) if col["so"] < len(r) else ""
+        if not so_raw:
+            continue
+        so_no = normalize_so_no(so_raw)
+        if not so_no:
+            skipped += 1
+            continue
+        customer = _clean_str(r[col["customer"]]) if (col["customer"] is not None and col["customer"] < len(r)) else ""
+        desc = _clean_str(r[col["desc"]]) if (col["desc"] is not None and col["desc"] < len(r)) else ""
+        date_v = ""
+        if col["date"] is not None and col["date"] < len(r):
+            date_v = _excel_serial_to_iso(r[col["date"]]) or _clean_str(r[col["date"]])
+
+        existing = await db.sales_orders.find_one(merged({"so_no": so_no}, NOT_DELETED_FILTER))
+        if existing:
+            patch = {}
+            if customer and not existing.get("customer"):
+                patch["customer"] = customer
+            if desc and not existing.get("description"):
+                patch["description"] = desc
+            if date_v and not existing.get("so_date"):
+                patch["so_date"] = date_v
+            if patch:
+                await db.sales_orders.update_one({"id": existing["id"]}, {"$set": patch})
+                updated += 1
+            else:
+                skipped += 1
+            continue
+        await db.sales_orders.insert_one({
+            "id": str(uuid.uuid4()), "so_no": so_no, "so_date": date_v,
+            "customer": customer, "description": desc,
+            "created_by": current.get("id"), "created_by_username": current.get("username", ""),
+            "created_at": now, "source": "so_list_import",
+        })
+        created += 1
+
+    await log_action(current, "import_so_list", "sales_order", "-",
+                     {"created": created, "updated": updated, "skipped": skipped, "file": file.filename})
+    return {"success": True, "created": created, "updated": updated, "skipped": skipped,
+            "total_rows": created + updated + skipped,
+            "message": f"Import selesai: {created} SO baru, {updated} dilengkapi, {skipped} dilewati."}
+
+
 @router.get("/sales-orders/check/{so_no}")
 async def check_so(so_no: str, current: dict = Depends(get_current_user)):
     """Pre-check if an SO number already exists in Master List. SO dinormalisasi ke 6 digit.

@@ -1,26 +1,30 @@
 [
   {
-    "content": "Excel preview + wiring viewer — DONE & tested",
+    "content": "Fix bug parser BOM (could not convert '-' to float) + dukung .xls — DONE & verified",
     "status": "completed"
   },
   {
-    "content": "SO 6-digit normalize + migrasi + frontend — DONE",
+    "content": "Import Daftar SO dari Excel (backend + UI di Legacy Import) — DONE & verified (629 SO)",
     "status": "completed"
   },
   {
-    "content": "Legacy Import page + role produksi + menu — DONE & tested",
+    "content": "Watermark UNCONTROLLED COPY di /drawings/{id}/download untuk produksi/store/qc — DONE",
     "status": "completed"
   },
   {
-    "content": "Fix caption BOM Utama + bersihkan data test — DONE",
+    "content": "Histori Revisi BOM: lihat isi item revisi lama inline (BOMPage) — DONE",
     "status": "completed"
   },
   {
-    "content": "RBAC BOM: costing/purchase gating + DWG/customer preview-only — DONE & tested (backend 100%)",
-    "status": "completed"
+    "content": "Master Drawing List: kolom Status + preview 4 file per baris + DC-stamped only + print (eng) — PENDING (perlu konfirmasi)",
+    "status": "pending"
   },
   {
-    "content": "Akses menu BOM untuk semua departemen (QC dll) + fix 500→400 — DONE",
-    "status": "completed"
+    "content": "Legacy Import: multiple DWG per entri (kolom DWG bertambah) — PENDING (perlu konfirmasi)",
+    "status": "pending"
+  },
+  {
+    "content": "Keputusan akses Purchasing untuk Costing/Riwayat Pembelian — PENDING (tanya user)",
+    "status": "pending"
   }
 ]

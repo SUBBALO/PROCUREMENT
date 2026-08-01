@@ -8,7 +8,7 @@ import { Label } from "../components/ui/label";
 import { Badge } from "../components/ui/badge";
 import {
   UploadSimple, Plus, TrashSimple, CheckCircle, WarningCircle, FileXls, FilePdf,
-  FileDoc, MagicWand, FloppyDisk, X, Stack, ArrowClockwise,
+  FileDoc, MagicWand, FloppyDisk, X, Stack, ArrowClockwise, ListNumbers,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import BackLink from "../components/BackLink";
@@ -61,6 +61,25 @@ export default function LegacyImportPage() {
   const { user } = useAuth();
   const allowed = ALLOWED_ROLES.includes(user?.role);
   const [boxes, setBoxes] = useState([newBox()]);
+  const [soImport, setSoImport] = useState({ status: "idle", message: "" });
+
+  const importSoList = async (file) => {
+    if (!file) return;
+    setSoImport({ status: "loading", message: `Membaca ${file.name}...` });
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post("/sales-orders/import-list", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setSoImport({ status: "done", message: data.message });
+      toast.success(data.message);
+    } catch (e) {
+      const msg = e?.response?.data?.detail || "Gagal import daftar SO";
+      setSoImport({ status: "error", message: msg });
+      toast.error(msg);
+    }
+  };
 
   if (!allowed) {
     return (
@@ -172,6 +191,37 @@ export default function LegacyImportPage() {
           </Button>
         </div>
       </div>
+
+      {/* Import Daftar SO (Excel: SO number, Date, Customer, Description) */}
+      <Card className="rounded-none border-l-4 border-sky-500 mb-6" data-testid="so-import-card">
+        <div className="p-4 flex flex-col md:flex-row md:items-center gap-3 justify-between">
+          <div className="flex items-start gap-3">
+            <ListNumbers size={22} weight="duotone" className="text-sky-700 mt-0.5" />
+            <div>
+              <div className="font-semibold text-slate-800 text-sm">Import Daftar SO (Master SO)</div>
+              <div className="text-xs text-slate-500 max-w-xl">
+                Upload file Excel berisi daftar SO (kolom: <b>SO number, Date, Customer, Description</b>).
+                Nomor SO otomatis jadi 6 digit &amp; masuk autocomplete. (Ini berbeda dari import drawing di bawah.)
+              </div>
+              {soImport.message && (
+                <div className={`text-xs mt-1 ${soImport.status === "error" ? "text-rose-600" : "text-sky-700"}`} data-testid="so-import-msg">
+                  {soImport.message}
+                </div>
+              )}
+            </div>
+          </div>
+          <label className="shrink-0">
+            <input type="file" accept=".xlsx,.xls,.xlsm" className="hidden"
+              onChange={(e) => { if (e.target.files?.[0]) importSoList(e.target.files[0]); e.target.value = ""; }}
+              data-testid="so-import-input" />
+            <span className={`inline-flex items-center gap-1 px-3 h-9 text-sm font-semibold cursor-pointer border ${
+              soImport.status === "loading" ? "opacity-60 pointer-events-none" : ""
+            } border-sky-600 text-sky-700 hover:bg-sky-50`}>
+              <UploadSimple size={16} weight="bold" /> {soImport.status === "loading" ? "Memproses..." : "Upload Daftar SO"}
+            </span>
+          </label>
+        </div>
+      </Card>
 
       <div className="space-y-5">
         {boxes.map((box, idx) => (
