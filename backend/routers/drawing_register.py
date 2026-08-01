@@ -1249,6 +1249,29 @@ async def upload_drawing_pdf(
     text, src = _extract_pdf_text_with_source(content)
     check = _check_drawing_no_in_text(existing["drawing_no"], text, source=src)
 
+    # STRICT (New Order): nomor drawing sudah di-register oleh sistem → PDF WAJIB mengikuti nomor tsb.
+    # Bila nomor DWG di PDF terbaca tapi TIDAK cocok → TOLAK: file tidak disimpan (file lama tetap aman).
+    strict = bool(existing.get("auto_generated"))
+    if not strict and existing.get("from_drf_id"):
+        drf = await db.drawing_requests.find_one({"id": existing["from_drf_id"]}, {"_id": 0, "request_type": 1})
+        strict = (drf or {}).get("request_type") == "new_order"
+    readable = (check.get("detected_source") not in (None, "none")) and bool(text and text.strip())
+    if strict and not check["match"] and readable:
+        detected = check.get("detected_no") or ""
+        cands = check.get("extracted_candidates") or []
+        raise HTTPException(status_code=422, detail={
+            "code": "dwg_no_mismatch",
+            "message": (
+                f"Nomor DWG di dalam PDF tidak sesuai dengan nomor drawing terdaftar "
+                f"({existing['drawing_no']}). "
+                + (f"Terbaca di PDF: {detected}. " if detected else (f"Kandidat terbaca: {', '.join(cands[:4])}. " if cands else "Nomor terdaftar tidak ditemukan di PDF. "))
+                + "File TIDAK disimpan. Silakan revisi PDF agar nomornya sama, lalu upload ulang."
+            ),
+            "expected": existing["drawing_no"],
+            "detected": detected,
+            "candidates": cands,
+        })
+
     # Replace old file if any
     if existing.get("file_id"):
         try:

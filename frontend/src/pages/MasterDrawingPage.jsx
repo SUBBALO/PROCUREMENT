@@ -1406,6 +1406,7 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
   const [savingNo, setSavingNo] = useState(false);
   const [showHist, setShowHist] = useState(false);
   const [ocrSuggestion, setOcrSuggestion] = useState("");
+  const [mismatchInfo, setMismatchInfo] = useState(null); // popup nomor DWG salah (New Order strict)
   const applyOcrSuggestion = async () => {
     const val = (ocrSuggestion || "").trim();
     if (!val) return;
@@ -1528,7 +1529,14 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
       } else if (source !== "ocr") {
         toast.success("Drawing PDF ter-upload ✓");
       }
-    } catch (e) { toast.error(e.response?.data?.detail || "Gagal upload drawing PDF"); }
+    } catch (e) {
+      const det = e.response?.data?.detail;
+      if (det && typeof det === "object" && det.code === "dwg_no_mismatch") {
+        setMismatchInfo(det); // tampilkan popup — file TIDAK disimpan
+      } else {
+        toast.error((typeof det === "string" ? det : det?.message) || "Gagal upload drawing PDF");
+      }
+    }
     finally { setUploading(null); }
   };
 
@@ -1885,6 +1893,40 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
           </div>
           <div className="text-[11px] text-rose-700 italic">
             {activeDwg.pdf_match_note || "Nomor tidak ditemukan atau berbeda."} — Silakan <b>Replace</b> file dengan PDF yang benar, atau <b>Hapus</b> lalu upload ulang.
+          </div>
+        </div>
+      )}
+
+      {/* Popup: Nomor DWG di PDF salah (New Order strict) — file TIDAK disimpan */}
+      {mismatchInfo && (
+        <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4" data-testid="dw-mismatch-modal" onClick={() => setMismatchInfo(null)}>
+          <div className="bg-white w-full max-w-md border-2 border-rose-500 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-rose-700 text-white px-4 py-3 flex items-center gap-2">
+              <Warning size={20} weight="fill" />
+              <h3 className="font-bold uppercase tracking-widest text-sm">Nomor DWG di PDF Salah</h3>
+            </div>
+            <div className="p-5 space-y-3 text-sm">
+              <p className="text-slate-700">{mismatchInfo.message}</p>
+              <div className="bg-slate-50 border border-slate-200 p-3 space-y-1.5 text-xs">
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-500 uppercase tracking-wider font-bold">Harus (terdaftar)</span>
+                  <span className="font-mono font-bold text-emerald-700">{mismatchInfo.expected}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-500 uppercase tracking-wider font-bold">Terbaca di PDF</span>
+                  <span className="font-mono font-bold text-rose-700">{mismatchInfo.detected || (mismatchInfo.candidates && mismatchInfo.candidates[0]) || "tidak ditemukan"}</span>
+                </div>
+              </div>
+              <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 p-2.5 text-xs text-amber-800">
+                <Warning size={15} weight="fill" className="shrink-0 mt-0.5" />
+                <span>File <b>tidak disimpan</b> ke sistem. Revisi PDF agar nomornya <b>{mismatchInfo.expected}</b>, lalu upload ulang.</span>
+              </div>
+            </div>
+            <div className="border-t border-slate-200 p-3 flex justify-end">
+              <button onClick={() => setMismatchInfo(null)} className="px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white text-sm font-bold uppercase tracking-wider" data-testid="dw-mismatch-close">
+                Mengerti, Upload Ulang
+              </button>
+            </div>
           </div>
         </div>
       )}
