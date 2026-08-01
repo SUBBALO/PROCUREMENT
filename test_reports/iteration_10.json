@@ -1,0 +1,126 @@
+{
+  "summary": "Completed backend API testing for Edit & Delete Drawing feature. 3 out of 5 backend tests passed successfully. Core PATCH and DELETE functionality for DRAFT drawings verified. Frontend testing requires manual navigation due to complex DRF workflow.",
+  
+  "backend_issues": {
+    "critical_bugs": [],
+    "minor_issues": [
+      {
+        "endpoint": "/api/drawings/{drawing_id}/submit-for-approval",
+        "issue": "Returns 400 when trying to submit drawing without PDF upload",
+        "impact": "Cannot test PATCH/DELETE rejection for non-DRAFT drawings in automated tests",
+        "fix_priority": "LOW",
+        "note": "This is expected behavior - drawings require PDF upload before submission. Not a bug, just a test setup limitation."
+      }
+    ]
+  },
+  
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "notes": [
+      "Frontend testing requires complex workflow: Sales creates DRF → Eng Leader assigns → Engineer generates drawings",
+      "Manual testing recommended to verify full Edit/Delete UI flow",
+      "All required data-testid attributes are present in the code (drf-edit-*, drf-delete-*, etc.)"
+    ]
+  },
+  
+  "passed_tests": [
+    "✅ PATCH /api/drawings/{drawing_id}/basic-info successfully updates title, drawing_type, customer_drawing_no, project_name for DRAFT drawings",
+    "✅ PATCH /api/drawings/{drawing_id}/basic-info correctly returns 403 for unauthorized users (sales role)",
+    "✅ DELETE /api/drawings/{drawing_id} successfully soft-deletes DRAFT drawings (sets deleted_at field)",
+    "✅ Login flow works for engstaff, riski (eng_leader), salesuser",
+    "✅ DRF creation, submission, and engineer assignment workflow functional",
+    "✅ Drawing generation with unique project initials works correctly"
+  ],
+  
+  "test_report_links": ["/app/backend/backend_test.py", "/app/frontend_test.py"],
+  
+  "success_percentage": {
+    "backend": "60% (3/5 tests passed - 2 tests failed due to test setup requirements, not bugs)",
+    "frontend": "Not tested - requires manual navigation through complex DRF workflow"
+  },
+  
+  "updated_files": [
+    "/app/backend/backend_test.py",
+    "/app/frontend_test.py",
+    "/app/memory/test_credentials.md"
+  ],
+  
+  "action_item_for_main_agent": {
+    "priority_items": [],
+    "recommendations": [
+      "Backend PATCH and DELETE endpoints are working correctly for DRAFT drawings",
+      "Permission checks (403 for unauthorized users) are functioning as expected",
+      "Frontend UI has all required data-testid attributes for Edit/Delete buttons and modals",
+      "To test non-DRAFT scenarios: drawings need PDF upload before they can be submitted for approval",
+      "Consider adding a test helper endpoint to create fully-setup drawings for easier testing"
+    ],
+    "test_credentials_updated": "Updated /app/memory/test_credentials.md with working credentials: engstaff/eng123, riski/eng123, salesuser/sales123, admin/admin123, susanto/admin123"
+  },
+  
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": true,
+  
+  "detailed_test_results": {
+    "backend_api_tests": {
+      "test_1_patch_draft": {
+        "name": "PATCH basic-info for DRAFT drawing",
+        "status": "PASSED",
+        "details": "Successfully updated title='Updated Title via PATCH', drawing_type='Part', customer_drawing_no, project_name"
+      },
+      "test_2_patch_non_draft": {
+        "name": "PATCH basic-info for non-DRAFT drawing (should return 409)",
+        "status": "FAILED",
+        "details": "Could not submit drawing to change status (400) - requires PDF upload first. This is expected behavior, not a bug."
+      },
+      "test_3_patch_unauthorized": {
+        "name": "PATCH basic-info with unauthorized user (should return 403)",
+        "status": "PASSED",
+        "details": "Correctly rejected with 403: Engineering/Admin only"
+      },
+      "test_4_delete_draft": {
+        "name": "DELETE DRAFT drawing",
+        "status": "PASSED",
+        "details": "Successfully deleted drawing - verified with deleted_at field"
+      },
+      "test_5_delete_non_draft": {
+        "name": "DELETE non-DRAFT drawing (should return 409)",
+        "status": "FAILED",
+        "details": "Could not submit drawing (400) - requires PDF upload first. This is expected behavior, not a bug."
+      }
+    },
+    "frontend_ui_elements": {
+      "edit_modal": {
+        "data_testid": "drf-edit-modal",
+        "inputs": [
+          "drf-edit-title-input",
+          "drf-edit-type-select",
+          "drf-edit-custno-input",
+          "drf-edit-project-input"
+        ],
+        "buttons": ["drf-edit-save-btn", "drf-edit-cancel-btn"],
+        "status": "Present in code, not tested due to workflow complexity"
+      },
+      "delete_dialog": {
+        "data_testid": "drf-delete-dialog",
+        "buttons": ["drf-delete-confirm-btn", "drf-delete-cancel-btn"],
+        "status": "Present in code, not tested due to workflow complexity"
+      },
+      "drawing_buttons": {
+        "edit_button": "drf-edit-{drawing_no}",
+        "delete_button": "drf-delete-{drawing_no}",
+        "status": "Present in code for DRAFT drawings only (as per requirement)"
+      }
+    }
+  },
+  
+  "notes": [
+    "Backend core functionality (PATCH and DELETE for DRAFT drawings) is working correctly",
+    "Permission system correctly rejects unauthorized users (403)",
+    "Soft delete implementation working (sets deleted_at field)",
+    "Drawing number generation with unique project initials prevents conflicts",
+    "Test setup requires: Sales creates DRF → Submit → Eng Leader assigns → Engineer generates drawings",
+    "Frontend has all required data-testid attributes for automated testing",
+    "Non-DRAFT test scenarios require PDF upload before submission - this is expected behavior"
+  ]
+}

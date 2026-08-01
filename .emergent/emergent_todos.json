@@ -1,38 +1,18 @@
 [
   {
-    "content": "Part B: WorkOrder 4 tab pagination + search SO/Customer Riwayat TTD",
+    "content": "Add Edit Modal (Dialog) UI in EngineeringDrfWorkPage.jsx bound to editDwg",
     "status": "completed"
   },
   {
-    "content": "Part B: SignatureHistoryPanel pagination",
+    "content": "Add styled Delete confirmation dialog (AlertDialog)",
     "status": "completed"
   },
   {
-    "content": "Part A Backend: modul controlled_documents (ISO) + obsolete overlay",
+    "content": "Compile check (esbuild) + fix errors",
     "status": "completed"
   },
   {
-    "content": "Part A: register router server.py + verifikasi curl",
-    "status": "completed"
-  },
-  {
-    "content": "Part A: extend PdfStampCanvas (prop generic) untuk stamp ISO",
-    "status": "completed"
-  },
-  {
-    "content": "Part A: ControlledDocsManager (list+upload+stamp+preview+revisi)",
-    "status": "completed"
-  },
-  {
-    "content": "Part A: DC portal 3 kartu + routes + Menunggu Stamp DC (tab Drawing+ISO)",
-    "status": "completed"
-  },
-  {
-    "content": "Part A: Controlled Document Register (tab Drawing/ISO/Obsolete)",
-    "status": "completed"
-  },
-  {
-    "content": "Verifikasi compile + screenshot + cleanup",
-    "status": "completed"
+    "content": "Test Edit/Delete flow (backend + frontend)",
+    "status": "in_progress"
   }
 ]

@@ -6,6 +6,14 @@ import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import {
+  Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription,
+} from "../components/ui/dialog";
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
+} from "../components/ui/alert-dialog";
 import BackLink from "../components/BackLink";
 import PdfPreviewModal from "../components/PdfPreviewModal";
 import {
@@ -33,7 +41,41 @@ export default function EngineeringDrfWorkPage() {
   const [loading, setLoading] = useState(true);
   const [viewer, setViewer] = useState(null); // { drawingId, target, extraId, title, subtitle }
   const [editDwg, setEditDwg] = useState(null); // drawing yang sedang diedit (draft)
+  const [editForm, setEditForm] = useState({ title: "", drawing_type: "Assembly", customer_drawing_no: "", project_name: "" });
+  const [editBusy, setEditBusy] = useState(false);
+  const [delDwg, setDelDwg] = useState(null); // drawing yang akan dihapus (konfirmasi)
+  const [delBusy, setDelBusy] = useState(false);
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
+
+  const openEdit = (d) => {
+    setEditForm({
+      title: d.title || "",
+      drawing_type: d.drawing_type || "Assembly",
+      customer_drawing_no: d.customer_drawing_no || "",
+      project_name: d.project_name || "",
+    });
+    setEditDwg(d);
+  };
+
+  const saveEdit = async () => {
+    if (!editDwg) return;
+    setEditBusy(true);
+    try {
+      await api.patch(`/drawings/${editDwg.id}/basic-info`, {
+        title: editForm.title.trim(),
+        drawing_type: editForm.drawing_type,
+        customer_drawing_no: editForm.customer_drawing_no.trim(),
+        project_name: editForm.project_name.trim(),
+      });
+      toast.success(`Drawing ${editDwg.drawing_no} diperbarui`);
+      setEditDwg(null);
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal menyimpan perubahan");
+    } finally {
+      setEditBusy(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,12 +117,18 @@ export default function EngineeringDrfWorkPage() {
   // Drawing masih bisa Edit/Hapus selama DRAFT / dikembalikan untuk revisi (belum masuk approval)
   const isDraftDwg = (d) => !d?.approval_status || d.approval_status === "draft";
   const deleteDrawing = async (d) => {
-    if (!window.confirm(`Hapus drawing ${d.drawing_no}?\nSemua file (MKS/Customer/Nesting/CAD) drawing ini ikut terhapus permanen.`)) return;
+    if (!d) return;
+    setDelBusy(true);
     try {
       await api.delete(`/drawings/${d.id}`);
       toast.success(`Drawing ${d.drawing_no} dihapus`);
+      setDelDwg(null);
       load();
-    } catch (e) { toast.error(e.response?.data?.detail || "Gagal hapus drawing"); }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal hapus drawing");
+    } finally {
+      setDelBusy(false);
+    }
   };
   const sharedBomNo = drawings[0]?.bom_no || "";
 
@@ -220,7 +268,7 @@ export default function EngineeringDrfWorkPage() {
               {canEdit && isDraftDwg(d) && (
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => setEditDwg(d)}
+                    onClick={() => openEdit(d)}
                     className="inline-flex items-center gap-1 px-2 py-1.5 border border-amber-400 text-amber-700 hover:bg-amber-50 text-[11px] font-bold uppercase tracking-wider"
                     title="Edit data drawing"
                     data-testid={`drf-edit-${d.drawing_no}`}
@@ -228,7 +276,7 @@ export default function EngineeringDrfWorkPage() {
                     <PencilSimple size={12} weight="bold" /> Edit
                   </button>
                   <button
-                    onClick={() => deleteDrawing(d)}
+                    onClick={() => setDelDwg(d)}
                     className="inline-flex items-center gap-1 px-2 py-1.5 border border-rose-400 text-rose-700 hover:bg-rose-50 text-[11px] font-bold uppercase tracking-wider"
                     title="Hapus drawing (permanen)"
                     data-testid={`drf-delete-${d.drawing_no}`}
@@ -260,6 +308,122 @@ export default function EngineeringDrfWorkPage() {
           onClose={() => setViewer(null)}
         />
       )}
+
+      {/* ---------- Edit Drawing Modal (draft/revisi saja) ---------- */}
+      <Dialog open={!!editDwg} onOpenChange={(o) => { if (!o) setEditDwg(null); }}>
+        <DialogContent className="sm:max-w-[520px] rounded-none" data-testid="drf-edit-modal">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PencilSimple size={18} weight="bold" className="text-amber-600" />
+              Edit Data Drawing
+            </DialogTitle>
+            <DialogDescription>
+              {editDwg?.drawing_no
+                ? <>Perbaiki data dasar untuk <b className="font-mono">{editDwg.drawing_no}</b>. Nomor drawing tidak dapat diubah.</>
+                : "Perbaiki data dasar drawing."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-title">Judul Drawing</Label>
+              <Input
+                id="edit-title"
+                value={editForm.title}
+                onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
+                placeholder="cth: Bracket Assembly"
+                className="rounded-none"
+                data-testid="drf-edit-title-input"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-type">Tipe Drawing</Label>
+              <select
+                id="edit-type"
+                value={editForm.drawing_type}
+                onChange={(e) => setEditForm((f) => ({ ...f, drawing_type: e.target.value }))}
+                className="w-full h-10 border border-slate-300 rounded-none text-sm px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                data-testid="drf-edit-type-select"
+              >
+                <option value="Assembly">Assembly</option>
+                <option value="Part">Part</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-custno">No. Drawing Customer</Label>
+              <Input
+                id="edit-custno"
+                value={editForm.customer_drawing_no}
+                onChange={(e) => setEditForm((f) => ({ ...f, customer_drawing_no: e.target.value }))}
+                placeholder="No. DWG dari customer (opsional)"
+                className="rounded-none font-mono"
+                data-testid="drf-edit-custno-input"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-project">Nama Project</Label>
+              <Input
+                id="edit-project"
+                value={editForm.project_name}
+                onChange={(e) => setEditForm((f) => ({ ...f, project_name: e.target.value }))}
+                placeholder="Nama project (opsional)"
+                className="rounded-none"
+                data-testid="drf-edit-project-input"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="rounded-none"
+              onClick={() => setEditDwg(null)}
+              disabled={editBusy}
+              data-testid="drf-edit-cancel-btn"
+            >
+              Batal
+            </Button>
+            <Button
+              className="rounded-none bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={saveEdit}
+              disabled={editBusy}
+              data-testid="drf-edit-save-btn"
+            >
+              {editBusy ? <><ArrowClockwise size={15} className="animate-spin mr-1.5" /> Menyimpan...</> : <><CheckCircle size={15} weight="bold" className="mr-1.5" /> Simpan Perubahan</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ---------- Delete Drawing Konfirmasi ---------- */}
+      <AlertDialog open={!!delDwg} onOpenChange={(o) => { if (!o) setDelDwg(null); }}>
+        <AlertDialogContent className="rounded-none" data-testid="drf-delete-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-rose-700">
+              <Trash size={18} weight="bold" /> Hapus Drawing?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {delDwg?.drawing_no
+                ? <>Drawing <b className="font-mono">{delDwg.drawing_no}</b> beserta seluruh file (MKS / Customer DWG / Nesting / CAD) akan dihapus <b>permanen</b> dan tidak dapat dikembalikan.</>
+                : "Drawing ini akan dihapus permanen."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-none" disabled={delBusy} data-testid="drf-delete-cancel-btn">Batal</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-none bg-rose-600 hover:bg-rose-700 text-white"
+              onClick={(e) => { e.preventDefault(); deleteDrawing(delDwg); }}
+              disabled={delBusy}
+              data-testid="drf-delete-confirm-btn"
+            >
+              {delBusy ? <><ArrowClockwise size={15} className="animate-spin mr-1.5" /> Menghapus...</> : <><Trash size={15} weight="bold" className="mr-1.5" /> Ya, Hapus Permanen</>}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
