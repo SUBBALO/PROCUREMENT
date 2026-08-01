@@ -10,7 +10,7 @@ Original PDF tidak diubah — stamped version dibuat on-the-fly saat preview/dow
 """
 from __future__ import annotations
 import io
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 from bson import ObjectId
@@ -20,6 +20,31 @@ import fitz  # PyMuPDF
 RED_INK = (0.85, 0.15, 0.30)     # merah/pink seperti cap manual MKS
 BLUE_INK = (0.10, 0.30, 0.65)    # biru untuk digital signature engineering
 GREEN_INK = (0.15, 0.55, 0.30)   # hijau untuk approved signature
+
+WIB = timezone(timedelta(hours=7))  # Waktu Indonesia Barat (Kepri/UTC+7)
+
+
+def _fmt_print_dt_wib(iso_str: str = "") -> str:
+    """Format waktu print: 'DD MMM YY | hh.mm AM/PM' dalam WIB (UTC+7).
+    Kosong → pakai waktu sekarang (server)."""
+    try:
+        if iso_str:
+            dt = datetime.fromisoformat(str(iso_str).replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = datetime.now(timezone.utc)
+        dt = dt.astimezone(WIB)
+        return dt.strftime("%d %b %y | %I.%M %p")
+    except Exception:
+        return datetime.now(WIB).strftime("%d %b %y | %I.%M %p")
+
+
+def _text_w(text: str, fontname: str, fontsize: float) -> float:
+    try:
+        return fitz.get_text_length(text, fontname=fontname, fontsize=fontsize)
+    except Exception:
+        return len(text) * fontsize * 0.5
 
 
 def _fmt_date(iso_str: str) -> str:
@@ -63,33 +88,25 @@ def _draw_dc_stamp(page: fitz.Page, dc_data: dict) -> None:
     page.draw_rect(rect, color=RED_INK, width=1.4)
     inner = fitz.Rect(x0 + 2, y0 + 2, x0 + box_w - 2, y0 + box_h - 2)
     page.draw_rect(inner, color=RED_INK, width=0.5)
-    # Text MKS di tengah atas
+    cx = x0 + box_w / 2
+    # "MKS" — center
     page.insert_text(
-        (x0 + box_w / 2 - 11, y0 + 15),
-        "MKS",
-        fontsize=11, fontname="helv", color=RED_INK,
+        (cx - _text_w("MKS", "helv", 11) / 2, y0 + 16),
+        "MKS", fontsize=11, fontname="helv", color=RED_INK,
     )
-    # Tanggal
+    # Tanggal — center
     date_str = _fmt_date(dc_data.get("at", ""))
-    page.insert_text(
-        (x0 + box_w / 2 - len(date_str) * 1.8, y0 + 28),
-        date_str,
-        fontsize=6.5, fontname="helv", color=RED_INK,
-    )
-    # Footer "DOCUMENT CONTROL"
-    page.insert_text(
-        (x0 + 3, y0 + box_h - 6),
-        "DOCUMENT CONTROL",
-        fontsize=4.6, fontname="hebo", color=RED_INK,
-    )
-    # Info kecil audit (di luar kotak)
-    name = dc_data.get("name") or dc_data.get("username") or ""
-    if name:
+    if date_str:
         page.insert_text(
-            (x0, y0 + box_h + 9),
-            f"by: {name} · {_fmt_datetime(dc_data.get('at', ''))}",
-            fontsize=5.5, fontname="helv", color=(0.3, 0.3, 0.3),
+            (cx - _text_w(date_str, "helv", 6.5) / 2, y0 + 29),
+            date_str, fontsize=6.5, fontname="helv", color=RED_INK,
         )
+    # Footer "DOCUMENT CONTROL" — center
+    page.insert_text(
+        (cx - _text_w("DOCUMENT CONTROL", "hebo", 4.6) / 2, y0 + box_h - 6),
+        "DOCUMENT CONTROL", fontsize=4.6, fontname="hebo", color=RED_INK,
+    )
+    # (Caption 'by: nama · tgl' DIHILANGKAN sesuai permintaan — jejak audit tetap di DB & footer print)
 
 
 def _draw_so_stamp(page: fitz.Page, so_data: dict) -> None:
@@ -120,7 +137,9 @@ def _draw_so_stamp(page: fitz.Page, so_data: dict) -> None:
     val_col_w = max(30, min(150, max_val_chars * 3.4 + 8))
     box_w = int(label_col_w + val_col_w + 8)
     box_w = max(80, min(200, box_w))
-    box_h = 90
+    # Tinggi kotak menyesuaikan jumlah baris (buang ruang kosong di bawah Due Date)
+    row_h = 11
+    box_h = int(len(rows) * row_h + 12)
     if "x" in so_data and "y" in so_data:
         cx = float(so_data["x"]) * pw
         cy = float(so_data["y"]) * ph
@@ -134,17 +153,12 @@ def _draw_so_stamp(page: fitz.Page, so_data: dict) -> None:
     inner = fitz.Rect(x0 + 2, y0 + 2, x0 + box_w - 2, y0 + box_h - 2)
     page.draw_rect(inner, color=RED_INK, width=0.4)
 
-    y = y0 + 12
+    y = y0 + 13
     for label, val in rows:
         page.insert_text((x0 + 4, y), f"{label}", fontsize=6, fontname="hebo", color=RED_INK)
         page.insert_text((x0 + label_col_w, y), f": {val or ''}", fontsize=6, fontname="helv", color=RED_INK)
-        y += 12
-    # Audit line di luar kotak
-    name = so_data.get("name") or so_data.get("username") or ""
-    if name:
-        page.insert_text((x0, y0 + box_h + 9),
-                         f"SO by: {name} · {_fmt_datetime(so_data.get('at', ''))}",
-                         fontsize=5.5, fontname="helv", color=(0.3, 0.3, 0.3))
+        y += row_h
+    # (Caption 'SO by: nama · tgl' DIHILANGKAN sesuai permintaan)
 
 
 def _draw_placed_signature(
@@ -290,10 +304,9 @@ def _draw_watermark(page: fitz.Page, text: str = "UNCONTROLLED COPY WHEN PRINTED
 
 
 def _draw_print_footer(page: fitz.Page, printed_by: str, printed_at: str = "") -> None:
-    """Footer kecil di bawah setiap halaman: 'Printed by: X | Date | Time'."""
-    if not printed_at:
-        printed_at = datetime.now().strftime("%d %B %Y | %H:%M")
-    text = f"Printed by: {printed_by} | {printed_at}"
+    """Footer kecil (jejak print) di bawah halaman: 'Printed by: X | DD MMM YY | hh.mm AM/PM' (WIB)."""
+    stamp = printed_at if printed_at else _fmt_print_dt_wib()
+    text = f"Printed by: {printed_by} | {stamp} WIB"
     pw, ph = page.rect.width, page.rect.height
     page.insert_text(
         (25, ph - 8),

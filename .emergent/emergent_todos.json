@@ -1,22 +1,22 @@
 [
   {
-    "content": "Sales Repeat Manual: input manual SO lama + nama customer saat data lama tak ditemukan (Sales DRF form)",
+    "content": "Tambah state queuedFiles & submitting di DrawingRequestFormDialog",
     "status": "completed"
   },
   {
-    "content": "OCR Fallback: baca nomor DWG dari PDF scan (tesseract) dgn graceful degrade + saran (tidak auto-apply)",
+    "content": "Refactor doSave menjadi persistDrf + uploadQueued + doSaveDraft + doSubmitToEng",
     "status": "completed"
   },
   {
-    "content": "Preview Nesting/Costing lama di daftar repeat (chip clickable)",
+    "content": "Tampilkan area upload multi-dokumen langsung (new order & draft), tidak terkunci",
     "status": "completed"
   },
   {
-    "content": "Riwayat Ganti Nomor DWG: simpan rename_history + tampilkan di UI",
+    "content": "Ganti footer jadi 3 tombol: Batal > Simpan > Kirim Ke Engineering",
     "status": "completed"
   },
   {
-    "content": "Verifikasi akhir: compile semua + screenshot DRF manual + health check",
+    "content": "Verifikasi compile (esbuild) & screenshot flow New Order",
     "status": "completed"
   }
 ]

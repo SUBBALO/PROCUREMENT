@@ -5,7 +5,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
-import { X, FileText, UploadSimple, MagnifyingGlass, Paperclip, Trash, Eye, Warning } from "@phosphor-icons/react";
+import { X, FileText, UploadSimple, MagnifyingGlass, Paperclip, Trash, Eye } from "@phosphor-icons/react";
 
 /**
  * DrawingRequestFormDialog — form buat/edit DRF.
@@ -26,6 +26,8 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
   const [refManual, setRefManual] = useState(!!initial?.ref_so_manual);
   const [refManualSo, setRefManualSo] = useState(initial?.ref_so_manual ? (initial?.ref_so_no || "") : "");
   const [attachments, setAttachments] = useState(initial?.attached_files || []);
+  const [queuedFiles, setQueuedFiles] = useState([]); // File objects untuk DRF baru (belum tersimpan)
+  const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef();
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
 
@@ -105,33 +107,87 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
     });
   };
 
-  const doSave = async () => {
-    if (!form.so_no) { toast.error("Pilih SO dulu"); return; }
-    if (type === "repeat_order" && !form.ref_so_no) { toast.error("Pilih SO referensi (lama) dulu"); return; }
-    if (!form.qty_order || form.qty_order < 1) { toast.error("Qty order minimal 1"); return; }
+  const _validate = () => {
+    if (!form.so_no) { toast.error("Pilih SO dulu"); return false; }
+    if (type === "repeat_order" && !form.ref_so_no) { toast.error("Pilih SO referensi (lama) dulu"); return false; }
+    if (!form.qty_order || form.qty_order < 1) { toast.error("Qty order minimal 1"); return false; }
+    return true;
+  };
 
+  // Simpan/Update DRF, kembalikan doc tersimpan (punya id) atau null bila gagal
+  const persistDrf = async () => {
+    const payload = { ...form, request_type: type, qty_order: Number(form.qty_order) };
+    if (isEdit) {
+      const resp = await api.put(`/drawing-requests/${initial.id}`, payload);
+      return resp.data;
+    }
+    const resp = await api.post("/drawing-requests", payload);
+    return resp.data;
+  };
+
+  // Upload semua file yang di-queue (untuk DRF baru) ke drf id
+  const uploadQueued = async (drfId) => {
+    if (!drfId || queuedFiles.length === 0) return;
+    for (const file of queuedFiles) {
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        await api.post(`/drawing-requests/${drfId}/attachments`, fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+      } catch (e) {
+        toast.error(`Gagal upload "${file.name}": ${e.response?.data?.detail || "error"}`);
+      }
+    }
+  };
+
+  // Tombol "Simpan" → simpan sebagai draft (tetap di status draft)
+  const doSaveDraft = async () => {
+    if (!_validate()) return;
     setSaving(true);
     try {
-      const payload = { ...form, request_type: type, qty_order: Number(form.qty_order) };
-      let resp;
-      if (isEdit) {
-        resp = await api.put(`/drawing-requests/${initial.id}`, payload);
-      } else {
-        resp = await api.post("/drawing-requests", payload);
-      }
-      toast.success(isEdit ? "DRF disimpan" : `✓ DRF dibuat: ${resp.data.form_no}`);
-      // Kalau new record dan ada attachment queue, upload sekarang
+      const saved = await persistDrf();
+      const drfId = saved?.id || initial?.id;
+      await uploadQueued(drfId);
+      setQueuedFiles([]);
+      toast.success(isEdit ? "✓ DRF disimpan" : `✓ DRF draft dibuat: ${saved.form_no}`);
       onSaved?.();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal simpan");
     } finally { setSaving(false); }
   };
 
-  const doUpload = async (file) => {
-    if (!file || !initial?.id) {
-      toast.error("Simpan DRF dulu, baru bisa upload file");
-      return;
+  // Tombol "Kirim Ke Engineering" → simpan draft + upload lampiran + submit final
+  const doSubmitToEng = async () => {
+    if (!_validate()) return;
+    if (!window.confirm("Kirim DRF ini ke Engineering? Setelah dikirim tidak bisa diedit.")) return;
+    setSubmitting(true);
+    try {
+      const saved = await persistDrf();
+      const drfId = saved?.id || initial?.id;
+      await uploadQueued(drfId);
+      setQueuedFiles([]);
+      await api.post(`/drawing-requests/${drfId}/submit`);
+      toast.success(`✓ DRF dikirim ke Engineering${saved?.form_no ? `: ${saved.form_no}` : ""}`);
+      onSaved?.();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal kirim ke Engineering");
+    } finally { setSubmitting(false); }
+  };
+
+  // Pilih file dari input: DRF lama upload langsung, DRF baru masuk antrian lokal
+  const handleFilePick = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+    if (isEdit && initial?.id) {
+      for (const f of files) await doUpload(f);
+    } else {
+      setQueuedFiles((prev) => [...prev, ...files]);
     }
+  };
+
+  const doUpload = async (file) => {
+    if (!file || !initial?.id) return;
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -139,7 +195,7 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
         headers: { "Content-Type": "multipart/form-data" },
       });
       setAttachments((prev) => [...prev, data]);
-      toast.success("✓ File di-attach");
+      toast.success(`✓ File di-attach: ${data.filename}`);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal upload");
     }
@@ -389,49 +445,79 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
             </div>
           )}
 
-          {/* Attachments — only shown after DRF is saved */}
-          {isEdit ? (
-            <div className="border-t border-slate-200 pt-3">
-              <div className="flex items-center justify-between mb-2">
-                <Label className="text-xs font-bold uppercase tracking-widest text-slate-700">Attached Documents</Label>
-                {!isLocked && (
-                  <Button
-                    size="sm"
-                    onClick={() => fileRef.current?.click()}
-                    className="rounded-none bg-slate-700 hover:bg-slate-800 text-white h-7 text-xs"
-                    data-testid="drf-upload-btn"
-                  >
-                    <UploadSimple size={12} weight="bold" className="mr-1" /> Attach File
-                  </Button>
-                )}
-              </div>
-              <input type="file" ref={fileRef} accept=".pdf,image/*,.xlsx,.xls,.dwg,.step,.stp,.iges,.igs" onChange={(e) => { doUpload(e.target.files?.[0]); e.target.value = ""; }} className="hidden" />
-              {attachments.length === 0 ? (
-                <div className="text-xs text-slate-400 italic p-4 border-2 border-dashed border-slate-200 text-center">
-                  Belum ada attachment
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {attachments.map((f) => (
-                    <div key={f.file_id} className="flex items-center gap-2 border border-slate-200 p-2 hover:bg-slate-50">
-                      <Paperclip size={14} className="text-slate-500" />
-                      <span className="flex-1 text-xs">{f.filename}</span>
-                      <span className="text-[10px] text-slate-400">{(f.size / 1024).toFixed(1)} KB</span>
-                      <a href={`${apiUrl}/api/drawing-requests/${initial.id}/attachments/${f.file_id}/download`} target="_blank" rel="noreferrer" className="p-1 hover:bg-slate-200"><Eye size={12} /></a>
-                      {!isLocked && (
-                        <button onClick={() => doDeleteAttachment(f.file_id)} className="p-1 hover:bg-rose-100 text-rose-600"><Trash size={12} /></button>
-                      )}
-                    </div>
-                  ))}
-                </div>
+          {/* Attachments — tampil langsung (multi-dokumen). DRF baru: antrian lokal, DRF tersimpan: upload langsung */}
+          <div className="border-t border-slate-200 pt-3">
+            <div className="flex items-center justify-between mb-2">
+              <Label className="text-xs font-bold uppercase tracking-widest text-slate-700">
+                Lampiran Dokumen <span className="text-slate-400 normal-case font-normal">(opsional · bisa banyak file)</span>
+              </Label>
+              {!isLocked && (
+                <Button
+                  size="sm"
+                  onClick={() => fileRef.current?.click()}
+                  className="rounded-none bg-slate-700 hover:bg-slate-800 text-white h-7 text-xs"
+                  data-testid="drf-upload-btn"
+                >
+                  <UploadSimple size={12} weight="bold" className="mr-1" /> Tambah File
+                </Button>
               )}
             </div>
-          ) : (
-            <div className="text-xs text-slate-500 italic border border-dashed border-slate-300 p-3 bg-slate-50">
-              <Warning size={14} weight="fill" className="inline mr-1 text-amber-600" />
-              Attach file bisa dilakukan setelah DRF disimpan (klik Simpan dulu).
-            </div>
-          )}
+            <input
+              type="file"
+              multiple
+              ref={fileRef}
+              accept=".pdf,image/*,.xlsx,.xls,.dwg,.step,.stp,.iges,.igs"
+              onChange={(e) => { handleFilePick(e.target.files); e.target.value = ""; }}
+              className="hidden"
+              data-testid="drf-file-input"
+            />
+
+            {!isLocked && (
+              <div
+                onClick={() => fileRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); handleFilePick(e.dataTransfer.files); }}
+                className="cursor-pointer text-xs text-slate-500 p-4 border-2 border-dashed border-slate-300 text-center hover:border-slate-500 hover:bg-slate-50 transition-colors"
+                data-testid="drf-dropzone"
+              >
+                <UploadSimple size={18} className="inline mr-1 text-slate-400" />
+                Klik atau seret file ke sini (PDF, gambar, Excel, DWG/STEP)
+              </div>
+            )}
+
+            {/* File tersimpan (DRF lama) */}
+            {attachments.length > 0 && (
+              <div className="space-y-1 mt-2" data-testid="drf-attachment-list">
+                {attachments.map((f) => (
+                  <div key={f.file_id} className="flex items-center gap-2 border border-slate-200 p-2 hover:bg-slate-50">
+                    <Paperclip size={14} className="text-slate-500" />
+                    <span className="flex-1 text-xs">{f.filename}</span>
+                    <span className="text-[10px] text-slate-400">{(f.size / 1024).toFixed(1)} KB</span>
+                    <a href={`${apiUrl}/api/drawing-requests/${initial.id}/attachments/${f.file_id}/download`} target="_blank" rel="noreferrer" className="p-1 hover:bg-slate-200"><Eye size={12} /></a>
+                    {!isLocked && (
+                      <button onClick={() => doDeleteAttachment(f.file_id)} className="p-1 hover:bg-rose-100 text-rose-600" data-testid={`drf-attachment-del-${f.file_id}`}><Trash size={12} /></button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* File di-queue (DRF baru, belum tersimpan) */}
+            {queuedFiles.length > 0 && (
+              <div className="space-y-1 mt-2" data-testid="drf-queued-list">
+                {queuedFiles.map((f, idx) => (
+                  <div key={`${f.name}-${idx}`} className="flex items-center gap-2 border border-amber-200 bg-amber-50 p-2">
+                    <Paperclip size={14} className="text-amber-600" />
+                    <span className="flex-1 text-xs">{f.name}</span>
+                    <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-bold uppercase tracking-wider">Belum diupload</span>
+                    <span className="text-[10px] text-slate-400">{(f.size / 1024).toFixed(1)} KB</span>
+                    <button onClick={() => setQueuedFiles((prev) => prev.filter((_, i) => i !== idx))} className="p-1 hover:bg-rose-100 text-rose-600" data-testid={`drf-queued-del-${idx}`}><Trash size={12} /></button>
+                  </div>
+                ))}
+                <div className="text-[10px] text-amber-700 italic">File akan otomatis terupload saat klik "Simpan" atau "Kirim Ke Engineering".</div>
+              </div>
+            )}
+          </div>
 
           {/* Approval Info */}
           {isEdit && initial?.requested_by && (
@@ -459,14 +545,25 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
         <div className="sticky bottom-0 bg-white border-t border-slate-200 p-3 flex justify-end gap-2">
           <Button variant="outline" onClick={onClose} className="rounded-none border-slate-300" data-testid="drf-cancel-btn">Batal</Button>
           {!isLocked && (
-            <Button
-              onClick={doSave}
-              disabled={saving || !form.so_no}
-              className="rounded-none bg-rose-700 hover:bg-rose-800 text-white"
-              data-testid="drf-save-btn"
-            >
-              {saving ? "Menyimpan..." : (isEdit ? "Update DRF" : "Simpan Draft")}
-            </Button>
+            <>
+              <Button
+                onClick={doSaveDraft}
+                disabled={saving || submitting || !form.so_no}
+                variant="outline"
+                className="rounded-none border-rose-300 text-rose-700 hover:bg-rose-50"
+                data-testid="drf-save-btn"
+              >
+                {saving ? "Menyimpan..." : "Simpan"}
+              </Button>
+              <Button
+                onClick={doSubmitToEng}
+                disabled={saving || submitting || !form.so_no}
+                className="rounded-none bg-rose-700 hover:bg-rose-800 text-white"
+                data-testid="drf-submit-btn"
+              >
+                {submitting ? "Mengirim..." : "Kirim Ke Engineering"}
+              </Button>
+            </>
           )}
         </div>
       </div>

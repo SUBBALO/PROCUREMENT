@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { FileText, MagnifyingGlass, Plus, PencilSimple, Trash, ArrowClockwise, UploadSimple, Eye, DownloadSimple, Warning, CheckCircle, Printer, Stamp, FileXls, FilePdf } from "@phosphor-icons/react";
+import { FileText, MagnifyingGlass, Plus, PencilSimple, Trash, ArrowClockwise, UploadSimple, Eye, DownloadSimple, Warning, CheckCircle, Printer, Stamp, FileXls, FilePdf, X } from "@phosphor-icons/react";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
@@ -44,6 +44,7 @@ export default function MasterDrawingPage() {
   const [customerRefUpload, setCustomerRefUpload] = useState(null);
   const [customerRefPreview, setCustomerRefPreview] = useState(null);
   const [viewer, setViewer] = useState(null); // universal image-based viewer config
+  const [detail, setDetail] = useState(null); // drawing detail popup
   const canPrint = canPrintDrawing(user?.role);
   const previewOnly = isDrawingPreviewOnly(user?.role);
   const pag = usePagination(items, 20);
@@ -210,23 +211,18 @@ export default function MasterDrawingPage() {
               <tr className="text-[10px] uppercase tracking-[0.08em] font-bold text-slate-500">
                 <th className="text-left p-3">Drawing</th>
                 <th className="text-left p-3">Title / Project</th>
-                <th className="text-left p-3">Prepared / Request</th>
                 <th className="text-left p-3">Status &amp; TTD</th>
-                <th className="text-center p-3">Preview (DC-Stamped)</th>
-                <th className="text-center p-3">Aksi</th>
+                <th className="text-right p-3"></th>
               </tr>
             </thead>
             <tbody data-testid="dw-list">
-              {loading && (<tr><td colSpan={6} className="p-8 text-center text-slate-400">Memuat...</td></tr>)}
-              {!loading && items.length === 0 && (<tr><td colSpan={6} className="p-8 text-center text-slate-400">Belum ada drawing. Alur register drawing baru: <b>Sales buat DRF (MKS-F-ENG-001)</b> → Eng Head Accept → Assign Engineer.</td></tr>)}
+              {loading && (<tr><td colSpan={4} className="p-8 text-center text-slate-400">Memuat...</td></tr>)}
+              {!loading && items.length === 0 && (<tr><td colSpan={4} className="p-8 text-center text-slate-400">Belum ada drawing. Alur register drawing baru: <b>Sales buat DRF (MKS-F-ENG-001)</b> → Eng Head Accept → Assign Engineer.</td></tr>)}
               {items.length > 0 && pag.pagedData.map((it) => (
                 <DrawingMasterRow
                   key={it.id}
                   it={it}
-                  canPrint={canPrint}
-                  previewOnly={previewOnly}
-                  onView={setViewer}
-                  onChanged={load}
+                  onDetail={setDetail}
                 />
               ))}
             </tbody>
@@ -249,6 +245,14 @@ export default function MasterDrawingPage() {
       )}
       {customerRefPreview && (
         <CustomerRefPreviewDialog item={customerRefPreview} onClose={() => setCustomerRefPreview(null)} />
+      )}
+      {detail && (
+        <DrawingDetailModal
+          it={detail}
+          previewOnly={previewOnly}
+          onView={setViewer}
+          onClose={() => setDetail(null)}
+        />
       )}
       {viewer && (
         <PdfPreviewModal
@@ -301,7 +305,72 @@ function PreviewTile({ label, tone, available, loading, onClick, testid }) {
 
 const _TTD_STAGE = { submit: "Prepared", eng_head: "Eng Head", qc: "QC", sales: "Sales" };
 
-function DrawingMasterRow({ it, canPrint, previewOnly, onView, onChanged }) {
+function DrawingMasterRow({ it, onDetail }) {
+  // Baris minimalis — detail lengkap & preview dokumen ada di popup (klik baris).
+  const approvals = (it.approvals || []).filter((a) => !String(a.stage || "").startsWith("reject_"));
+  const ttdByStage = {};
+  approvals.forEach((a) => { if (_TTD_STAGE[a.stage] && !ttdByStage[a.stage]) ttdByStage[a.stage] = a.name; });
+  const ttdEntries = Object.entries(ttdByStage);
+  const dcName = it.dc_stamp?.name;
+  const isControlled = it.approval_status === "controlled" || it.approval_status === "released";
+
+  return (
+    <tr
+      className="border-b border-slate-100 hover:bg-sky-50/60 align-top cursor-pointer"
+      data-testid={`dw-row-${it.id}`}
+      onClick={() => onDetail?.(it)}
+      title="Klik untuk lihat detail lengkap & preview dokumen"
+    >
+      {/* Drawing (ringkas) */}
+      <td className="p-3">
+        <div className="font-mono font-semibold text-slate-900 text-sm">{it.drawing_no}</div>
+        <div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-500">
+          <span className="px-1 py-0.5 bg-slate-100 text-slate-600 font-semibold">{it.revision}</span>
+          <span>{it.discipline}</span>
+          <span className="text-slate-300">·</span>
+          <span className="font-mono" title="SO">SO {it.so_no || "-"}</span>
+        </div>
+      </td>
+
+      {/* Title / Project (dipangkas) */}
+      <td className="p-3 max-w-[280px]">
+        <div className="text-slate-800 text-sm font-medium truncate">{it.title || "-"}</div>
+        {it.project_name && <div className="text-[11px] text-slate-500 mt-0.5 truncate">{it.project_name}</div>}
+      </td>
+
+      {/* Status & TTD (ringkas) */}
+      <td className="p-3" data-testid={`dw-status-${it.id}`}>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className={`px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${STATUS_COLORS[it.status] || "bg-slate-100 text-slate-700"}`}>{it.status}</span>
+          {dcName ? (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300" title={`DC stamp: ${dcName}`}><Stamp size={11} weight="fill" /> DC</span>
+          ) : isControlled ? (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300"><Stamp size={11} weight="fill" /> Controlled</span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200"><Stamp size={11} /> Belum DC</span>
+          )}
+          {ttdEntries.length > 0 ? (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200" title={ttdEntries.map(([s, n]) => `${_TTD_STAGE[s]}: ${n}`).join(", ")}>
+              <CheckCircle size={10} weight="fill" /> {ttdEntries.length} TTD
+            </span>
+          ) : (
+            <span className="text-[10px] text-slate-400 italic">Belum TTD</span>
+          )}
+        </div>
+      </td>
+
+      {/* Buka detail */}
+      <td className="p-3 text-right">
+        <span className="inline-flex items-center gap-1 text-[11px] text-sky-600 font-semibold" data-testid={`dw-detail-open-${it.id}`}>
+          <Eye size={13} /> Detail
+        </span>
+      </td>
+    </tr>
+  );
+}
+
+/* ============ DRAWING DETAIL POPUP (klik Title/Project) ============ */
+function DrawingDetailModal({ it, previewOnly, onView, onClose }) {
   const backendUrl = process.env.REACT_APP_BACKEND_URL;
   const [att, setAtt] = useState(it.bom_id ? _attCache[it.bom_id] || null : { costing: [], nesting: [] });
   const [attLoading, setAttLoading] = useState(false);
@@ -312,11 +381,7 @@ function DrawingMasterRow({ it, canPrint, previewOnly, onView, onChanged }) {
     let alive = true;
     setAttLoading(true);
     api.get(`/bom/${it.bom_id}/attachments`)
-      .then(({ data }) => {
-        const a = data.attachments || { costing: [], nesting: [] };
-        _attCache[it.bom_id] = a;
-        if (alive) setAtt(a);
-      })
+      .then(({ data }) => { const a = data.attachments || { costing: [], nesting: [] }; _attCache[it.bom_id] = a; if (alive) setAtt(a); })
       .catch(() => { if (alive) setAtt({ costing: [], nesting: [] }); })
       .finally(() => { if (alive) setAttLoading(false); });
     return () => { alive = false; };
@@ -326,146 +391,97 @@ function DrawingMasterRow({ it, canPrint, previewOnly, onView, onChanged }) {
   const firstNesting = att?.nesting?.[0];
   const subtitle = `${it.title || ""}${it.project_name ? " · " + it.project_name : ""}${it.so_no ? " · SO " + it.so_no : ""}`;
 
-  const openMks = () => onView({
-    mode: "drawing", drawingId: it.id, target: "mks", stamped: true, hideSo: true,
-    title: it.drawing_no, subtitle, noDownload: previewOnly,
-    downloadUrl: `${backendUrl}/api/drawings/${it.id}/pdf-stamped`,
-  });
-  const openCustomer = () => onView({
-    mode: "drawing", drawingId: it.id, target: "customer_ref", stamped: true, hideSo: true,
-    title: `${it.drawing_no} · Customer DWG`, subtitle, noDownload: previewOnly,
-    downloadUrl: `${backendUrl}/api/drawings/${it.id}/customer-ref/download`,
-  });
-  const openAttachment = (a, label) => onView({
-    mode: "generic",
-    metaUrl: `/bom/${it.bom_id}/attachments/${a.id}/page-meta`,
-    pageBase: `${backendUrl}/api/bom/${it.bom_id}/attachments/${a.id}/page-image`,
-    downloadUrl: `${backendUrl}/api/bom/${it.bom_id}/attachments/${a.id}/download`,
-    title: `${it.drawing_no} · ${label}`, subtitle: a.filename || "", noDownload: previewOnly,
-  });
-  const printMks = () => onView({
-    mode: "drawing", drawingId: it.id, target: "mks", stamped: true, hideSo: true,
-    title: it.drawing_no, subtitle, noDownload: previewOnly, autoPrint: true,
-    downloadUrl: `${backendUrl}/api/drawings/${it.id}/pdf-stamped`,
-  });
+  const openMks = () => onView({ mode: "drawing", drawingId: it.id, target: "mks", stamped: true, hideSo: true, title: it.drawing_no, subtitle, noDownload: previewOnly, downloadUrl: `${backendUrl}/api/drawings/${it.id}/pdf-stamped` });
+  const openCustomer = () => onView({ mode: "drawing", drawingId: it.id, target: "customer_ref", stamped: true, hideSo: true, title: `${it.drawing_no} · Customer DWG`, subtitle, noDownload: previewOnly, downloadUrl: `${backendUrl}/api/drawings/${it.id}/customer-ref/download` });
+  const openAtt = (a, label) => onView({ mode: "generic", metaUrl: `/bom/${it.bom_id}/attachments/${a.id}/page-meta`, pageBase: `${backendUrl}/api/bom/${it.bom_id}/attachments/${a.id}/page-image`, downloadUrl: `${backendUrl}/api/bom/${it.bom_id}/attachments/${a.id}/download`, title: `${it.drawing_no} · ${label}`, subtitle: a.filename || "", noDownload: previewOnly });
 
-  // ---- Status & TTD summary ----
   const approvals = (it.approvals || []).filter((a) => !String(a.stage || "").startsWith("reject_"));
   const ttdByStage = {};
-  approvals.forEach((a) => { if (_TTD_STAGE[a.stage] && !ttdByStage[a.stage]) ttdByStage[a.stage] = a.name; });
-  const ttdEntries = Object.entries(ttdByStage);
+  approvals.forEach((a) => { if (_TTD_STAGE[a.stage] && !ttdByStage[a.stage]) ttdByStage[a.stage] = a; });
   const dcName = it.dc_stamp?.name;
   const isControlled = it.approval_status === "controlled" || it.approval_status === "released";
 
+  const Row = ({ label, value, mono }) => (
+    <div className="flex gap-2 py-1 border-b border-slate-100">
+      <div className="w-32 shrink-0 text-[10px] uppercase tracking-wider font-bold text-slate-400 pt-0.5">{label}</div>
+      <div className={`flex-1 text-sm text-slate-800 ${mono ? "font-mono" : ""}`}>{value || <span className="text-slate-300">-</span>}</div>
+    </div>
+  );
+
   return (
-    <tr className="border-b border-slate-100 hover:bg-sky-50/40 align-top" data-testid={`dw-row-${it.id}`}>
-      {/* Drawing */}
-      <td className="p-3">
-        <div className="font-mono font-semibold text-slate-900">{it.drawing_no}</div>
-        {it.customer_drawing_no && (
-          <div className="font-mono text-[10px] text-slate-500 mt-0.5" title="No. DWG Customer">Cust: {it.customer_drawing_no}</div>
-        )}
-        <div className="flex items-center gap-1.5 mt-1">
-          <span className="text-[10px] px-1 py-0.5 bg-slate-100 text-slate-600 font-semibold">{it.revision}</span>
-          <span className="text-[10px] text-slate-500">{it.discipline}</span>
-        </div>
-        <div className="flex items-center gap-1.5 mt-1 text-[10px]">
-          <span className="font-mono text-slate-700" title="SO">{it.so_no || "-"}</span>
-          <span className="text-slate-300">|</span>
-          <span className="font-mono text-amber-800" title="BOM">{it.bom_no || "-"}</span>
-        </div>
-      </td>
-
-      {/* Title / Project */}
-      <td className="p-3">
-        <div className="text-slate-800 text-xs font-medium">{it.title || "-"}</div>
-        {it.project_name && <div className="text-[11px] text-slate-500 mt-0.5">{it.project_name}</div>}
-      </td>
-
-      {/* Prepared / Request */}
-      <td className="p-3 text-xs text-slate-700">
-        <div>{it.prepared_by || "-"}</div>
-        {it.assigned_to_name && (
-          <div className="mt-0.5 text-[9px] uppercase tracking-widest text-purple-700 font-bold" title="Assigned engineer">
-            👷 {it.assigned_to_name}
+    <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4" data-testid="dw-detail-modal" onClick={onClose}>
+      <div className="bg-white w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-none shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 bg-slate-900 text-white px-4 py-3 flex items-center justify-between z-10">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest opacity-70">Detail Drawing · MKS-F-ENG-005</div>
+            <h2 className="text-lg font-bold font-mono">{it.drawing_no}</h2>
           </div>
-        )}
-        {it.request_by_sales && (
-          <div className="mt-1">
-            <span className="px-1.5 py-0.5 bg-sky-50 text-sky-800 border border-sky-200 font-semibold text-[10px]">{it.request_by_sales}</span>
-          </div>
-        )}
-      </td>
+          <button onClick={onClose} className="p-1 hover:bg-white/10" data-testid="dw-detail-close"><X size={20} /></button>
+        </div>
 
-      {/* Status & TTD */}
-      <td className="p-3" data-testid={`dw-status-${it.id}`}>
-        <div className="flex flex-col gap-1.5">
-          <span className={`w-fit px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${STATUS_COLORS[it.status] || "bg-slate-100 text-slate-700"}`}>{it.status}</span>
-
-          {/* DC stamp status */}
-          {dcName ? (
-            <span className="w-fit inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300" title={`Doc Control stamp oleh ${dcName}`}>
-              <Stamp size={11} weight="fill" /> DC: {dcName}
-            </span>
-          ) : isControlled ? (
-            <span className="w-fit inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300">
-              <Stamp size={11} weight="fill" /> Controlled
-            </span>
-          ) : (
-            <span className="w-fit inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200" title="Belum di-stamp Doc Control">
-              <Stamp size={11} /> Belum DC
-            </span>
-          )}
-
-          {/* TTD list */}
-          {ttdEntries.length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {ttdEntries.map(([stage, name]) => (
-                <span key={stage} className="inline-flex items-center gap-0.5 px-1 py-0.5 text-[9px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200" title={`${_TTD_STAGE[stage]}: ${name}`}>
-                  <CheckCircle size={9} weight="fill" /> {_TTD_STAGE[stage]}
-                </span>
-              ))}
+        <div className="p-4 space-y-4">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Preview Dokumen (DC-Stamped)</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <PreviewTile label="DWG MKS" tone="violet" available={!!it.file_id} onClick={openMks} testid="dw-detail-tile-mks" />
+              <PreviewTile label="Customer" tone="sky" available={!!it.customer_ref_file_id} onClick={openCustomer} testid="dw-detail-tile-cust" />
+              <PreviewTile label="BOM" tone="amber" available={!!firstCosting} loading={attLoading} onClick={() => openAtt(firstCosting, "BOM")} testid="dw-detail-tile-bom" />
+              <PreviewTile label="Nesting" tone="teal" available={!!firstNesting} loading={attLoading} onClick={() => openAtt(firstNesting, "Nesting")} testid="dw-detail-tile-nesting" />
             </div>
-          ) : (
-            <span className="text-[10px] text-slate-400 italic">Belum ada TTD</span>
-          )}
-        </div>
-      </td>
-
-      {/* Preview tiles */}
-      <td className="p-3">
-        <div className="flex items-center justify-center gap-1.5">
-          <PreviewTile label="DWG MKS" tone="violet" available={!!it.file_id} onClick={openMks} testid={`dw-tile-mks-${it.id}`} />
-          <PreviewTile label="Customer" tone="sky" available={!!it.customer_ref_file_id} onClick={openCustomer} testid={`dw-tile-cust-${it.id}`} />
-          <PreviewTile label="BOM" tone="amber" available={!!firstCosting} loading={attLoading} onClick={() => openAttachment(firstCosting, "BOM")} testid={`dw-tile-bom-${it.id}`} />
-          <PreviewTile label="Nesting" tone="teal" available={!!firstNesting} loading={attLoading} onClick={() => openAttachment(firstNesting, "Nesting")} testid={`dw-tile-nesting-${it.id}`} />
-        </div>
-        {!it.file_id && (
-          <div className="text-center mt-1">
-            <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-800 font-bold uppercase tracking-wider">⚠ DWG belum upload</span>
           </div>
-        )}
-      </td>
 
-      {/* Aksi */}
-      <td className="p-3">
-        <div className="flex flex-col items-center gap-1.5">
-          <DrawingApprovalBadge drawing={it} onChanged={onChanged} />
-          {canPrint && it.file_id && (
-            <button
-              onClick={printMks}
-              data-testid={`dw-print-${it.id}`}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-bold uppercase tracking-widest bg-slate-700 hover:bg-slate-800 text-white"
-              title="Print DWG MKS (footer: Printed by [nama])"
-            >
-              <Printer size={12} weight="bold" /> Print
-            </button>
-          )}
+          <div>
+            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-1">Informasi</div>
+            <Row label="Judul" value={it.title} />
+            <Row label="Project" value={it.project_name} />
+            <Row label="No. DWG Customer" value={it.customer_drawing_no} mono />
+            <Row label="Revisi" value={it.revision} />
+            <Row label="Discipline" value={it.discipline} />
+            <Row label="SO" value={it.so_no} mono />
+            <Row label="BOM" value={it.bom_no} mono />
+            <Row label="Prepared By" value={it.prepared_by} />
+            <Row label="Assigned Eng" value={it.assigned_to_name} />
+            <Row label="Request (Sales)" value={it.request_by_sales} />
+            <Row label="Status Dokumen" value={it.status} />
+          </div>
+
+          <div>
+            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-1">Status &amp; TTD</div>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {dcName ? (
+                <span className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300"><Stamp size={12} weight="fill" /> DC Stamp: {dcName}</span>
+              ) : isControlled ? (
+                <span className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300"><Stamp size={12} weight="fill" /> Controlled</span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200"><Stamp size={12} /> Belum DC Stamp</span>
+              )}
+            </div>
+            {Object.keys(ttdByStage).length > 0 ? (
+              <div className="space-y-1">
+                {Object.entries(ttdByStage).map(([stage, a]) => (
+                  <div key={stage} className="flex items-center gap-2 text-xs">
+                    <CheckCircle size={13} weight="fill" className="text-emerald-600" />
+                    <span className="font-bold w-20">{_TTD_STAGE[stage]}</span>
+                    <span className="text-slate-700">{a.name}</span>
+                    {a.at && <span className="text-slate-400 text-[10px]">· {new Date(a.at).toLocaleString("id-ID")}</span>}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-xs text-slate-400 italic">Belum ada TTD</div>
+            )}
+          </div>
         </div>
-      </td>
-    </tr>
+
+        <div className="sticky bottom-0 bg-white border-t border-slate-200 p-3 flex justify-end">
+          <Button variant="outline" onClick={onClose} className="rounded-none border-slate-300" data-testid="dw-detail-close-btn">Tutup</Button>
+        </div>
+      </div>
+    </div>
   );
 }
+
+
 
 
 /* ============ FORM DIALOG ============ */

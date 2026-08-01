@@ -127,6 +127,11 @@ export default function DrawingRequestInboxPage() {
                     <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase ${d.request_type === "new_order" ? "bg-emerald-100 text-emerald-800 border border-emerald-400" : "bg-blue-100 text-blue-800 border border-blue-400"}`}>
                       {d.request_type === "new_order" ? "New" : "Repeat"}
                     </span>
+                    {d.ref_so_manual && (
+                      <span className="ml-1 px-1.5 py-0.5 text-[9px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-400" title={`SO lama diinput manual: ${d.ref_so_no || "-"} — verifikasi data lama`} data-testid={`inbox-so-manual-${d.form_no}`}>
+                        SO Manual
+                      </span>
+                    )}
                   </td>
                   <td className="p-3 font-mono text-xs">{d.so_no || "-"}</td>
                   <td className="p-3 text-xs">{d.project_name || "-"}</td>
