@@ -45,10 +45,31 @@ SALES_ROLES = ("sales",)
 FINANCE_ROLES = ("finance",)
 QC_ROLES = ("qc",)
 DOC_CONTROL_ROLES = ("doc_control", "document_control")
+PRODUCTION_ROLES = ("produksi", "production")
+
+# === RBAC untuk menu BOM (Feb 2026) ===
+# Boleh melihat file Costing Price + Harga/Riwayat Pembelian item BOM.
+# (Super Admin, Admin, Supervisor, Finance, semua Engineering, Sales)
+COSTING_VIEW_ROLES = ADMIN_LIKE_ROLES + FINANCE_ROLES + ENGINEERING_ROLES + SALES_ROLES
+# Kategori attachment yang dianggap "harga/costing" (disembunyikan dari role non-privileged).
+PRICE_ATTACHMENT_CATEGORIES = {"costing", "costing_prev", "nesting_price"}
+# Role yang HANYA boleh preview file DWG & Customer (tanpa tombol download) di konteks BOM.
+DRAWING_PREVIEW_ONLY_ROLES = QC_ROLES + DOC_CONTROL_ROLES + STORE_ROLES + PRODUCTION_ROLES
+DRAWING_ATTACHMENT_CATEGORIES = {"drawing", "customer_ref"}
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def can_view_costing(user: dict) -> bool:
+    """True jika role boleh lihat Costing Price & harga/riwayat pembelian BOM."""
+    return (user or {}).get("role") in COSTING_VIEW_ROLES
+
+
+def is_drawing_preview_only(user: dict) -> bool:
+    """True untuk QC / Doc Control / Store / Produksi → DWG & Customer preview-only (no download)."""
+    return (user or {}).get("role") in DRAWING_PREVIEW_ONLY_ROLES
 
 
 def is_admin_like(user: dict) -> bool:

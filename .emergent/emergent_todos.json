@@ -8,23 +8,19 @@
     "status": "completed"
   },
   {
-    "content": "Backend: kategori nesting_price + izin Word + drawing render Word→PDF — DONE",
+    "content": "Legacy Import page + role produksi + menu — DONE & tested",
     "status": "completed"
   },
   {
-    "content": "Backend: legacy_import/commit slot Eng DWG/Customer/Nesting/Nesting Price/BOM — DONE",
+    "content": "Fix caption BOM Utama (hapus link lama) + bersihkan data test — DONE",
     "status": "completed"
   },
   {
-    "content": "Frontend: LegacyImportPage + route + menu (Admin & Eng Leader) — DONE",
+    "content": "RBAC BOM: costing/purchase-history gating + DWG/customer preview-only — backend+frontend DONE, verified via API",
     "status": "completed"
   },
   {
-    "content": "Frontend: tampilkan nesting_price di Master List/BOM read-only/BOM entry — DONE",
-    "status": "completed"
-  },
-  {
-    "content": "Test backend legacy import (analyze+commit) + SO 6-digit + frontend screenshot",
+    "content": "Verifikasi UI RBAC (QC vs Sales/Admin) + alur revisi BOM via testing agent",
     "status": "in_progress"
   }
 ]

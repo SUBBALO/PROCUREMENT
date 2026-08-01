@@ -466,6 +466,7 @@ function CreateUserDialog({ open, onClose, onSaved }) {
                 <SelectItem value="doc_control">Document Control (Salma — DC Stamp & SO Stamp)</SelectItem>
                 <SelectItem value="purchasing">Purchasing</SelectItem>
                 <SelectItem value="store">Store (Gudang, harga di-hide)</SelectItem>
+                <SelectItem value="produksi">Produksi (BOM & Drawing preview-only, tanpa harga)</SelectItem>
               </SelectContent>
             </Select>
             <div className="text-[11px] text-slate-500 mt-1 leading-relaxed">
@@ -553,6 +554,7 @@ function EditUserDialog({ user, me, onClose, onSaved }) {
                 <SelectItem value="doc_control">Document Control (DC Stamp & SO Stamp)</SelectItem>
                 <SelectItem value="purchasing">Purchasing</SelectItem>
                 <SelectItem value="store">Store</SelectItem>
+                <SelectItem value="produksi">Produksi</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -18,10 +18,32 @@ from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 from db import db
-from deps import get_current_user, log_action
+from deps import (
+    get_current_user, log_action, can_view_costing, is_drawing_preview_only,
+    PRICE_ATTACHMENT_CATEGORIES, DRAWING_ATTACHMENT_CATEGORIES,
+)
 from routers.drawing_register import _normalize_dno
 
 router = APIRouter(tags=["bom-attachments"])
+
+
+async def _get_attachment_or_404(bom_id: str, attach_id: str) -> dict:
+    doc = await db.bom_attachments.find_one({"id": attach_id, "bom_id": bom_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Attachment tidak ditemukan")
+    return doc
+
+
+def _guard_costing_access(doc: dict, current: dict):
+    """403 jika mencoba akses file costing/price tanpa hak."""
+    if doc.get("category") in PRICE_ATTACHMENT_CATEGORIES and not can_view_costing(current):
+        raise HTTPException(status_code=403, detail="Anda tidak berwenang melihat file Costing/Harga.")
+
+
+def _guard_drawing_download(doc: dict, current: dict):
+    """403 jika role preview-only (QC/DocControl/Store/Produksi) mencoba DOWNLOAD file DWG/Customer."""
+    if doc.get("category") in DRAWING_ATTACHMENT_CATEGORIES and is_drawing_preview_only(current):
+        raise HTTPException(status_code=403, detail="File Drawing/Customer hanya bisa dipreview (tanpa download) untuk role Anda.")
 
 VALID_CATEGORIES = {"drawing", "customer_ref", "nesting", "nesting_price", "costing", "costing_prev", "revision"}
 CATEGORY_LABELS = {
@@ -131,16 +153,23 @@ async def list_attachments(bom_id: str, current: dict = Depends(get_current_user
     ).sort("uploaded_at", -1).to_list(length=500)
     # Grouped view (backward compat for existing consumers) — all valid categories
     grouped = {k: [] for k in VALID_CATEGORIES}
+    show_costing = can_view_costing(current)
+    flat = []
     for d in docs:
         cat = d.get("category")
+        # RBAC: sembunyikan file costing/price dari role non-privileged.
+        if cat in PRICE_ATTACHMENT_CATEGORIES and not show_costing:
+            continue
         if cat in grouped:
             grouped[cat].append(d)
-    # Flat items list (for new consumers like EngineeringWorkOrderPage)
+        flat.append(d)
     return {
         "bom_id": bom_id,
         "attachments": grouped,   # legacy
-        "items": docs,            # flat list — preferred for new code
-        "total": len(docs),
+        "items": flat,            # flat list — preferred for new code
+        "total": len(flat),
+        "can_view_costing": show_costing,
+        "drawing_preview_only": is_drawing_preview_only(current),
     }
 
 
@@ -569,15 +598,15 @@ def _excel_to_html(xlsx_bytes: bytes, orig_name: str) -> str:
     return f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>{escape(orig_name)}</title>{css}</head><body>{body}{js}</body></html>"
 
 
-async def _attachment_pdf_bytes(bom_id: str, attach_id: str) -> bytes:
+async def _attachment_pdf_bytes(bom_id: str, attach_id: str, current: dict = None) -> bytes:
     """Ambil bytes attachment & pastikan bentuk PDF.
 
     - PDF → dipakai apa adanya.
     - Excel (xlsx/xls/xlsm/...) → dikonversi ke PDF via LibreOffice (akurat "sesuai hasil").
     """
-    doc = await db.bom_attachments.find_one({"id": attach_id, "bom_id": bom_id, "deleted_at": {"$exists": False}})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Attachment tidak ditemukan")
+    doc = await _get_attachment_or_404(bom_id, attach_id)
+    if current is not None:
+        _guard_costing_access(doc, current)
     ext = _ext(doc["filename"]).lstrip(".").lower()
     stream = await _stream_from_gridfs(doc["file_id"])
     raw = await stream.read()
@@ -593,7 +622,7 @@ async def _attachment_pdf_bytes(bom_id: str, attach_id: str) -> bytes:
 async def attachment_page_meta(bom_id: str, attach_id: str, current: dict = Depends(get_current_user)):
     """Metadata halaman untuk viewer image-based (PDF & Excel)."""
     from utils.pdf_render import pdf_page_meta
-    raw = await _attachment_pdf_bytes(bom_id, attach_id)
+    raw = await _attachment_pdf_bytes(bom_id, attach_id, current)
     return pdf_page_meta(raw)
 
 
@@ -602,7 +631,7 @@ async def attachment_page_image(bom_id: str, attach_id: str, page: int = 0, scal
                                 current: dict = Depends(get_current_user)):
     """Render satu halaman lampiran (PDF/Excel) menjadi PNG untuk viewer image-based."""
     from utils.pdf_render import pdf_page_png
-    raw = await _attachment_pdf_bytes(bom_id, attach_id)
+    raw = await _attachment_pdf_bytes(bom_id, attach_id, current)
     try:
         png = pdf_page_png(raw, page, scale)
     except IndexError:
@@ -615,9 +644,8 @@ async def attachment_page_image(bom_id: str, attach_id: str, page: int = 0, scal
 @router.get("/bom/{bom_id}/attachments/{attach_id}/preview")
 async def preview_attachment(bom_id: str, attach_id: str, current: dict = Depends(get_current_user)):
     """Inline preview. PDF: native. Excel: convert to PDF first."""
-    doc = await db.bom_attachments.find_one({"id": attach_id, "bom_id": bom_id, "deleted_at": {"$exists": False}})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Attachment tidak ditemukan")
+    doc = await _get_attachment_or_404(bom_id, attach_id)
+    _guard_costing_access(doc, current)
     ext = _ext(doc["filename"])
     stream = await _stream_from_gridfs(doc["file_id"])
     raw = await stream.read()
@@ -640,9 +668,9 @@ async def preview_attachment(bom_id: str, attach_id: str, current: dict = Depend
 
 @router.get("/bom/{bom_id}/attachments/{attach_id}/download")
 async def download_attachment(bom_id: str, attach_id: str, current: dict = Depends(get_current_user)):
-    doc = await db.bom_attachments.find_one({"id": attach_id, "bom_id": bom_id, "deleted_at": {"$exists": False}})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Attachment tidak ditemukan")
+    doc = await _get_attachment_or_404(bom_id, attach_id)
+    _guard_costing_access(doc, current)      # role non-privileged tidak boleh unduh costing/price
+    _guard_drawing_download(doc, current)     # QC/DocControl/Store/Produksi: DWG/Customer preview-only
     stream = await _stream_from_gridfs(doc["file_id"])
     raw = await stream.read()
     return StreamingResponse(

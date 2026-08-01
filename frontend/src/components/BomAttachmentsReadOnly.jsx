@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../lib/api";
+import { useAuth } from "../lib/auth";
+import { isDrawingPreviewOnly } from "../lib/rbac";
 import { Card } from "./ui/card";
 import { FileText, Eye, LinkSimple, Info, Table } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
@@ -13,6 +15,8 @@ import PdfPreviewModal from "./PdfPreviewModal";
  * To modify → user must go to MKS-F-ENG-005 Drawing Master List edit dialog.
  */
 export default function BomAttachmentsReadOnly({ bom }) {
+  const { user } = useAuth();
+  const previewOnly = isDrawingPreviewOnly(user?.role);  // QC/DocControl/Store/Produksi → no download
   const [drawing, setDrawing] = useState(null);
   const [bomAtt, setBomAtt] = useState({ drawing: [], nesting: [], costing: [] });
   const [loading, setLoading] = useState(true);
@@ -57,7 +61,7 @@ export default function BomAttachmentsReadOnly({ bom }) {
         accent: "emerald",
         name: drawing.filename || `${drawing.drawing_no}.pdf`,
         url: `${backendUrl}/api/drawings/${drawing.id}/preview`,
-        viewer: { drawingId: drawing.id, target: "mks", downloadUrl: `${backendUrl}/api/drawings/${drawing.id}/pdf-stamped` },
+        viewer: { drawingId: drawing.id, target: "mks", downloadUrl: previewOnly ? "" : `${backendUrl}/api/drawings/${drawing.id}/pdf-stamped` },
         source: "MKS-F-ENG-005 Drawing Master List",
       });
     }
@@ -67,7 +71,7 @@ export default function BomAttachmentsReadOnly({ bom }) {
         accent: "blue",
         name: drawing.customer_ref_filename || `${drawing.drawing_no}-CUST-REF.pdf`,
         url: `${backendUrl}/api/drawings/${drawing.id}/customer-ref/preview`,
-        viewer: { drawingId: drawing.id, target: "customer_ref", downloadUrl: `${backendUrl}/api/drawings/${drawing.id}/customer-ref/download` },
+        viewer: { drawingId: drawing.id, target: "customer_ref", downloadUrl: previewOnly ? "" : `${backendUrl}/api/drawings/${drawing.id}/customer-ref/download` },
         source: "MKS-F-ENG-005 Drawing Master List",
       });
     }
@@ -165,7 +169,7 @@ export default function BomAttachmentsReadOnly({ bom }) {
           </div>
         )}
       </div>
-      {previewFile && !previewFile.isCosting && <ReadOnlyPreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} />}
+      {previewFile && !previewFile.isCosting && <ReadOnlyPreviewDialog file={previewFile} previewOnly={previewOnly} onClose={() => setPreviewFile(null)} />}
       {previewFile && previewFile.isCosting && <CostingReportDialog file={previewFile} onClose={() => setPreviewFile(null)} />}
     </Card>
   );
@@ -286,7 +290,7 @@ function CostingReportDialog({ file, onClose }) {
   );
 }
 
-function ReadOnlyPreviewDialog({ file, onClose }) {
+function ReadOnlyPreviewDialog({ file, onClose, previewOnly = false }) {
   const ext = (file.name || "").split(".").pop().toLowerCase();
   const isPdf = ext === "pdf";
   const isImage = ["jpg", "jpeg", "png", "webp", "gif"].includes(ext);
@@ -315,6 +319,7 @@ function ReadOnlyPreviewDialog({ file, onClose }) {
         stamped
         title={file.name}
         downloadUrl={v.downloadUrl || ""}
+        noDownload={previewOnly}
         onClose={onClose}
       />
     );

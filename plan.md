@@ -15,11 +15,16 @@
 - ✅ Tetap menjaga modul lain berjalan; tidak mengubah env URL.
 - ✅ (Tambahan) Document Control stamping multi-page sudah diperbaiki (DC/SO/TTD di semua halaman + picker scrollable).
 
-**Update objektif (terbaru, prioritas user):**
-- ⏳ **Universal preview image-based** untuk semua dokumen **tanpa buka tab baru** (menghindari popup blocker/IDM auto-download).
-- ⏳ **Preview attachments Sales Inquiry** (PDF + Excel costing) di viewer yang sama (`PdfPreviewModal`).
-- ⏳ **Preview Form Template** (ReportLab PDF template + Excel Template PDF) di viewer yang sama (`PdfPreviewModal`).
-- ⏳ **Preview Excel costing sebagai halaman gambar** (akurat “sesuai hasil” via LibreOffice), **download tetap file Excel asli**.
+**Update objektif (terbaru, hasil sesi ini):**
+- ✅ **Universal preview image-based** (PDF + Excel) tanpa buka tab baru (`PdfPreviewModal`), menghindari popup blocker/IDM.
+- ✅ **Preview Sales Inquiry attachments** (PDF + Excel) di viewer yang sama.
+- ✅ **Preview Form Template** (ReportLab PDF) & **Excel Template preview** di viewer yang sama.
+- ✅ **Preview Excel costing sebagai halaman gambar** (akurat “sesuai hasil” via LibreOffice), **download tetap file Excel asli**.
+- ✅ **Nomor SO 6 digit**: ketik `5251` → sistem menyimpan/menampilkan `005251` + migrasi data lama.
+- ✅ **Legacy Import Data Lama** (upload per “box” untuk 1 drawing/SO) → otomatis masuk **Drawing Master List** sebagai **Controlled/Final** (skip TTD) dengan label “Data Lama (scan TTD manual)”.
+- ✅ **RBAC BOM**:
+  - Costing Price + Harga/Riwayat Pembelian hanya untuk **super_admin/admin/supervisor/finance/engineering/sales** (Purchasing dikecualikan; sesuai instruksi user).
+  - DWG & Customer = **preview-only tanpa download** untuk **QC/DocControl/Store/Produksi**.
 
 ---
 
@@ -43,7 +48,7 @@ POC Steps (backend-first, minimal):
 4. **TTD requirement (existing flow):**
    - ✅ TTD per drawing dilakukan via Work Order (SignaturePlacementModal) sebelum submit ke Eng Leader.
 5. **POC tests:**
-   - ✅ Curl tests + UI tests + testing_agent (backend 94.4% success; UI 0 console errors untuk role leader & staff).
+   - ✅ Curl tests + UI tests + testing_agent.
 
 POC Exit: semua endpoints berfungsi, permission enforced, dan tidak ada regresi.
 
@@ -53,144 +58,134 @@ POC Exit: semua endpoints berfungsi, permission enforced, dan tidak ada regresi.
 **Keputusan user (konfirmasi):**
 - Sumber pencarian repeat order: **kombinasi SO + Drawing No**.
 - Yang di-auto-pull: **Drawing + BOM + Nesting + Costing** → di-copy & auto-attach, autofill di BOM, **editable bila Qty berubah**.
-- Bila data lama tidak ketemu: **tampilkan form upload manual** (pakai flow generate/upload yang sudah ada).
+- Bila data lama tidak ketemu: **tampilkan form upload manual**.
 - QC: hanya bisa lihat **MKS drawing + Customer drawing** (view-only), lalu **TTD**.
 
 **Implementasi:**
-- ✅ Backend: `GET /drawings/repeat-search` dan `POST /drawing-requests/{drf_id}/pull-repeat` (clone drawing + shared BOM + nesting + costing + costing_prev).
+- ✅ Backend: `GET /drawings/repeat-search` dan `POST /drawing-requests/{drf_id}/pull-repeat`.
 - ✅ Frontend: panel Repeat Order di Work Order Engineering.
-- ✅ QC view-only modal & TTD flow sudah berfungsi.
+- ✅ QC view-only modal & TTD flow.
 
 ---
 
-## Phase 3+ (User pivot) — Stamp per-halaman & Universal PDF/Excel Preview
+## Phase 3+ (User pivot) — Stamp per-halaman, Universal Preview, SO 6-digit, Legacy Import, BOM RBAC
 
 ### Phase A — Stamp per-halaman (SELESAI ✅)
 Masalah: stamp hal.1 kiri, hal.2 ingin kanan, tetapi semua halaman ikut satu posisi.
 Solusi: dukung `placements[]` (list {page,x,y,size}) di seluruh alur stamp.
-- ✅ `utils/pdf_stamper.py`: signature, DC stamp, SO stamp render posisi berbeda per halaman (page -1 = semua halaman). Backward compatible dgn x/y/page lama.
-- ✅ Backend endpoints: `ApprovalActionIn`, `DCStampIn`, `SOStampIn` terima `placements[]` + helper `_norm_placements`/`_apply_placement_to_stamp`.
-- ✅ `PdfStampCanvas`: render marker per halaman dari `placements`.
-- ✅ `SignaturePlacementModal`: klik tiap halaman → posisi sendiri; opsi "Posisi sama di semua halaman"; daftar halaman + hapus.
-- ✅ `DocumentDistributionRecordPage` (DC stamp) & `SOStampPage` (SO stamp): per-halaman placements + toggle sama-semua.
-- ✅ Verified end-to-end via API: hal.1 x≈70 (kiri), hal.2 x≈487 (kanan).
+- ✅ `utils/pdf_stamper.py`: signature, DC stamp, SO stamp render posisi berbeda per halaman.
+- ✅ Backend endpoints menerima `placements[]`.
+- ✅ `PdfStampCanvas` + `SignaturePlacementModal`.
+- ✅ Verified end-to-end.
 
-### Phase B — Universal image-based Preview (PDF + Excel) (IN PROGRESS)
-Masalah: preview PDF buka tab baru → kena blok popup / dicegat IDM (auto-download).
+### Phase B — Universal image-based Preview (PDF + Excel) (SELESAI ✅)
+Masalah: preview PDF buka tab baru → kena popup blocker/IDM.
 Solusi: viewer baca/preview berbasis **GAMBAR** (`PdfPreviewModal`) dengan backend `page-meta`/`page-image`.
 
-**Status saat ini (terbaru):**
-- ✅ Universal viewer `PdfPreviewModal` sudah ada & dipakai lintas modul.
-- ✅ Sales Inquiry attachment PDF sudah punya endpoint `page-meta`/`page-image` (di `sales.py`) dan frontend sudah routing PDF ke `PdfPreviewModal`.
-- ✅ LibreOffice `soffice` sudah terinstall di container untuk konversi Excel→PDF (akurat “sesuai hasil”).
-- ⏳ Excel costing (xlsx/xls/xlsm) belum punya `page-meta`/`page-image` untuk viewer (sebagian masih HTML/iframe preview).
-- ⏳ Form Template preview (ReportLab PDF) & Excel Template preview masih `window.open(blob)`.
+**Hasil implementasi (selesai):**
+- ✅ `PdfPreviewModal` jadi viewer universal (zoom/print/download) untuk seluruh modul.
+- ✅ Backend util:
+  - ✅ `backend/utils/pdf_render.py` (render page-meta + page-image)
+  - ✅ `backend/utils/office_render.py` (Office/Excel → PDF via LibreOffice headless + cache TTL)
+- ✅ Endpoint Excel→image sudah aktif untuk:
+  - ✅ BOM attachments: `/api/bom/{bom_id}/attachments/{attach_id}/page-meta|page-image`
+  - ✅ Sales inquiry attachments: `/api/inquiries/{inq_id}/attachments/{file_id}/page-meta|page-image`
+- ✅ Preview template image-based:
+  - ✅ Form templates: `/api/form-templates/{tid}/preview-page-meta|preview-page-image`
+  - ✅ Excel templates: `/api/excel-templates/{tid}/preview-page-meta|preview-page-image`
+- ✅ Frontend wiring:
+  - ✅ SalesPage: PDF + Excel attachments → `PdfPreviewModal`
+  - ✅ MasterDrawingPage costing → `PdfPreviewModal`
+  - ✅ BomAttachmentsReadOnly: full excel/dwg preview → `PdfPreviewModal`
+  - ✅ FormTemplatesPage + FormTemplateEditorPage: ganti `window.open(blob)` → `PdfPreviewModal`
+- ✅ Testing backend: **100% lulus (21/21)** untuk endpoint preview Excel/PDF.
 
-**Keputusan user (konfirmasi terbaru):**
-- Preview Excel harus **sesuai hasil** (akurat), tapi **download tetap format Excel asli**.
-- Deployment target: Windows Server 2012 R2 lokal; user akan tarik update dari GitHub. (Catatan: Windows host perlu LibreOffice terinstall agar konversi Excel berjalan, konsisten dengan modul `excel_templates`.)
+**Catatan deploy Windows Server 2012 R2:**
+- LibreOffice wajib terinstall (headless) atau set `SOFFICE_BIN`.
 
-**Implementasi yang akan dikerjakan (berurutan sesuai prioritas user):**
+### Phase C — SO Number 6 Digit (SELESAI ✅)
+Kebutuhan: semua SO numeric disimpan dalam format **6 digit** (zero-pad).
+- ✅ Backend:
+  - `normalize_so_no()` diubah menjadi zero-pad 6 digit.
+  - Validasi confirm order di Sales diubah → angka max 6 digit, disimpan zfill(6).
+  - Migrasi data lama: `backend/migrations/migrate_so_6digit.py` (sudah dijalankan pada env kerja).
+- ✅ Frontend:
+  - Input SO di QuotationPage: max 6 digit + padStart(6) saat blur.
 
-#### B1) Wiring Preview Sales Inquiry + Form Templates ke `PdfPreviewModal`
-1) **Sales Inquiry**
-- Backend:
-  - ⏳ Extend `GET /inquiries/{inq_id}/attachments/{file_id}/page-meta` & `page-image` agar mendukung Excel (`.xlsx/.xls/.xlsm`) selain PDF.
-  - Output harus kompatibel dengan `PdfPreviewModal` (`{pages, sizes}` + `image/png`).
-- Frontend:
-  - ⏳ `SalesPage.jsx`:
-    - Buat `.xlsx/.xls` menjadi previewable.
-    - Route Excel ke `PdfPreviewModal` (bukan iframe tab baru).
-    - Download tetap ke endpoint download (Content-Disposition attachment) supaya format asli.
+### Phase D — Legacy Import Data Lama → Drawing Master List (SELESAI ✅)
+Kebutuhan: upload data lama per “box” (per SO/drawing) dengan auto-detect dan verifikasi sebelum masuk sistem.
+- ✅ Backend router: `routers/legacy_import.py`
+  - `POST /api/legacy-import/analyze` → baca BOM Excel dan kembalikan suggested fields + items.
+  - `POST /api/legacy-import/commit` → buat Drawing + BOM + attachments sebagai **Controlled/Final** (skip TTD) dan label “Data Lama (scan TTD manual)”.
+  - Slot file sesuai permintaan:
+    - `eng_dwg` (PDF/Word, wajib)
+    - `customer_dwg` (PDF/Word/gambar, opsional)
+    - `nesting` (PDF/Word/Excel, opsional)
+    - `nesting_price` (PDF/Word/Excel, opsional)
+    - `bom_file` (Excel, opsional)
+- ✅ Frontend page: `LegacyImportPage.jsx` + route `/admin/legacy-import`
+  - Add box, upload slot, auto-analyze BOM, editable verifikasi, commit.
+- ✅ Menu:
+  - Admin dropdown + link untuk engineering leader.
 
-2) **Form Templates (ReportLab JSON template)**
-- Backend:
-  - ⏳ Tambah endpoint image-based untuk preview template:
-    - `POST /form-templates/{tid}/preview-page-meta`
-    - `GET /form-templates/{tid}/preview-page-image?page=...`
-    - Sumber PDF dari hasil render preview yang sudah ada (`/preview`) → render ke gambar via `utils/pdf_render.py`.
-- Frontend:
-  - ⏳ `FormTemplatesPage.jsx` & `FormTemplateEditorPage.jsx`: ganti `window.open(blob)` dengan membuka `PdfPreviewModal` menggunakan endpoint `preview-page-meta` / `preview-page-image`.
+### Phase E — BOM Workflow & RBAC (IN PROGRESS → hardening + UX)
+**User requirement:**
+- Add/edit item hanya lewat workflow revisi (staff ajukan revisi → leader approve → revisi → approval → masuk list + alasan revisi + bisa lihat revisi sebelumnya).
+- BOM umum bisa dibuka semua departemen, tapi:
+  - Costing price + harga pembelian/riwayat pembelian dibatasi.
+  - DWG/Customer untuk QC/DC/Store/Produksi hanya preview tanpa download.
 
-3) **Excel Templates (admin upload xlsx template → substitute → PDF)**
-- Backend:
-  - ⏳ Tambah endpoint image-based untuk preview hasil PDF dari excel template:
-    - `POST /excel-templates/{tid}/preview-page-meta`
-    - `GET /excel-templates/{tid}/preview-page-image?page=...`
-- Frontend:
-  - ⏳ `FormTemplatesPage.jsx`: tombol preview excel template → buka `PdfPreviewModal`.
+**Status saat ini:**
+- ✅ Backend alur revisi BOM sudah ada di Work Order (`request-reopen` → leader approve → draft → submit-review → approve-review + revision snapshot/history).
+- ✅ Caption/link lama “BOM Preparation & Approval” di BOM Utama sudah dihapus (tidak lagi link ke `/engineering/master-list`).
+- ✅ Backend RBAC:
+  - BOM attachments list memfilter kategori harga (`costing`, `costing_prev`, `nesting_price`) untuk non-privileged.
+  - Endpoint download guarded:
+    - Non-privileged tidak bisa download/akses costing.
+    - QC/DC/Store/Produksi tidak bisa download drawing/customer.
+  - Endpoint `GET /bom/{bom_id}/purchases` dibatasi → hanya role costing-view.
+- ✅ Frontend RBAC:
+  - BOM purchases card disembunyikan untuk non-costing role.
+  - PdfPreviewModal mendukung `noDownload` untuk mematikan tombol download.
+  - BomAttachmentsReadOnly: untuk QC/DC/Store/Produksi, tombol download DWG/Customer tidak muncul.
+- ✅ Role baru: `produksi` ditambahkan ke VALID_ROLES + dropdown Admin.
 
-#### B2) Preview Excel Costing sebagai halaman gambar (universal)
-Target: Excel costing di:
-- BOM attachments (`/bom/{bom_id}/attachments/{attach_id}` kategori `costing`)
-- Inquiry attachments (Sales)
-- Read-only BOM viewer (`BomAttachmentsReadOnly.jsx`)
-
-Backend:
-1) **Shared conversion util**
-- ⏳ Buat `backend/utils/office_render.py`:
-  - `office_to_pdf(raw, ext)` → LibreOffice headless convert.
-  - Cache hasil PDF berdasarkan sha256(raw) + ext (TTL) untuk hemat waktu.
-  - Reuse logika pencarian soffice (`_find_soffice`) dari `excel_templates.py` (refactor agar tidak duplikasi).
-
-2) **BOM attachments**
-- ⏳ Update `bom_attachments.py`:
-  - `GET /bom/{bom_id}/attachments/{attach_id}/page-meta` mendukung `.pdf` dan `.xlsx/.xls/.xlsm`.
-  - `GET /bom/{bom_id}/attachments/{attach_id}/page-image` mendukung Excel (convert→PDF→render PNG).
-  - Pastikan download tetap endpoint `/download` (asli).
-
-3) **Sales inquiry attachments**
-- ⏳ Update `sales.py`:
-  - `page-meta` & `page-image` mendukung Excel.
-
-4) **Kompatibilitas Windows Server 2012 R2**
-- ⏳ Dokumentasikan requirement: instal LibreOffice (headless) dan/atau set `SOFFICE_BIN` bila path tidak standar.
-
-Frontend:
-1) **MasterDrawingPage.jsx (costingList)**
-- ⏳ Tambah `viewer` pada costingList sehingga Excel costing bisa dibuka di `PdfPreviewModal`.
-- ⏳ Update logic pemilihan modal: jika file Excel punya `viewer.metaUrl`/`pageBase`, tetap buka `PdfPreviewModal` walau bukan PDF.
-
-2) **BomAttachmentsReadOnly.jsx**
-- ⏳ Tombol "Lihat Full Excel" dan preview costing diarahkan ke `PdfPreviewModal` image-based (bukan iframe HTML).
-
-3) **(Opsional / fallback)**
-- HTML preview (openpyxl→HTML) tetap boleh disimpan sebagai fallback jika LibreOffice tidak tersedia, tapi prioritas utama adalah image-based agar konsisten.
-
----
-
-### Phase 3 — Revision loop + QC/Sales/Document Control wiring + UX simplification (DONE ✅)
-- ✅ Revision loop Eng Leader ↔ engineer staff (reject dengan notes + multi-file upload + resubmit).
-- ✅ QC view-only + TTD tanpa tombol download.
-- ✅ Perbaikan wiring stamping & universal viewer telah diterapkan lintas modul utama.
-
-Catatan role & watermark:
-- ✅ Watermark "UNCONTROLLED" untuk user biasa; `doc_control` (Salma) dan `super_admin` tidak kena watermark namun tetap ada footer "printed by".
+**Sisa hardening (target berikutnya):**
+1. UI end-to-end verifikasi (QC/DC/Store/Produksi vs Sales/Engineering/Admin):
+   - Costing/price hidden vs visible
+   - DWG/Customer preview-only tanpa download
+   - Purchase history hidden vs visible
+2. Pastikan seluruh halaman yang menampilkan attachments BOM membaca flag `can_view_costing` / `drawing_preview_only` dari backend bila perlu.
+3. Final check: tidak ada lagi link/menu “BOM Preparation & Approval” yang membingungkan.
 
 ---
 
 ## 3) Next Actions (Updated)
-**P0 (langsung dikerjakan, sesuai prioritas user):**
-1) ✅ Verifikasi Sales Inquiry PDF preview (sudah diwire) via test endpoint & UI.
-2) ⏳ Integrasi preview **Form Templates** (ReportLab) ke `PdfPreviewModal` (hapus `window.open(blob)`).
-3) ⏳ Integrasi preview **Excel Templates** ke `PdfPreviewModal`.
-4) ⏳ Implementasi preview **Excel costing** sebagai image pages:
-   - BOM attachments: `page-meta/page-image` dukung Excel.
-   - Inquiry attachments: `page-meta/page-image` dukung Excel.
-   - Frontend: SalesPage + MasterDrawingPage + BomAttachmentsReadOnly routing ke viewer.
+**P0 (langsung):**
+1) ✅ Universal preview Excel/PDF + wiring viewer (DONE, tested).
+2) ✅ SO 6 digit + migrasi data lama (DONE).
+3) ✅ Legacy Import page + role produksi (DONE).
+4) ⏳ **Hardening RBAC BOM** (UI test + edge cases):
+   - QC/DC/Store/Produksi: DWG/Customer preview-only (tanpa download)
+   - Non-privileged: tidak bisa lihat costing price + tidak bisa lihat purchase history
+   - Privileged: semua tetap berfungsi (download tetap jalan, watermark rule tetap berlaku).
 
 **P1:**
-- Refactor/rapikan file frontend besar (mis. `MasterDrawingPage.jsx` 2300+ lines) menjadi komponen.
+- Refactor file frontend besar (mis. `MasterDrawingPage.jsx` 2300+ lines).
 
 **Testing:**
-- Backend: curl/python untuk endpoint `page-meta/page-image` (PDF & Excel) + verifikasi caching dan error message.
-- Frontend: validasi UI (screenshot/visual) untuk preview multi-page, zoom, print/download.
+- Backend: sudah lulus untuk preview endpoints; tambah regression untuk RBAC (403/filtered list).
+- Frontend: validasi visual + role-based flows (QC/DC/Store/Produksi vs Engineering/Sales/Admin).
 
 ---
 
 ## 4) Success Criteria (Updated)
 - ✅ Tidak ada regresi: backend startup sehat, frontend compile tanpa error.
-- ✅ Semua preview PDF tidak lagi `window.open`/tab baru, melainkan via `PdfPreviewModal`.
-- ✅ Excel costing dapat dipreview sebagai **halaman gambar** (multi-page) di viewer yang sama.
-- ✅ Tombol Download tetap mengunduh file **asli** (Excel tetap `.xlsx`).
-- ✅ Dapat berjalan di Windows Server 2012 R2 lokal (dengan requirement LibreOffice untuk konversi Excel→PDF).
+- ✅ Semua preview dokumen tidak lagi `window.open`/tab baru; gunakan `PdfPreviewModal`.
+- ✅ Excel (costing/template/inquiry) dapat dipreview sebagai **halaman gambar**; download tetap file asli.
+- ✅ SO numeric tersimpan konsisten 6 digit (`005251`).
+- ✅ Legacy import mampu memasukkan data lama sebagai Controlled/Final dan bisa diverifikasi sebelum commit.
+- ✅ RBAC BOM:
+  - Costing price + purchase history hanya terlihat untuk role yang diizinkan.
+  - QC/DC/Store/Produksi tidak bisa download DWG/Customer (preview-only).
+- ✅ Siap ditarik ke Windows Server 2012 R2 lokal (dengan requirement LibreOffice untuk konversi Office→PDF).

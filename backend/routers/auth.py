@@ -161,6 +161,7 @@ VALID_ROLES = (
     "store",
     "qc",  # Quality Control — Material Incoming Inspection (MII)
     "doc_control",  # Document Control (Salma) — Digital stamp & controlled document distribution
+    "produksi",  # Produksi/Production — lihat BOM & drawing (preview-only, tanpa harga/costing)
 )
 
 

@@ -32,6 +32,7 @@ export default function PdfPreviewModal({
   title = "Preview Dokumen",
   subtitle = "",
   downloadUrl = "",
+  noDownload = false,
   onClose,
 }) {
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
@@ -46,12 +47,13 @@ export default function PdfPreviewModal({
   const [zoom, setZoom] = useState(1);
   const [printing, setPrinting] = useState(false);
 
-  // Default download URL untuk mode drawing bila tidak diberikan
-  const effectiveDownloadUrl = downloadUrl || (!generic && drawingId
+  // Default download URL untuk mode drawing bila tidak diberikan.
+  // noDownload=true (mis. role QC/Store/Produksi/DocControl) → paksa sembunyikan tombol download.
+  const effectiveDownloadUrl = noDownload ? "" : (downloadUrl || (!generic && drawingId
     ? (active.key === "customer_ref"
         ? `${apiUrl}/api/drawings/${drawingId}/customer-ref/download`
         : `${apiUrl}/api/drawings/${drawingId}/pdf-stamped`)
-    : "");
+    : ""));
 
   const load = useCallback(async () => {
     setMeta(null); setErr("");

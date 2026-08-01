@@ -20,6 +20,7 @@ from deps import (
     require_bom_admin,
     require_bom_upload,
     require_bom_edit,
+    can_view_costing,
 )
 from services.soft_delete import NOT_DELETED_FILTER, merged, soft_delete_one
 
@@ -1244,14 +1245,10 @@ async def bom_purchase_history(bom_id: str, current: dict = Depends(get_current_
     so_no = (bom.get("so_no") or "").strip()
     role = (current.get("role") or "").lower()
 
-    # Role gate — block roles we don't intend to give any access
-    allowed_roles = {
-        "super_admin", "admin", "supervisor", "finance",
-        "eng_leader", "eng_head", "eng_staff", "engineering",
-        "sales", "purchasing", "store",
-    }
-    if role not in allowed_roles and not current.get("is_super_admin"):
-        raise HTTPException(status_code=403, detail="Tidak punya akses ke data pembelian BOM ini")
+    # RBAC (Feb 2026): Harga & riwayat pembelian BOM hanya untuk role yang boleh lihat costing
+    # (Super Admin, Admin, Supervisor, Finance, semua Engineering, Sales).
+    if not can_view_costing(current) and not current.get("is_super_admin"):
+        raise HTTPException(status_code=403, detail="Anda tidak berwenang melihat harga & riwayat pembelian BOM")
 
     if not so_no and bom_id:
         # BOM without SO — only explicit BOM-linked purchases

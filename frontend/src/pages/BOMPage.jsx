@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import api, { formatDateID } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { canViewCosting } from "../lib/rbac";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -440,8 +441,10 @@ export default function BOMPage() {
 
 
 function BomDetail({ bom, annotations, canAnnotate, savingAnn, onBack, onUpdate, onSave, onHistory }) {
-  // Add/edit/delete item DISABLED di BOM Utama — semua perubahan wajib lewat BOM Preparation & Approval (Engineering workflow)
+  // Add/edit/delete item DISABLED di BOM Utama — semua perubahan wajib lewat revisi BOM (Engineering workflow)
   const canAddItem = false;
+  const { user } = useAuth();
+  const showCosting = canViewCosting(user?.role);  // RBAC: harga & riwayat pembelian
   const items = bom.items || [];
   const [addItemMode, setAddItemMode] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -476,7 +479,7 @@ function BomDetail({ bom, annotations, canAnnotate, savingAnn, onBack, onUpdate,
   const isPurchased = (name) => name && purchasedNames.has(String(name).trim().toLowerCase());
 
   useEffect(() => {
-    if (!bom?.id) return;
+    if (!bom?.id || !showCosting) return;   // RBAC: hanya role privileged yang ambil riwayat pembelian
     let cancelled = false;
     (async () => {
       setPurchasesLoading(true);
@@ -490,7 +493,7 @@ function BomDetail({ bom, annotations, canAnnotate, savingAnn, onBack, onUpdate,
       }
     })();
     return () => { cancelled = true; };
-  }, [bom?.id]);
+  }, [bom?.id, showCosting]);
   return (
     <>
       {/* Back + header */}
@@ -754,7 +757,8 @@ function BomDetail({ bom, annotations, canAnnotate, savingAnn, onBack, onUpdate,
         </div>
       </Card>
 
-      {/* Purchase History for this SO */}
+      {/* Purchase History for this SO — RBAC: hanya role privileged (costing) */}
+      {showCosting && (
       <Card className="rounded-none border-slate-200 overflow-hidden" data-testid="bom-purchases-card">
         <div className="px-4 py-2 bg-sky-50 border-b border-sky-200 flex items-center justify-between">
           <div className="text-[10px] uppercase tracking-[0.15em] font-bold text-sky-800">
@@ -832,6 +836,7 @@ function BomDetail({ bom, annotations, canAnnotate, savingAnn, onBack, onUpdate,
           </>
         )}
       </Card>
+      )}
 
       {linkItem && (
         <BomSearchLinkModal
