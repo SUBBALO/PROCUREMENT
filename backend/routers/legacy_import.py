@@ -308,3 +308,112 @@ async def commit_entry(
         "attachments": attached,
         "message": f"Drawing {drawing_no} (SO {so_no}) masuk Master List (Controlled) — {legacy_note}",
     }
+
+
+
+@router.post("/legacy-import/add-drawing")
+async def add_drawing_to_bom(
+    meta: str = Form(...),                              # JSON: {bom_id, drawing_no, customer_drawing_no, revision}
+    eng_dwg: UploadFile = File(...),                    # Eng DWG (PDF/Word)
+    customer_dwg: Optional[UploadFile] = File(None),
+    current: dict = Depends(get_current_user),
+):
+    """Tambah DWG tambahan (drawing terpisah) ke BOM/SO yang sudah dibuat (multiple DWG)."""
+    _require_access(current)
+    from routers.drawing_register import _fs as drawings_fs
+
+    try:
+        m = json.loads(meta or "{}")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Metadata tidak valid (bukan JSON)")
+
+    bom_id = (m.get("bom_id") or "").strip()
+    drawing_no = (m.get("drawing_no") or "").strip()
+    if not bom_id or not drawing_no:
+        raise HTTPException(status_code=400, detail="bom_id & drawing_no wajib")
+    if _ext(eng_dwg.filename) not in ("pdf", "doc", "docx"):
+        raise HTTPException(status_code=400, detail="File Eng DWG harus PDF atau Word")
+
+    bom = await db.boms.find_one({"id": bom_id})
+    if not bom:
+        raise HTTPException(status_code=404, detail="BOM tidak ditemukan")
+
+    revision = (m.get("revision") or "Rev-0").strip()
+    dup = await db.drawings.find_one({"drawing_no": drawing_no, "revision": revision, "deleted_at": {"$exists": False}})
+    if dup:
+        raise HTTPException(status_code=409, detail=f"Drawing '{drawing_no}' {revision} sudah ada")
+
+    now = _now_iso()
+    user_name = current.get("username") or current.get("name")
+    so_no = bom.get("so_no") or ""
+    legacy_note = "Data Lama (scan TTD manual)"
+    dfs = drawings_fs()
+
+    mks_bytes = await eng_dwg.read()
+    if not mks_bytes:
+        raise HTTPException(status_code=400, detail="File Eng DWG kosong")
+    mks_file_id = await dfs.upload_from_stream(
+        eng_dwg.filename, mks_bytes,
+        metadata={"content_type": eng_dwg.content_type, "drawing_no": drawing_no, "legacy": True},
+    )
+    customer_ref_file_id = None
+    customer_ref_filename = None
+    if customer_dwg is not None and customer_dwg.filename:
+        cust_bytes = await customer_dwg.read()
+        if cust_bytes:
+            cid = await dfs.upload_from_stream(
+                customer_dwg.filename, cust_bytes,
+                metadata={"content_type": customer_dwg.content_type, "drawing_no": drawing_no, "legacy": True, "kind": "customer_ref"},
+            )
+            customer_ref_file_id = str(cid)
+            customer_ref_filename = customer_dwg.filename
+
+    drawing_doc = {
+        "id": str(uuid.uuid4()),
+        "drawing_no": drawing_no,
+        "customer_code": (bom.get("customer") or "MKS"),
+        "customer_name": "",
+        "project_initial": "",
+        "drawing_type": "Assembly",
+        "title": bom.get("project_name") or "",
+        "revision": revision,
+        "discipline": "Mechanical",
+        "customer_drawing_no": (m.get("customer_drawing_no") or "").strip(),
+        "so_no": so_no,
+        "project_name": bom.get("project_name") or "",
+        "class_material": bom.get("class_material") or "",
+        "prepared_by": user_name,
+        "request_by_sales": "",
+        "checked_by": "",
+        "drawing_date": (m.get("drawing_date") or bom.get("bom_date") or ""),
+        "status": "Issued",
+        "remark": "",
+        "bom_link_mode": "existing",
+        "bom_no": bom.get("bom_no") or "",
+        "bom_id": bom_id,
+        "auto_generated": False,
+        "id_year_month": None,
+        "created_at": now, "created_by": user_name,
+        "updated_at": now, "updated_by": user_name,
+        "file_id": str(mks_file_id),
+        "filename": eng_dwg.filename,
+        "file_uploaded_at": now, "file_uploaded_by": user_name,
+        "customer_ref_file_id": customer_ref_file_id,
+        "customer_ref_filename": customer_ref_filename,
+        "pdf_match_status": "legacy",
+        "pdf_match_note": legacy_note,
+        "approval_status": "controlled",
+        "approvals": [{
+            "stage": "legacy_import", "name": user_name, "role": current.get("role"),
+            "user_id": current.get("id"), "username": current.get("username"),
+            "at": now, "notes": legacy_note,
+        }],
+        "legacy_import": True,
+        "legacy_note": legacy_note,
+    }
+    await db.drawings.insert_one(drawing_doc.copy())
+    await log_action(current, "legacy_import_add_drawing", "drawings", drawing_doc["id"],
+                     {"drawing_no": drawing_no, "so_no": so_no, "bom_id": bom_id})
+    return {"success": True, "drawing_id": drawing_doc["id"], "drawing_no": drawing_no,
+            "bom_id": bom_id, "so_no": so_no,
+            "message": f"Drawing tambahan {drawing_no} (SO {so_no}) masuk Master List (Controlled)"}

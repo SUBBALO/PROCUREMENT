@@ -49,8 +49,8 @@ PRODUCTION_ROLES = ("produksi", "production")
 
 # === RBAC untuk menu BOM (Feb 2026) ===
 # Boleh melihat file Costing Price + Harga/Riwayat Pembelian item BOM.
-# (Super Admin, Admin, Supervisor, Finance, semua Engineering, Sales)
-COSTING_VIEW_ROLES = ADMIN_LIKE_ROLES + FINANCE_ROLES + ENGINEERING_ROLES + SALES_ROLES
+# (Super Admin, Admin, Supervisor, Finance, semua Engineering, Sales, Purchasing)
+COSTING_VIEW_ROLES = ADMIN_LIKE_ROLES + FINANCE_ROLES + ENGINEERING_ROLES + SALES_ROLES + PURCHASING_ROLES
 # Kategori attachment yang dianggap "harga/costing" (disembunyikan dari role non-privileged).
 PRICE_ATTACHMENT_CATEGORIES = {"costing", "costing_prev", "nesting_price"}
 # Role yang HANYA boleh preview file DWG & Customer (tanpa tombol download) di konteks BOM.

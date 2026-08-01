@@ -7,7 +7,7 @@
 const COSTING_VIEW_ROLES = new Set([
   "super_admin", "admin", "supervisor", "finance",
   "engineering", "eng_head", "eng_leader", "eng_staff",
-  "sales",
+  "sales", "purchasing", "staff",
 ]);
 
 const DRAWING_PREVIEW_ONLY_ROLES = new Set([
