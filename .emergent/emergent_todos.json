@@ -1,26 +1,22 @@
 [
   {
-    "content": "QC Tanpa Download: tambah prop noPrint di PdfPreviewModal + wire noDownload/noPrint utk role QC di PendingApprovalDrawingsPage",
+    "content": "Backend: endpoint preview lampiran DRF (page-meta + page-image) view-only",
     "status": "completed"
   },
   {
-    "content": "Dashboard Engineering: tambah slot children di DeptPortal",
+    "content": "Buat DrfDetailModal: info DRF + preview lampiran view-only + dokumen drawing + progres",
     "status": "completed"
   },
   {
-    "content": "Dashboard Engineering: buat komponen EngineeringQueuePanel (stat tiles + mini-list antrian DRF)",
+    "content": "DrfDetailModal: aksi Terima & Assign engineer (submitted) + link Work Order (in_progress)",
     "status": "completed"
   },
   {
-    "content": "Integrasi EngineeringQueuePanel ke EngineeringPortalPage",
+    "content": "Ubah EngineeringQueuePanel: tile jadi filter inline + tombol Buka -> popup",
     "status": "completed"
   },
   {
-    "content": "Verifikasi compile esbuild + screenshot portal & QC preview",
-    "status": "completed"
-  },
-  {
-    "content": "Verifikasi Phase 3 Revision loop end-to-end (backend curl + panel staff)",
+    "content": "Verifikasi compile + screenshot: filter tile & popup detail/preview/assign",
     "status": "completed"
   }
 ]

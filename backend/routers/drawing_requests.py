@@ -668,3 +668,57 @@ async def delete_drf_attachment(drf_id: str, file_id: str, current: dict = Depen
         {"$pull": {"attached_files": {"file_id": file_id}}},
     )
     return {"success": True}
+
+
+# =========================================================================
+# Attachment preview (image-based, view-only) — dipakai popup Antrian DRF
+# =========================================================================
+def _entry_is_pdf(entry: dict) -> bool:
+    ct = (entry.get("content_type") or "").lower()
+    fn = (entry.get("filename") or "").lower()
+    return "pdf" in ct or fn.endswith(".pdf")
+
+
+async def _attachment_raw(drf_id: str, file_id: str) -> tuple:
+    doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="DRF tidak ditemukan")
+    entry = next((f for f in (doc.get("attached_files") or []) if f["file_id"] == file_id), None)
+    if not entry:
+        raise HTTPException(status_code=404, detail="File tidak ditemukan")
+    try:
+        stream = await _bucket().open_download_stream(ObjectId(file_id))
+        raw = await stream.read()
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"File tidak bisa dibaca: {e}")
+    return raw, entry
+
+
+@router.get("/drawing-requests/{drf_id}/attachments/{file_id}/page-meta")
+async def drf_attachment_page_meta(drf_id: str, file_id: str, current: dict = Depends(get_current_user)):
+    """Metadata halaman untuk preview image-based lampiran DRF (PDF)."""
+    raw, entry = await _attachment_raw(drf_id, file_id)
+    if not _entry_is_pdf(entry):
+        raise HTTPException(status_code=400, detail="Preview gambar hanya untuk PDF")
+    from utils.pdf_render import pdf_page_meta
+    return pdf_page_meta(raw)
+
+
+@router.get("/drawing-requests/{drf_id}/attachments/{file_id}/page-image")
+async def drf_attachment_page_image(
+    drf_id: str, file_id: str, page: int = 0, scale: float = 2.0,
+    current: dict = Depends(get_current_user),
+):
+    """Render 1 halaman lampiran DRF (PDF) sebagai PNG untuk viewer view-only."""
+    raw, entry = await _attachment_raw(drf_id, file_id)
+    if not _entry_is_pdf(entry):
+        raise HTTPException(status_code=400, detail="Preview gambar hanya untuk PDF")
+    from utils.pdf_render import pdf_page_png
+    from fastapi.responses import Response
+    try:
+        png = pdf_page_png(raw, page=page, scale=scale)
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Halaman tidak ada")
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"File bukan PDF valid: {e}")
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})

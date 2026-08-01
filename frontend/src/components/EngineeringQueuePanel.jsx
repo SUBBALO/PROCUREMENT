@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../lib/api";
+import DrfDetailModal from "./DrfDetailModal";
 import {
-  PaperPlaneTilt, Stamp, Kanban, ClipboardText, ArrowRight,
-  ArrowClockwise, CheckCircle, Gear, Tray,
+  PaperPlaneTilt, Stamp, Kanban, ArrowRight, ArrowClockwise,
+  CheckCircle, Gear, Tray, Tray as TrayIcon, ListChecks, Eye,
 } from "@phosphor-icons/react";
 
 const TYPE_LABEL = { new_order: "New", repeat_order: "Repeat" };
@@ -14,9 +15,11 @@ const STATUS_META = {
 };
 
 /**
- * EngineeringQueuePanel — ringkasan konsolidasi antrian Drawing Request (DRF) untuk portal Engineering.
- * Menampilkan stat tiles (perlu diterima / dikerjakan / menunggu TTD saya / tugas saya) + mini-list
- * antrian DRF terbaru sehingga Eng Leader bisa langsung melihat & bertindak tanpa berpindah menu.
+ * EngineeringQueuePanel — antrian Drawing Request (DRF) untuk portal Engineering.
+ * Tile status = FILTER inline daftar DRF di bawahnya (tidak pindah menu).
+ * Tombol "Buka" pada tiap baris membuka POPUP detail DRF (info + preview lampiran view-only,
+ * aksi Terima & Assign untuk submitted, atau dokumen drawing + progres untuk in_progress).
+ * Quick-link terpisah untuk "Menunggu TTD Saya" & "Tugas Saya" (domain approval drawing).
  */
 export default function EngineeringQueuePanel({ isHead, isEngUser }) {
   const navigate = useNavigate();
@@ -24,6 +27,8 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
   const [pendingApproval, setPendingApproval] = useState(0);
   const [myTasks, setMyTasks] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
+  const [detailDrf, setDetailDrf] = useState(null);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -55,21 +60,24 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
     return () => clearInterval(t);
   }, [fetchAll]);
 
-  const submitted = drfs.filter((d) => d.status === "submitted");
-  const accepted = drfs.filter((d) => d.status === "accepted");
-  const inProgress = drfs.filter((d) => d.status === "in_progress");
-  const queue = [...submitted, ...accepted, ...inProgress];
+  const counts = {
+    all: drfs.length,
+    submitted: drfs.filter((d) => d.status === "submitted").length,
+    accepted: drfs.filter((d) => d.status === "accepted").length,
+    in_progress: drfs.filter((d) => d.status === "in_progress").length,
+  };
 
-  const tiles = [
-    ...(isHead ? [
-      { key: "submitted", label: "Perlu Diterima", value: submitted.length, icon: PaperPlaneTilt, accent: "text-amber-600", ring: "border-l-amber-500", href: "/engineering/drawing-request-inbox" },
-      { key: "inprogress", label: "Sedang Dikerjakan", value: inProgress.length, icon: Gear, accent: "text-violet-600", ring: "border-l-violet-500", href: "/engineering/work-orders" },
-      { key: "approval", label: "Menunggu TTD Saya", value: pendingApproval, icon: Stamp, accent: "text-emerald-600", ring: "border-l-emerald-500", href: "/drawings/pending-my-approval" },
-    ] : []),
-    ...(isEngUser ? [
-      { key: "mytasks", label: "Tugas Saya", value: myTasks, icon: Kanban, accent: "text-teal-600", ring: "border-l-teal-500", href: "/engineering/work-orders" },
-    ] : []),
+  const FILTERS = [
+    { key: "all", label: "Semua Antrian", icon: TrayIcon, accent: "text-slate-700", ring: "border-l-slate-400" },
+    { key: "submitted", label: "Perlu Diterima", icon: PaperPlaneTilt, accent: "text-amber-600", ring: "border-l-amber-500" },
+    { key: "accepted", label: "Diterima", icon: CheckCircle, accent: "text-sky-600", ring: "border-l-sky-500" },
+    { key: "in_progress", label: "Sedang Dikerjakan", icon: Gear, accent: "text-violet-600", ring: "border-l-violet-500" },
   ];
+
+  // Urutan antrian: submitted → accepted → in_progress
+  const order = { submitted: 0, accepted: 1, in_progress: 2 };
+  const sorted = [...drfs].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
+  const filtered = filter === "all" ? sorted : sorted.filter((d) => d.status === filter);
 
   return (
     <div className="bg-white border border-slate-200 shadow-sm" data-testid="eng-queue-panel">
@@ -82,115 +90,165 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
           </h2>
           {loading && <span className="text-[10px] text-slate-400 animate-pulse">memuat…</span>}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
+          {isHead && (
+            <QuickLink icon={Stamp} label="Menunggu TTD Saya" count={pendingApproval} onClick={() => navigate("/drawings/pending-my-approval")} testid="eng-queue-ttd-link" />
+          )}
+          {isEngUser && (
+            <QuickLink icon={Kanban} label="Tugas Saya" count={myTasks} onClick={() => navigate("/engineering/work-orders")} testid="eng-queue-mytasks-link" />
+          )}
           <button onClick={fetchAll} className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded" title="Segarkan" data-testid="eng-queue-refresh">
             <ArrowClockwise size={14} weight="bold" />
           </button>
-          {isHead && (
-            <button
-              onClick={() => navigate("/engineering/drawing-request-inbox")}
-              className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest font-bold text-amber-700 hover:text-amber-900 px-2 py-1"
-              data-testid="eng-queue-inbox-link"
-            >
-              Buka Inbox <ArrowRight size={12} weight="bold" />
-            </button>
-          )}
         </div>
       </div>
 
-      {/* Stat tiles */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-px bg-slate-200">
-        {tiles.map((t) => {
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.key}
-              onClick={() => navigate(t.href)}
-              className={`text-left bg-white hover:bg-slate-50 transition-colors p-3 border-l-4 ${t.ring} focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500`}
-              data-testid={`eng-queue-tile-${t.key}`}
-            >
-              <div className="flex items-center justify-between">
-                <Icon size={18} weight="duotone" className={t.accent} />
-                <span className="text-2xl font-bold tabular-nums text-slate-900" data-testid={`eng-queue-count-${t.key}`}>{t.value}</span>
-              </div>
-              <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-slate-500 mt-1">{t.label}</div>
-            </button>
-          );
-        })}
-      </div>
+      {isHead ? (
+        <>
+          {/* Filter tiles */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-200" data-testid="eng-queue-filters">
+            {FILTERS.map((f) => {
+              const Icon = f.icon;
+              const activeF = filter === f.key;
+              return (
+                <button
+                  key={f.key}
+                  onClick={() => setFilter(f.key)}
+                  className={`text-left p-3 border-l-4 ${f.ring} transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500 ${activeF ? "bg-amber-50" : "bg-white hover:bg-slate-50"}`}
+                  data-testid={`eng-queue-filter-${f.key}`}
+                  aria-pressed={activeF}
+                >
+                  <div className="flex items-center justify-between">
+                    <Icon size={18} weight="duotone" className={f.accent} />
+                    <span className="text-2xl font-bold tabular-nums text-slate-900" data-testid={`eng-queue-count-${f.key}`}>{counts[f.key]}</span>
+                  </div>
+                  <div className={`text-[10px] uppercase tracking-[0.1em] font-bold mt-1 ${activeF ? "text-amber-700" : "text-slate-500"}`}>{f.label}</div>
+                </button>
+              );
+            })}
+          </div>
 
-      {/* Mini-list antrian */}
-      {isHead && (
-        <div className="p-3">
-          {queue.length === 0 ? (
-            <div className="flex items-center justify-center gap-2 py-6 text-xs text-slate-400">
-              <CheckCircle size={16} weight="fill" className="text-emerald-500" />
-              Tidak ada antrian DRF saat ini.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm" data-testid="eng-queue-list">
-                <thead>
-                  <tr className="text-[9px] uppercase tracking-[0.1em] font-bold text-slate-400 border-b border-slate-100">
-                    <th className="text-left py-1.5 pr-2">Form No</th>
-                    <th className="text-left py-1.5 pr-2">Tipe</th>
-                    <th className="text-left py-1.5 pr-2">SO</th>
-                    <th className="text-left py-1.5 pr-2">Customer / Project</th>
-                    <th className="text-left py-1.5 pr-2">Engineer</th>
-                    <th className="text-left py-1.5 pr-2">Status</th>
-                    <th className="py-1.5"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {queue.slice(0, 6).map((d) => {
-                    const meta = STATUS_META[d.status] || { label: d.status, cls: "bg-slate-100 text-slate-700 border-slate-300" };
-                    const goto = d.status === "submitted" ? "/engineering/drawing-request-inbox" : "/engineering/work-orders";
-                    return (
-                      <tr key={d.id} className="border-b border-slate-50 hover:bg-amber-50/40" data-testid={`eng-queue-row-${d.form_no}`}>
-                        <td className="py-1.5 pr-2 font-mono text-xs font-semibold text-slate-800 whitespace-nowrap">{d.form_no}</td>
-                        <td className="py-1.5 pr-2">
-                          <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${d.request_type === "repeat_order" ? "bg-blue-50 text-blue-700 border-blue-300" : "bg-emerald-50 text-emerald-700 border-emerald-300"}`}>
-                            {TYPE_LABEL[d.request_type] || d.request_type}
-                          </span>
-                        </td>
-                        <td className="py-1.5 pr-2 font-mono text-xs text-slate-600 whitespace-nowrap">{d.so_no || "-"}</td>
-                        <td className="py-1.5 pr-2 text-xs text-slate-700 max-w-[220px] truncate" title={`${d.customer_name || ""} ${d.project_name || ""}`}>
-                          <span className="font-medium">{d.customer_name || "-"}</span>
-                          {d.project_name ? <span className="text-slate-400"> · {d.project_name}</span> : null}
-                        </td>
-                        <td className="py-1.5 pr-2 text-xs text-slate-600 whitespace-nowrap">{d.assigned_engineer_name || <span className="text-slate-300">—</span>}</td>
-                        <td className="py-1.5 pr-2">
-                          <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${meta.cls}`}>{meta.label}</span>
-                        </td>
-                        <td className="py-1.5 text-right">
-                          <button
-                            onClick={() => navigate(goto)}
-                            className="inline-flex items-center gap-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700 hover:text-amber-900"
-                            data-testid={`eng-queue-open-${d.form_no}`}
-                          >
-                            {d.status === "submitted" ? "Terima" : "Buka"} <ArrowRight size={11} weight="bold" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {queue.length > 6 && (
-                <div className="text-center pt-2">
-                  <button
-                    onClick={() => navigate("/engineering/work-orders")}
-                    className="text-[10px] uppercase tracking-widest font-bold text-slate-500 hover:text-slate-800"
-                    data-testid="eng-queue-more"
-                  >
-                    +{queue.length - 6} DRF lainnya — lihat semua
-                  </button>
-                </div>
+          {/* List (terfilter) */}
+          <div className="p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-slate-400">
+                {filter === "all" ? "Semua DRF di antrian" : `Filter: ${STATUS_META[filter]?.label || filter}`} · {filtered.length}
+              </div>
+              {filter !== "all" && (
+                <button onClick={() => setFilter("all")} className="text-[10px] uppercase tracking-widest font-bold text-amber-700 hover:text-amber-900" data-testid="eng-queue-clear-filter">
+                  Tampilkan semua
+                </button>
               )}
             </div>
-          )}
+            {filtered.length === 0 ? (
+              <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-400" data-testid="eng-queue-empty">
+                <CheckCircle size={16} weight="fill" className="text-emerald-500" />
+                {filter === "all" ? "Tidak ada antrian DRF saat ini." : `Tidak ada DRF pada filter "${STATUS_META[filter]?.label || filter}".`}
+              </div>
+            ) : (
+              <div className="overflow-x-auto max-h-[340px] overflow-y-auto border border-slate-100">
+                <table className="w-full text-sm" data-testid="eng-queue-list">
+                  <thead className="sticky top-0 bg-white z-[1]">
+                    <tr className="text-[9px] uppercase tracking-[0.1em] font-bold text-slate-400 border-b border-slate-100">
+                      <th className="text-left py-1.5 px-2">Form No</th>
+                      <th className="text-left py-1.5 px-2">Tipe</th>
+                      <th className="text-left py-1.5 px-2">SO</th>
+                      <th className="text-left py-1.5 px-2">Customer / Project</th>
+                      <th className="text-left py-1.5 px-2">Engineer</th>
+                      <th className="text-left py-1.5 px-2">Status</th>
+                      <th className="py-1.5 px-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((d) => {
+                      const meta = STATUS_META[d.status] || { label: d.status, cls: "bg-slate-100 text-slate-700 border-slate-300" };
+                      return (
+                        <tr
+                          key={d.id}
+                          className="border-b border-slate-50 hover:bg-amber-50/50 cursor-pointer"
+                          onClick={() => setDetailDrf(d)}
+                          data-testid={`eng-queue-row-${d.form_no}`}
+                        >
+                          <td className="py-1.5 px-2 font-mono text-xs font-semibold text-slate-800 whitespace-nowrap">{d.form_no}</td>
+                          <td className="py-1.5 px-2">
+                            <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${d.request_type === "repeat_order" ? "bg-blue-50 text-blue-700 border-blue-300" : "bg-emerald-50 text-emerald-700 border-emerald-300"}`}>
+                              {TYPE_LABEL[d.request_type] || d.request_type}
+                            </span>
+                          </td>
+                          <td className="py-1.5 px-2 font-mono text-xs text-slate-600 whitespace-nowrap">{d.so_no || "-"}</td>
+                          <td className="py-1.5 px-2 text-xs text-slate-700 max-w-[220px] truncate" title={`${d.customer_name || ""} ${d.project_name || ""}`}>
+                            <span className="font-medium">{d.customer_name || "-"}</span>
+                            {d.project_name ? <span className="text-slate-400"> · {d.project_name}</span> : null}
+                          </td>
+                          <td className="py-1.5 px-2 text-xs text-slate-600 whitespace-nowrap">{d.assigned_engineer_name || <span className="text-slate-300">—</span>}</td>
+                          <td className="py-1.5 px-2">
+                            <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${meta.cls}`}>{meta.label}</span>
+                          </td>
+                          <td className="py-1.5 px-2 text-right">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setDetailDrf(d); }}
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold uppercase tracking-wider"
+                              data-testid={`eng-queue-open-${d.form_no}`}
+                            >
+                              <Eye size={11} weight="bold" /> Buka
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        /* Non-head (eng staff): fokus Tugas Saya */
+        <div className="p-4">
+          <button
+            onClick={() => navigate("/engineering/work-orders")}
+            className="w-full flex items-center justify-between p-4 border-l-4 border-l-teal-500 bg-white hover:bg-slate-50 transition-colors"
+            data-testid="eng-queue-mytasks-tile"
+          >
+            <div className="flex items-center gap-3">
+              <ListChecks size={22} weight="duotone" className="text-teal-600" />
+              <div className="text-left">
+                <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-slate-500">Tugas Saya</div>
+                <div className="text-sm text-slate-700">DRF yang ditugaskan ke Anda — klik untuk mengerjakan</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl font-bold tabular-nums text-slate-900">{myTasks}</span>
+              <ArrowRight size={16} weight="bold" className="text-slate-400" />
+            </div>
+          </button>
         </div>
       )}
+
+      {detailDrf && (
+        <DrfDetailModal
+          drf={detailDrf}
+          isHead={isHead}
+          onClose={() => setDetailDrf(null)}
+          onChanged={fetchAll}
+        />
+      )}
     </div>
+  );
+}
+
+function QuickLink({ icon: Icon, label, count, onClick, testid }) {
+  return (
+    <button
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 transition-colors group"
+      data-testid={testid}
+      title={label}
+    >
+      <Icon size={14} weight="duotone" className="text-slate-500" />
+      <span className="text-[10px] uppercase tracking-wider font-bold text-slate-600 hidden md:inline">{label}</span>
+      <span className={`min-w-[20px] h-5 px-1 flex items-center justify-center text-[11px] font-bold rounded-full ${count > 0 ? "bg-amber-600 text-white" : "bg-slate-200 text-slate-500"}`}>{count}</span>
+      <ArrowRight size={11} weight="bold" className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+    </button>
   );
 }
