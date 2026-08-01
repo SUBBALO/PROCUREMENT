@@ -14,6 +14,14 @@ const DRAWING_PREVIEW_ONLY_ROLES = new Set([
   "qc", "doc_control", "document_control", "store", "produksi", "production",
 ]);
 
+// Engineering + Admin/SuperAdmin → boleh Print dari Master Drawing List.
+const ENGINEERING_ROLES = new Set([
+  "engineering", "eng_head", "eng_leader", "eng_staff",
+]);
+const PRINT_ROLES = new Set([
+  ...ENGINEERING_ROLES, "admin", "super_admin",
+]);
+
 export const PRICE_ATTACHMENT_CATEGORIES = new Set(["costing", "costing_prev", "nesting_price"]);
 export const DRAWING_ATTACHMENT_CATEGORIES = new Set(["drawing", "customer_ref"]);
 
@@ -23,4 +31,13 @@ export function canViewCosting(role) {
 
 export function isDrawingPreviewOnly(role) {
   return DRAWING_PREVIEW_ONLY_ROLES.has((role || "").toLowerCase());
+}
+
+export function isEngineeringRole(role) {
+  return ENGINEERING_ROLES.has((role || "").toLowerCase());
+}
+
+// Master Drawing List → tombol Print hanya untuk Engineering + Admin/SuperAdmin.
+export function canPrintDrawing(role) {
+  return PRINT_ROLES.has((role || "").toLowerCase());
 }

@@ -8,12 +8,13 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { FileText, MagnifyingGlass, Plus, PencilSimple, Trash, ArrowClockwise, UploadSimple, Eye, DownloadSimple, Warning, CheckCircle } from "@phosphor-icons/react";
+import { FileText, MagnifyingGlass, Plus, PencilSimple, Trash, ArrowClockwise, UploadSimple, Eye, DownloadSimple, Warning, CheckCircle, Printer, Stamp } from "@phosphor-icons/react";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
 import PdfPreviewModal from "../components/PdfPreviewModal";
 import { useAuth } from "../lib/auth";
+import { canPrintDrawing, isDrawingPreviewOnly } from "../lib/rbac";
 
 const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-sky-600 text-sm";
 const DISCIPLINES = ["Mechanical", "Civil", "Electrical", "Piping", "Structural", "Instrument", "General"];
@@ -28,6 +29,7 @@ const STATUS_COLORS = {
 };
 
 export default function MasterDrawingPage() {
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [q, setQ] = useState("");
@@ -41,6 +43,9 @@ export default function MasterDrawingPage() {
   const [previewItem, setPreviewItem] = useState(null);
   const [customerRefUpload, setCustomerRefUpload] = useState(null);
   const [customerRefPreview, setCustomerRefPreview] = useState(null);
+  const [viewer, setViewer] = useState(null); // universal image-based viewer config
+  const canPrint = canPrintDrawing(user?.role);
+  const previewOnly = isDrawingPreviewOnly(user?.role);
   const pag = usePagination(items, 20);
 
   // Iter 19 — kalau URL punya query params from_drf_id → auto-open form Register Drawing dengan pre-fill
@@ -152,98 +157,37 @@ export default function MasterDrawingPage() {
       <CustomerCodeMasterPanel />
 
       <Card className="rounded-none border-slate-200 overflow-hidden">
-        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 text-[10px] uppercase tracking-[0.15em] font-bold text-slate-500">
-          MKS-F-ENG-005 Drawing Master List — {items.length} entri
+        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 text-[10px] uppercase tracking-[0.15em] font-bold text-slate-500 flex items-center justify-between gap-2">
+          <span>MKS-F-ENG-005 Drawing Master List — {items.length} entri</span>
+          <span className="normal-case tracking-normal text-[10px] text-slate-400 flex items-center gap-3">
+            <span className="flex items-center gap-1"><Eye size={12} /> Preview: MKS · Customer · BOM · Nesting</span>
+            {canPrint && <span className="flex items-center gap-1 text-sky-600"><Printer size={12} weight="bold" /> Print (Engineering)</span>}
+          </span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-white border-b border-slate-200">
               <tr className="text-[10px] uppercase tracking-[0.08em] font-bold text-slate-500">
-                <th className="text-left p-3">Drawing No</th>
-                <th className="text-left p-3">Cust DWG No</th>
-                <th className="text-left p-3">Title</th>
-                <th className="text-left p-3">Rev</th>
-                <th className="text-left p-3">Discipline</th>
-                <th className="text-left p-3">SO</th>
-                <th className="text-left p-3">BOM</th>
-                <th className="text-left p-3">Project</th>
-                <th className="text-left p-3">Prepared By</th>
-                <th className="text-left p-3">Request By (Sales)</th>
-                <th className="text-center p-3">Status</th>
-                <th className="text-center p-3">Approval</th>
-                <th className="text-center p-3">File MKS</th>
+                <th className="text-left p-3">Drawing</th>
+                <th className="text-left p-3">Title / Project</th>
+                <th className="text-left p-3">Prepared / Request</th>
+                <th className="text-left p-3">Status &amp; TTD</th>
+                <th className="text-center p-3">Preview (DC-Stamped)</th>
                 <th className="text-center p-3">Aksi</th>
               </tr>
             </thead>
             <tbody data-testid="dw-list">
-              {loading && (<tr><td colSpan={14} className="p-8 text-center text-slate-400">Memuat...</td></tr>)}
-              {!loading && items.length === 0 && (<tr><td colSpan={14} className="p-8 text-center text-slate-400">Belum ada drawing. Alur register drawing baru: <b>Sales buat DRF (MKS-F-ENG-001)</b> → Eng Head Accept → Assign Engineer.</td></tr>)}
+              {loading && (<tr><td colSpan={6} className="p-8 text-center text-slate-400">Memuat...</td></tr>)}
+              {!loading && items.length === 0 && (<tr><td colSpan={6} className="p-8 text-center text-slate-400">Belum ada drawing. Alur register drawing baru: <b>Sales buat DRF (MKS-F-ENG-001)</b> → Eng Head Accept → Assign Engineer.</td></tr>)}
               {items.length > 0 && pag.pagedData.map((it) => (
-                <tr
+                <DrawingMasterRow
                   key={it.id}
-                  className="border-b border-slate-100 hover:bg-sky-50/60 cursor-pointer"
-                  onClick={() => {
-                    // Master List = VIEW-ONLY (hanya daftar data). Klik row → preview PDF kalau ada.
-                    // Edit/upload/generate dilakukan di Work Group (DRF), bukan di sini.
-                    if (it.file_id) setPreviewItem(it);
-                  }}
-                  data-testid={`dw-row-${it.id}`}
-                  title={it.file_id ? "Klik untuk preview PDF (view-only)" : "Master List hanya untuk melihat data"}
-                >
-                  <td className="p-3 font-mono font-semibold text-slate-900 hover:underline hover:text-sky-800">{it.drawing_no}</td>
-                  <td className="p-3 font-mono text-xs text-slate-700">{it.customer_drawing_no || <span className="text-slate-300">-</span>}</td>
-                  <td className="p-3 text-slate-800">{it.title || "-"}</td>
-                  <td className="p-3 text-xs text-slate-600">{it.revision}</td>
-                  <td className="p-3 text-xs">{it.discipline}</td>
-                  <td className="p-3 text-xs font-mono text-slate-700">{it.so_no || "-"}</td>
-                  <td className="p-3 text-xs font-mono text-amber-800">{it.bom_no || <span className="text-slate-300">-</span>}</td>
-                  <td className="p-3 text-xs text-slate-600 hover:text-sky-800">{it.project_name || "-"}</td>
-                  <td className="p-3 text-xs text-slate-700">
-                    {it.prepared_by || "-"}
-                    {it.assigned_to_name && (
-                      <div className="mt-0.5 text-[9px] uppercase tracking-widest text-purple-700 font-bold" title="Assigned engineer — hanya user ini yang bisa edit">
-                        👷 {it.assigned_to_name}
-                      </div>
-                    )}
-                  </td>
-                  <td className="p-3 text-xs text-slate-700">
-                    {it.request_by_sales
-                      ? <span className="px-1.5 py-0.5 bg-sky-50 text-sky-800 border border-sky-200 font-semibold text-[10px]">{it.request_by_sales}</span>
-                      : <span className="text-slate-300">-</span>}
-                  </td>
-                  <td className="p-3 text-center">
-                    <span className={`px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${STATUS_COLORS[it.status] || "bg-slate-100 text-slate-700"}`}>{it.status}</span>
-                  </td>
-                  <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
-                    <DrawingApprovalBadge drawing={it} onChanged={load} />
-                  </td>
-                  <td className="p-3 text-center text-xs" onClick={(e) => { if (it.file_id) { e.stopPropagation(); setPreviewItem(it); } }}>
-                    {it.file_id ? (
-                      <div className="flex items-center justify-center gap-1 hover:bg-violet-50 py-0.5" title="Klik untuk preview PDF">
-                        {it.pdf_match_status === "verified" && (<CheckCircle size={14} weight="fill" className="text-emerald-600" />)}
-                        {it.pdf_match_status === "warning" && (<Warning size={14} weight="fill" className="text-amber-600" />)}
-                        <span className="text-violet-700 underline max-w-[140px] truncate" title={it.filename}>{it.filename}</span>
-                        <Eye size={12} className="text-violet-600" />
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center">
-                        <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-800 font-bold uppercase tracking-wider whitespace-nowrap">⚠ Belum upload</span>
-                      </div>
-                    )}
-                    {it.pdf_match_status === "warning" && (
-                      <div className="text-[10px] text-amber-700 mt-0.5">isi PDF tidak match</div>
-                    )}
-                  </td>
-                  <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-center gap-1">
-                      {it.file_id ? (
-                        <button onClick={() => setPreviewItem(it)} data-testid={`dw-preview-${it.id}`} className="p-1 text-violet-700 hover:bg-violet-50" title="Preview (view-only)"><Eye size={13} /></button>
-                      ) : (
-                        <span className="text-[10px] text-slate-400 italic">view-only</span>
-                      )}
-                    </div>
-                  </td>
-                </tr>
+                  it={it}
+                  canPrint={canPrint}
+                  previewOnly={previewOnly}
+                  onView={setViewer}
+                  onChanged={load}
+                />
               ))}
             </tbody>
           </table>
@@ -266,9 +210,223 @@ export default function MasterDrawingPage() {
       {customerRefPreview && (
         <CustomerRefPreviewDialog item={customerRefPreview} onClose={() => setCustomerRefPreview(null)} />
       )}
+      {viewer && (
+        <PdfPreviewModal
+          {...(viewer.mode === "drawing"
+            ? { drawingId: viewer.drawingId, target: viewer.target, stamped: viewer.stamped, hideSo: viewer.hideSo }
+            : { metaUrl: viewer.metaUrl, pageUrlBuilder: (n) => `${viewer.pageBase}?page=${n}&scale=2` })}
+          title={viewer.title}
+          subtitle={viewer.subtitle}
+          downloadUrl={viewer.downloadUrl || ""}
+          noDownload={viewer.noDownload}
+          autoPrint={viewer.autoPrint}
+          onClose={() => setViewer(null)}
+        />
+      )}
     </div>
   );
 }
+
+/* ============ MASTER LIST ROW (redesign MKS-F-ENG-005) ============ */
+const _attCache = {}; // bom_id -> { costing:[], nesting:[], ... }  (dedupe fetch across pagination)
+
+const TILE_TONES = {
+  violet: "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100",
+  sky: "border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100",
+  amber: "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100",
+  teal: "border-teal-300 bg-teal-50 text-teal-700 hover:bg-teal-100",
+};
+const TILE_OFF = "border-slate-200 bg-slate-50 text-slate-300 cursor-not-allowed";
+
+function PreviewTile({ label, tone, available, loading, onClick, testid }) {
+  const cls = available ? `${TILE_TONES[tone]} cursor-pointer` : TILE_OFF;
+  return (
+    <button
+      type="button"
+      disabled={!available}
+      onClick={available ? onClick : undefined}
+      data-testid={testid}
+      title={available ? `Preview ${label} (DC-stamped)` : (loading ? "Memuat..." : `${label} belum ada`)}
+      className={`flex flex-col items-center justify-center gap-0.5 w-[70px] h-[54px] border transition-colors ${cls}`}
+    >
+      {loading ? (
+        <ArrowClockwise size={15} className="animate-spin" />
+      ) : (
+        <Eye size={15} weight={available ? "bold" : "regular"} />
+      )}
+      <span className="text-[9px] font-bold uppercase tracking-wide">{label}</span>
+    </button>
+  );
+}
+
+const _TTD_STAGE = { submit: "Prepared", eng_head: "Eng Head", qc: "QC", sales: "Sales" };
+
+function DrawingMasterRow({ it, canPrint, previewOnly, onView, onChanged }) {
+  const backendUrl = process.env.REACT_APP_BACKEND_URL;
+  const [att, setAtt] = useState(it.bom_id ? _attCache[it.bom_id] || null : { costing: [], nesting: [] });
+  const [attLoading, setAttLoading] = useState(false);
+
+  useEffect(() => {
+    if (!it.bom_id) { setAtt({ costing: [], nesting: [] }); return; }
+    if (_attCache[it.bom_id]) { setAtt(_attCache[it.bom_id]); return; }
+    let alive = true;
+    setAttLoading(true);
+    api.get(`/bom/${it.bom_id}/attachments`)
+      .then(({ data }) => {
+        const a = data.attachments || { costing: [], nesting: [] };
+        _attCache[it.bom_id] = a;
+        if (alive) setAtt(a);
+      })
+      .catch(() => { if (alive) setAtt({ costing: [], nesting: [] }); })
+      .finally(() => { if (alive) setAttLoading(false); });
+    return () => { alive = false; };
+  }, [it.bom_id]);
+
+  const firstCosting = att?.costing?.[0];
+  const firstNesting = att?.nesting?.[0];
+  const subtitle = `${it.title || ""}${it.project_name ? " · " + it.project_name : ""}${it.so_no ? " · SO " + it.so_no : ""}`;
+
+  const openMks = () => onView({
+    mode: "drawing", drawingId: it.id, target: "mks", stamped: true, hideSo: true,
+    title: it.drawing_no, subtitle, noDownload: previewOnly,
+    downloadUrl: `${backendUrl}/api/drawings/${it.id}/pdf-stamped`,
+  });
+  const openCustomer = () => onView({
+    mode: "drawing", drawingId: it.id, target: "customer_ref", stamped: true, hideSo: true,
+    title: `${it.drawing_no} · Customer DWG`, subtitle, noDownload: previewOnly,
+    downloadUrl: `${backendUrl}/api/drawings/${it.id}/customer-ref/download`,
+  });
+  const openAttachment = (a, label) => onView({
+    mode: "generic",
+    metaUrl: `/bom/${it.bom_id}/attachments/${a.id}/page-meta`,
+    pageBase: `${backendUrl}/api/bom/${it.bom_id}/attachments/${a.id}/page-image`,
+    downloadUrl: `${backendUrl}/api/bom/${it.bom_id}/attachments/${a.id}/download`,
+    title: `${it.drawing_no} · ${label}`, subtitle: a.filename || "", noDownload: previewOnly,
+  });
+  const printMks = () => onView({
+    mode: "drawing", drawingId: it.id, target: "mks", stamped: true, hideSo: true,
+    title: it.drawing_no, subtitle, noDownload: previewOnly, autoPrint: true,
+    downloadUrl: `${backendUrl}/api/drawings/${it.id}/pdf-stamped`,
+  });
+
+  // ---- Status & TTD summary ----
+  const approvals = (it.approvals || []).filter((a) => !String(a.stage || "").startsWith("reject_"));
+  const ttdByStage = {};
+  approvals.forEach((a) => { if (_TTD_STAGE[a.stage] && !ttdByStage[a.stage]) ttdByStage[a.stage] = a.name; });
+  const ttdEntries = Object.entries(ttdByStage);
+  const dcName = it.dc_stamp?.name;
+  const isControlled = it.approval_status === "controlled" || it.approval_status === "released";
+
+  return (
+    <tr className="border-b border-slate-100 hover:bg-sky-50/40 align-top" data-testid={`dw-row-${it.id}`}>
+      {/* Drawing */}
+      <td className="p-3">
+        <div className="font-mono font-semibold text-slate-900">{it.drawing_no}</div>
+        {it.customer_drawing_no && (
+          <div className="font-mono text-[10px] text-slate-500 mt-0.5" title="No. DWG Customer">Cust: {it.customer_drawing_no}</div>
+        )}
+        <div className="flex items-center gap-1.5 mt-1">
+          <span className="text-[10px] px-1 py-0.5 bg-slate-100 text-slate-600 font-semibold">{it.revision}</span>
+          <span className="text-[10px] text-slate-500">{it.discipline}</span>
+        </div>
+        <div className="flex items-center gap-1.5 mt-1 text-[10px]">
+          <span className="font-mono text-slate-700" title="SO">{it.so_no || "-"}</span>
+          <span className="text-slate-300">|</span>
+          <span className="font-mono text-amber-800" title="BOM">{it.bom_no || "-"}</span>
+        </div>
+      </td>
+
+      {/* Title / Project */}
+      <td className="p-3">
+        <div className="text-slate-800 text-xs font-medium">{it.title || "-"}</div>
+        {it.project_name && <div className="text-[11px] text-slate-500 mt-0.5">{it.project_name}</div>}
+      </td>
+
+      {/* Prepared / Request */}
+      <td className="p-3 text-xs text-slate-700">
+        <div>{it.prepared_by || "-"}</div>
+        {it.assigned_to_name && (
+          <div className="mt-0.5 text-[9px] uppercase tracking-widest text-purple-700 font-bold" title="Assigned engineer">
+            👷 {it.assigned_to_name}
+          </div>
+        )}
+        {it.request_by_sales && (
+          <div className="mt-1">
+            <span className="px-1.5 py-0.5 bg-sky-50 text-sky-800 border border-sky-200 font-semibold text-[10px]">{it.request_by_sales}</span>
+          </div>
+        )}
+      </td>
+
+      {/* Status & TTD */}
+      <td className="p-3" data-testid={`dw-status-${it.id}`}>
+        <div className="flex flex-col gap-1.5">
+          <span className={`w-fit px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${STATUS_COLORS[it.status] || "bg-slate-100 text-slate-700"}`}>{it.status}</span>
+
+          {/* DC stamp status */}
+          {dcName ? (
+            <span className="w-fit inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300" title={`Doc Control stamp oleh ${dcName}`}>
+              <Stamp size={11} weight="fill" /> DC: {dcName}
+            </span>
+          ) : isControlled ? (
+            <span className="w-fit inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300">
+              <Stamp size={11} weight="fill" /> Controlled
+            </span>
+          ) : (
+            <span className="w-fit inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200" title="Belum di-stamp Doc Control">
+              <Stamp size={11} /> Belum DC
+            </span>
+          )}
+
+          {/* TTD list */}
+          {ttdEntries.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {ttdEntries.map(([stage, name]) => (
+                <span key={stage} className="inline-flex items-center gap-0.5 px-1 py-0.5 text-[9px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200" title={`${_TTD_STAGE[stage]}: ${name}`}>
+                  <CheckCircle size={9} weight="fill" /> {_TTD_STAGE[stage]}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span className="text-[10px] text-slate-400 italic">Belum ada TTD</span>
+          )}
+        </div>
+      </td>
+
+      {/* Preview tiles */}
+      <td className="p-3">
+        <div className="flex items-center justify-center gap-1.5">
+          <PreviewTile label="DWG MKS" tone="violet" available={!!it.file_id} onClick={openMks} testid={`dw-tile-mks-${it.id}`} />
+          <PreviewTile label="Customer" tone="sky" available={!!it.customer_ref_file_id} onClick={openCustomer} testid={`dw-tile-cust-${it.id}`} />
+          <PreviewTile label="BOM" tone="amber" available={!!firstCosting} loading={attLoading} onClick={() => openAttachment(firstCosting, "BOM")} testid={`dw-tile-bom-${it.id}`} />
+          <PreviewTile label="Nesting" tone="teal" available={!!firstNesting} loading={attLoading} onClick={() => openAttachment(firstNesting, "Nesting")} testid={`dw-tile-nesting-${it.id}`} />
+        </div>
+        {!it.file_id && (
+          <div className="text-center mt-1">
+            <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-800 font-bold uppercase tracking-wider">⚠ DWG belum upload</span>
+          </div>
+        )}
+      </td>
+
+      {/* Aksi */}
+      <td className="p-3">
+        <div className="flex flex-col items-center gap-1.5">
+          <DrawingApprovalBadge drawing={it} onChanged={onChanged} />
+          {canPrint && it.file_id && (
+            <button
+              onClick={printMks}
+              data-testid={`dw-print-${it.id}`}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-bold uppercase tracking-widest bg-slate-700 hover:bg-slate-800 text-white"
+              title="Print DWG MKS (footer: Printed by [nama])"
+            >
+              <Printer size={12} weight="bold" /> Print
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 
 /* ============ FORM DIALOG ============ */
 function DrawingForm({ initial, drfPrefill, onClose, onSaved }) {

@@ -29,10 +29,12 @@ export default function PdfPreviewModal({
   metaUrl = "",
   pageUrlBuilder = null,
   stamped = true,
+  hideSo = false,
   title = "Preview Dokumen",
   subtitle = "",
   downloadUrl = "",
   noDownload = false,
+  autoPrint = false,
   onClose,
 }) {
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
@@ -74,11 +76,26 @@ export default function PdfPreviewModal({
 
   useEffect(() => { load(); }, [load]);
 
+  // autoPrint — begitu metadata siap, langsung picu dialog cetak (dipakai tombol Print di Master List).
+  const _printedOnce = React.useRef(false);
+  useEffect(() => {
+    if (autoPrint && meta && !_printedOnce.current) {
+      _printedOnce.current = true;
+      setPrinting(true);
+      const t = setTimeout(() => {
+        window.print();
+        setTimeout(() => setPrinting(false), 500);
+      }, 800);
+      return () => clearTimeout(t);
+    }
+  }, [autoPrint, meta]);
+
   const imgUrl = (n) => {
     if (generic && pageUrlBuilder) return pageUrlBuilder(n);
     const p = new URLSearchParams({ target: active.key, page: String(n), scale: "2" });
     if (active.extraId) p.set("extra_id", active.extraId);
     if (stamped) p.set("stamped", "1");
+    if (hideSo) p.set("hide_so", "1");
     return `${apiUrl}/api/drawings/${drawingId}/page-image?${p.toString()}`;
   };
 

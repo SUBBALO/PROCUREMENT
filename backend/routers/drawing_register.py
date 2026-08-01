@@ -2125,9 +2125,13 @@ async def _build_signature_map(approvals: list) -> dict:
     return signature_bytes_map
 
 
-async def _build_stamped_for_target(drawing: dict, target: str, extra_id: str, raw: bytes, current: dict) -> bytes:
+async def _build_stamped_for_target(drawing: dict, target: str, extra_id: str, raw: bytes, current: dict,
+                                    hide_so: bool = False) -> bytes:
     """Terapkan overlay stamp yang sesuai untuk preview per target (mks/customer_ref/extra).
-    Meniru perilaku endpoint pdf-stamped / customer-ref preview / extras preview."""
+    Meniru perilaku endpoint pdf-stamped / customer-ref preview / extras preview.
+
+    hide_so=True → jangan render SO stamp (kotak merah SO) pada target mks. Dipakai di
+    Master Drawing List agar preview menampilkan versi DC-stamped yang 'bersih' tanpa SO stamp."""
     is_dc_or_admin = is_doc_control(current) or is_admin_like(current)
     printed_by = current.get("name") or current.get("username") or ""
     try:
@@ -2144,9 +2148,10 @@ async def _build_stamped_for_target(drawing: dict, target: str, extra_id: str, r
         show_wm = drawing.get("approval_status") == "controlled" and not is_dc_or_admin
         approvals = drawing.get("approvals") or []
         sig_map = await _build_signature_map(approvals)
+        so_stamp = None if hide_so else drawing.get("so_stamp")
         return _apply_pdf_stamps(raw, approvals=approvals, dc_stamp=drawing.get("dc_stamp"),
                                  watermark_uncontrolled=show_wm, printed_by=printed_by,
-                                 signature_bytes_map=sig_map, so_stamp=drawing.get("so_stamp"))
+                                 signature_bytes_map=sig_map, so_stamp=so_stamp)
     except Exception:
         return raw  # fallback ke raw kalau gagal stamp
 
@@ -2176,9 +2181,11 @@ async def drawing_page_meta(drawing_id: str, target: str = "mks", extra_id: str 
 @router.get("/drawings/{drawing_id}/page-image")
 async def drawing_page_image(drawing_id: str, page: int = 0, target: str = "mks",
                              extra_id: str = "", scale: float = 2.0, stamped: bool = False,
+                             hide_so: bool = False,
                              current: dict = Depends(get_current_user)):
     """Render satu halaman PDF menjadi gambar PNG (untuk preview stamp picker & viewer baca-saja).
-    stamped=1 → tampilkan versi ber-stamp (approval/DC/SO + watermark) sesuai role."""
+    stamped=1 → tampilkan versi ber-stamp (approval/DC/SO + watermark) sesuai role.
+    hide_so=1 → sembunyikan SO stamp pada target mks (dipakai Master Drawing List)."""
     if not _can_view(current):
         raise HTTPException(status_code=403, detail="Akses ditolak")
     drawing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
@@ -2186,7 +2193,7 @@ async def drawing_page_image(drawing_id: str, page: int = 0, target: str = "mks"
         raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
     raw = await _target_raw_bytes(drawing, target, extra_id)
     if stamped:
-        raw = await _build_stamped_for_target(drawing, target, extra_id, raw, current)
+        raw = await _build_stamped_for_target(drawing, target, extra_id, raw, current, hide_so=hide_so)
     import fitz  # PyMuPDF
     try:
         doc = fitz.open(stream=raw, filetype="pdf")

@@ -1,10 +1,30 @@
 [
   {
     "content": "Verify Legacy Import flow (BOM upload -> auto-detect -> multiple DWG) frontend+backend",
-    "status": "in_progress"
+    "status": "completed"
   },
   {
-    "content": "Redesign MasterDrawingPage.jsx: Status column, 4 inline previews, DC-stamped rendering, restricted Print button",
-    "status": "pending"
+    "content": "Explore MasterDrawingPage.jsx + related APIs (drawing status, DC stamp, previews)",
+    "status": "completed"
+  },
+  {
+    "content": "Backend: add hide_so param to page-image + _build_stamped_for_target",
+    "status": "completed"
+  },
+  {
+    "content": "rbac.js: add isEngineeringRole/canPrint helpers",
+    "status": "completed"
+  },
+  {
+    "content": "PdfPreviewModal.jsx: add hideSo + autoPrint prop wiring",
+    "status": "completed"
+  },
+  {
+    "content": "MasterDrawingPage.jsx: DrawingMasterRow (Status column + 4 inline previews + Print button)",
+    "status": "completed"
+  },
+  {
+    "content": "Test: frontend UI (screenshot + testing agent)",
+    "status": "in_progress"
   }
 ]
