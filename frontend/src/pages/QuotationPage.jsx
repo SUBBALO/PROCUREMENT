@@ -697,8 +697,9 @@ function QuotationDetailDialog({ id, onClose, onChanged }) {
 
   const submitSO = async () => {
     if (!soDialog) return;
-    const so = (soDialog.soNo || "").trim();
-    if (!/^\d{4}$/.test(so)) { toast.error("Nomor SO harus 4 digit angka"); return; }
+    const raw = (soDialog.soNo || "").trim();
+    if (!/^\d{1,6}$/.test(raw)) { toast.error("Nomor SO harus angka maksimal 6 digit"); return; }
+    const so = raw.padStart(6, "0");  // normalisasi ke 6 digit (5251 -> 005251)
     setSaving(true);
     try {
       await api.patch(`/quotations/${id}/status`, { status: "confirm_order", so_no: so, force_reuse_so: !!soDialog.force });
@@ -841,11 +842,11 @@ function QuotationDetailDialog({ id, onClose, onChanged }) {
           <DialogContent className="rounded-none max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Konfirmasi Order — Input Nomor SO</DialogTitle>
-              <DialogDescription>Wajib 4 digit angka. SO otomatis masuk ke Master List SO.</DialogDescription>
+              <DialogDescription>Wajib angka maksimal 6 digit (mis. 5251 → 005251). SO otomatis masuk ke Master List SO.</DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               <div>
-                <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nomor SO (4 digit) *</Label>
+                <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nomor SO (6 digit) *</Label>
                 <SoAutocompleteInput value={soDialog.soNo} onChange={(v) => setSoDialog({ ...soDialog, soNo: v, conflict: null, force: false })} />
               </div>
               {soDialog.conflict && (
@@ -878,7 +879,7 @@ function QuotationDetailDialog({ id, onClose, onChanged }) {
 }
 
 
-function SoAutocompleteInput({ value, onChange, placeholder = "1234" }) {
+function SoAutocompleteInput({ value, onChange, placeholder = "005251" }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showList, setShowList] = useState(false);
 
@@ -898,10 +899,10 @@ function SoAutocompleteInput({ value, onChange, placeholder = "1234" }) {
       <Input
         data-testid="so-input"
         value={value}
-        onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 4); onChange(v); setShowList(true); }}
+        onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 6); onChange(v); setShowList(true); }}
+        onBlur={() => { if (value && /^\d{1,6}$/.test(value)) onChange(value.padStart(6, "0")); setTimeout(() => setShowList(false), 200); }}
         onFocus={() => setShowList(true)}
-        onBlur={() => setTimeout(() => setShowList(false), 200)}
-        maxLength={4}
+        maxLength={6}
         inputMode="numeric"
         placeholder={placeholder}
         className={`${inputCls} font-mono tabular-nums text-lg tracking-wider`}

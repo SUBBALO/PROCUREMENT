@@ -30,7 +30,8 @@ class SORequestIn(BaseModel):
 
 @router.post("")
 async def create_so_request(payload: SORequestIn, current: dict = Depends(get_current_user)):
-    so_no = (payload.requested_so_no or "").strip()
+    from routers.bom import normalize_so_no
+    so_no = normalize_so_no(payload.requested_so_no or "")
     notes = (payload.notes or "").strip()
     if not so_no and not notes and not payload.customer_hint and not payload.project_hint:
         raise HTTPException(status_code=400, detail="Isi minimal salah satu field (nomor SO, customer, project, atau notes)")

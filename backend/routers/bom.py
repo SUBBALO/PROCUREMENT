@@ -83,19 +83,20 @@ def _clean_str(v) -> str:
 
 
 def normalize_so_no(v) -> str:
-    """Normalise Sales Order number.
+    """Normalise Sales Order number → kanonik 6 digit (zero-padded).
 
     Rules:
     - Trim whitespace and leading ':' artefacts from Excel imports.
-    - If the resulting string is purely numeric (e.g. '005221'), strip leading zeros ('5221').
-    - Non-numeric or alphanumeric (e.g. 'SO-2026-001') is returned unchanged.
+    - Jika murni numerik: zero-pad ke 6 digit (mis. '5251' → '005251', '1234' → '001234').
+      Jika sudah > 6 digit, biarkan apa adanya (tidak dipotong).
+    - Non-numeric / alfanumerik (mis. 'SO-2026-001') dikembalikan apa adanya.
     - Returns empty string for empty / None input.
     """
     s = _clean_str(v)
     if not s:
         return ""
     if s.isdigit():
-        return s.lstrip("0") or "0"
+        return s.zfill(6)
     return s
 
 

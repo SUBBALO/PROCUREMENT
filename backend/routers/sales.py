@@ -1166,7 +1166,7 @@ async def download_quotation_pdf(qid: str, current: dict = Depends(get_current_u
 
 class QuotationStatusUpdate(BaseModel):
     status: str  # on_bidding | confirm_order | cancel
-    so_no: Optional[str] = ""  # required (4 digits) when status = confirm_order
+    so_no: Optional[str] = ""  # required (numeric, dinormalisasi ke 6 digit) when status = confirm_order
     force_reuse_so: bool = False  # if so_no already exists, must pass force_reuse_so=True to bind existing SO
 
 
@@ -1335,12 +1335,14 @@ async def update_quotation_status(qid: str, payload: QuotationStatusUpdate, curr
 
     # === SO Integration on confirm_order ===
     if payload.status == "confirm_order":
-        so_no = (payload.so_no or "").strip()
-        if not so_no:
-            raise HTTPException(status_code=400, detail="Nomor SO wajib diisi saat konfirmasi order (4 digit)")
-        # Validate 4-digit format
-        if not (so_no.isdigit() and len(so_no) == 4):
-            raise HTTPException(status_code=400, detail="Nomor SO harus 4 digit angka (mis. 1234)")
+        from routers.bom import normalize_so_no
+        raw_so = (payload.so_no or "").strip()
+        if not raw_so:
+            raise HTTPException(status_code=400, detail="Nomor SO wajib diisi saat konfirmasi order (6 digit)")
+        # Validasi: harus numerik & maksimal 6 digit → dinormalisasi ke 6 digit (zero-pad).
+        if not (raw_so.isdigit() and len(raw_so) <= 6):
+            raise HTTPException(status_code=400, detail="Nomor SO harus angka maksimal 6 digit (mis. 5251 → 005251)")
+        so_no = normalize_so_no(raw_so)
 
         # Check master list SO
         existing_so = await db.sales_orders.find_one({"so_no": so_no, "deleted_at": {"$exists": False}})
@@ -1437,8 +1439,10 @@ async def so_autocomplete(q: Optional[str] = None, limit: int = 20, current: dic
 
 @router.get("/sales-orders/check/{so_no}")
 async def check_so(so_no: str, current: dict = Depends(get_current_user)):
-    """Pre-check if a 4-digit SO number already exists in Master List. Used by forms before submitting."""
-    so_no = so_no.strip()
+    """Pre-check if an SO number already exists in Master List. SO dinormalisasi ke 6 digit.
+    Used by forms before submitting."""
+    from routers.bom import normalize_so_no
+    so_no = normalize_so_no(so_no)
     d = await db.sales_orders.find_one({"so_no": so_no, "deleted_at": {"$exists": False}}, {"_id": 0})
     if not d:
         return {"exists": False, "so_no": so_no}

@@ -303,7 +303,7 @@ async def import_sos_xlsx(file: UploadFile = File(...), current: dict = Depends(
                 so_no_raw = row[col_so] if col_so is not None and col_so < len(row) else None
                 if not so_no_raw:
                     continue
-                so_no = str(so_no_raw).strip()
+                so_no = normalize_so_no(so_no_raw)
                 # skip duplicates
                 if await db.sales_orders.find_one({"so_no": so_no}):
                     skipped += 1

@@ -1,38 +1,14 @@
 [
   {
-    "content": "Backend: buat utils/office_render.py (office_to_pdf via LibreOffice + cache)",
+    "content": "Excel preview as image pages + wiring viewer (Inquiry/BOM/Form/Excel templates) — DONE & tested 100%",
     "status": "completed"
   },
   {
-    "content": "Backend: bom_attachments page-meta/page-image dukung Excel",
+    "content": "SO 6-digit: normalize_so_no zero-pad, validasi, migrasi data lama, frontend input QuotationPage",
     "status": "completed"
   },
   {
-    "content": "Backend: sales.py inquiry page-meta/page-image dukung Excel",
-    "status": "completed"
-  },
-  {
-    "content": "Backend: form_templates & excel_templates tambah preview-page-meta/preview-page-image (image-based)",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: SalesPage AttachmentsList route Excel ke PdfPreviewModal",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: MasterDrawingPage costingList route Excel ke PdfPreviewModal",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: BomAttachmentsReadOnly Full Excel pakai PdfPreviewModal",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: FormTemplatesPage & FormTemplateEditorPage ganti window.open dengan PdfPreviewModal",
-    "status": "completed"
-  },
-  {
-    "content": "Test backend (curl/python) + frontend screenshot, fix bug",
-    "status": "in_progress"
+    "content": "Bulk Import Data Lama (BOM+DWG MKS+DWG Customer) → Master List (final/approved) — MENUNGGU konfirmasi desain",
+    "status": "pending"
   }
 ]

@@ -511,9 +511,10 @@ async def create_drawing(payload: DrawingIn, current: dict = Depends(get_current
                     "remark": it.get("remark") or "",
                 })
         # Create BOM record
+        from routers.bom import normalize_so_no as _norm_so
         bom_doc = {
             "id": str(uuid.uuid4()),
-            "so_no": payload.so_no.strip(),
+            "so_no": _norm_so(payload.so_no),
             "rev_no": 0,
             "bom_no": bom_no_to_create,
             "project_name": payload.project_name.strip(),
@@ -1946,8 +1947,9 @@ async def drawing_stamp_so(
     if not is_doc_control(current) and not is_admin_like(current):
         raise HTTPException(status_code=403, detail="Hanya Document Control yang boleh SO stamp")
 
+    from routers.bom import normalize_so_no as _norm_so
     so_stamp = {
-        "so_no": payload.so_no.strip(),
+        "so_no": _norm_so(payload.so_no),
         "po_no": payload.po_no.strip(),
         "qty": payload.qty.strip(),
         "customer": payload.customer.strip(),
