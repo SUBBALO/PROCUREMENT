@@ -1,34 +1,38 @@
 [
   {
-    "content": "Login susanto/Subbalo1994 diperbaiki (+ clear lockout)",
+    "content": "Backend: buat utils/office_render.py (office_to_pdf via LibreOffice + cache)",
     "status": "completed"
   },
   {
-    "content": "PdfPreviewModal: tombol PRINT (cetak gambar) + DOWNLOAD untuk semua role",
+    "content": "Backend: bom_attachments page-meta/page-image dukung Excel",
     "status": "completed"
   },
   {
-    "content": "Backend render: BOM attachment page-meta/page-image (tested)",
+    "content": "Backend: sales.py inquiry page-meta/page-image dukung Excel",
     "status": "completed"
   },
   {
-    "content": "Backend render: MII inspection page-meta/page-image (endpoint ok)",
+    "content": "Backend: form_templates & excel_templates tambah preview-page-meta/preview-page-image (image-based)",
     "status": "completed"
   },
   {
-    "content": "Wire BOM attachment preview (nesting) + extras + drawing ke image viewer",
+    "content": "Frontend: SalesPage AttachmentsList route Excel ke PdfPreviewModal",
     "status": "completed"
   },
   {
-    "content": "Wire MII preview (QCPage) ke image viewer",
+    "content": "Frontend: MasterDrawingPage costingList route Excel ke PdfPreviewModal",
     "status": "completed"
   },
   {
-    "content": "Watermark UNCONTROLLED + printed-by (salma/doc_control exempt watermark, printed-by tetap) — verified",
+    "content": "Frontend: BomAttachmentsReadOnly Full Excel pakai PdfPreviewModal",
     "status": "completed"
   },
   {
-    "content": "Sisa (defer): template form preview + lampiran inquiry Sales ke image viewer",
-    "status": "pending"
+    "content": "Frontend: FormTemplatesPage & FormTemplateEditorPage ganti window.open dengan PdfPreviewModal",
+    "status": "completed"
+  },
+  {
+    "content": "Test backend (curl/python) + frontend screenshot, fix bug",
+    "status": "in_progress"
   }
 ]

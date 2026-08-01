@@ -1047,6 +1047,36 @@ async def preview_excel_template(tid: str, current: dict = Depends(get_current_u
     )
 
 
+async def _excel_preview_pdf(tid: str, current: dict) -> bytes:
+    doc = await db[COLLECTION].find_one(merged({"id": tid}, NOT_DELETED_FILTER))
+    if not doc:
+        raise HTTPException(status_code=404, detail="Template tidak ditemukan")
+    xlsx_bytes = base64.b64decode(doc["xlsx_base64"])
+    return render_excel_template(xlsx_bytes, _sample_data(current), as_pdf=True)
+
+
+@router.get("/excel-templates/{tid}/preview-page-meta")
+async def excel_preview_page_meta(tid: str, current: dict = Depends(get_current_user)):
+    """Metadata halaman preview Excel template untuk viewer image-based."""
+    from utils.pdf_render import pdf_page_meta
+    pdf = await _excel_preview_pdf(tid, current)
+    return pdf_page_meta(pdf)
+
+
+@router.get("/excel-templates/{tid}/preview-page-image")
+async def excel_preview_page_image(tid: str, page: int = 0, scale: float = 2.0,
+                                   current: dict = Depends(get_current_user)):
+    """Render satu halaman preview Excel template menjadi PNG."""
+    from utils.pdf_render import pdf_page_png
+    pdf = await _excel_preview_pdf(tid, current)
+    try:
+        png = pdf_page_png(pdf, page, scale)
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
+    return StreamingResponse(io.BytesIO(png), media_type="image/png",
+                             headers={"Cache-Control": "private, max-age=60"})
+
+
 @router.post("/excel-templates/{tid}/auto-placeholder")
 async def auto_placeholder(tid: str, current: dict = Depends(get_current_user)):
     """Analyze the active Excel template and inject placeholders automatically

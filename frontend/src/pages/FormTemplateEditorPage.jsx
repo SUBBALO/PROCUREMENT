@@ -11,6 +11,7 @@ import {
   FloppyDisk, Eye, TrashSimple, ArrowLeft, MagnifyingGlassPlus, MagnifyingGlassMinus, Copy,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import PdfPreviewModal from "../components/PdfPreviewModal";
 
 // 1 mm at zoom=1 → 3.7795 px (96 DPI)
 const MM_TO_PX = 3.7795;
@@ -43,6 +44,7 @@ export default function FormTemplateEditorPage() {
   const [zoom, setZoom] = useState(0.75);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const canvasRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -109,11 +111,7 @@ export default function FormTemplateEditorPage() {
       const ok = confirm("Ada perubahan belum disimpan. Simpan dulu?");
       if (ok) await onSave();
     }
-    try {
-      const res = await api.post(`/form-templates/${id}/preview`, {}, { responseType: "blob" });
-      const url = URL.createObjectURL(res.data);
-      window.open(url, "_blank");
-    } catch { toast.error("Gagal preview"); }
+    setShowPreview(true);
   };
 
   if (!tpl) return <div className="p-8 text-center text-slate-500">Memuat template...</div>;
@@ -250,6 +248,15 @@ export default function FormTemplateEditorPage() {
           )}
         </div>
       </div>
+      {showPreview && (
+        <PdfPreviewModal
+          metaUrl={`/form-templates/${id}/preview-page-meta`}
+          pageUrlBuilder={(n) => `${process.env.REACT_APP_BACKEND_URL}/api/form-templates/${id}/preview-page-image?page=${n}&scale=2`}
+          title={`Preview: ${tpl?.name || tpl?.code || "Template"}`}
+          subtitle="Contoh data · Cetak via tombol Print"
+          onClose={() => setShowPreview(false)}
+        />
+      )}
     </div>
   );
 }

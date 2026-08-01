@@ -10,6 +10,7 @@ import { FileText, Plus, PencilSimple, TrashSimple, Copy, Eye, FileXls, UploadSi
 import { toast } from "sonner";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
+import PdfPreviewModal from "../components/PdfPreviewModal";
 
 const ADMIN_ROLES = ["admin", "super_admin", "supervisor"];
 
@@ -26,6 +27,7 @@ export default function FormTemplatesPage() {
   const [loading, setLoading] = useState(true);
   const [newForm, setNewForm] = useState({ code: "MCL", name: "" });
   const [showNew, setShowNew] = useState(false);
+  const [previewTpl, setPreviewTpl] = useState(null);  // {id, code, name}
   const pag = usePagination(templates, 20);
 
   const load = async () => {
@@ -69,13 +71,7 @@ export default function FormTemplatesPage() {
     } catch { toast.error("Gagal hapus"); }
   };
 
-  const onPreview = async (t) => {
-    try {
-      const res = await api.post(`/form-templates/${t.id}/preview`, {}, { responseType: "blob" });
-      const url = URL.createObjectURL(res.data);
-      window.open(url, "_blank");
-    } catch { toast.error("Gagal preview"); }
-  };
+  const onPreview = (t) => setPreviewTpl(t);
 
   if (!isAdmin) {
     return <div className="p-8 text-center text-slate-500">Hanya admin yang dapat mengelola template form.</div>;
@@ -181,6 +177,15 @@ export default function FormTemplatesPage() {
         </table>
         <PaginationBar {...pag} label="template" testIdPrefix="templates-pag" />
       </Card>
+      {previewTpl && (
+        <PdfPreviewModal
+          metaUrl={`/form-templates/${previewTpl.id}/preview-page-meta`}
+          pageUrlBuilder={(n) => `${process.env.REACT_APP_BACKEND_URL}/api/form-templates/${previewTpl.id}/preview-page-image?page=${n}&scale=2`}
+          title={`Preview: ${previewTpl.name || previewTpl.code}`}
+          subtitle="Contoh data · Cetak via tombol Print"
+          onClose={() => setPreviewTpl(null)}
+        />
+      )}
     </div>
   );
 }
@@ -193,6 +198,7 @@ function ExcelTemplateSection() {
   const [loading, setLoading] = useState(true);
   const [selectedCode, setSelectedCode] = useState("MCL");
   const [uploading, setUploading] = useState(false);
+  const [previewExcel, setPreviewExcel] = useState(null);  // {id, code, filename}
   const fileRef = useRef(null);
 
   const load = async () => {
@@ -239,13 +245,7 @@ function ExcelTemplateSection() {
     }
   };
 
-  const onPreview = async (item) => {
-    try {
-      const res = await api.post(`/excel-templates/${item.id}/preview`, {}, { responseType: "blob" });
-      const url = URL.createObjectURL(res.data);
-      window.open(url, "_blank");
-    } catch { toast.error("Gagal preview PDF"); }
-  };
+  const onPreview = (item) => setPreviewExcel(item);
 
   const onPreviewRaw = async (item) => {
     try {
@@ -443,6 +443,16 @@ function ExcelTemplateSection() {
           </div>
         ))}
       </div>
+      {previewExcel && (
+        <PdfPreviewModal
+          metaUrl={`/excel-templates/${previewExcel.id}/preview-page-meta`}
+          pageUrlBuilder={(n) => `${process.env.REACT_APP_BACKEND_URL}/api/excel-templates/${previewExcel.id}/preview-page-image?page=${n}&scale=2`}
+          title={`Preview Excel: ${previewExcel.code}`}
+          subtitle="Hasil substitusi data contoh · Download = file Excel asli"
+          downloadUrl={`${process.env.REACT_APP_BACKEND_URL}/api/excel-templates/${previewExcel.id}/download`}
+          onClose={() => setPreviewExcel(null)}
+        />
+      )}
     </Card>
   );
 }

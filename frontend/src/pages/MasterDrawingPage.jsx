@@ -1407,7 +1407,13 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
   const costingList = (bomAttachments.costing || []).map((a) => ({
     ...a,
     previewUrl: `${backendUrl}/api/bom/${activeDwg.bom_id}/attachments/${a.id}/preview`,
-    // costing = Excel → tetap pakai InlinePreviewDialog (HTML); download tetap tersedia
+    // costing Excel → preview sebagai halaman GAMBAR (LibreOffice→PDF→image) di viewer yang sama.
+    // Download tetap file Excel asli.
+    viewer: {
+      metaUrl: `/bom/${activeDwg.bom_id}/attachments/${a.id}/page-meta`,
+      pageBase: `${backendUrl}/api/bom/${activeDwg.bom_id}/attachments/${a.id}/page-image`,
+      downloadUrl: `${backendUrl}/api/bom/${activeDwg.bom_id}/attachments/${a.id}/download`,
+    },
     downloadUrl: `${backendUrl}/api/bom/${activeDwg.bom_id}/attachments/${a.id}/download`,
   }));
 
@@ -1586,20 +1592,22 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
       {previewFile && (() => {
         const ext = (previewFile.name || "").split(".").pop().toLowerCase();
         const isPdf = ext === "pdf" || (previewFile.contentType || "").includes("pdf");
+        const isExcel = ["xlsx", "xls", "xlsm"].includes(ext);
         const v = previewFile.viewer;
-        // Excel / gambar / non-PDF → tetap InlinePreviewDialog (punya tombol download sendiri)
+        // PDF & Excel → viewer image-based (Excel dikonversi ke halaman gambar di backend).
+        if (v && v.metaUrl && (isPdf || isExcel)) {
+          return (
+            <PdfPreviewModal
+              metaUrl={v.metaUrl}
+              pageUrlBuilder={(n) => `${v.pageBase}?page=${n}&scale=2`}
+              title={previewFile.name}
+              subtitle={isExcel ? "Excel (preview gambar) · Download = file asli" : ""}
+              downloadUrl={v.downloadUrl || previewFile.downloadUrl || ""}
+              onClose={() => setPreviewFile(null)}
+            />
+          );
+        }
         if (v && isPdf) {
-          if (v.metaUrl) {
-            return (
-              <PdfPreviewModal
-                metaUrl={v.metaUrl}
-                pageUrlBuilder={(n) => `${v.pageBase}?page=${n}&scale=2`}
-                title={previewFile.name}
-                downloadUrl={v.downloadUrl || previewFile.downloadUrl || ""}
-                onClose={() => setPreviewFile(null)}
-              />
-            );
-          }
           return (
             <PdfPreviewModal
               drawingId={v.drawingId}

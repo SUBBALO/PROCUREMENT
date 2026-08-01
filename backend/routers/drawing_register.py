@@ -1602,6 +1602,145 @@ async def drawing_reject_stage(
     return {"success": True, "approval_status": "draft", "rejected_stage": stage}
 
 
+def _rev_fs() -> AsyncIOMotorGridFSBucket:
+    """GridFS bucket khusus file revisi (markup/koreksi dari leader saat reject)."""
+    return AsyncIOMotorGridFSBucket(db, bucket_name="revision_files")
+
+
+@router.post("/drawings/{drawing_id}/reject-with-files/{stage}")
+async def drawing_reject_with_files(
+    drawing_id: str, stage: str,
+    notes: str = Form(...),
+    files: List[UploadFile] = File(default=[]),
+    current: dict = Depends(get_current_user),
+):
+    """Fase 3 — Reject bercatatan + unggah banyak file koreksi (markup).
+    Drawing kembali ke 'draft'; catatan & file tersimpan di `revisions` agar staff bisa revisi & submit ulang."""
+    if stage not in STAGE_ORDER:
+        raise HTTPException(status_code=400, detail=f"Stage '{stage}' tidak valid")
+    if not notes or len(notes.strip()) < 5:
+        raise HTTPException(status_code=400, detail="Reject wajib menyertakan catatan (min 5 karakter)")
+    drawing = await db.drawings.find_one({"id": drawing_id})
+    if not drawing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    current_status = drawing.get("approval_status", "draft")
+    if current_status != STAGE_STATUS[stage]:
+        raise HTTPException(status_code=409, detail=f"Tidak bisa reject stage '{stage}' — status saat ini '{current_status}'")
+    allowed = _stage_allowed_roles(stage)
+    if current.get("role") not in allowed and not is_super_admin_user(current):
+        raise HTTPException(status_code=403, detail=f"Role Anda tidak boleh reject stage '{stage}'")
+
+    # Simpan file koreksi ke GridFS
+    saved = []
+    fs = _rev_fs()
+    for f in (files or []):
+        if not f or not f.filename:
+            continue
+        data = await f.read()
+        if not data:
+            continue
+        fid = await fs.upload_from_stream(f.filename, data, metadata={"content_type": f.content_type or "application/octet-stream"})
+        saved.append({
+            "id": str(fid),
+            "filename": f.filename,
+            "content_type": f.content_type or "application/octet-stream",
+            "size": len(data),
+            "is_pdf": (f.filename or "").lower().endswith(".pdf"),
+        })
+
+    rev_entry = {
+        "id": str(uuid.uuid4()),
+        "stage": stage,
+        "rejected_by_id": current.get("id"),
+        "rejected_by_name": current.get("name") or current.get("username"),
+        "notes": notes.strip(),
+        "files": saved,
+        "at": _now_iso(),
+        "resolved": False,
+    }
+    stamp = _sig_stamp(current, notes=notes.strip())
+    stamp["stage"] = f"reject_{stage}"
+    await db.drawings.update_one(
+        {"id": drawing_id},
+        {"$set": {"approval_status": "draft", "rejected_at": _now_iso(),
+                  "rejected_stage": stage, "reject_notes": notes.strip(), "revision_reason": notes.strip()},
+         "$push": {"approvals": stamp, "revisions": rev_entry}},
+    )
+    await log_action(current, f"drawing_reject_{stage}", "drawings", drawing_id,
+                     {"drawing_no": drawing.get("drawing_no"), "notes": notes.strip(), "files": len(saved)})
+    return {"success": True, "approval_status": "draft", "rejected_stage": stage, "revision": rev_entry}
+
+
+@router.get("/drawings/{drawing_id}/revisions")
+async def drawing_revisions(drawing_id: str, current: dict = Depends(get_current_user)):
+    """Daftar catatan revisi (reject) + file koreksi untuk sebuah drawing."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    drawing = await db.drawings.find_one({"id": drawing_id}, {"_id": 0, "revisions": 1, "drawing_no": 1})
+    if not drawing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    return {"drawing_no": drawing.get("drawing_no"), "revisions": drawing.get("revisions", [])}
+
+
+async def _rev_file_bytes(drawing_id: str, file_id: str) -> tuple:
+    drawing = await db.drawings.find_one({"id": drawing_id}, {"_id": 0, "revisions": 1})
+    if not drawing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    meta = None
+    for rev in (drawing.get("revisions") or []):
+        for f in (rev.get("files") or []):
+            if f.get("id") == file_id:
+                meta = f
+                break
+        if meta:
+            break
+    if not meta:
+        raise HTTPException(status_code=404, detail="File revisi tidak ditemukan")
+    try:
+        stream = await _rev_fs().open_download_stream(ObjectId(file_id))
+        raw = await stream.read()
+    except Exception:
+        raise HTTPException(status_code=404, detail="File revisi tidak ada di storage")
+    return raw, meta
+
+
+@router.get("/drawings/{drawing_id}/revision-files/{file_id}/page-meta")
+async def revision_file_page_meta(drawing_id: str, file_id: str, current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    from utils.pdf_render import pdf_page_meta
+    raw, meta = await _rev_file_bytes(drawing_id, file_id)
+    if not meta.get("is_pdf"):
+        raise HTTPException(status_code=400, detail="Preview gambar hanya untuk PDF")
+    return pdf_page_meta(raw)
+
+
+@router.get("/drawings/{drawing_id}/revision-files/{file_id}/page-image")
+async def revision_file_page_image(drawing_id: str, file_id: str, page: int = 0, scale: float = 2.0,
+                                   current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    from utils.pdf_render import pdf_page_png
+    raw, meta = await _rev_file_bytes(drawing_id, file_id)
+    if not meta.get("is_pdf"):
+        raise HTTPException(status_code=400, detail="Preview gambar hanya untuk PDF")
+    try:
+        png = pdf_page_png(raw, page, scale)
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
+    return StreamingResponse(io.BytesIO(png), media_type="image/png",
+                             headers={"Cache-Control": "private, max-age=120"})
+
+
+@router.get("/drawings/{drawing_id}/revision-files/{file_id}/download")
+async def revision_file_download(drawing_id: str, file_id: str, current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    raw, meta = await _rev_file_bytes(drawing_id, file_id)
+    return StreamingResponse(io.BytesIO(raw), media_type=meta.get("content_type") or "application/octet-stream",
+                             headers={"Content-Disposition": f'inline; filename="{meta.get("filename")}"'})
+
+
 @router.get("/drawings/pending-my-approval")
 async def list_pending_my_approval(current: dict = Depends(get_current_user)):
     """List drawings yang sekarang butuh approval dari user (sesuai role stage)."""

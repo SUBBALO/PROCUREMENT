@@ -4,6 +4,7 @@ import { Card } from "./ui/card";
 import { FileText, Eye, LinkSimple, Info, Table } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
+import PdfPreviewModal from "./PdfPreviewModal";
 
 /**
  * Read-only viewer of drawing attachments accessible from a BOM.
@@ -56,6 +57,7 @@ export default function BomAttachmentsReadOnly({ bom }) {
         accent: "emerald",
         name: drawing.filename || `${drawing.drawing_no}.pdf`,
         url: `${backendUrl}/api/drawings/${drawing.id}/preview`,
+        viewer: { drawingId: drawing.id, target: "mks", downloadUrl: `${backendUrl}/api/drawings/${drawing.id}/pdf-stamped` },
         source: "MKS-F-ENG-005 Drawing Master List",
       });
     }
@@ -65,6 +67,7 @@ export default function BomAttachmentsReadOnly({ bom }) {
         accent: "blue",
         name: drawing.customer_ref_filename || `${drawing.drawing_no}-CUST-REF.pdf`,
         url: `${backendUrl}/api/drawings/${drawing.id}/customer-ref/preview`,
+        viewer: { drawingId: drawing.id, target: "customer_ref", downloadUrl: `${backendUrl}/api/drawings/${drawing.id}/customer-ref/download` },
         source: "MKS-F-ENG-005 Drawing Master List",
       });
     }
@@ -73,6 +76,11 @@ export default function BomAttachmentsReadOnly({ bom }) {
       accent: "violet",
       name: a.filename,
       url: `${backendUrl}/api/bom/${bom.id}/attachments/${a.id}/preview`,
+      viewer: {
+        metaUrl: `/bom/${bom.id}/attachments/${a.id}/page-meta`,
+        pageBase: `${backendUrl}/api/bom/${bom.id}/attachments/${a.id}/page-image`,
+        downloadUrl: `${backendUrl}/api/bom/${bom.id}/attachments/${a.id}/download`,
+      },
       source: "BOM Attachments",
       uploaded_by: a.uploaded_by, uploaded_at: a.uploaded_at,
     }));
@@ -81,6 +89,11 @@ export default function BomAttachmentsReadOnly({ bom }) {
       accent: "amber",
       name: a.filename,
       url: `${backendUrl}/api/bom/${bom.id}/attachments/${a.id}/preview`,
+      viewer: {
+        metaUrl: `/bom/${bom.id}/attachments/${a.id}/page-meta`,
+        pageBase: `${backendUrl}/api/bom/${bom.id}/attachments/${a.id}/page-image`,
+        downloadUrl: `${backendUrl}/api/bom/${bom.id}/attachments/${a.id}/download`,
+      },
       summaryEndpoint: `/bom/${bom.id}/attachments/${a.id}/costing-summary`,
       isCosting: true,
       attachId: a.id,
@@ -264,7 +277,36 @@ function ReadOnlyPreviewDialog({ file, onClose }) {
   const ext = (file.name || "").split(".").pop().toLowerCase();
   const isPdf = ext === "pdf";
   const isImage = ["jpg", "jpeg", "png", "webp", "gif"].includes(ext);
-  const isExcel = ["xlsx", "xls"].includes(ext);
+  const isExcel = ["xlsx", "xls", "xlsm"].includes(ext);
+  const v = file.viewer;
+
+  // PDF & Excel → viewer image-based (halaman gambar). Excel dikonversi ke gambar di backend.
+  if (v && (isPdf || isExcel)) {
+    if (v.metaUrl) {
+      return (
+        <PdfPreviewModal
+          metaUrl={v.metaUrl}
+          pageUrlBuilder={(n) => `${v.pageBase}?page=${n}&scale=2`}
+          title={file.name}
+          subtitle={isExcel ? "Excel (preview gambar) · Download = file asli" : (file.kind || "")}
+          downloadUrl={v.downloadUrl || ""}
+          onClose={onClose}
+        />
+      );
+    }
+    return (
+      <PdfPreviewModal
+        drawingId={v.drawingId}
+        target={v.target}
+        extraId={v.extraId || ""}
+        stamped
+        title={file.name}
+        downloadUrl={v.downloadUrl || ""}
+        onClose={onClose}
+      />
+    );
+  }
+
   return (
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent className="rounded-none max-w-5xl h-[90vh] flex flex-col" data-testid="bom-att-preview-dialog">
@@ -276,13 +318,12 @@ function ReadOnlyPreviewDialog({ file, onClose }) {
           <DialogDescription>{file.kind} · {file.source} — Preview read-only.</DialogDescription>
         </DialogHeader>
         <div className="flex-1 border border-slate-200 bg-slate-900 overflow-hidden">
-          {(isPdf || isExcel) && <iframe src={file.url} title={file.name} className="w-full h-full bg-white" />}
           {isImage && (
             <div className="w-full h-full flex items-center justify-center bg-slate-900">
               <img src={file.url} alt={file.name} className="max-w-full max-h-full object-contain" />
             </div>
           )}
-          {!isPdf && !isImage && !isExcel && (
+          {!isImage && (
             <div className="w-full h-full flex items-center justify-center text-slate-400 italic">Tipe file tidak dikenal</div>
           )}
         </div>

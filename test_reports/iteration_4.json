@@ -1,0 +1,60 @@
+{
+  "summary": "Completed backend testing for Excel preview features (LibreOffice conversion). All core endpoints working: Form templates, Excel templates, Inquiry attachments, Drawing regression, and error handling. BOM attachment tests skipped due to no test data.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": [],
+    "minor_issues": [
+      {
+        "issue": "No BOMs available in system for testing BOM attachment Excel preview",
+        "impact": "Could not test BOM attachment page-meta/page-image endpoints",
+        "workaround": "Tested equivalent functionality with inquiry attachments (same code path)",
+        "fix_priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Login with super admin credentials (susanto / Subbalo1994)",
+    "Form template preview-page-meta returns {pages, sizes}",
+    "Form template preview-page-image returns PNG",
+    "Excel template preview-page-meta returns {pages, sizes}",
+    "Excel template preview-page-image returns PNG (LibreOffice conversion working)",
+    "Excel template upload and activation",
+    "Inquiry creation and Excel attachment upload",
+    "Inquiry attachment page-meta for Excel files (converts to PDF then PNG)",
+    "Inquiry attachment page-image for Excel files returns PNG",
+    "Download inquiry Excel attachment returns ORIGINAL Excel format (not PDF)",
+    "Drawing page-meta regression test (existing functionality intact)",
+    "Drawing page-image regression test (existing functionality intact)",
+    "Error handling: non-PDF/non-office files return 400 with clear message",
+    "Cookie-based authentication working correctly"
+  ],
+  "test_report_links": [
+    "/app/backend_test.py"
+  ],
+  "success_percentage": {
+    "backend": "100% (21/21 tests passed)",
+    "frontend": "N/A (backend-only testing as requested)"
+  },
+  "updated_files": [
+    "/app/backend_test.py"
+  ],
+  "action_item_for_main_agent": "",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false,
+  "notes": [
+    "LibreOffice (soffice) is installed and working at /usr/bin/soffice",
+    "Excel->PDF->PNG conversion pipeline working correctly",
+    "5-minute PDF cache working (office_render.py)",
+    "All download endpoints correctly return ORIGINAL Excel files, not converted PDFs",
+    "Form template and Excel template preview endpoints working with image-based viewer",
+    "Inquiry attachment Excel preview working (sales slot)",
+    "BOM attachment tests skipped - no BOMs in system, but code path is identical to inquiry attachments which passed",
+    "Error handling verified: non-office files return 400 as expected",
+    "No backend 500 errors encountered during testing"
+  ]
+}

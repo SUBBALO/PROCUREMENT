@@ -5,6 +5,7 @@ import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import PdfPreviewModal from "../components/PdfPreviewModal";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { toast } from "sonner";
@@ -1303,7 +1304,7 @@ function AttachmentsList({ title, attachments, inquiryId, accent = "slate" }) {
     if (mime.startsWith("image/")) return true;
     if (mime.startsWith("text/") && mime.length < 30) return true;
     const ext = (filename || "").split(".").pop().toLowerCase();
-    if (["pdf", "png", "jpg", "jpeg", "gif", "webp", "svg", "txt", "md", "csv"].includes(ext)) return true;
+    if (["pdf", "png", "jpg", "jpeg", "gif", "webp", "svg", "txt", "md", "csv", "xlsx", "xls", "xlsm"].includes(ext)) return true;
     return false;
   };
 
@@ -1344,14 +1345,31 @@ function AttachmentsList({ title, attachments, inquiryId, accent = "slate" }) {
           ))}
         </div>
       </div>
-      {previewFile && (
-        <AttachmentPreviewDialog
-          file={previewFile}
-          inquiryId={inquiryId}
-          onClose={() => setPreviewFile(null)}
-          onDownload={() => window.open(buildUrl(previewFile.id, false), "_blank")}
-        />
-      )}
+      {previewFile && (() => {
+        const ext = (previewFile.filename || "").split(".").pop().toLowerCase();
+        const isPdf = (previewFile.mime === "application/pdf") || ext === "pdf";
+        const isExcel = ["xlsx", "xls", "xlsm"].includes(ext);
+        if (isPdf || isExcel) {
+          return (
+            <PdfPreviewModal
+              metaUrl={`/inquiries/${inquiryId}/attachments/${previewFile.id}/page-meta`}
+              pageUrlBuilder={(n) => `${process.env.REACT_APP_BACKEND_URL}/api/inquiries/${inquiryId}/attachments/${previewFile.id}/page-image?page=${n}&scale=2`}
+              title={previewFile.filename}
+              subtitle={`${(previewFile.size / 1024).toFixed(1)} KB · Upload oleh ${previewFile.uploaded_by || "-"}${isExcel ? " · Excel (preview gambar)" : ""}`}
+              downloadUrl={buildUrl(previewFile.id, false)}
+              onClose={() => setPreviewFile(null)}
+            />
+          );
+        }
+        return (
+          <AttachmentPreviewDialog
+            file={previewFile}
+            inquiryId={inquiryId}
+            onClose={() => setPreviewFile(null)}
+            onDownload={() => window.open(buildUrl(previewFile.id, false), "_blank")}
+          />
+        );
+      })()}
     </>
   );
 }

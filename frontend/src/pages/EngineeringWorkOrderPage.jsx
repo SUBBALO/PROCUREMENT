@@ -9,7 +9,8 @@ import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
 import { DrawingAttachmentsPanel } from "./MasterDrawingPage";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
-import { Wrench, ClipboardText, FloppyDisk, ArrowClockwise, PaperPlaneRight, CheckCircle } from "@phosphor-icons/react";
+import PdfPreviewModal from "../components/PdfPreviewModal";
+import { Wrench, ClipboardText, FloppyDisk, ArrowClockwise, PaperPlaneRight, CheckCircle, Warning, Eye, DownloadSimple, Paperclip } from "@phosphor-icons/react";
 
 /**
  * EngineeringWorkOrderPage — halaman kerja engineer setelah Eng Head assign drawing.
@@ -78,6 +79,9 @@ export default function EngineeringWorkOrderPage() {
         </div>
         <StatusBadge status={drawing.approval_status} />
       </div>
+
+      {/* Fase 3 — Catatan revisi dari leader (kalau pernah di-reject) */}
+      <RevisionNotesPanel drawing={drawing} />
 
       {/* Info card: assign, prepared_by, from DRF */}
       <Card className="rounded-none border-slate-200 p-4 bg-slate-50">
@@ -158,6 +162,85 @@ export default function EngineeringWorkOrderPage() {
     </div>
   );
 }
+
+function RevisionNotesPanel({ drawing }) {
+  const [preview, setPreview] = useState(null);
+  const revisions = (drawing.revisions || []).slice().reverse(); // terbaru dulu
+  const apiUrl = process.env.REACT_APP_BACKEND_URL;
+  if (revisions.length === 0) return null;
+  const isDraft = (drawing.approval_status || "draft") === "draft";
+
+  return (
+    <div className="border-2 border-rose-500" data-testid="revision-panel">
+      <div className="px-3 py-2 bg-rose-600 text-white flex items-center gap-2">
+        <Warning size={16} weight="fill" />
+        <div className="text-[11px] uppercase tracking-widest font-bold flex-1">
+          Catatan Revisi dari Reviewer{isDraft ? " — Perlu Diperbaiki & Submit Ulang" : ""}
+        </div>
+        <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full">{revisions.length}x revisi</span>
+      </div>
+      <div className="p-4 bg-rose-50 space-y-3">
+        {revisions.map((rev, idx) => (
+          <div key={rev.id || idx} className={`bg-white border ${idx === 0 ? "border-rose-300" : "border-slate-200"} p-3`}>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="text-xs font-bold text-rose-800 uppercase tracking-wider">
+                {idx === 0 ? "\u2605 Terbaru \u00b7 " : ""}Reject di stage: {rev.stage}
+              </div>
+              <div className="text-[10px] text-slate-500">
+                {rev.rejected_by_name} \u00b7 {rev.at ? new Date(rev.at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }) : ""}
+              </div>
+            </div>
+            <div className="text-sm text-slate-800 whitespace-pre-wrap">{rev.notes}</div>
+            {(rev.files || []).length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {rev.files.map((f) => (
+                  <div key={f.id} className="inline-flex items-center gap-1 border border-slate-300 bg-slate-50 pl-2">
+                    <Paperclip size={12} className="text-slate-500" />
+                    <span className="text-[11px] max-w-[160px] truncate">{f.filename}</span>
+                    {f.is_pdf && (
+                      <button
+                        onClick={() => setPreview(f)}
+                        className="px-1.5 py-1 bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-bold uppercase"
+                        title="Preview"
+                        data-testid={`rev-preview-${f.id}`}
+                      >
+                        <Eye size={11} weight="bold" />
+                      </button>
+                    )}
+                    <a
+                      href={`${apiUrl}/api/drawings/${drawing.id}/revision-files/${f.id}/download`}
+                      target="_blank" rel="noreferrer"
+                      className="px-1.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold uppercase"
+                      title="Download"
+                    >
+                      <DownloadSimple size={11} weight="bold" />
+                    </a>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+        {isDraft && (
+          <div className="text-[11px] text-rose-700 font-semibold">
+            \u2192 Perbaiki drawing/BOM sesuai catatan, upload ulang PDF bila perlu, lalu klik <b>TTD &amp; Submit</b> di bawah untuk kirim ulang ke Eng Head.
+          </div>
+        )}
+      </div>
+
+      {preview && (
+        <PdfPreviewModal
+          metaUrl={`/drawings/${drawing.id}/revision-files/${preview.id}/page-meta`}
+          pageUrlBuilder={(n) => `${apiUrl}/api/drawings/${drawing.id}/revision-files/${preview.id}/page-image?page=${n}&scale=2`}
+          title={preview.filename}
+          downloadUrl={`${apiUrl}/api/drawings/${drawing.id}/revision-files/${preview.id}/download`}
+          onClose={() => setPreview(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 
 function Info({ k, v, mono }) {
   return (

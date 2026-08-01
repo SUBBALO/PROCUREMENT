@@ -726,6 +726,64 @@ async def download_attachment(inq_id: str, file_id: str, inline: bool = False, c
     )
 
 
+async def _inq_att_bytes(inq_id: str, file_id: str):
+    d = await db.inquiries.find_one({"id": inq_id})
+    if not d:
+        raise HTTPException(status_code=404, detail="Inquiry tidak ditemukan")
+    meta = None
+    for att in (d.get("attachments") or []) + (d.get("engineer_response_files") or []):
+        if att.get("id") == file_id:
+            meta = att
+            break
+    if not meta:
+        raise HTTPException(status_code=404, detail="File tidak ditemukan")
+    try:
+        stream = await gridfs().open_download_stream(ObjectId(file_id))
+        raw = await stream.read()
+    except Exception:
+        raise HTTPException(status_code=404, detail="File tidak ada di storage")
+    return raw, meta
+
+
+@router.get("/inquiries/{inq_id}/attachments/{file_id}/page-meta")
+async def inquiry_attachment_page_meta(inq_id: str, file_id: str, current: dict = Depends(get_current_user)):
+    """Metadata halaman untuk viewer image-based (PDF & Excel)."""
+    from utils.pdf_render import pdf_page_meta
+    from utils.office_render import is_office_ext, office_to_pdf
+    raw, meta = await _inq_att_bytes(inq_id, file_id)
+    fn = (meta.get("filename") or "").lower()
+    ext = fn.rsplit(".", 1)[-1] if "." in fn else ""
+    if ext == "pdf":
+        return pdf_page_meta(raw)
+    if is_office_ext(ext):
+        return pdf_page_meta(office_to_pdf(raw, ext))
+    raise HTTPException(status_code=400, detail="Preview gambar hanya untuk PDF/Excel")
+
+
+@router.get("/inquiries/{inq_id}/attachments/{file_id}/page-image")
+async def inquiry_attachment_page_image(inq_id: str, file_id: str, page: int = 0, scale: float = 2.0,
+                                        current: dict = Depends(get_current_user)):
+    """Render satu halaman lampiran inquiry (PDF/Excel) menjadi PNG."""
+    from utils.pdf_render import pdf_page_png
+    from utils.office_render import is_office_ext, office_to_pdf
+    raw, meta = await _inq_att_bytes(inq_id, file_id)
+    fn = (meta.get("filename") or "").lower()
+    ext = fn.rsplit(".", 1)[-1] if "." in fn else ""
+    if ext == "pdf":
+        pdf = raw
+    elif is_office_ext(ext):
+        pdf = office_to_pdf(raw, ext)
+    else:
+        raise HTTPException(status_code=400, detail="Preview gambar hanya untuk PDF/Excel")
+    try:
+        png = pdf_page_png(pdf, page, scale)
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
+    return StreamingResponse(io.BytesIO(png), media_type="image/png",
+                             headers={"Cache-Control": "private, max-age=120"})
+
+
+
 @router.delete("/inquiries/{inq_id}/attachments/{file_id}")
 async def delete_attachment(inq_id: str, file_id: str, current: dict = Depends(get_current_user)):
     d = await db.inquiries.find_one({"id": inq_id})

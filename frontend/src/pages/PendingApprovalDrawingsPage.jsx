@@ -11,6 +11,7 @@ import PaginationBar, { usePagination } from "../components/PaginationBar";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
 import PdfPreviewModal from "../components/PdfPreviewModal";
 import SignatureHistoryPanel from "../components/SignatureHistoryPanel";
+import RejectDrawingModal from "../components/RejectDrawingModal";
 
 const ROLE_STAGE_MAP = {
   eng_leader: "eng_head",
@@ -34,6 +35,7 @@ export default function PendingApprovalDrawingsPage() {
   const [q, setQ] = useState("");
   const [sigDrawing, setSigDrawing] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [rejectDrawing, setRejectDrawing] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,17 +66,7 @@ export default function PendingApprovalDrawingsPage() {
     doc_control: "Document Control",
   }[user?.role] || user?.role;
 
-  const doReject = async (d) => {
-    const notes = window.prompt(`Alasan reject (wajib, min 5 char):`);
-    if (!notes || notes.trim().length < 5) return toast.error("Notes wajib min 5 char");
-    try {
-      await api.post(`/drawings/${d.id}/reject/${stage}`, { notes: notes.trim() });
-      toast.success("Drawing di-reject, kembali ke draft");
-      await load();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Gagal reject");
-    }
-  };
+  const doReject = (d) => setRejectDrawing(d);
 
   const TabBtn = ({ id, icon: Icon, label, count }) => (
     <button
@@ -225,6 +217,14 @@ export default function PendingApprovalDrawingsPage() {
           title={preview.drawing_no}
           subtitle={`${preview.title || ""}${preview.customer_name ? " · " + preview.customer_name : ""}`}
           onClose={() => setPreview(null)}
+        />
+      )}
+      {rejectDrawing && stage && (
+        <RejectDrawingModal
+          drawing={rejectDrawing}
+          stage={stage}
+          onDone={() => { setRejectDrawing(null); load(); }}
+          onClose={() => setRejectDrawing(null)}
         />
       )}
     </div>
