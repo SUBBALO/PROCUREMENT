@@ -45,7 +45,9 @@ export default function EngineeringWorkOrderPage() {
   // Iter 22 — Tidak lagi auto-redirect ke Master List saat drawing selesai.
   // Approver/reviewer boleh tetap buka WorkOrder untuk lihat attachments & status TTD.
 
-  if (loading || !drawing) {
+  // Hanya tampilkan loader penuh saat load AWAL (drawing masih null).
+  // Refetch setelah upload TIDAK meng-unmount panel → popup kategori tidak ikut hilang.
+  if (!drawing) {
     return (
       <div className="p-12 text-center text-slate-400">
         <ArrowClockwise size={22} className="mx-auto animate-spin mb-2" />
