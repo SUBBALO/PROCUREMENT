@@ -1,22 +1,26 @@
 [
   {
-    "content": "Tambah state queuedFiles & submitting di DrawingRequestFormDialog",
+    "content": "QC Tanpa Download: tambah prop noPrint di PdfPreviewModal + wire noDownload/noPrint utk role QC di PendingApprovalDrawingsPage",
     "status": "completed"
   },
   {
-    "content": "Refactor doSave menjadi persistDrf + uploadQueued + doSaveDraft + doSubmitToEng",
+    "content": "Dashboard Engineering: tambah slot children di DeptPortal",
     "status": "completed"
   },
   {
-    "content": "Tampilkan area upload multi-dokumen langsung (new order & draft), tidak terkunci",
+    "content": "Dashboard Engineering: buat komponen EngineeringQueuePanel (stat tiles + mini-list antrian DRF)",
     "status": "completed"
   },
   {
-    "content": "Ganti footer jadi 3 tombol: Batal > Simpan > Kirim Ke Engineering",
+    "content": "Integrasi EngineeringQueuePanel ke EngineeringPortalPage",
     "status": "completed"
   },
   {
-    "content": "Verifikasi compile (esbuild) & screenshot flow New Order",
+    "content": "Verifikasi compile esbuild + screenshot portal & QC preview",
+    "status": "completed"
+  },
+  {
+    "content": "Verifikasi Phase 3 Revision loop end-to-end (backend curl + panel staff)",
     "status": "completed"
   }
 ]

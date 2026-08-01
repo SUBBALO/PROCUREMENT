@@ -214,6 +214,8 @@ export default function PendingApprovalDrawingsPage() {
             { key: "customer_ref", label: "Drawing Customer" },
           ]}
           stamped
+          noDownload={user?.role === "qc"}
+          noPrint={user?.role === "qc"}
           title={preview.drawing_no}
           subtitle={`${preview.title || ""}${preview.customer_name ? " · " + preview.customer_name : ""}`}
           onClose={() => setPreview(null)}

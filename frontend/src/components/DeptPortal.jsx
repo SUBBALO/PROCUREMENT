@@ -5,7 +5,7 @@ import { ArrowRight, ArrowLeft, Sparkle } from "@phosphor-icons/react";
 /**
  * Reusable department sub-portal (LIGHT theme, 1-screen compact).
  */
-export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky", cards }) {
+export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky", cards, children }) {
   const navigate = useNavigate();
 
   return (
@@ -34,6 +34,8 @@ export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky"
           </h1>
           {deptTagline && <p className="mt-1.5 text-xs text-slate-600">{deptTagline}</p>}
         </div>
+
+        {children && <div className="mb-5">{children}</div>}
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           {cards.map((c, idx) => (

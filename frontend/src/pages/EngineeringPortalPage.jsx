@@ -1,36 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import DeptPortal from "../components/DeptPortal";
-import api from "../lib/api";
-import { Wrench, Package, CurrencyCircleDollar, FileText, ClipboardText, PaperPlaneTilt, Kanban, PenNib, ClipboardText as ClipboardIcon } from "@phosphor-icons/react";
+import EngineeringQueuePanel from "../components/EngineeringQueuePanel";
+import { Wrench, Package, CurrencyCircleDollar, FileText, Kanban, ClipboardText as ClipboardIcon } from "@phosphor-icons/react";
 import { useAuth } from "../lib/auth";
 
 export default function EngineeringPortalPage() {
   const { user } = useAuth();
   const isHead = ["eng_head", "eng_leader", "engineering", "admin", "super_admin", "supervisor"].includes(user?.role);
   const isEngUser = ["eng_head", "eng_leader", "engineering", "eng_staff", "admin", "super_admin", "supervisor"].includes(user?.role);
-  const [drfPending, setDrfPending] = useState(0);
-  const [myTasks, setMyTasks] = useState(0);
-  const [pendingApproval, setPendingApproval] = useState(0);
-
-  useEffect(() => {
-    const fetchAll = () => {
-      if (isHead) {
-        api.get("/drawing-requests/pending-count-for-engineering")
-          .then(({ data }) => setDrfPending(data?.count || 0)).catch(() => {});
-        // Iter 22 — Eng Head lihat count drawing yg menunggu TTD Eng Head
-        api.get("/drawings/pending-my-approval")
-          .then(({ data }) => setPendingApproval(data?.total || 0)).catch(() => {});
-      }
-      if (isEngUser) {
-        api.get("/drawings/my-assignments")
-          .then(({ data }) => setMyTasks((data?.items || []).filter((d) => !["controlled", "released"].includes(d.approval_status)).length))
-          .catch(() => {});
-      }
-    };
-    fetchAll();
-    const t = setInterval(fetchAll, 45000);
-    return () => clearInterval(t);
-  }, [isHead, isEngUser]);
 
   const CARDS = [
     ...(isEngUser ? [{
@@ -44,7 +21,6 @@ export default function EngineeringPortalPage() {
       href: "/engineering/work-orders",
       accent: "from-teal-500 via-cyan-500 to-sky-500",
       accentText: "text-teal-400",
-      badgeCount: (drfPending || 0) + (myTasks || 0),
     }] : []),
     {
       key: "costing", label: "Costing (Inquiry Sales)", stats: "Request dari Sales",
@@ -78,5 +54,9 @@ export default function EngineeringPortalPage() {
     },
   ];
 
-  return <DeptPortal deptLabel="Engineering Department" deptTagline="Drawing Request · Tugas Saya · Costing · BOM · Master Drawing" accentColor="amber" cards={CARDS} />;
+  return (
+    <DeptPortal deptLabel="Engineering Department" deptTagline="Drawing Request · Tugas Saya · Costing · BOM · Master Drawing" accentColor="amber" cards={CARDS}>
+      <EngineeringQueuePanel isHead={isHead} isEngUser={isEngUser} />
+    </DeptPortal>
+  );
 }

@@ -1,4 +1,4 @@
-# Development Plan — ERP/Procurement (FARM) — Master Drawing List + Repeat Order Enhancements
+# Development Plan — ERP/Procurement (FARM) — Engineering Workflow Consolidation + Document Security + Revision Loop
 
 ## Objectives
 - ✅ **Selesai verifikasi Legacy Import multi-DWG**
@@ -11,7 +11,7 @@
     - **4 inline preview tiles** per baris: **DWG MKS**, **Customer**, **BOM**, **Nesting**
     - Preview DWG MKS/Customer menampilkan **DC-stamped** namun **tanpa SO stamp** (via `hide_so=1`)
     - Tombol **Print** hanya untuk **Engineering + Admin/SuperAdmin**
-    - Footer **Printed by [nama]** ter-overlay dari backend stamping.
+    - Footer **Printed by [nama]** ter-overlay dari backend stamping
   - Bukti: **Iteration 9** — backend **100% (11/11)** pass, frontend **95% (17/18)**.
 - ✅ **Ekspor Master Drawing List ke Excel/PDF untuk arsip Engineering**
   - Status: **COMPLETED**
@@ -26,6 +26,14 @@
     - Saat upload PDF MKS (manual repeat), sistem **auto-baca nomor DWG dari isi PDF** (format MKS) dan **auto-rename drawing_no**.
     - Fallback: editor manual **Ubah manual** No. DWG untuk koreksi bila detect salah/tidak kebaca.
   - Bukti: uji UI end-to-end: upload PDF → nomor berubah otomatis (tanpa mismatch warning), edit manual sukses, mismatch warning muncul bila nomor manual ≠ isi PDF.
+- ✅ **Phase 1 DRF — NEW Order inline upload + tombol Simpan/Kirim**
+  - Status: **COMPLETED**
+  - Deliverables:
+    - `DrawingRequestFormDialog.jsx`: area lampiran tampil langsung untuk **NEW Order** dan mendukung **multi-file** (click/drag-drop).
+    - Tombol footer: **Batal · Simpan (draft) · Kirim Ke Engineering (submit)**.
+    - Untuk DRF baru: file di-*queue* lokal → otomatis terupload saat Simpan/Kirim.
+    - Upload lampiran bersifat **opsional**.
+  - Bukti: uji end-to-end (buat DRF + attach + submit) berhasil; data uji dibersihkan.
 
 ---
 
@@ -119,7 +127,7 @@
 4. ✅ Regression test `pdf-stamped` berjalan.
 5. ⏳ **RBAC negative-case verification (Doc Control / QC / Store / Produksi)**
    - Catatan: perlu uji manual dengan kredensial preview-only yang valid pada environment target.
-   - Secara kode: `isDrawingPreviewOnly(role)` → viewer `noDownload=true`.
+   - Secara kode: `noDownload` tersedia di viewer, namun wiring per-role perlu dipastikan konsisten di semua halaman preview.
 
 ---
 
@@ -165,34 +173,88 @@
    - Viewer: `PdfPreviewModal`.
 2. ✅ **Auto-detect nomor DWG saat upload (repeat/manual)**
    - Backend (`drawing_register.py`):
-     - `_extract_pdf_text` diperbaiki pakai **PyMuPDF (fitz)** (karena `pypdf` tidak terpasang).
-     - `_detect_mks_dno` regex format: `DWG.YY.MM.NN_CUST.INIT.TYPE.NN`.
+     - `_extract_pdf_text` diperbaiki pakai **PyMuPDF (fitz)**.
+     - OCR fallback via **pytesseract** bila PDF scanned.
      - Upload response menambahkan: `detected_no`, `current_drawing_no`.
      - Simpan ke DB: `pdf_detected_no`.
-   - Endpoint baru: `POST /drawings/{id}/rename`:
-     - Cek unik (`drawing_no+revision`)
-     - Sync BOM `project_dwg` bila sama dengan nomor lama
-     - Re-verify match terhadap isi PDF (update `pdf_match_status`, candidates, note) agar warning tidak stale.
-   - Frontend (`MasterDrawingPage.jsx` → `DrawingAttachmentsPanel.uploadDrawingPdf`):
-     - Setelah upload: jika `detected_no` beda → **auto rename** tanpa konfirmasi.
-     - Jika rename gagal (mis. duplicate): tampilkan error + arahkan pakai **Ubah manual**.
-     - UI editor manual No. DWG: tombol **Ubah manual** + input + simpan (panggil `/rename`).
+   - Endpoint baru: `POST /drawings/{id}/rename`.
+   - Frontend: auto-rename + editor manual.
 3. ✅ **Testing**
-   - Verified UI:
-     - Upload PDF valid → nomor berubah otomatis → mismatch warning tidak muncul.
-     - Manual edit → berhasil → mismatch warning muncul bila nomor ≠ isi PDF (expected).
+   - Verified UI end-to-end.
    - Data uji dibersihkan.
 
 ---
 
+## Phase 6 — Engineering Workflow Consolidation (NEW)
+Fokus: ringkas portal Engineering untuk Eng Leader, perketat keamanan dokumen QC (tanpa download/print), dan memastikan revision loop benar-benar siap produksi.
+
+### 6A — Dashboard Engineering: Panel Konsolidasi “Antrian DRF”
+
+#### User Stories
+1. Sebagai **Eng Leader**, saya ingin melihat ringkasan antrian DRF (submitted/accepted/in_progress) dalam satu panel ringkas agar cepat mengambil keputusan.
+2. Sebagai **Eng Leader**, saya ingin melihat mini-list DRF terbaru (submitted + butuh assign) agar bisa langsung klik ke inbox/work order.
+3. Sebagai **Engineer**, saya ingin melihat tugas saya (assigned to me) dan statusnya tanpa harus buka beberapa menu.
+
+#### Implementation Steps — STATUS: PLANNED
+1. ⏳ **Tambah slot `children` pada `DeptPortal`** (`/app/frontend/src/components/DeptPortal.jsx`)
+   - Izinkan `DeptPortal` merender blok opsional di atas grid cards (mis. panel ringkas).
+2. ⏳ **Buat komponen `EngineeringQueuePanel`** (`/app/frontend/src/components/EngineeringQueuePanel.jsx`)
+   - Menampilkan:
+     - Stat tiles: DRF pending for engineering (`/drawing-requests/pending-count-for-engineering`), pending approval Eng Head (`/drawings/pending-my-approval`), dan my assignments (`/drawings/my-assignments`).
+     - Mini list DRF terbaru (ambil dari `/drawing-requests?scope=for_engineering` lalu filter `submitted/accepted/in_progress`).
+     - CTA cepat: tombol ke `/engineering/drawing-request-inbox` dan `/engineering/work-orders`.
+3. ⏳ **Integrasi ke Engineering portal** (`/app/frontend/src/pages/EngineeringPortalPage.jsx`)
+   - Render `EngineeringQueuePanel` sebagai anak (children) di `DeptPortal`.
+4. ⏳ **Testing**
+   - Screenshot portal Engineering sebelum/sesudah.
+   - Verifikasi angka konsisten dengan list.
+
+### 6B — QC Tanpa Download (View-only + TTD)
+
+#### User Stories
+1. Sebagai **QC**, saya ingin preview drawing (image-based) untuk inspeksi tetapi **tanpa tombol Download** agar file asli tidak tersebar.
+2. Sebagai **QC**, saya (opsional) tidak boleh print dari sistem preview bila kebijakan dokumen melarang cetak.
+
+#### Implementation Steps — STATUS: PARTIALLY IMPLEMENTED
+1. ✅ `PdfPreviewModal` sudah memiliki prop `noDownload` (sudah ada), namun belum konsisten dipakai.
+2. ⏳ **Wire `noDownload` untuk role QC** di `PendingApprovalDrawingsPage.jsx`
+   - Saat membuka `PdfPreviewModal`, set `noDownload={user.role === "qc"}` (atau helper RBAC `isDrawingPreviewOnly(role)`).
+3. ⏳ **Tambahkan prop `noPrint` pada `PdfPreviewModal`**
+   - Sembunyikan tombol Print bila `noPrint=true`.
+   - Aktifkan `noPrint` untuk QC (dan role preview-only lain bila diperlukan).
+4. ⏳ **Regression check**
+   - Pastikan Engineering/Admin tetap bisa Print/Download sesuai RBAC.
+   - Pastikan halaman lain yang memakai viewer tidak berubah perilakunya.
+
+### 6C — Phase 3 Revision Loop (Reject + Notes + Files) — Verification
+
+#### Status Temuan
+- ✅ Backend sudah ada:
+  - `POST /drawings/{id}/reject-with-files/{stage}`
+  - `GET /drawings/{id}/revisions`
+  - `GET /drawings/{id}/revision-files/{file_id}/download`
+  - `GET /drawings/{id}/revision-files/{file_id}/page-meta` + `page-image`
+- ✅ Frontend sudah ada:
+  - `RejectDrawingModal.jsx` (notes wajib + multi file)
+  - `EngineeringWorkOrderPage.jsx` menampilkan `RevisionNotesPanel` (catatan + preview/download file revisi)
+
+#### Verification Steps — STATUS: PLANNED
+1. ⏳ **E2E flow**
+   - Eng Head approve → QC preview (no download) → QC reject dengan notes+files → status drawing kembali `draft`.
+   - Engineer membuka Work Order → panel revisi muncul → preview file revisi → perbaiki dokumen → submit ulang.
+2. ⏳ **Audit trail**
+   - Pastikan `approvals[]` mencatat stage `reject_qc`/`reject_sales` dst.
+   - Pastikan `revisions[]` terisi lengkap (rejected_by, at, notes, file meta).
+3. ⏳ **Testing output**
+   - Screenshot panel revisi di Work Order.
+   - Screenshot modal reject dan hasil perubahan status.
+
+---
+
 ## Next Actions (Immediate)
-1. ✅ Tidak ada action blocking untuk fitur yang sudah selesai.
-2. ⏳ (Opsional hardening) Jalankan uji manual untuk role preview-only (QC/Store/Produksi/Doc Control):
-   - Pastikan tombol **Download** hilang di viewer.
-   - Pastikan tombol **Print** tidak tampil.
-3. ⏳ (Out of scope sesi ini, tapi disebut user) Sales portal — manual input SO lama + customer untuk repeat apabila data SO lama tidak ditemukan.
-4. (Opsional) Tingkatkan auto-detect untuk PDF scan:
-   - OCR fallback (jika diperlukan) untuk kasus PDF gambar.
+1. ⏳ Implement **Phase 6A** (EngineeringQueuePanel + slot children pada DeptPortal).
+2. ⏳ Implement **Phase 6B** (QC noDownload + noPrint di viewer) dan lakukan uji regresi.
+3. ⏳ Jalankan verifikasi **Phase 6C** (Revision loop) via testing agent dan dokumentasikan hasil.
 
 ---
 
@@ -202,4 +264,7 @@
 - ✅ Tombol **Print** hanya untuk **Engineering + Admin/SuperAdmin**.
 - ✅ Ekspor Master Drawing List ke **Excel/PDF** berhasil dan mengikuti filter.
 - ✅ Repeat Order: dokumen bisa dipreview sebelum submit/tarik; upload manual auto-detect nomor DWG dari isi PDF; tersedia koreksi manual.
-- ✅ Semua endpoint existing tetap kompatibel; regression test lulus (approval/stamping/download).
+- ✅ DRF New Order: upload lampiran inline (multi-file) + tombol **Simpan**/**Kirim** sesuai workflow.
+- ⏳ Engineering Portal menampilkan **panel ringkas antrian DRF** (angka + mini list) untuk Eng Leader.
+- ⏳ QC preview bersifat **view-only**: **tanpa Download** dan (bila diaktifkan) **tanpa Print**, namun tetap bisa TTD/Approve/Reject.
+- ⏳ Revision loop: reject dengan notes+files → kembali ke engineer → perbaikan → submit ulang berjalan tanpa kehilangan audit trail.

@@ -7,7 +7,8 @@ import { X, MagnifyingGlassPlus, MagnifyingGlassMinus, DownloadSimple, Printer, 
  * Menggantikan "buka tab baru" yang sering kena blokir popup / dicegat IDM.
  *
  * Fitur: scroll semua halaman, zoom, PRINT (cetak halaman gambar), dan DOWNLOAD (file asli).
- * Print & Download tersedia untuk SEMUA role.
+ * Print & Download bisa disembunyikan per-role via prop `noPrint` / `noDownload`
+ * (mis. QC = view-only tanpa download & tanpa print demi keamanan dokumen).
  *
  * MODE A (drawing): beri `drawingId` + `target`/`targets`.
  * MODE B (generik): beri `metaUrl` (path relatif ke /api) + `pageUrlBuilder(page)` +
@@ -34,6 +35,7 @@ export default function PdfPreviewModal({
   subtitle = "",
   downloadUrl = "",
   noDownload = false,
+  noPrint = false,
   autoPrint = false,
   onClose,
 }) {
@@ -121,9 +123,11 @@ export default function PdfPreviewModal({
           <button onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.15).toFixed(2)))} className="p-2 bg-slate-700 hover:bg-slate-600 rounded" title="Perkecil" data-testid="pdf-zoom-out"><MagnifyingGlassMinus size={16} weight="bold" /></button>
           <span className="text-xs w-12 text-center tabular-nums" data-testid="pdf-zoom-level">{Math.round(zoom * 100)}%</span>
           <button onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.15).toFixed(2)))} className="p-2 bg-slate-700 hover:bg-slate-600 rounded" title="Perbesar" data-testid="pdf-zoom-in"><MagnifyingGlassPlus size={16} weight="bold" /></button>
-          <button onClick={doPrint} disabled={!meta} className="ml-2 inline-flex items-center gap-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs font-bold uppercase tracking-widest disabled:opacity-40" title="Cetak" data-testid="pdf-print">
-            <Printer size={15} weight="bold" /> Print
-          </button>
+          {!noPrint && (
+            <button onClick={doPrint} disabled={!meta} className="ml-2 inline-flex items-center gap-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs font-bold uppercase tracking-widest disabled:opacity-40" title="Cetak" data-testid="pdf-print">
+              <Printer size={15} weight="bold" /> Print
+            </button>
+          )}
           {effectiveDownloadUrl && (
             <a href={effectiveDownloadUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded text-xs font-bold uppercase tracking-widest" data-testid="pdf-download">
               <DownloadSimple size={15} weight="bold" /> Download
