@@ -1195,7 +1195,7 @@ function WorkOrderView() {
             Engineering Work Order — {bom.bom_no}
           </h1>
           <div className="text-xs text-slate-500 mt-1">
-            Semua alur Engineering dalam 1 halaman: <b>Info Drawing → Attachments → Grid BOM</b>. Setelah submit, Engineering Leader (Riski) review; bisa revisi bolak-balik sampai approved. Tanda tangan basah dilakukan di dokumen cetak.
+            Semua alur Engineering dalam 1 halaman: <b>Info Drawing → Grid BOM</b>. Attachment (Drawing PDF, Customer, Nesting, Costing, CAD) di halaman <b>Upload &amp; TTD</b> per-drawing. Setelah submit, Engineering Leader (Riski) review; bisa revisi bolak-balik sampai approved.
           </div>
         </div>
         <div className={`px-3 py-2 border-2 ${statusBadge.bg.replace("bg-", "border-")} ${statusBadge.bg} ${statusBadge.text} text-xs font-bold tracking-wider text-right`} data-testid="wo-status-badge">
@@ -1208,27 +1208,8 @@ function WorkOrderView() {
         <InfoDrawingSection bom={bom} canEdit={canEditItems} onSaved={loadAll} linkedDrawings={linkedDrawings} />
       </SectionCard>
 
-      {/* SECTION 2 - Attachments (4 slot) */}
-      <SectionCard title="2. Attachments (Upload File Pendukung)" icon={UploadSimple}>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-          {ATTACH_SLOTS.map((slot) => (
-            <AttachmentSlot
-              key={slot.key}
-              slot={slot}
-              files={attachmentsByCategory[slot.key]}
-              bomId={bomId}
-              onChanged={loadAll}
-              disabled={!canEditItems}
-            />
-          ))}
-        </div>
-        <div className="text-[10px] text-slate-500 italic mt-2">
-          💡 File tersimpan permanen di BOM. Bisa preview/hapus setelah upload. Engineering Leader bisa upload file <b>revisi</b> di section bawah.
-        </div>
-      </SectionCard>
-
-      {/* SECTION 3 - BOM Grid */}
-      <SectionCard title="3. Grid Data BOM (Excel-like)" icon={ClipboardText}>
+      {/* SECTION 2 - BOM Grid (Attachments dipindah ke halaman "Upload & TTD" per-drawing) */}
+      <SectionCard title="2. Grid Data BOM (Excel-like)" icon={ClipboardText}>
         <BomClassOfMaterialInline bom={bom} onSaved={loadAll} canEdit={canEditItems} />
         <div className="flex items-center justify-between mb-2">
           <div className="text-[11px] uppercase tracking-[0.15em] font-bold text-slate-700">
