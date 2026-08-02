@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
 import api from "../lib/api";
-import { ClipboardText, Stamp, Signature, ClipboardText as ClipboardIcon } from "@phosphor-icons/react";
+import { ClipboardText, Stamp, ClipboardText as ClipboardIcon } from "@phosphor-icons/react";
 import { useNotifCount } from "../lib/useNotifCount";
 export default function QCPortalPage() {
   const pendingDrawings = useNotifCount("drawing_pending_approval");
@@ -16,26 +16,14 @@ export default function QCPortalPage() {
   const CARDS = [
     {
       key: "pending-approval",
-      label: "Review & TTD Drawing (QC Inspection)",
-      stats: "Baca view-only · TTD kalau OK",
-      description: "Drawing sudah di-approve Eng Head & menunggu QC review. Klik Preview untuk baca Drawing MKS & Drawing Customer (view-only, tanpa download) → cek dimensi, tolerance, spec material → klik TTD & Approve kalau OK (lanjut ke Sales), atau Reject kalau perlu revisi.",
+      label: "Menunggu TTD Saya",
+      stats: "Drawing + ECN dalam satu tempat",
+      description: "Kotak masuk tanda tangan Anda: review & TTD Drawing (view-only, cek dimensi/tolerance/spec) DAN TTD ECN (perubahan drawing) — semua jadi satu. TTD Drawing lanjut ke Sales; TTD ECN otomatis diarsipkan ke Document Control.",
       icon: Stamp,
       href: "/drawings/pending-my-approval",
       accent: "from-emerald-500 via-green-500 to-teal-500",
       accentText: "text-emerald-400",
-      badgeCount: pendingDrawings,
-    },
-    {
-      key: "ecn-ttd",
-      label: "Menunggu TTD ECN Anda",
-      stats: "Tanda Tangan Perubahan Drawing (ECN)",
-      description:
-        "Perubahan drawing (ECN) yang sudah di-acknowledge Produksi dan menunggu TTD digital QA/QC. Klik untuk baca perubahan lalu TTD. Setelah QA/QC TTD, ECN otomatis diarsipkan ke Document Control.",
-      icon: Signature,
-      href: "/ecn-ttd",
-      accent: "from-sky-500 via-blue-500 to-indigo-500",
-      accentText: "text-sky-400",
-      badgeCount: pendingEcn,
+      badgeCount: pendingDrawings + pendingEcn,
     },
     {
       key: "mii",

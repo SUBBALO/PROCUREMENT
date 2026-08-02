@@ -15,12 +15,12 @@ export default function ProductionPortalPage() {
   const CARDS = [
     {
       key: "ecn-ttd",
-      label: "Menunggu TTD ECN Anda",
-      stats: "Acknowledge Perubahan Drawing (ECN)",
+      label: "Menunggu TTD Saya",
+      stats: "Drawing + ECN dalam satu tempat",
       description:
-        "Perubahan drawing (ECN) yang sudah terbit dan menunggu acknowledge/TTD digital Produksi. Klik untuk baca perubahan lalu TTD. Setelah Produksi acknowledge, otomatis lanjut ke QA/QC.",
+        "Kotak masuk tanda tangan Anda. Untuk Produksi: acknowledge/TTD perubahan drawing (ECN) yang sudah terbit. Setelah Produksi acknowledge, otomatis lanjut ke QA/QC.",
       icon: Signature,
-      href: "/ecn-ttd",
+      href: "/drawings/pending-my-approval",
       accent: "from-amber-500 via-orange-500 to-rose-500",
       accentText: "text-amber-400",
       badgeCount: pendingTtd,

@@ -4,7 +4,7 @@ import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { ArrowClockwise, Eye, Stamp, MagnifyingGlass, ClockClockwise } from "@phosphor-icons/react";
+import { ArrowClockwise, Eye, Stamp, MagnifyingGlass, ClockClockwise, Signature, Factory, ShieldCheck, ArrowRight, CheckCircle } from "@phosphor-icons/react";
 import BackLink from "../components/BackLink";
 import { Input } from "../components/ui/input";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
@@ -31,6 +31,8 @@ export default function PendingApprovalDrawingsPage() {
   const { user } = useAuth();
   const [tab, setTab] = useState("pending");
   const [items, setItems] = useState([]);
+  const [ecnItems, setEcnItems] = useState([]);
+  const [busyEcn, setBusyEcn] = useState(null);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
   const [sigDrawing, setSigDrawing] = useState(null);
@@ -40,14 +42,29 @@ export default function PendingApprovalDrawingsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get("/drawings/pending-my-approval");
-      setItems(data.items || []);
+      const [drawRes, ecnRes] = await Promise.allSettled([
+        api.get("/drawings/pending-my-approval"),
+        api.get("/drawings/ecn-pending-ttd"),
+      ]);
+      setItems(drawRes.status === "fulfilled" ? (drawRes.value.data.items || []) : []);
+      setEcnItems(ecnRes.status === "fulfilled" ? (ecnRes.value.data.items || []) : []);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal muat data");
     } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const signEcn = async (it) => {
+    setBusyEcn(it.drawing_id);
+    try {
+      const { data } = await api.post(`/drawings/${it.drawing_id}/ecn-ack`);
+      toast.success(data.message || "TTD tercatat");
+      await load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal TTD");
+    } finally { setBusyEcn(null); }
+  };
 
   const filtered = q.trim()
     ? items.filter((d) => [d.drawing_no, d.project_name, d.customer_name, d.customer_code, d.so_no].some(
@@ -86,23 +103,76 @@ export default function PendingApprovalDrawingsPage() {
       <BackLink />
       <div>
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-emerald-700 mb-1">
-          <Stamp size={14} weight="fill" /> Review & Approval — {roleLabel}
+          <Stamp size={14} weight="fill" /> Kotak Masuk TTD — {roleLabel}
         </div>
         <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
-          Review & TTD Drawing
+          Menunggu TTD Saya
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Tab <b>Perlu TTD Saya</b> untuk review & tanda tangan drawing baru. Tab <b>Riwayat TTD Saya</b> berisi bukti audit semua drawing yang pernah Anda TTD.
+          Semua yang menunggu tanda tangan Anda dalam satu tempat: <b>Drawing</b> (review & TTD) dan <b>ECN</b> (perubahan drawing). Tab <b>Riwayat TTD Saya</b> berisi bukti audit.
         </p>
       </div>
 
       {/* Tabs */}
       <div className="flex border-b border-slate-200">
-        <TabBtn id="pending" icon={Stamp} label="Perlu TTD Saya" count={items.length} />
+        <TabBtn id="pending" icon={Stamp} label="Perlu TTD Saya" count={items.length + ecnItems.length} />
         <TabBtn id="history" icon={ClockClockwise} label="Riwayat TTD Saya" />
       </div>
 
-      {tab === "pending" && (
+      {tab === "pending" && ecnItems.length > 0 && (
+        <Card className="rounded-none border-violet-300 overflow-hidden" data-testid="inbox-ecn-section">
+          <div className="px-4 py-2 bg-violet-600 text-white flex items-center gap-2">
+            <Signature size={15} weight="bold" />
+            <div className="text-[11px] uppercase tracking-widest font-bold">ECN — Perubahan Drawing</div>
+            <span className="ml-auto text-[10px] bg-white/20 px-2 py-0.5 rounded-full">{ecnItems.length} menunggu TTD</span>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {ecnItems.map((it) => (
+              <div key={it.drawing_id} className="p-3 flex flex-col md:flex-row md:items-center gap-3 hover:bg-violet-50/40" data-testid={`inbox-ecn-${it.ecn_no}`}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                    <span className="font-mono text-sm font-bold text-violet-700">{it.ecn_no}</span>
+                    <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-violet-100 text-violet-800 border border-violet-300 inline-flex items-center gap-1">
+                      {it.stage === "production" ? <Factory size={10} weight="fill" /> : <ShieldCheck size={10} weight="fill" />}{it.stage_label}
+                    </span>
+                    {it.production_done && it.stage === "qa_qc" && (
+                      <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1"><CheckCircle size={10} weight="fill" /> Produksi OK</span>
+                    )}
+                  </div>
+                  <div className="font-mono text-sm text-slate-800">{it.drawing_no}{it.rev_no != null && <span className="text-slate-400"> · Rev {it.rev_no}</span>}</div>
+                  <div className="text-[11px] text-slate-500">SO {it.so_no || "-"} · {it.customer || "-"} · diajukan {it.requested_by || "-"}</div>
+                  {(it.current_desc || it.proposed_desc) && (
+                    <div className="mt-1 inline-flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 px-2 py-1 max-w-xl">
+                      <span className="text-slate-500 line-through truncate">{it.current_desc || "—"}</span>
+                      <ArrowRight size={13} weight="bold" className="text-violet-500 shrink-0" />
+                      <span className="text-slate-800 font-semibold truncate">{it.proposed_desc || it.reason || "—"}</span>
+                    </div>
+                  )}
+                </div>
+                <Button
+                  onClick={() => signEcn(it)}
+                  disabled={busyEcn === it.drawing_id}
+                  className="rounded-none bg-violet-600 hover:bg-violet-700 text-white h-10 px-5 disabled:opacity-40 shrink-0"
+                  data-testid={`inbox-ecn-sign-${it.ecn_no}`}
+                >
+                  {busyEcn === it.drawing_id ? <ArrowClockwise size={15} className="animate-spin mr-1.5" /> : <Signature size={15} weight="bold" className="mr-1.5" />}
+                  TTD Sekarang
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {tab === "pending" && items.length === 0 && ecnItems.length === 0 && (
+        <Card className="rounded-none p-12 text-center" data-testid="inbox-empty">
+          <CheckCircle size={40} weight="duotone" className="mx-auto text-emerald-500 mb-2" />
+          <div className="text-slate-600 font-semibold">Tidak ada yang menunggu TTD Anda</div>
+          <div className="text-sm text-slate-400 mt-1">Semua drawing & ECN sudah Anda tandatangani.</div>
+        </Card>
+      )}
+
+      {tab === "pending" && items.length > 0 && (
         <Card className="rounded-none border-slate-200 overflow-hidden">
           <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
             <MagnifyingGlass size={14} className="text-slate-500" />

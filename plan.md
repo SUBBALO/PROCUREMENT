@@ -38,6 +38,12 @@ Alur revisi drawing menggunakan Form ECN (MKS-F-ENG-004) dengan rantai persetuju
 - [x] Portal Produksi baru + entry di Landing; drawing revisi pakai alur TTD normal (QC review)
 - [x] History Revisi Viewer (buka/unduh PDF versi lama) di Work Order
 
+## Tahap 4 — Inbox TTD Tunggal (semua dept) — STATUS: COMPLETED
+- [x] `/drawings/pending-my-approval` jadi "Menunggu TTD Saya": Drawing + ECN dalam satu halaman
+- [x] Section ECN inline (TTD digital) + tabel Drawing (review+TTD/Reject) + empty-state gabungan
+- [x] Portal QC & Produksi: satu kartu "Menunggu TTD Saya" (badge = drawing+ECN)
+- [x] Testing agent 14/14 pass (ack chain, sequential, role perms, owner restriction)
+
 ## Kredensial TTD (final)
 - agus / AgusMks2026 (Produksi - Kepala Produksi)
 - prodstaff / ProdMks2026 (Staff Produksi)
