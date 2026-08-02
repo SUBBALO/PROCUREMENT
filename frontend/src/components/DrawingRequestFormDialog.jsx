@@ -361,8 +361,9 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
               <Input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} disabled={isLocked} className="rounded-none border-slate-300" data-testid="drf-date" />
             </div>
             <div>
-              <Label className="text-xs">Expected Due Date</Label>
-              <Input type="date" value={form.expected_due_date} onChange={(e) => setForm((f) => ({ ...f, expected_due_date: e.target.value }))} disabled={isLocked} className="rounded-none border-slate-300" data-testid="drf-due-date" />
+              <Label className="text-xs font-bold text-amber-700">Target Selesai (Due Date)</Label>
+              <Input type="date" value={form.expected_due_date} onChange={(e) => setForm((f) => ({ ...f, expected_due_date: e.target.value }))} disabled={isLocked} className="rounded-none border-amber-300 focus-visible:ring-amber-400" data-testid="drf-due-date" />
+              <div className="text-[10px] text-slate-500 mt-0.5">Dipakai untuk urutan prioritas antrian Engineering (paling dekat = didahulukan).</div>
             </div>
             <div>
               <Label className="text-xs">Project Name</Label>

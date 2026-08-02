@@ -215,14 +215,20 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
                   <tbody>
                     {filtered.map((d) => {
                       const meta = STATUS_META[d.status] || { label: d.status, cls: "bg-slate-100 text-slate-700 border-slate-300" };
+                      const dv = d.expected_due_date || d.due_date;
+                      const dt = dv ? Date.parse(dv) : NaN;
+                      const isOverdue = !isNaN(dt) && (dt - Date.now()) / 86400000 < 0 && d.status !== "completed";
                       return (
                         <tr
                           key={d.id}
-                          className="border-b border-slate-50 hover:bg-amber-50/50 cursor-pointer"
+                          className={`border-b cursor-pointer ${isOverdue ? "bg-rose-50 hover:bg-rose-100 border-rose-200" : "border-slate-50 hover:bg-amber-50/50"}`}
                           onClick={() => setDetailDrf(d)}
                           data-testid={`eng-queue-row-${d.form_no}`}
                         >
-                          <td className="py-1.5 px-2 font-mono text-xs font-semibold text-slate-800 whitespace-nowrap">{d.form_no}</td>
+                          <td className="py-1.5 px-2 font-mono text-xs font-semibold whitespace-nowrap">
+                            {isOverdue && <span className="mr-1 text-rose-600" title="Lewat due date">⚠</span>}
+                            <span className={isOverdue ? "text-rose-800" : "text-slate-800"}>{d.form_no}</span>
+                          </td>
                           <td className="py-1.5 px-2 whitespace-nowrap"><DueBadge value={d.expected_due_date || d.due_date} /></td>
                           <td className="py-1.5 px-2">
                             <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${d.request_type === "repeat_order" ? "bg-blue-50 text-blue-700 border-blue-300" : "bg-emerald-50 text-emerald-700 border-emerald-300"}`}>
