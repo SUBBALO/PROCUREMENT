@@ -2284,6 +2284,126 @@ async def drawing_reject_stage(
     return {"success": True, "approval_status": "draft", "rejected_stage": stage}
 
 
+# ============ ECN — Engineering Change Notice (MKS-F-ENG-004) ============
+# Eng staff mengajukan revisi drawing yang SUDAH masuk approval/approved via form ECN.
+# Eng Leader (Head of Dept) menyetujui → drawing dikembalikan ke 'draft' untuk direvisi.
+
+class EcnIn(BaseModel):
+    ecr_no: str = ""
+    m4: List[str] = []                 # MAN / MACHINE / METHOD / MATERIAL
+    item_of_change: List[str] = []     # process/materials/inspection/subcon/design_spec/packing/other
+    item_other: str = ""
+    change_type: str = "permanent"     # temporary | permanent
+    expired_date: str = ""
+    current_desc: str
+    proposed_desc: str
+    purpose: List[str] = []            # customer_request/customer_complaint/quality_improvement/others
+    purpose_other: str = ""
+    purpose_explanation: str = ""
+    effective_date: str = ""
+    affected_document: List[str] = []  # drawing_spec / sop_wip / others
+    affected_other: str = ""
+
+
+async def _next_ecn_no() -> str:
+    now = datetime.now(timezone.utc)
+    prefix = f"ECN-{now.strftime('%y-%m')}"
+    cnt = await db.drawings.count_documents({"revision_request.ecn.ecn_no": {"$regex": f"^{prefix}"}})
+    return f"{prefix}-{cnt + 1:02d}"
+
+
+@router.post("/drawings/{drawing_id}/request-revision")
+async def request_drawing_revision(drawing_id: str, payload: EcnIn, current: dict = Depends(get_current_user)):
+    """Eng staff ajukan revisi (form ECN) untuk drawing yang sudah tidak draft."""
+    if not (is_engineering(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering/Admin")
+    d = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not d:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    status = d.get("approval_status") or "draft"
+    if status == "draft":
+        raise HTTPException(status_code=400, detail="Drawing masih DRAFT — langsung edit di Work Order, tidak perlu ECN.")
+    if (d.get("revision_request") or {}).get("status") == "pending":
+        raise HTTPException(status_code=400, detail="Sudah ada pengajuan ECN yang menunggu keputusan Eng Leader.")
+    if not (payload.current_desc or "").strip() or not (payload.proposed_desc or "").strip():
+        raise HTTPException(status_code=400, detail="Kolom 'Current' dan 'Proposed' wajib diisi.")
+    now = _now_iso()
+    who = current.get("name") or current.get("username")
+    ecn_no = await _next_ecn_no()
+    ecn = payload.model_dump()
+    ecn.update({
+        "ecn_no": ecn_no,
+        "to": "Production & QA/QC",
+        "originator": who,
+        "date_initiated": now,
+        "so_no": d.get("so_no"),
+        "customer": d.get("customer_name"),
+        "part_dwg_no": d.get("drawing_no"),
+        "prepared_by": who,
+        "prepared_at": now,
+        "approvals": {},  # diisi saat keputusan: head_of_dept
+    })
+    rr = {
+        "status": "pending",
+        "type": "ecn",
+        "ecn": ecn,
+        "reason": (payload.purpose_explanation or payload.proposed_desc or "").strip(),
+        "requested_by": who,
+        "requested_by_id": current.get("id"),
+        "requested_at": now,
+        "prev_status": status,
+    }
+    await db.drawings.update_one({"id": drawing_id}, {"$set": {"revision_request": rr, "updated_at": now}})
+    await log_action(current, "drawing_request_revision_ecn", "drawings", drawing_id, {"ecn_no": ecn_no})
+    return {"success": True, "ecn_no": ecn_no, "revision_request": rr}
+
+
+class RevisionDecisionIn(BaseModel):
+    approve: bool
+    notes: str = ""
+
+
+@router.post("/drawings/{drawing_id}/revision-decision")
+async def decide_drawing_revision(drawing_id: str, payload: RevisionDecisionIn, current: dict = Depends(get_current_user)):
+    """Eng Leader (Head of Dept) / Admin memutuskan pengajuan ECN.
+    APPROVE → drawing kembali ke 'draft' agar bisa direvisi & submit ulang.
+    REJECT  → status drawing tidak berubah, ECN ditolak."""
+    if not (is_eng_head(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Eng Leader / Admin yang bisa memutuskan ECN")
+    d = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not d:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    rr = d.get("revision_request") or {}
+    if rr.get("status") != "pending":
+        raise HTTPException(status_code=400, detail="Tidak ada pengajuan ECN yang menunggu keputusan")
+    now = _now_iso()
+    who = current.get("name") or current.get("username")
+    rr["decided_by"] = who
+    rr["decided_at"] = now
+    rr["decision_notes"] = (payload.notes or "").strip()
+    ecn = rr.get("ecn") or {}
+    ecn.setdefault("approvals", {})["head_of_dept"] = {"name": who, "at": now, "notes": (payload.notes or "").strip()}
+    rr["ecn"] = ecn
+    if payload.approve:
+        rr["status"] = "approved"
+        upd = {
+            "revision_request": rr,
+            "approval_status": "draft",
+            "revision_reason": rr.get("reason", ""),
+            "revision_opened_at": now,
+            "updated_at": now,
+        }
+    else:
+        rr["status"] = "rejected"
+        upd = {"revision_request": rr, "updated_at": now}
+    await db.drawings.update_one({"id": drawing_id}, {"$set": upd})
+    await log_action(current, "drawing_revision_decision", "drawings", drawing_id,
+                     {"approve": payload.approve, "ecn_no": ecn.get("ecn_no")})
+    return {"success": True, "approved": payload.approve, "approval_status": upd.get("approval_status", d.get("approval_status"))}
+
+
+
+
 def _rev_fs() -> AsyncIOMotorGridFSBucket:
     """GridFS bucket khusus file revisi (markup/koreksi dari leader saat reject)."""
     return AsyncIOMotorGridFSBucket(db, bucket_name="revision_files")

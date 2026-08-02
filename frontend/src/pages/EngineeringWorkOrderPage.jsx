@@ -10,7 +10,8 @@ import BackLink from "../components/BackLink";
 import { DrawingAttachmentsPanel } from "./MasterDrawingPage";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
 import PdfPreviewModal from "../components/PdfPreviewModal";
-import { Wrench, ClipboardText, FloppyDisk, ArrowClockwise, PaperPlaneRight, CheckCircle, Warning, Eye, DownloadSimple, Paperclip } from "@phosphor-icons/react";
+import EcnRevisionModal from "../components/EcnRevisionModal";
+import { Wrench, ClipboardText, FloppyDisk, ArrowClockwise, PaperPlaneRight, CheckCircle, Warning, Eye, DownloadSimple, Paperclip, PencilSimpleLine, Clock, XCircle } from "@phosphor-icons/react";
 
 /**
  * EngineeringWorkOrderPage — halaman kerja engineer setelah Eng Head assign drawing.
@@ -28,6 +29,7 @@ export default function EngineeringWorkOrderPage() {
   const [drawing, setDrawing] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showSubmitSig, setShowSubmitSig] = useState(false);
+  const [showEcnModal, setShowEcnModal] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,6 +62,9 @@ export default function EngineeringWorkOrderPage() {
   const isPending = (drawing.approval_status || "").startsWith("pending_");
   const hasWorkCat = ["simple", "moderate", "complex"].includes((drawing.work_category || "").toLowerCase());
   const canSubmit = isDraft && drawing.file_id && hasWorkCat;
+  const isEngUser = ["eng_staff", "eng_leader", "admin", "super_admin"].includes(user?.role);
+  const rr = drawing.revision_request || null;
+  const rrPending = rr?.status === "pending";
 
   return (
     <div className="p-4 max-w-[1400px] mx-auto space-y-4">
@@ -157,6 +162,16 @@ export default function EngineeringWorkOrderPage() {
         </Card>
       )}
 
+      {/* ECN Revision — Eng staff mengajukan revisi drawing yang sudah tidak draft (Form MKS-F-ENG-004) */}
+      {!isDraft && (
+        <EcnRevisionSection
+          rr={rr}
+          rrPending={rrPending}
+          canRequest={isEngUser && !rrPending}
+          onRequest={() => setShowEcnModal(true)}
+        />
+      )}
+
       {showSubmitSig && (
         <SignaturePlacementModal
           drawing={drawing}
@@ -165,6 +180,81 @@ export default function EngineeringWorkOrderPage() {
           onClose={() => setShowSubmitSig(false)}
         />
       )}
+
+      {showEcnModal && (
+        <EcnRevisionModal
+          drawing={drawing}
+          open={showEcnModal}
+          onClose={() => setShowEcnModal(false)}
+          onDone={() => { setShowEcnModal(false); load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── ECN Revision Section ────────────────────────────────────────────────
+ * Muncul untuk drawing yang sudah tidak draft (sudah disubmit/approved).
+ * Eng staff bisa mengajukan revisi via Form ECN (MKS-F-ENG-004).
+ * Menampilkan status pengajuan yang sedang menunggu keputusan Eng Leader.
+ */
+function EcnRevisionSection({ rr, rrPending, canRequest, onRequest }) {
+  const ecn = rr?.ecn || {};
+  const statusMap = {
+    pending: { label: "Menunggu Keputusan Eng Leader", cls: "bg-amber-100 text-amber-800 border-amber-300", Icon: Clock },
+    approved: { label: "ECN Disetujui", cls: "bg-emerald-100 text-emerald-800 border-emerald-300", Icon: CheckCircle },
+    rejected: { label: "ECN Ditolak", cls: "bg-rose-100 text-rose-800 border-rose-300", Icon: XCircle },
+  };
+  const st = rr?.status ? statusMap[rr.status] : null;
+
+  return (
+    <div className="border-2 border-indigo-500" data-testid="ecn-section">
+      <div className="px-3 py-2 bg-indigo-600 text-white flex items-center gap-2">
+        <PencilSimpleLine size={16} weight="bold" />
+        <div className="text-[11px] uppercase tracking-widest font-bold">Engineering Change Notice (ECN) — Ajukan Revisi</div>
+      </div>
+      <div className="p-4 bg-indigo-50/60 space-y-3">
+        {rr && st && (
+          <div className={`flex items-start gap-2 border px-3 py-2 text-sm ${st.cls}`} data-testid="ecn-status-banner">
+            <st.Icon size={18} weight="fill" className="mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <div className="font-bold">
+                {ecn.ecn_no ? <span className="font-mono">{ecn.ecn_no}</span> : "ECN"} · {st.label}
+              </div>
+              <div className="text-[12px] mt-0.5 opacity-90">
+                Diajukan oleh <b>{rr.requested_by || "-"}</b>
+                {rr.requested_at && <> pada {new Date(rr.requested_at).toLocaleString("id-ID")}</>}
+              </div>
+              {rr.status === "rejected" && rr.decision_notes && (
+                <div className="text-[12px] mt-1"><b>Catatan penolakan:</b> {rr.decision_notes}</div>
+              )}
+              {rr.status === "approved" && (
+                <div className="text-[12px] mt-1">Drawing dibuka kembali untuk direvisi & submit ulang.</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="text-sm text-slate-700 flex-1">
+            Perlu mengubah drawing yang sudah disubmit/di-approve? Ajukan revisi resmi menggunakan
+            <b> Form ECN (MKS-F-ENG-004)</b>. Pengajuan akan dikirim ke Eng Leader untuk keputusan.
+            {rrPending && (
+              <div className="mt-1 text-amber-700 font-bold">⚠ Sudah ada pengajuan ECN yang menunggu keputusan — tidak bisa mengajukan lagi.</div>
+            )}
+          </div>
+          {canRequest && (
+            <Button
+              onClick={onRequest}
+              className="rounded-none bg-indigo-600 hover:bg-indigo-700 text-white h-11 px-6"
+              data-testid="ecn-request-btn"
+            >
+              <PencilSimpleLine size={16} weight="bold" className="mr-2" />
+              Ajukan ECN
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
