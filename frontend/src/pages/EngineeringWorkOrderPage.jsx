@@ -10,8 +10,7 @@ import BackLink from "../components/BackLink";
 import { DrawingAttachmentsPanel } from "./MasterDrawingPage";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
 import PdfPreviewModal from "../components/PdfPreviewModal";
-import EcnRevisionModal from "../components/EcnRevisionModal";
-import { Wrench, ClipboardText, FloppyDisk, ArrowClockwise, PaperPlaneRight, CheckCircle, Warning, Eye, DownloadSimple, Paperclip, PencilSimpleLine, Clock, XCircle } from "@phosphor-icons/react";
+import { Wrench, ClipboardText, FloppyDisk, ArrowClockwise, PaperPlaneRight, CheckCircle, Warning, Eye, DownloadSimple, Paperclip, PencilSimpleLine, Clock, XCircle, PlayCircle } from "@phosphor-icons/react";
 
 /**
  * EngineeringWorkOrderPage — halaman kerja engineer setelah Eng Head assign drawing.
@@ -29,7 +28,6 @@ export default function EngineeringWorkOrderPage() {
   const [drawing, setDrawing] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showSubmitSig, setShowSubmitSig] = useState(false);
-  const [showEcnModal, setShowEcnModal] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,7 +62,6 @@ export default function EngineeringWorkOrderPage() {
   const canSubmit = isDraft && drawing.file_id && hasWorkCat;
   const isEngUser = ["eng_staff", "eng_leader", "admin", "super_admin"].includes(user?.role);
   const rr = drawing.revision_request || null;
-  const rrPending = rr?.status === "pending";
 
   return (
     <div className="p-4 max-w-[1400px] mx-auto space-y-4">
@@ -90,6 +87,10 @@ export default function EngineeringWorkOrderPage() {
 
       {/* Fase 3 — Catatan revisi dari leader (kalau pernah di-reject) */}
       <RevisionNotesPanel drawing={drawing} />
+
+      {/* Alur Revisi ECN — gate "Lanjut Kerja" setelah ECN disetujui Eng Leader */}
+      <RevisionFlowPanel drawing={drawing} rr={rr} isEngUser={isEngUser} onReload={load} />
+
 
       {/* Info card: assign, prepared_by, from DRF */}
       <Card className="rounded-none border-slate-200 p-4 bg-slate-50">
@@ -162,16 +163,6 @@ export default function EngineeringWorkOrderPage() {
         </Card>
       )}
 
-      {/* ECN Revision — Eng staff mengajukan revisi drawing yang sudah tidak draft (Form MKS-F-ENG-004) */}
-      {!isDraft && (
-        <EcnRevisionSection
-          rr={rr}
-          rrPending={rrPending}
-          canRequest={isEngUser && !rrPending}
-          onRequest={() => setShowEcnModal(true)}
-        />
-      )}
-
       {showSubmitSig && (
         <SignaturePlacementModal
           drawing={drawing}
@@ -180,83 +171,113 @@ export default function EngineeringWorkOrderPage() {
           onClose={() => setShowSubmitSig(false)}
         />
       )}
-
-      {showEcnModal && (
-        <EcnRevisionModal
-          drawing={drawing}
-          open={showEcnModal}
-          onClose={() => setShowEcnModal(false)}
-          onDone={() => { setShowEcnModal(false); load(); }}
-        />
-      )}
     </div>
   );
 }
 
-/* ── ECN Revision Section ────────────────────────────────────────────────
- * Muncul untuk drawing yang sudah tidak draft (sudah disubmit/approved).
- * Eng staff bisa mengajukan revisi via Form ECN (MKS-F-ENG-004).
- * Menampilkan status pengajuan yang sedang menunggu keputusan Eng Leader.
+/* ── Revision Flow Panel ─────────────────────────────────────────────────
+ * Menampilkan status alur revisi ECN di Work Order:
+ *  - pending    : menunggu keputusan Eng Leader (read-only)
+ *  - approved   : GATE "Lanjut Kerja?" — staff klik untuk mulai revisi (buka semua menu)
+ *  - in_progress: sedang revisi (Rev N) — semua menu terbuka
+ *  - rejected   : ECN ditolak
+ * Catatan: pengajuan ECN dilakukan dari Master List, bukan di sini.
  */
-function EcnRevisionSection({ rr, rrPending, canRequest, onRequest }) {
-  const ecn = rr?.ecn || {};
-  const statusMap = {
-    pending: { label: "Menunggu Keputusan Eng Leader", cls: "bg-amber-100 text-amber-800 border-amber-300", Icon: Clock },
-    approved: { label: "ECN Disetujui", cls: "bg-emerald-100 text-emerald-800 border-emerald-300", Icon: CheckCircle },
-    rejected: { label: "ECN Ditolak", cls: "bg-rose-100 text-rose-800 border-rose-300", Icon: XCircle },
+function RevisionFlowPanel({ drawing, rr, isEngUser, onReload }) {
+  const [busy, setBusy] = useState(false);
+  if (!rr || !rr.status) return null;
+  const ecn = rr.ecn || {};
+
+  const startRevision = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/drawings/${drawing.id}/start-revision`);
+      toast.success(`Revisi dimulai — Rev ${data.rev_no}. Semua menu kini terbuka.`);
+      onReload?.();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal memulai revisi");
+    } finally { setBusy(false); }
   };
-  const st = rr?.status ? statusMap[rr.status] : null;
 
-  return (
-    <div className="border-2 border-indigo-500" data-testid="ecn-section">
-      <div className="px-3 py-2 bg-indigo-600 text-white flex items-center gap-2">
-        <PencilSimpleLine size={16} weight="bold" />
-        <div className="text-[11px] uppercase tracking-widest font-bold">Engineering Change Notice (ECN) — Ajukan Revisi</div>
+  // pending — menunggu keputusan leader
+  if (rr.status === "pending") {
+    return (
+      <div className="border-2 border-amber-500" data-testid="rev-flow-pending">
+        <div className="px-3 py-2 bg-amber-500 text-white flex items-center gap-2">
+          <Clock size={16} weight="bold" />
+          <div className="text-[11px] uppercase tracking-widest font-bold">Pengajuan ECN — Menunggu Keputusan Eng Leader</div>
+        </div>
+        <div className="p-4 bg-amber-50 text-sm text-slate-700">
+          {ecn.ecn_no && <span className="font-mono font-bold">{ecn.ecn_no}</span>} diajukan oleh <b>{rr.requested_by}</b>.
+          Drawing belum bisa direvisi sampai Eng Leader menyetujui.
+        </div>
       </div>
-      <div className="p-4 bg-indigo-50/60 space-y-3">
-        {rr && st && (
-          <div className={`flex items-start gap-2 border px-3 py-2 text-sm ${st.cls}`} data-testid="ecn-status-banner">
-            <st.Icon size={18} weight="fill" className="mt-0.5 shrink-0" />
-            <div className="flex-1">
-              <div className="font-bold">
-                {ecn.ecn_no ? <span className="font-mono">{ecn.ecn_no}</span> : "ECN"} · {st.label}
-              </div>
-              <div className="text-[12px] mt-0.5 opacity-90">
-                Diajukan oleh <b>{rr.requested_by || "-"}</b>
-                {rr.requested_at && <> pada {new Date(rr.requested_at).toLocaleString("id-ID")}</>}
-              </div>
-              {rr.status === "rejected" && rr.decision_notes && (
-                <div className="text-[12px] mt-1"><b>Catatan penolakan:</b> {rr.decision_notes}</div>
-              )}
-              {rr.status === "approved" && (
-                <div className="text-[12px] mt-1">Drawing dibuka kembali untuk direvisi & submit ulang.</div>
-              )}
-            </div>
-          </div>
-        )}
+    );
+  }
 
-        <div className="flex items-center justify-between gap-4">
+  // approved — GATE lanjut kerja
+  if (rr.status === "approved") {
+    return (
+      <div className="border-2 border-indigo-600" data-testid="rev-flow-approved">
+        <div className="px-3 py-2 bg-indigo-600 text-white flex items-center gap-2">
+          <CheckCircle size={16} weight="fill" />
+          <div className="text-[11px] uppercase tracking-widest font-bold">Permintaan Revisi Disetujui — Lanjut Kerja?</div>
+        </div>
+        <div className="p-4 bg-indigo-50 flex items-center justify-between gap-4">
           <div className="text-sm text-slate-700 flex-1">
-            Perlu mengubah drawing yang sudah disubmit/di-approve? Ajukan revisi resmi menggunakan
-            <b> Form ECN (MKS-F-ENG-004)</b>. Pengajuan akan dikirim ke Eng Leader untuk keputusan.
-            {rrPending && (
-              <div className="mt-1 text-amber-700 font-bold">⚠ Sudah ada pengajuan ECN yang menunggu keputusan — tidak bisa mengajukan lagi.</div>
-            )}
+            ECN {ecn.ecn_no && <span className="font-mono font-bold">{ecn.ecn_no}</span>} telah <b>disetujui</b> oleh {rr.approved_by || "Eng Leader"}.
+            {rr.decision_notes && <> Catatan: <i>"{rr.decision_notes}"</i>.</>}
+            <div className="mt-1">Klik <b>Mulai Revisi</b> untuk melanjutkan — data lama akan disimpan sebagai <b>history revisi</b> dan semua menu drawing akan terbuka kembali.</div>
           </div>
-          {canRequest && (
+          {isEngUser && (
             <Button
-              onClick={onRequest}
-              className="rounded-none bg-indigo-600 hover:bg-indigo-700 text-white h-11 px-6"
-              data-testid="ecn-request-btn"
+              onClick={startRevision}
+              disabled={busy}
+              className="rounded-none bg-indigo-600 hover:bg-indigo-700 text-white h-11 px-6 disabled:opacity-40"
+              data-testid="rev-start-btn"
             >
-              <PencilSimpleLine size={16} weight="bold" className="mr-2" />
-              Ajukan ECN
+              {busy ? <ArrowClockwise size={16} className="animate-spin mr-2" /> : <PlayCircle size={16} weight="bold" className="mr-2" />}
+              Mulai Revisi
             </Button>
           )}
         </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  // in_progress — sedang revisi
+  if (rr.status === "in_progress") {
+    return (
+      <div className="border-2 border-teal-500" data-testid="rev-flow-inprogress">
+        <div className="px-3 py-2 bg-teal-600 text-white flex items-center gap-2">
+          <PencilSimpleLine size={16} weight="bold" />
+          <div className="text-[11px] uppercase tracking-widest font-bold">Sedang Revisi — Rev {drawing.rev_no ?? 1}</div>
+        </div>
+        <div className="p-4 bg-teal-50 text-sm text-slate-700">
+          Revisi ECN {ecn.ecn_no && <span className="font-mono font-bold">{ecn.ecn_no}</span>} sedang dikerjakan.
+          Perbaiki drawing/BOM sesuai perubahan, lalu <b>TTD & Submit</b> ulang ke Eng Head.
+        </div>
+      </div>
+    );
+  }
+
+  // rejected
+  if (rr.status === "rejected") {
+    return (
+      <div className="border-2 border-rose-500" data-testid="rev-flow-rejected">
+        <div className="px-3 py-2 bg-rose-600 text-white flex items-center gap-2">
+          <XCircle size={16} weight="fill" />
+          <div className="text-[11px] uppercase tracking-widest font-bold">Pengajuan ECN Ditolak</div>
+        </div>
+        <div className="p-4 bg-rose-50 text-sm text-slate-700">
+          ECN {ecn.ecn_no && <span className="font-mono font-bold">{ecn.ecn_no}</span>} ditolak oleh {rr.decided_by || "Eng Leader"}.
+          {rr.decision_notes && <> Catatan: <i>"{rr.decision_notes}"</i>.</>}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function RevisionNotesPanel({ drawing }) {

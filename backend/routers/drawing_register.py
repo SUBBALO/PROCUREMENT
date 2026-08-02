@@ -1406,8 +1406,8 @@ async def upload_drawing_pdf(
             "candidates": cands,
         })
 
-    # Replace old file if any
-    if existing.get("file_id"):
+    # Replace old file if any — TAPI jangan hapus bila file lama masih jadi history revisi
+    if existing.get("file_id") and not _file_in_revisions(existing, existing["file_id"]):
         try:
             await _fs().delete(ObjectId(existing["file_id"]))
         except Exception:
@@ -1998,7 +1998,7 @@ async def delete_cad_file(drawing_id: str, cad_id: str, current: dict = Depends(
 # Iter 16 — Digital Approval Workflow untuk Drawing
 # Strict sequential: draft → pending_eng_head → pending_qc → pending_sales → approved → controlled → released
 # ============================================================================
-from deps import is_eng_head, is_qc, is_doc_control, is_engineering, is_admin_like, is_super_admin_user, SALES_ROLES  # noqa: E402
+from deps import is_eng_head, is_qc, is_doc_control, is_engineering, is_admin_like, is_super_admin_user, SALES_ROLES, ENGINEERING_ROLES  # noqa: E402
 
 STAGE_ORDER = ["eng_head", "qc", "sales"]  # sequential approval stages
 STAGE_STATUS = {
@@ -2385,12 +2385,15 @@ async def decide_drawing_revision(drawing_id: str, payload: RevisionDecisionIn, 
     ecn.setdefault("approvals", {})["head_of_dept"] = {"name": who, "at": now, "notes": (payload.notes or "").strip()}
     rr["ecn"] = ecn
     if payload.approve:
+        # ECN disetujui — TIDAK langsung buka draft. Drawing menunggu staff klik "Lanjut Kerja"
+        # (start-revision) di Work Order. approval_status TIDAK diubah sampai revisi dimulai.
         rr["status"] = "approved"
+        rr["approved_by"] = who
+        rr["approved_at"] = now
         upd = {
             "revision_request": rr,
-            "approval_status": "draft",
             "revision_reason": rr.get("reason", ""),
-            "revision_opened_at": now,
+            "revision_approved_at": now,
             "updated_at": now,
         }
     else:
@@ -2399,7 +2402,187 @@ async def decide_drawing_revision(drawing_id: str, payload: RevisionDecisionIn, 
     await db.drawings.update_one({"id": drawing_id}, {"$set": upd})
     await log_action(current, "drawing_revision_decision", "drawings", drawing_id,
                      {"approve": payload.approve, "ecn_no": ecn.get("ecn_no")})
-    return {"success": True, "approved": payload.approve, "approval_status": upd.get("approval_status", d.get("approval_status"))}
+    return {"success": True, "approved": payload.approve,
+            "revision_status": rr["status"], "approval_status": d.get("approval_status")}
+
+
+def _file_in_revisions(drawing: dict, file_id: str) -> bool:
+    """True jika file_id masih direferensikan oleh snapshot history revisi
+    (agar file lama TIDAK ikut terhapus saat upload MKS revisi baru)."""
+    if not file_id:
+        return False
+    for rev in (drawing.get("revisions") or []):
+        snap = rev.get("snapshot") or {}
+        if snap.get("file_id") == file_id or snap.get("customer_ref_file_id") == file_id:
+            return True
+    return False
+
+
+@router.post("/drawings/{drawing_id}/start-revision")
+async def drawing_start_revision(drawing_id: str, current: dict = Depends(get_current_user)):
+    """Staff klik 'Lanjut Kerja' setelah ECN disetujui Eng Leader.
+    - Snapshot data lama (PDF MKS, no drawing, rev_no, semua TTD, customer ref) → simpan ke `revisions` (history, TIDAK dihapus).
+    - Naikkan rev_no, reset TTD/approvals untuk siklus baru, buka kembali ke 'draft' agar semua menu terbuka."""
+    if not (is_engineering(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering/Admin")
+    d = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not d:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    rr = d.get("revision_request") or {}
+    if rr.get("status") != "approved":
+        raise HTTPException(status_code=400, detail="Tidak ada revisi yang disetujui & siap dimulai")
+    now = _now_iso()
+    who = current.get("name") or current.get("username")
+    old_rev = int(d.get("rev_no") or 0)
+    ecn = rr.get("ecn") or {}
+
+    # Snapshot data lama sebagai history revisi (file lama dipertahankan di storage)
+    snapshot = {
+        "rev_no": old_rev,
+        "drawing_no": d.get("drawing_no"),
+        "approval_status": d.get("approval_status"),
+        "file_id": d.get("file_id"),
+        "filename": d.get("filename"),
+        "customer_ref_file_id": d.get("customer_ref_file_id"),
+        "customer_ref_filename": d.get("customer_ref_filename"),
+        "approvals": d.get("approvals") or [],
+        "controlled_at": d.get("controlled_at"),
+    }
+    rev_entry = {
+        "id": str(uuid.uuid4()),
+        "type": "ecn_revision",
+        "ecn_no": ecn.get("ecn_no"),
+        "rev_no": old_rev,
+        "started_by": who,
+        "started_by_id": current.get("id"),
+        "at": now,
+        "reason": rr.get("reason", ""),
+        "ecn": ecn,
+        "snapshot": snapshot,
+        "files": [],
+    }
+
+    rr["status"] = "in_progress"
+    rr["started_by"] = who
+    rr["started_at"] = now
+
+    upd = {
+        "revision_request": rr,
+        "rev_no": old_rev + 1,
+        "is_revision": True,
+        "approval_status": "draft",
+        "approvals": [],  # TTD siklus baru mulai dari kosong (TTD lama tersimpan di snapshot)
+        "revision_opened_at": now,
+        "revision_reason": rr.get("reason", ""),
+        # reset flag controlled agar siklus baru bersih; timestamp lama tersimpan di snapshot
+        "controlled_at": None,
+        "updated_at": now,
+    }
+    await db.drawings.update_one({"id": drawing_id},
+                                 {"$set": upd, "$push": {"revisions": rev_entry}})
+    await log_action(current, "drawing_start_revision", "drawings", drawing_id,
+                     {"ecn_no": ecn.get("ecn_no"), "new_rev_no": old_rev + 1})
+    return {"success": True, "rev_no": old_rev + 1, "approval_status": "draft"}
+
+
+@router.get("/drawings/eng-designers")
+async def list_eng_designers(current: dict = Depends(get_current_user)):
+    """Daftar user Engineering untuk filter 'Designer' di Master List. Akses: Engineering/Admin."""
+    if not (is_engineering(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    cur = db.users.find(
+        {"role": {"$in": list(ENGINEERING_ROLES)}},
+        {"_id": 0, "id": 1, "username": 1, "name": 1, "role": 1},
+    )
+    users = await cur.to_list(200)
+    users.sort(key=lambda u: (u.get("name") or u.get("username") or "").lower())
+    return {"designers": users}
+
+
+@router.get("/ecn-register")
+async def ecn_register(q: Optional[str] = None, kind: Optional[str] = None,
+                       current: dict = Depends(get_current_user)):
+    """Master List ECN & ECR (read-only, record).
+    Mengagregasi seluruh ECN dari alur revisi drawing (revision_request + history `revisions`)
+    dan entri ECR/ECN lama dari koleksi `ecns`. Drawing hasil revisi tetap di Master List utama."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    rows: List[dict] = []
+
+    # 1) ECN dari alur revisi drawing
+    cursor = db.drawings.find(
+        {"$or": [{"revision_request": {"$exists": True}}, {"revisions.type": "ecn_revision"}],
+         "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "drawing_no": 1, "so_no": 1, "customer_name": 1,
+         "revision_request": 1, "revisions": 1},
+    )
+    async for d in cursor:
+        by_no: dict = {}
+
+        def _mk(ecn: dict, status: str, at: str, requested_by: str, rev_no):
+            no = (ecn or {}).get("ecn_no")
+            if not no:
+                return
+            by_no[no] = {
+                "no": no,
+                "kind": "ecn",
+                "drawing_id": d.get("id"),
+                "drawing_no": d.get("drawing_no"),
+                "so_no": d.get("so_no"),
+                "customer": d.get("customer_name"),
+                "reason": (ecn.get("purpose_explanation") or ecn.get("proposed_desc") or "").strip(),
+                "current_desc": ecn.get("current_desc", ""),
+                "proposed_desc": ecn.get("proposed_desc", ""),
+                "requested_by": requested_by,
+                "status": status,
+                "rev_no": rev_no,
+                "at": at,
+                "source": "drawing_revision",
+            }
+
+        # history dulu
+        for rev in (d.get("revisions") or []):
+            if rev.get("type") == "ecn_revision":
+                _mk(rev.get("ecn") or {}, "completed", rev.get("at"),
+                    rev.get("started_by") or "", rev.get("rev_no"))
+        # lalu revision_request aktif (override status terbaru per ecn_no)
+        rr = d.get("revision_request") or {}
+        if rr and (rr.get("ecn") or {}).get("ecn_no"):
+            _mk(rr.get("ecn") or {}, rr.get("status") or "pending",
+                rr.get("requested_at"), rr.get("requested_by") or "", None)
+        rows.extend(by_no.values())
+
+    # 2) ECR/ECN lama dari koleksi ecns
+    async for e in db.ecns.find({}, {"_id": 0}):
+        rows.append({
+            "no": e.get("ecn_no"),
+            "kind": e.get("kind") or "ecn",
+            "drawing_id": None,
+            "drawing_no": e.get("drawing_no") or e.get("bom_no"),
+            "so_no": e.get("so_no"),
+            "customer": e.get("customer_name"),
+            "reason": e.get("reason", ""),
+            "current_desc": "",
+            "proposed_desc": e.get("description", ""),
+            "requested_by": (e.get("requested_by") or {}).get("name") if isinstance(e.get("requested_by"), dict) else e.get("requested_by"),
+            "status": e.get("status") or "draft",
+            "rev_no": None,
+            "at": e.get("created_at") or e.get("submitted_at"),
+            "source": "manual",
+        })
+
+    # filter
+    if kind in ("ecn", "ecr"):
+        rows = [r for r in rows if r.get("kind") == kind]
+    if q:
+        ql = q.strip().lower()
+        rows = [r for r in rows if ql in " ".join(
+            str(r.get(k) or "") for k in ("no", "drawing_no", "so_no", "customer", "reason", "requested_by")
+        ).lower()]
+
+    rows.sort(key=lambda r: (r.get("at") or ""), reverse=True)
+    return {"items": rows, "total": len(rows)}
 
 
 

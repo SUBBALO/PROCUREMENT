@@ -68,10 +68,10 @@ export default function EngineeringPortalPage() {
       accent: "from-violet-500 via-purple-500 to-fuchsia-500", accentText: "text-violet-400",
     },
     {
-      key: "ecn", label: "Perubahan Drawing — ECR & ECN", stats: "ECR (Customer) · ECN (Internal MKS)",
-      description: "Pengajuan perubahan drawing/BOM. ECR = perubahan diminta customer; ECN = perubahan internal MKS dari engineer. Submit ke Eng Leader untuk review & approve.",
+      key: "ecn", label: "Master List ECN & ECR", stats: "Record ECN & ECR",
+      description: "Arsip read-only semua perubahan drawing. ECN tercatat otomatis dari revisi di Master Drawing List; ECR = permintaan customer. Hanya untuk record — drawing hasil revisi tetap di Master Drawing List.",
       icon: ClipboardIcon, href: "/engineering/ecn",
-      accent: "from-rose-500 via-pink-500 to-fuchsia-500", accentText: "text-rose-400",
+      accent: "from-indigo-500 via-violet-500 to-fuchsia-500", accentText: "text-indigo-400",
     },
     {
       key: "bom", label: "Bill of Material (BOM)", stats: "Untuk Purchasing · Yang sudah approved saja",

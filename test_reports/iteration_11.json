@@ -1,0 +1,114 @@
+{
+  "summary": "Completed comprehensive backend testing of ECN revision flow endpoints. All critical functionality working correctly.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": [],
+    "minor_issues": [
+      {
+        "issue": "qcuser login failed with 401",
+        "endpoint": "/api/auth/login",
+        "impact": "Could not test eng-designers permission denial for QC role",
+        "note": "Test credentials indicate 'qcuser (qc, password eng123 if set else skip)' - user may not exist or password incorrect",
+        "fix_priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "POST /api/drawings/{id}/request-revision - eng staff submits ECN (status: pending)",
+    "POST /api/drawings/{id}/request-revision - rejects draft drawings (400)",
+    "POST /api/drawings/{id}/request-revision - requires current_desc and proposed_desc (422)",
+    "POST /api/drawings/{id}/request-revision - prevents duplicate requests while pending (400)",
+    "POST /api/drawings/{id}/revision-decision - eng_staff denied permission (403)",
+    "POST /api/drawings/{id}/revision-decision - eng_leader approves ECN (status: approved, approval_status stays controlled)",
+    "POST /api/drawings/{id}/revision-decision - eng_leader rejects ECN (status: rejected, approval_status unchanged)",
+    "POST /api/drawings/{id}/start-revision - increases rev_no by 1",
+    "POST /api/drawings/{id}/start-revision - changes approval_status to draft",
+    "POST /api/drawings/{id}/start-revision - saves history in revisions array",
+    "POST /api/drawings/{id}/start-revision - preserves old file_id in snapshot",
+    "POST /api/drawings/{id}/start-revision - preserves old approvals in snapshot",
+    "POST /api/drawings/{id}/start-revision - prevents duplicate calls (400)",
+    "GET /api/drawings/eng-designers - returns engineering users list (3 users)",
+    "GET /api/ecn-register - returns all ECN/ECR records (16 records)",
+    "GET /api/ecn-register - filter by kind=ecn works (11 records)",
+    "GET /api/ecn-register - search by ECN number works"
+  ],
+  "test_report_links": [
+    "/app/backend_test.py"
+  ],
+  "action_item_for_main_agent": "",
+  "updated_files": [
+    "/app/backend_test.py"
+  ],
+  "success_percentage": {
+    "backend": "100% (17/17 critical tests passed)",
+    "frontend": "N/A (backend-only testing)"
+  },
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false,
+  "detailed_findings": {
+    "ecn_revision_flow": {
+      "request_revision": {
+        "status": "PASS",
+        "notes": [
+          "Correctly rejects draft drawings with 400",
+          "Validates required fields (current_desc, proposed_desc)",
+          "Creates ECN with auto-generated ECN number (ECN-26-08-04)",
+          "Sets revision_request.status to 'pending'",
+          "Prevents duplicate requests while one is pending"
+        ]
+      },
+      "revision_decision": {
+        "status": "PASS",
+        "notes": [
+          "Permission check works: eng_staff gets 403, eng_leader can approve",
+          "CRITICAL: After approval, approval_status stays 'controlled' (NOT draft) ✅",
+          "revision_request.status changes to 'approved'",
+          "Rejection flow works: status='rejected', approval_status unchanged"
+        ]
+      },
+      "start_revision": {
+        "status": "PASS",
+        "notes": [
+          "rev_no increases correctly (0 → 1)",
+          "approval_status changes to 'draft' after start-revision",
+          "History preservation works: revisions array has 1 entry",
+          "Old file_id preserved in snapshot.file_id",
+          "Old approvals preserved in snapshot.approvals (1 approval)",
+          "Prevents duplicate start-revision calls (400)"
+        ]
+      },
+      "eng_designers": {
+        "status": "PASS",
+        "notes": [
+          "Returns list of engineering users (3 found)",
+          "Sample user: Andi Eng (eng_staff)",
+          "QC permission test skipped (qcuser login failed)"
+        ]
+      },
+      "ecn_register": {
+        "status": "PASS",
+        "notes": [
+          "Returns all ECN/ECR records (16 total)",
+          "Test ECN (ECN-26-08-04) found in register",
+          "Status correctly shows 'in_progress'",
+          "Source correctly shows 'drawing_revision'",
+          "Filter by kind=ecn works (11 ECN records)",
+          "Search by ECN number works (1 result)"
+        ]
+      }
+    },
+    "anti_delete_verification": {
+      "status": "PASS",
+      "notes": [
+        "Old file_id (6a6d5d6f64a198bb85e90b32) preserved in snapshot",
+        "File history not deleted during revision flow",
+        "Approvals history preserved in snapshot"
+      ]
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import api, { downloadFile } from "../lib/api";
@@ -8,13 +8,16 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { FileText, MagnifyingGlass, Plus, PencilSimple, Trash, ArrowClockwise, UploadSimple, Eye, DownloadSimple, Warning, CheckCircle, Printer, Stamp, FileXls, FilePdf, X } from "@phosphor-icons/react";
+import { FileText, MagnifyingGlass, Plus, PencilSimple, Trash, ArrowClockwise, UploadSimple, Eye, DownloadSimple, Warning, CheckCircle, Printer, Stamp, FileXls, FilePdf, X, PencilSimpleLine, Clock } from "@phosphor-icons/react";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
 import PdfPreviewModal from "../components/PdfPreviewModal";
+import EcnRevisionModal from "../components/EcnRevisionModal";
 import { useAuth } from "../lib/auth";
 import { canPrintDrawing, isDrawingPreviewOnly } from "../lib/rbac";
+
+const ENG_ROLES = ["eng_staff", "eng_leader", "eng_head", "engineering", "admin", "super_admin"];
 
 const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-sky-600 text-sm";
 const DISCIPLINES = ["Mechanical", "Civil", "Electrical", "Piping", "Structural", "Instrument", "General"];
@@ -45,9 +48,43 @@ export default function MasterDrawingPage() {
   const [customerRefPreview, setCustomerRefPreview] = useState(null);
   const [viewer, setViewer] = useState(null); // universal image-based viewer config
   const [detail, setDetail] = useState(null); // drawing detail popup
+  const [ecnItem, setEcnItem] = useState(null); // drawing untuk modal Ajukan ECN
+  const [mine, setMine] = useState(false); // filter "Drawing Saya"
+  const [designer, setDesigner] = useState(""); // filter by designer (user id)
+  const [designers, setDesigners] = useState([]); // daftar user Engineering
+  const isEngUser = ENG_ROLES.includes(user?.role);
   const canPrint = canPrintDrawing(user?.role);
   const previewOnly = isDrawingPreviewOnly(user?.role);
-  const pag = usePagination(items, 20);
+
+  // Daftar user Engineering untuk filter "Designer" (hanya untuk user Engineering)
+  useEffect(() => {
+    if (!isEngUser) return;
+    api.get("/drawings/eng-designers")
+      .then(({ data }) => setDesigners(data.designers || []))
+      .catch(() => setDesigners([]));
+  }, [isEngUser]);
+
+  // Filter client-side berdasarkan "Drawing Saya" / Designer terpilih
+  const viewItems = useMemo(() => {
+    let list = items;
+    if (mine && user) {
+      list = list.filter((it) =>
+        it.assigned_to_user_id === user.id ||
+        it.prepared_by === user.name || it.prepared_by === user.username ||
+        it.assigned_to_name === user.name);
+    }
+    if (designer) {
+      const d = designers.find((x) => x.id === designer);
+      const dn = d?.name; const du = d?.username;
+      list = list.filter((it) =>
+        it.assigned_to_user_id === designer ||
+        (dn && (it.prepared_by === dn || it.assigned_to_name === dn)) ||
+        (du && it.prepared_by === du));
+    }
+    return list;
+  }, [items, mine, designer, designers, user]);
+
+  const pag = usePagination(viewItems, 20);
 
   // Iter 19 — kalau URL punya query params from_drf_id → auto-open form Register Drawing dengan pre-fill
   useEffect(() => {
@@ -158,6 +195,26 @@ export default function MasterDrawingPage() {
             {STATUSES.map((s) => <option key={s}>{s}</option>)}
           </select>
         </div>
+        {isEngUser && (
+          <>
+            <div>
+              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Designer</Label>
+              <select className={inputCls} value={designer} onChange={(e) => { setDesigner(e.target.value); if (e.target.value) setMine(false); }} data-testid="dw-filter-designer">
+                <option value="">Semua Designer</option>
+                {designers.map((d) => <option key={d.id} value={d.id}>{d.name || d.username}</option>)}
+              </select>
+            </div>
+            <Button
+              variant={mine ? "default" : "outline"}
+              onClick={() => { setMine((v) => !v); setDesigner(""); }}
+              className={`rounded-none h-9 ${mine ? "bg-sky-600 hover:bg-sky-700 text-white" : ""}`}
+              data-testid="dw-filter-mine"
+              title="Tampilkan hanya drawing yang saya rancang"
+            >
+              <PencilSimpleLine size={14} weight="bold" className="mr-1" /> Drawing Saya
+            </Button>
+          </>
+        )}
         <Button variant="outline" onClick={load} className="rounded-none h-9"><MagnifyingGlass size={14} weight="bold" className="mr-1" /> Cari</Button>
         <Button variant="ghost" onClick={load} className="rounded-none h-9" title="Refresh"><ArrowClockwise size={14} weight="bold" /></Button>
         <div className="flex-1"></div>
@@ -218,8 +275,8 @@ export default function MasterDrawingPage() {
             </thead>
             <tbody data-testid="dw-list">
               {loading && (<tr><td colSpan={5} className="p-8 text-center text-slate-400">Memuat...</td></tr>)}
-              {!loading && items.length === 0 && (<tr><td colSpan={5} className="p-8 text-center text-slate-400">Belum ada drawing. Alur register drawing baru: <b>Sales buat DRF (MKS-F-ENG-001)</b> → Eng Head Accept → Assign Engineer.</td></tr>)}
-              {items.length > 0 && pag.pagedData.map((it) => (
+              {!loading && viewItems.length === 0 && (<tr><td colSpan={5} className="p-8 text-center text-slate-400">{(mine || designer) ? "Tidak ada drawing untuk filter ini." : "Belum ada drawing. Alur register drawing baru: Sales buat DRF (MKS-F-ENG-001) → Eng Head Accept → Assign Engineer."}</td></tr>)}
+              {pag.pagedData.map((it) => (
                 <DrawingMasterRow
                   key={it.id}
                   it={it}
@@ -253,6 +310,16 @@ export default function MasterDrawingPage() {
           previewOnly={previewOnly}
           onView={setViewer}
           onClose={() => setDetail(null)}
+          canEcn={isEngUser}
+          onRequestEcn={(it) => { setDetail(null); setEcnItem(it); }}
+        />
+      )}
+      {ecnItem && (
+        <EcnRevisionModal
+          drawing={ecnItem}
+          open={!!ecnItem}
+          onClose={() => setEcnItem(null)}
+          onDone={() => { setEcnItem(null); load(); }}
         />
       )}
       {viewer && (
@@ -416,7 +483,7 @@ function DrawingMasterRow({ it, onDetail }) {
 }
 
 /* ============ DRAWING DETAIL POPUP (klik Title/Project) ============ */
-function DrawingDetailModal({ it, previewOnly, onView, onClose }) {
+function DrawingDetailModal({ it, previewOnly, onView, onClose, canEcn, onRequestEcn }) {
   const backendUrl = process.env.REACT_APP_BACKEND_URL;
   const [att, setAtt] = useState(it.bom_id ? _attCache[it.bom_id] || null : { costing: [], nesting: [] });
   const [attLoading, setAttLoading] = useState(false);
@@ -551,8 +618,33 @@ function DrawingDetailModal({ it, previewOnly, onView, onClose }) {
           </div>
         </div>
 
-        <div className="sticky bottom-0 bg-white border-t border-slate-200 p-3 flex justify-end">
-          <Button variant="outline" onClick={onClose} className="rounded-none border-slate-300" data-testid="dw-detail-close-btn">Tutup</Button>
+        <div className="sticky bottom-0 bg-white border-t border-slate-200 p-3 flex justify-between items-center gap-2">
+          <div className="text-xs">
+            {(() => {
+              const rr = it.revision_request;
+              if (!rr || !rr.status) return null;
+              const map = {
+                pending: ["Pengajuan ECN menunggu keputusan Eng Leader", "text-amber-700"],
+                approved: ["Revisi disetujui — buka Work Order untuk mulai revisi", "text-indigo-700"],
+                in_progress: ["Drawing sedang direvisi", "text-teal-700"],
+                rejected: ["Pengajuan ECN terakhir ditolak", "text-rose-700"],
+              };
+              const m = map[rr.status];
+              return m ? <span className={`font-semibold ${m[1]}`} data-testid="dw-detail-ecn-status">{rr.ecn?.ecn_no ? `${rr.ecn.ecn_no} · ` : ""}{m[0]}</span> : null;
+            })()}
+          </div>
+          <div className="flex gap-2">
+            {canEcn && isControlled && it.revision_request?.status !== "pending" && it.revision_request?.status !== "approved" && it.revision_request?.status !== "in_progress" && (
+              <Button
+                onClick={() => onRequestEcn?.(it)}
+                className="rounded-none bg-indigo-600 hover:bg-indigo-700 text-white"
+                data-testid="dw-detail-ecn-btn"
+              >
+                <PencilSimpleLine size={15} weight="bold" className="mr-1.5" /> Ajukan ECN (Revisi)
+              </Button>
+            )}
+            <Button variant="outline" onClick={onClose} className="rounded-none border-slate-300" data-testid="dw-detail-close-btn">Tutup</Button>
+          </div>
         </div>
       </div>
     </div>

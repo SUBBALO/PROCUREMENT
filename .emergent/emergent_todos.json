@@ -1,26 +1,30 @@
 [
   {
-    "content": "Backend: start-work + my-queue + work_category + work_completed_at + denormalisasi",
+    "content": "Backend: approve ECN gate + start-revision + anti-hapus + eng-designers",
     "status": "completed"
   },
   {
-    "content": "Frontend: work-category popup/selector/gate + Antrian Job + Master Drawing List kolom",
+    "content": "Frontend Work Order: gate 'Lanjut Kerja' + history revisi",
     "status": "completed"
   },
   {
-    "content": "Inquiry: masterlist page + mandatory kategori saat kirim hasil",
+    "content": "Backend: endpoint /ecn-register",
     "status": "completed"
   },
   {
-    "content": "SO Tracker: backend (list/detail/partial/purchase-ready) + list & detail page + card",
+    "content": "Frontend: ECNPage jadi Master List ECN & ECR (read-only)",
     "status": "completed"
   },
   {
-    "content": "Penanda Purchasing: badge 'Siap Dibeli' di BOM list",
+    "content": "Nav: label menu 'Master List ECN & ECR'",
     "status": "completed"
   },
   {
-    "content": "Verifikasi end-to-end (backend curl + screenshots)",
+    "content": "Master List utama: tombol Ajukan ECN di popup + filter Designer/Drawing Saya",
     "status": "completed"
+  },
+  {
+    "content": "Verifikasi visual + Test E2E alur lengkap",
+    "status": "in_progress"
   }
 ]
