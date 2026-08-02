@@ -1,30 +1,26 @@
 [
   {
-    "content": "Backend: approve ECN gate + start-revision + anti-hapus + eng-designers",
+    "content": "Backend: approve gate + start-revision + anti-hapus + eng-designers + ecn-register",
     "status": "completed"
   },
   {
-    "content": "Frontend Work Order: gate 'Lanjut Kerja' + history revisi",
+    "content": "Backend: pembatasan owner (hanya designer boleh ajukan/mulai revisi)",
     "status": "completed"
   },
   {
-    "content": "Backend: endpoint /ecn-register",
+    "content": "Frontend Work Order: gate 'Lanjut Kerja' + panel status revisi",
     "status": "completed"
   },
   {
-    "content": "Frontend: ECNPage jadi Master List ECN & ECR (read-only)",
+    "content": "Frontend: Master List ECN & ECR read-only + nav label",
     "status": "completed"
   },
   {
-    "content": "Nav: label menu 'Master List ECN & ECR'",
+    "content": "Frontend Master List utama: tombol ECN (owner-only) + filter Designer/Drawing Saya",
     "status": "completed"
   },
   {
-    "content": "Master List utama: tombol Ajukan ECN di popup + filter Designer/Drawing Saya",
+    "content": "Testing agent (17/17 pass) + verifikasi manual owner check",
     "status": "completed"
-  },
-  {
-    "content": "Verifikasi visual + Test E2E alur lengkap",
-    "status": "in_progress"
   }
 ]

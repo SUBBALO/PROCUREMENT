@@ -2312,14 +2312,40 @@ async def _next_ecn_no() -> str:
     return f"{prefix}-{cnt + 1:02d}"
 
 
+def _is_drawing_owner(d: dict, user: dict) -> bool:
+    """True jika `user` adalah engineer yang menggambar drawing ini (designer/assignee).
+    Dipakai untuk membatasi siapa yang boleh mengajukan/menjalankan revisi ECN."""
+    if not d or not user:
+        return False
+    uid = user.get("id")
+    uname = user.get("name")
+    uuser = user.get("username")
+    candidates = {
+        d.get("assigned_to_user_id"),
+        d.get("prepared_by"),
+        d.get("assigned_to_name"),
+        d.get("created_by_id"),
+        d.get("created_by"),
+    }
+    candidates.discard(None)
+    return bool(
+        (uid and uid in candidates) or
+        (uname and uname in candidates) or
+        (uuser and uuser in candidates)
+    )
+
+
 @router.post("/drawings/{drawing_id}/request-revision")
 async def request_drawing_revision(drawing_id: str, payload: EcnIn, current: dict = Depends(get_current_user)):
-    """Eng staff ajukan revisi (form ECN) untuk drawing yang sudah tidak draft."""
+    """Eng staff ajukan revisi (form ECN) untuk drawing yang sudah tidak draft.
+    Hanya engineer yang menggambar drawing ini (designer/assignee) yang boleh — kecuali Admin."""
     if not (is_engineering(current) or is_admin_like(current)):
         raise HTTPException(status_code=403, detail="Hanya Engineering/Admin")
     d = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
     if not d:
         raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    if not _is_drawing_owner(d, current) and not is_admin_like(current):
+        raise HTTPException(status_code=403, detail="Hanya engineer yang menggambar drawing ini yang boleh mengajukan revisi.")
     status = d.get("approval_status") or "draft"
     if status == "draft":
         raise HTTPException(status_code=400, detail="Drawing masih DRAFT — langsung edit di Work Order, tidak perlu ECN.")
@@ -2428,6 +2454,8 @@ async def drawing_start_revision(drawing_id: str, current: dict = Depends(get_cu
     d = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
     if not d:
         raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    if not _is_drawing_owner(d, current) and not is_admin_like(current):
+        raise HTTPException(status_code=403, detail="Hanya engineer yang menggambar drawing ini yang boleh memulai revisi.")
     rr = d.get("revision_request") or {}
     if rr.get("status") != "approved":
         raise HTTPException(status_code=400, detail="Tidak ada revisi yang disetujui & siap dimulai")

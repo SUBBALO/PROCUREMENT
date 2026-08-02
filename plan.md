@@ -17,12 +17,19 @@ Alur revisi drawing menggunakan Form ECN (MKS-F-ENG-004) dengan rantai persetuju
 - [x] Backend `POST /drawings/{id}/request-revision` (Staff) & `POST /drawings/{id}/revision-decision` (Leader) tervalidasi via curl
 - [x] Verifikasi UI via screenshot (modal terbuka penuh)
 
-## Tahap 2 — Rantai Sign-off Bertingkat (Leader → Produksi → QA/QC → Doc Control) — STATUS: BLOCKED (menunggu input user)
-Menunggu keputusan user:
-- User Produksi untuk acknowledge (belum ada akun)
-- Mapping QA/QC signer ("dimas"/"salma" — dimas belum ada, salma=doc_control)
-- Bentuk TTD tiap tahap (tombol digital vs stamp PDF)
-- Pengiriman ke Doc Control (otomatis vs manual)
+## Tahap 2 — Alur Revisi ECN End-to-End — STATUS: COMPLETED
+- [x] Approve ECN = gate (tidak langsung draft); status tetap controlled/released
+- [x] `POST /drawings/{id}/start-revision` — snapshot history (data lama TIDAK dihapus), rev_no+1, reset TTD, buka draft
+- [x] Proteksi anti-hapus file lama yang ada di history
+- [x] `GET /drawings/eng-designers` untuk filter
+- [x] `GET /ecn-register` — agregasi ECN (revisi drawing) + ECR/ECN lama (db.ecns)
+- [x] Pembatasan OWNER: hanya engineer yang menggambar drawing (designer/assignee) yang boleh ajukan/mulai revisi (admin override)
+- [x] Work Order: gate "Lanjut Kerja" (pending/approved/in_progress/rejected panels)
+- [x] Master Drawing List: tombol "Ajukan ECN" (owner-only) di popup + filter Designer & "Drawing Saya"
+- [x] Menu lama "Perubahan ECN/ECR" -> "Master List ECN & ECR" (read-only record)
+- [x] Testing agent 17/17 pass + verifikasi manual owner check
+
+## Tahap 3 — Rantai TTD (Produksi -> QA/QC -> Doc Control) — STATUS: BLOCKED (menunggu info akun user)
 
 ## Backlog (Upcoming)
 - P1 ECR vs ECN logic

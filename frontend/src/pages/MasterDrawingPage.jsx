@@ -53,6 +53,13 @@ export default function MasterDrawingPage() {
   const [designer, setDesigner] = useState(""); // filter by designer (user id)
   const [designers, setDesigners] = useState([]); // daftar user Engineering
   const isEngUser = ENG_ROLES.includes(user?.role);
+  const isAdminUser = ["admin", "super_admin"].includes(user?.role);
+  // Owner check: hanya engineer yang menggambar drawing ini yang boleh ajukan revisi
+  const isDesigner = useCallback((it) => {
+    if (!it || !user) return false;
+    const cands = [it.assigned_to_user_id, it.prepared_by, it.assigned_to_name, it.created_by_id, it.created_by].filter(Boolean);
+    return cands.includes(user.id) || cands.includes(user.name) || cands.includes(user.username);
+  }, [user]);
   const canPrint = canPrintDrawing(user?.role);
   const previewOnly = isDrawingPreviewOnly(user?.role);
 
@@ -310,7 +317,7 @@ export default function MasterDrawingPage() {
           previewOnly={previewOnly}
           onView={setViewer}
           onClose={() => setDetail(null)}
-          canEcn={isEngUser}
+          canEcn={isEngUser && (isAdminUser || isDesigner(detail))}
           onRequestEcn={(it) => { setDetail(null); setEcnItem(it); }}
         />
       )}
