@@ -1,9 +1,17 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
-import { ClipboardText, Stamp, ClipboardText as ClipboardIcon } from "@phosphor-icons/react";
+import api from "../lib/api";
+import { ClipboardText, Stamp, Signature, ClipboardText as ClipboardIcon } from "@phosphor-icons/react";
 import { useNotifCount } from "../lib/useNotifCount";
 export default function QCPortalPage() {
   const pendingDrawings = useNotifCount("drawing_pending_approval");
+  const [pendingEcn, setPendingEcn] = useState(0);
+
+  useEffect(() => {
+    api.get("/drawings/ecn-pending-ttd")
+      .then(({ data }) => setPendingEcn((data.items || []).length))
+      .catch(() => setPendingEcn(0));
+  }, []);
 
   const CARDS = [
     {
@@ -16,6 +24,18 @@ export default function QCPortalPage() {
       accent: "from-emerald-500 via-green-500 to-teal-500",
       accentText: "text-emerald-400",
       badgeCount: pendingDrawings,
+    },
+    {
+      key: "ecn-ttd",
+      label: "Menunggu TTD ECN Anda",
+      stats: "Tanda Tangan Perubahan Drawing (ECN)",
+      description:
+        "Perubahan drawing (ECN) yang sudah di-acknowledge Produksi dan menunggu TTD digital QA/QC. Klik untuk baca perubahan lalu TTD. Setelah QA/QC TTD, ECN otomatis diarsipkan ke Document Control.",
+      icon: Signature,
+      href: "/ecn-ttd",
+      accent: "from-sky-500 via-blue-500 to-indigo-500",
+      accentText: "text-sky-400",
+      badgeCount: pendingEcn,
     },
     {
       key: "mii",

@@ -10,7 +10,7 @@ import BackLink from "../components/BackLink";
 import { DrawingAttachmentsPanel } from "./MasterDrawingPage";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
 import PdfPreviewModal from "../components/PdfPreviewModal";
-import { Wrench, ClipboardText, FloppyDisk, ArrowClockwise, PaperPlaneRight, CheckCircle, Warning, Eye, DownloadSimple, Paperclip, PencilSimpleLine, Clock, XCircle, PlayCircle } from "@phosphor-icons/react";
+import { Wrench, ClipboardText, FloppyDisk, ArrowClockwise, PaperPlaneRight, CheckCircle, Warning, Eye, DownloadSimple, Paperclip, PencilSimpleLine, Clock, XCircle, PlayCircle, Factory, ShieldCheck, Archive, Signature } from "@phosphor-icons/react";
 
 /**
  * EngineeringWorkOrderPage — halaman kerja engineer setelah Eng Head assign drawing.
@@ -93,6 +93,9 @@ export default function EngineeringWorkOrderPage() {
 
       {/* Riwayat Revisi ECN — lihat & buka PDF versi lama tiap Rev */}
       <RevisionHistoryPanel drawing={drawing} />
+
+      {/* Acknowledgment ECN — Produksi -> QA/QC -> Doc Control (setelah drawing revisi TERBIT/IFU) */}
+      <EcnAckPanel drawing={drawing} user={user} onReload={load} />
 
 
       {/* Info card: assign, prepared_by, from DRF */}
@@ -281,6 +284,154 @@ function RevisionFlowPanel({ drawing, rr, isEngUser, onReload }) {
   }
 
   return null;
+}
+
+/* ── ECN Acknowledgment Panel ────────────────────────────────────────────
+ * Rantai TTD digital setelah drawing revisi TERBIT (IFU):
+ *   Produksi (acknowledge) -> QA/QC (TTD) -> Doc Control (otomatis arsip).
+ * Berurutan. Tiap tahap menyimpan PNG TTD + tanggal + jam.
+ */
+function SignatureImg({ userId, name }) {
+  const [err, setErr] = useState(false);
+  const apiUrl = process.env.REACT_APP_BACKEND_URL;
+  if (!userId || err) {
+    return <div className="h-10 flex items-center text-lg font-semibold text-slate-700 italic" style={{ fontFamily: "Playfair Display, serif" }}>{name}</div>;
+  }
+  return (
+    <img
+      src={`${apiUrl}/api/users/${userId}/signature`}
+      alt={`TTD ${name}`}
+      className="h-10 object-contain"
+      onError={() => setErr(true)}
+      data-testid="ack-sig-img"
+    />
+  );
+}
+
+const ACK_TONES = {
+  amber: { activeBox: "border-amber-400 bg-amber-50", icon: "text-amber-700", btn: "bg-amber-600 hover:bg-amber-700" },
+  sky: { activeBox: "border-sky-400 bg-sky-50", icon: "text-sky-700", btn: "bg-sky-600 hover:bg-sky-700" },
+  indigo: { activeBox: "border-indigo-400 bg-indigo-50", icon: "text-indigo-700", btn: "bg-indigo-600 hover:bg-indigo-700" },
+};
+
+function AckStep({ icon: Icon, title, roleLabel, tone, data, active, canSign, onSign, busy, waitingText }) {
+  const done = !!data;
+  const t = ACK_TONES[tone] || ACK_TONES.indigo;
+  const boxCls = done ? "border-emerald-400 bg-emerald-50" : active ? t.activeBox : "border-slate-200 bg-slate-50 opacity-70";
+  const testKey = title.toLowerCase().replace(/[^a-z]/g, "-");
+  return (
+    <div className={`border-2 p-3 flex-1 min-w-[220px] ${boxCls}`} data-testid={`ack-step-${testKey}`}>
+      <div className="flex items-center gap-2 mb-2">
+        <Icon size={18} weight="bold" className={done ? "text-emerald-700" : active ? t.icon : "text-slate-400"} />
+        <div className="text-[11px] uppercase tracking-widest font-bold text-slate-700">{title}</div>
+        {done && <CheckCircle size={16} weight="fill" className="text-emerald-600 ml-auto" />}
+      </div>
+      {done ? (
+        <div className="space-y-1">
+          <div className="bg-white border border-slate-200 px-2 py-1">
+            <SignatureImg userId={data.user_id} name={data.name} />
+          </div>
+          <div className="text-xs font-semibold text-slate-800">{data.name}</div>
+          <div className="text-[11px] text-slate-500">
+            {data.auto ? "Otomatis diarsipkan" : roleLabel} · {data.at ? new Date(data.at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }) : ""}
+          </div>
+        </div>
+      ) : active ? (
+        <div className="space-y-2">
+          <div className="text-xs text-slate-600">Menunggu {roleLabel}…</div>
+          {canSign && (
+            <Button onClick={onSign} disabled={busy} className={`rounded-none w-full text-white h-9 ${t.btn}`} data-testid={`ack-sign-${testKey}`}>
+              {busy ? <ArrowClockwise size={14} className="animate-spin mr-1.5" /> : <Signature size={14} weight="bold" className="mr-1.5" />}
+              TTD Sekarang
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="text-[11px] text-slate-400 italic">{waitingText}</div>
+      )}
+    </div>
+  );
+}
+
+function EcnAckPanel({ drawing, user, onReload }) {
+  const [busy, setBusy] = useState(false);
+  const rr = drawing.revision_request || {};
+  const ecn = rr.ecn || {};
+  const isIfu = ["controlled", "released"].includes(drawing.approval_status);
+  const available = !!ecn.ecn_no && isIfu;
+  if (!available) return null;
+
+  const ack = rr.ack || { stage: "production", production: null, qa_qc: null, doc_control: null };
+  const stage = ack.stage || "production";
+  const role = user?.role;
+  const isProd = ["produksi", "production"].includes(role);
+  const isQc = role === "qc";
+  const isAdmin = ["admin", "super_admin", "supervisor"].includes(role);
+
+  const doAck = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/drawings/${drawing.id}/ecn-ack`);
+      toast.success(data.message || "TTD tercatat");
+      onReload?.();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal TTD");
+    } finally { setBusy(false); }
+  };
+
+  const allDone = stage === "done";
+
+  return (
+    <div className="border-2 border-violet-500" data-testid="ecn-ack-panel">
+      <div className="px-3 py-2 bg-violet-600 text-white flex items-center gap-2">
+        <ShieldCheck size={16} weight="bold" />
+        <div className="text-[11px] uppercase tracking-widest font-bold">Acknowledgment ECN {ecn.ecn_no && <span className="font-mono normal-case">· {ecn.ecn_no}</span>}</div>
+        {allDone
+          ? <span className="ml-auto text-[10px] bg-emerald-400/90 text-emerald-950 px-2 py-0.5 rounded-full font-bold">SELESAI</span>
+          : <span className="ml-auto text-[10px] bg-white/20 px-2 py-0.5 rounded-full">Berurutan: Produksi → QA/QC → Doc Control</span>}
+      </div>
+      <div className="p-3 bg-violet-50/50">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <AckStep
+            icon={Factory}
+            title="Produksi"
+            roleLabel="acknowledge Produksi"
+            tone="amber"
+            data={ack.production}
+            active={stage === "production"}
+            canSign={isProd || isAdmin}
+            onSign={doAck}
+            busy={busy}
+            waitingText="Menunggu tahap sebelumnya"
+          />
+          <AckStep
+            icon={ShieldCheck}
+            title="QA/QC"
+            roleLabel="tanda tangan QA/QC"
+            tone="sky"
+            data={ack.qa_qc}
+            active={stage === "qa_qc"}
+            canSign={isQc || isAdmin}
+            onSign={doAck}
+            busy={busy}
+            waitingText="Menunggu Produksi acknowledge"
+          />
+          <AckStep
+            icon={Archive}
+            title="Doc Control"
+            roleLabel="Document Control"
+            tone="indigo"
+            data={ack.doc_control}
+            active={false}
+            canSign={false}
+            onSign={doAck}
+            busy={busy}
+            waitingText="Otomatis setelah QA/QC TTD"
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ── Revision History Panel ──────────────────────────────────────────────

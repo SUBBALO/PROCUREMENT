@@ -108,17 +108,16 @@ const DEPARTMENTS = [
   {
     key: "produksi",
     label: "PRODUCTION",
-    tagline: "Work Order · Progress · WIP",
-    description: "Modul produksi: kelola Work Order, track progress per SO, laporan hasil produksi, WIP tracking, dan integrasi dengan Store & BOM.",
+    tagline: "Acknowledge ECN · TTD Digital · Controlled Drawing",
+    description: "Modul produksi: acknowledge/TTD perubahan drawing (ECN) yang menunggu tanda tangan Produksi, dan akses Controlled Drawing Database.",
     icon: Factory,
-    href: "#",
+    href: "/produksi",
     accent: "from-orange-500 via-red-500 to-rose-500",
     accentSolid: "bg-orange-600",
     accentText: "text-orange-600",
     accentBorder: "border-orange-300",
-    stats: "Coming Soon",
-    roles: ["admin", "super_admin", "supervisor", "production"],
-    comingSoon: true,
+    stats: "TTD ECN · Controlled Drawing",
+    roles: ["admin", "super_admin", "supervisor", "production", "produksi"],
   },
 ];
 

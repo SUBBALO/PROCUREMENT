@@ -165,8 +165,8 @@ def _can_view(user: dict) -> bool:
     role = (user or {}).get("role", "")
     return role in (
         "admin", "super_admin", "supervisor", "finance", "sales", "purchasing",
-        "eng_leader", "eng_head", "eng_staff", "engineering", "production", "qc",
-        "doc_control", "document_control",
+        "eng_leader", "eng_head", "eng_staff", "engineering", "production", "produksi", "qc",
+        "doc_control", "document_control", "store",
     )
 
 
@@ -1998,7 +1998,7 @@ async def delete_cad_file(drawing_id: str, cad_id: str, current: dict = Depends(
 # Iter 16 — Digital Approval Workflow untuk Drawing
 # Strict sequential: draft → pending_eng_head → pending_qc → pending_sales → approved → controlled → released
 # ============================================================================
-from deps import is_eng_head, is_qc, is_doc_control, is_engineering, is_admin_like, is_super_admin_user, SALES_ROLES, ENGINEERING_ROLES  # noqa: E402
+from deps import is_eng_head, is_qc, is_doc_control, is_engineering, is_admin_like, is_super_admin_user, SALES_ROLES, ENGINEERING_ROLES, PRODUCTION_ROLES  # noqa: E402
 
 STAGE_ORDER = ["eng_head", "qc", "sales"]  # sequential approval stages
 STAGE_STATUS = {
@@ -2513,6 +2513,131 @@ async def drawing_start_revision(drawing_id: str, current: dict = Depends(get_cu
     return {"success": True, "rev_no": old_rev + 1, "approval_status": "draft"}
 
 
+def _is_production(user: dict) -> bool:
+    return (user or {}).get("role") in PRODUCTION_ROLES
+
+
+@router.get("/drawings/{drawing_id}/ecn-ack-state")
+async def ecn_ack_state(drawing_id: str, current: dict = Depends(get_current_user)):
+    """State rantai acknowledgment ECN (Produksi -> QA/QC -> Doc Control) untuk sebuah drawing."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    d = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}},
+                                   {"_id": 0, "revision_request": 1, "approval_status": 1})
+    if not d:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    rr = d.get("revision_request") or {}
+    ecn = rr.get("ecn") or {}
+    ack = rr.get("ack") or {"stage": "production", "production": None, "qa_qc": None, "doc_control": None}
+    is_ifu = d.get("approval_status") in ("controlled", "released")
+    available = bool(ecn.get("ecn_no")) and is_ifu
+    role = current.get("role")
+    can_ack = False
+    if available and ack.get("stage") == "production":
+        can_ack = _is_production(current) or is_admin_like(current)
+    elif available and ack.get("stage") == "qa_qc":
+        can_ack = is_qc(current) or is_admin_like(current)
+    return {
+        "available": available,
+        "is_ifu": is_ifu,
+        "ecn_no": ecn.get("ecn_no"),
+        "ack": ack,
+        "stage": ack.get("stage") if available else None,
+        "can_ack": can_ack,
+        "my_role": role,
+    }
+
+
+@router.post("/drawings/{drawing_id}/ecn-ack")
+async def ecn_acknowledge(drawing_id: str, current: dict = Depends(get_current_user)):
+    """TTD digital acknowledgment ECN — berurutan: Produksi -> QA/QC -> (otomatis) Doc Control.
+    Hanya boleh setelah drawing revisi TERBIT (IFU = controlled/released)."""
+    d = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not d:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    rr = d.get("revision_request") or {}
+    ecn = rr.get("ecn") or {}
+    if not ecn.get("ecn_no"):
+        raise HTTPException(status_code=400, detail="Tidak ada ECN aktif pada drawing ini")
+    if d.get("approval_status") not in ("controlled", "released"):
+        raise HTTPException(status_code=400, detail="Menunggu drawing revisi TERBIT (IFU) sebelum acknowledge.")
+    ack = rr.get("ack") or {"stage": "production", "production": None, "qa_qc": None, "doc_control": None}
+    stage = ack.get("stage", "production")
+    now = _now_iso()
+
+    if stage == "production":
+        if not (_is_production(current) or is_admin_like(current)):
+            raise HTTPException(status_code=403, detail="Tahap ini menunggu acknowledge dari PRODUKSI.")
+        ack["production"] = _sig_stamp(current)
+        ack["stage"] = "qa_qc"
+        msg = "Produksi acknowledge tercatat. Lanjut ke QA/QC."
+    elif stage == "qa_qc":
+        if not (is_qc(current) or is_admin_like(current)):
+            raise HTTPException(status_code=403, detail="Tahap ini menunggu tanda tangan QA/QC.")
+        ack["qa_qc"] = _sig_stamp(current)
+        # Otomatis diteruskan ke Doc Control (arsip)
+        ack["doc_control"] = {"at": now, "auto": True, "note": "Otomatis diarsipkan ke Document Control setelah QA/QC TTD"}
+        ack["stage"] = "done"
+        msg = "QA/QC TTD tercatat. ECN otomatis diteruskan ke Document Control."
+    elif stage == "done":
+        raise HTTPException(status_code=400, detail="Acknowledgment ECN sudah selesai.")
+    else:
+        raise HTTPException(status_code=400, detail=f"Stage tidak dikenal: {stage}")
+
+    rr["ack"] = ack
+    await db.drawings.update_one({"id": drawing_id}, {"$set": {"revision_request": rr, "updated_at": now}})
+    await log_action(current, "ecn_acknowledge", "drawings", drawing_id,
+                     {"ecn_no": ecn.get("ecn_no"), "stage": stage})
+    return {"success": True, "stage": ack["stage"], "ack": ack, "message": msg}
+
+
+@router.get("/drawings/ecn-pending-ttd")
+async def ecn_pending_ttd(current: dict = Depends(get_current_user)):
+    """Daftar ECN yang menunggu TTD user saat ini (berdasarkan role: Produksi / QA-QC).
+    Muncul di kartu TTD portal masing-masing dept — tidak butuh akses menu Engineering."""
+    role = current.get("role")
+    prod = _is_production(current) or is_admin_like(current)
+    qc = is_qc(current) or is_admin_like(current)
+    if not (prod or qc):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/QA-QC")
+    cursor = db.drawings.find(
+        {"approval_status": {"$in": ["controlled", "released"]},
+         "revision_request.ecn.ecn_no": {"$exists": True},
+         "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "drawing_no": 1, "so_no": 1, "customer_name": 1,
+         "approval_status": 1, "rev_no": 1, "revision_request": 1},
+    )
+    items = []
+    async for d in cursor:
+        rr = d.get("revision_request") or {}
+        ecn = rr.get("ecn") or {}
+        ack = rr.get("ack") or {"stage": "production"}
+        stage = ack.get("stage", "production")
+        if stage == "done":
+            continue
+        # tentukan apakah user ini yang ditunggu di stage sekarang
+        mine = (stage == "production" and prod) or (stage == "qa_qc" and qc)
+        if not mine:
+            continue
+        items.append({
+            "drawing_id": d.get("id"),
+            "drawing_no": d.get("drawing_no"),
+            "so_no": d.get("so_no"),
+            "customer": d.get("customer_name"),
+            "rev_no": d.get("rev_no"),
+            "ecn_no": ecn.get("ecn_no"),
+            "stage": stage,
+            "stage_label": "Acknowledge Produksi" if stage == "production" else "Tanda Tangan QA/QC",
+            "reason": (ecn.get("purpose_explanation") or ecn.get("proposed_desc") or "").strip(),
+            "current_desc": ecn.get("current_desc", ""),
+            "proposed_desc": ecn.get("proposed_desc", ""),
+            "requested_by": rr.get("requested_by"),
+            "production_done": bool(ack.get("production")),
+        })
+    items.sort(key=lambda x: (x.get("ecn_no") or ""))
+    return {"items": items, "total": len(items)}
+
+
 @router.get("/drawings/eng-designers")
 async def list_eng_designers(current: dict = Depends(get_current_user)):
     """Daftar user Engineering untuk filter 'Designer' di Master List. Akses: Engineering/Admin."""
@@ -2548,7 +2673,7 @@ async def ecn_register(q: Optional[str] = None, kind: Optional[str] = None,
     async for d in cursor:
         by_no: dict = {}
 
-        def _mk(ecn: dict, status: str, at: str, requested_by: str, rev_no):
+        def _mk(ecn: dict, status: str, at: str, requested_by: str, rev_no, ack: dict = None):
             no = (ecn or {}).get("ecn_no")
             if not no:
                 return
@@ -2567,6 +2692,10 @@ async def ecn_register(q: Optional[str] = None, kind: Optional[str] = None,
                 "rev_no": rev_no,
                 "at": at,
                 "source": "drawing_revision",
+                "ack_stage": (ack or {}).get("stage"),
+                "ack_production": bool((ack or {}).get("production")),
+                "ack_qa_qc": bool((ack or {}).get("qa_qc")),
+                "ack_doc_control": bool((ack or {}).get("doc_control")),
             }
 
         # history dulu
@@ -2578,7 +2707,7 @@ async def ecn_register(q: Optional[str] = None, kind: Optional[str] = None,
         rr = d.get("revision_request") or {}
         if rr and (rr.get("ecn") or {}).get("ecn_no"):
             _mk(rr.get("ecn") or {}, rr.get("status") or "pending",
-                rr.get("requested_at"), rr.get("requested_by") or "", None)
+                rr.get("requested_at"), rr.get("requested_by") or "", None, rr.get("ack"))
         rows.extend(by_no.values())
 
     # 2) ECR/ECN lama dari koleksi ecns

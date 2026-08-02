@@ -29,7 +29,19 @@ Alur revisi drawing menggunakan Form ECN (MKS-F-ENG-004) dengan rantai persetuju
 - [x] Menu lama "Perubahan ECN/ECR" -> "Master List ECN & ECR" (read-only record)
 - [x] Testing agent 17/17 pass + verifikasi manual owner check
 
-## Tahap 3 — Rantai TTD (Produksi -> QA/QC -> Doc Control) — STATUS: BLOCKED (menunggu info akun user)
+## Tahap 3 — Rantai TTD (Produksi -> QA/QC -> Doc Control) — STATUS: COMPLETED
+- [x] Akun: agus (produksi/kepala produksi), prodstaff (produksi), qcuser (qc) + TTD PNG
+- [x] `POST /drawings/{id}/ecn-ack` — berurutan Produksi->QA/QC->auto Doc Control, role-gated
+- [x] `GET /drawings/{id}/ecn-ack-state` & `GET /drawings/ecn-pending-ttd` (queue per role)
+- [x] Work Order: panel Acknowledgment ECN (TTD PNG + tanggal/jam)
+- [x] Halaman `/ecn-ttd` (universal) + kartu di Portal QC & Produksi (badge count)
+- [x] Portal Produksi baru + entry di Landing; drawing revisi pakai alur TTD normal (QC review)
+- [x] History Revisi Viewer (buka/unduh PDF versi lama) di Work Order
+
+## Kredensial TTD (final)
+- agus / AgusMks2026 (Produksi - Kepala Produksi)
+- prodstaff / ProdMks2026 (Staff Produksi)
+- qcuser / QcMks2026 (QA/QC)
 
 ## Backlog (Upcoming)
 - P1 ECR vs ECN logic

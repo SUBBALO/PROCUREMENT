@@ -1,0 +1,41 @@
+{
+  "summary": "Completed comprehensive backend testing for ECN Acknowledgment Chain & Owner Restriction features. All 14 test cases passed successfully, validating sequential TTD flow, role-based permissions, and owner-only revision controls.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "ECN creation by owner (trisna) - POST /api/drawings/{id}/request-revision",
+    "ECN creation rejection for non-owner (engstaff) - 403 with correct message",
+    "ECN ack state endpoint returns correct available/is_ifu/stage/can_ack for eng_staff",
+    "ECN pending TTD for produksi user shows drawings at production stage",
+    "ECN pending TTD unauthorized access (eng_staff) correctly rejected with 403",
+    "ECN ack with wrong role (eng_staff at production stage) correctly rejected with 403",
+    "ECN ack by produksi user successfully moves stage from production to qa_qc",
+    "ECN pending TTD for QC user shows drawings at qa_qc stage",
+    "ECN ack at qa_qc stage with wrong role (produksi) correctly rejected with 403",
+    "ECN ack by QC user successfully moves stage to done and auto-sets doc_control",
+    "ECN ack when already done correctly rejected with 400",
+    "ECN register includes all ack fields (ack_stage, ack_production, ack_qa_qc, ack_doc_control)",
+    "Start revision by non-owner (engstaff) correctly rejected with 403",
+    "Revision history endpoints (page-meta, page-image, download) accessible"
+  ],
+  "test_report_links": [
+    "/app/backend/backend_test_ecn.py"
+  ],
+  "action_item_for_main_agent": "",
+  "updated_files": [
+    "/app/backend/backend_test_ecn.py"
+  ],
+  "success_percentage": {
+    "backend": "100% (14/14 tests passed)",
+    "frontend": "N/A (backend-only testing)"
+  },
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false
+}

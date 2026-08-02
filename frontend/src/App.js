@@ -37,6 +37,8 @@ import QuotationPage from "./pages/QuotationPage";
 import CustomerMasterPage from "./pages/CustomerMasterPage";
 import QCPage from "./pages/QCPage";
 import QCPortalPage from "./pages/QCPortalPage";
+import EcnTtdQueuePage from "./pages/EcnTtdQueuePage";
+import ProductionPortalPage from "./pages/ProductionPortalPage";
 import MaterialCostingPage from "./pages/MaterialCostingPage";
 import MasterDrawingPage from "./pages/MasterDrawingPage";import EngineeringMasterListPage from "./pages/EngineeringMasterListPage";
 import BomEntryGridPage from "./pages/BomEntryGridPage";
@@ -110,6 +112,7 @@ function ProtectedRoute({ children, storeRoleTo = "/store/stock", blockStore = f
     location.pathname.startsWith("/change-password") ||
     location.pathname.startsWith("/drawings/pending-my-approval") ||
     location.pathname.startsWith("/drawings/controlled") ||
+    location.pathname.startsWith("/ecn-ttd") ||
     location.pathname.startsWith("/documents/register") ||
     location.pathname.startsWith("/document-control");
 
@@ -196,6 +199,8 @@ function AppRoutes() {
       <Route path="/admin/form-templates" element={<ProtectedRoute><FormTemplatesPage /></ProtectedRoute>} />
       <Route path="/admin/form-templates/:id" element={<ProtectedRoute><FormTemplateEditorPage /></ProtectedRoute>} />
       <Route path="/qc" element={<ProtectedRoute><QCPortalPage /></ProtectedRoute>} />
+      <Route path="/ecn-ttd" element={<ProtectedRoute><EcnTtdQueuePage /></ProtectedRoute>} />
+      <Route path="/produksi" element={<ProtectedRoute><ProductionPortalPage /></ProtectedRoute>} />
       <Route path="/qc/mii" element={<ProtectedRoute><QCPage /></ProtectedRoute>} />
       <Route path="/qc/inspections/:id" element={<ProtectedRoute><QCPage /></ProtectedRoute>} />
       <Route path="/engineering/material-costing" element={<ProtectedRoute><MaterialCostingPage /></ProtectedRoute>} />
