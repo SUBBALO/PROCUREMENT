@@ -36,16 +36,6 @@ export default function QCPortalPage() {
       accent: "from-violet-500 via-purple-500 to-fuchsia-500",
       accentText: "text-violet-400",
     },
-    {
-      key: "sig-history",
-      label: "Riwayat TTD Saya",
-      stats: "Bukti Audit · ISO 9001",
-      description: "Semua drawing yang pernah Anda TTD sebagai QC. Lengkap dengan tanggal, jam, dan link preview PDF — bukti audit untuk auditor ISO 9001.",
-      icon: ClipboardIcon,
-      href: "/my/signature-history",
-      accent: "from-indigo-500 via-purple-500 to-fuchsia-500",
-      accentText: "text-indigo-400",
-    },
   ];
 
   return (

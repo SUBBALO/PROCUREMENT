@@ -5,6 +5,7 @@ import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { ArrowClockwise, Eye, Stamp, MagnifyingGlass, ClockClockwise, Signature, Factory, ShieldCheck, ArrowRight, CheckCircle } from "@phosphor-icons/react";
+import EcnReviewModal from "../components/EcnReviewModal";
 import BackLink from "../components/BackLink";
 import { Input } from "../components/ui/input";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
@@ -33,6 +34,7 @@ export default function PendingApprovalDrawingsPage() {
   const [items, setItems] = useState([]);
   const [ecnItems, setEcnItems] = useState([]);
   const [busyEcn, setBusyEcn] = useState(null);
+  const [ecnReview, setEcnReview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
   const [sigDrawing, setSigDrawing] = useState(null);
@@ -56,10 +58,12 @@ export default function PendingApprovalDrawingsPage() {
   useEffect(() => { load(); }, [load]);
 
   const signEcn = async (it) => {
+    if (!it) return;
     setBusyEcn(it.drawing_id);
     try {
       const { data } = await api.post(`/drawings/${it.drawing_id}/ecn-ack`);
       toast.success(data.message || "TTD tercatat");
+      setEcnReview(null);
       await load();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal TTD");
@@ -150,13 +154,13 @@ export default function PendingApprovalDrawingsPage() {
                   )}
                 </div>
                 <Button
-                  onClick={() => signEcn(it)}
+                  onClick={() => setEcnReview(it)}
                   disabled={busyEcn === it.drawing_id}
                   className="rounded-none bg-violet-600 hover:bg-violet-700 text-white h-10 px-5 disabled:opacity-40 shrink-0"
                   data-testid={`inbox-ecn-sign-${it.ecn_no}`}
                 >
-                  {busyEcn === it.drawing_id ? <ArrowClockwise size={15} className="animate-spin mr-1.5" /> : <Signature size={15} weight="bold" className="mr-1.5" />}
-                  TTD Sekarang
+                  {busyEcn === it.drawing_id ? <ArrowClockwise size={15} className="animate-spin mr-1.5" /> : <Eye size={15} weight="bold" className="mr-1.5" />}
+                  Review & TTD
                 </Button>
               </div>
             ))}
@@ -297,6 +301,15 @@ export default function PendingApprovalDrawingsPage() {
           stage={stage}
           onDone={() => { setRejectDrawing(null); load(); }}
           onClose={() => setRejectDrawing(null)}
+        />
+      )}
+
+      {ecnReview && (
+        <EcnReviewModal
+          item={ecnReview}
+          busy={busyEcn === ecnReview.drawing_id}
+          onConfirm={() => signEcn(ecnReview)}
+          onClose={() => setEcnReview(null)}
         />
       )}
     </div>

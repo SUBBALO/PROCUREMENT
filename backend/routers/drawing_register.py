@@ -2654,6 +2654,8 @@ async def list_eng_designers(current: dict = Depends(get_current_user)):
 
 @router.get("/ecn-register")
 async def ecn_register(q: Optional[str] = None, kind: Optional[str] = None,
+                       status: Optional[str] = None,
+                       date_from: Optional[str] = None, date_to: Optional[str] = None,
                        current: dict = Depends(get_current_user)):
     """Master List ECN & ECR (read-only, record).
     Mengagregasi seluruh ECN dari alur revisi drawing (revision_request + history `revisions`)
@@ -2673,10 +2675,12 @@ async def ecn_register(q: Optional[str] = None, kind: Optional[str] = None,
     async for d in cursor:
         by_no: dict = {}
 
-        def _mk(ecn: dict, status: str, at: str, requested_by: str, rev_no, ack: dict = None):
+        def _mk(ecn: dict, status: str, at: str, requested_by: str, rev_no, ack: dict = None, dates: dict = None):
             no = (ecn or {}).get("ecn_no")
             if not no:
                 return
+            dts = dates or {}
+            ackd = ack or {}
             by_no[no] = {
                 "no": no,
                 "kind": "ecn",
@@ -2692,22 +2696,36 @@ async def ecn_register(q: Optional[str] = None, kind: Optional[str] = None,
                 "rev_no": rev_no,
                 "at": at,
                 "source": "drawing_revision",
-                "ack_stage": (ack or {}).get("stage"),
-                "ack_production": bool((ack or {}).get("production")),
-                "ack_qa_qc": bool((ack or {}).get("qa_qc")),
-                "ack_doc_control": bool((ack or {}).get("doc_control")),
+                "ack_stage": ackd.get("stage"),
+                "ack_production": bool(ackd.get("production")),
+                "ack_qa_qc": bool(ackd.get("qa_qc")),
+                "ack_doc_control": bool(ackd.get("doc_control")),
+                # Timeline: registrasi -> mulai kerja -> selesai (IFU) -> stamp Doc Control (distribusi)
+                "date_reg": dts.get("reg"),
+                "date_start": dts.get("start"),
+                "date_done": dts.get("done"),
+                "date_doco": dts.get("doco"),
             }
 
         # history dulu
         for rev in (d.get("revisions") or []):
             if rev.get("type") == "ecn_revision":
+                snap = rev.get("snapshot") or {}
                 _mk(rev.get("ecn") or {}, "completed", rev.get("at"),
-                    rev.get("started_by") or "", rev.get("rev_no"))
+                    rev.get("started_by") or "", rev.get("rev_no"),
+                    dates={"start": rev.get("at"), "done": snap.get("controlled_at")})
         # lalu revision_request aktif (override status terbaru per ecn_no)
         rr = d.get("revision_request") or {}
         if rr and (rr.get("ecn") or {}).get("ecn_no"):
+            ackd = rr.get("ack") or {}
             _mk(rr.get("ecn") or {}, rr.get("status") or "pending",
-                rr.get("requested_at"), rr.get("requested_by") or "", None, rr.get("ack"))
+                rr.get("requested_at"), rr.get("requested_by") or "", None, ackd,
+                dates={
+                    "reg": rr.get("requested_at"),
+                    "start": rr.get("started_at"),
+                    "done": rr.get("completed_at"),
+                    "doco": (ackd.get("doc_control") or {}).get("at"),
+                })
         rows.extend(by_no.values())
 
     # 2) ECR/ECN lama dari koleksi ecns
@@ -2732,6 +2750,14 @@ async def ecn_register(q: Optional[str] = None, kind: Optional[str] = None,
     # filter
     if kind in ("ecn", "ecr"):
         rows = [r for r in rows if r.get("kind") == kind]
+    if status:
+        rows = [r for r in rows if (r.get("status") or "") == status]
+    if date_from:
+        rows = [r for r in rows if (r.get("date_reg") or r.get("at") or "") >= date_from]
+    if date_to:
+        # inklusif sampai akhir hari
+        dt_end = date_to + "T23:59:59"
+        rows = [r for r in rows if (r.get("date_reg") or r.get("at") or "") <= dt_end]
     if q:
         ql = q.strip().lower()
         rows = [r for r in rows if ql in " ".join(
@@ -3055,6 +3081,11 @@ async def drawing_stamp_controlled(
 
     if mks_ok and ref_ok and extras_ok:
         upd["approval_status"] = "controlled"
+        # Kalau ini drawing hasil revisi ECN, catat tgl selesai revisi (drawing terbit/IFU)
+        rr_cur = drawing.get("revision_request") or {}
+        if rr_cur.get("status") == "in_progress" and not rr_cur.get("completed_at"):
+            rr_cur["completed_at"] = _now_iso()
+            upd["revision_request"] = rr_cur
 
     await db.drawings.update_one({"id": drawing_id}, {"$set": upd})
     await log_action(current, "drawing_stamp_controlled", "drawings", drawing_id,
@@ -3405,6 +3436,147 @@ async def revision_snapshot_download(drawing_id: str, rev_id: str, which: str = 
     fname = f"{drawing_id}_rev-{rev_id[:8]}_{which}.pdf"
     return StreamingResponse(io.BytesIO(raw), media_type="application/pdf",
                              headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+async def _sig_png_by_user(uid: str):
+    if not uid:
+        return None
+    u = await db.users.find_one({"id": uid}, {"signature_gridfs_id": 1})
+    sid = (u or {}).get("signature_gridfs_id")
+    if not sid:
+        return None
+    try:
+        bucket = AsyncIOMotorGridFSBucket(db, bucket_name="signatures")
+        s = await bucket.open_download_stream(ObjectId(sid))
+        return await s.read()
+    except Exception:
+        return None
+
+
+@router.get("/drawings/{drawing_id}/ecn-sheet")
+async def ecn_sheet_pdf(drawing_id: str, current: dict = Depends(get_current_user)):
+    """Lembar Acknowledgment ECN (PDF) — Form MKS-F-ENG-004 dengan stamp TTD digital
+    (PNG + tanggal/jam) Produksi & QA/QC sebagai bukti resmi distribusi."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    d = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not d:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    rr = d.get("revision_request") or {}
+    ecn = rr.get("ecn") or {}
+    if not ecn.get("ecn_no"):
+        raise HTTPException(status_code=404, detail="Tidak ada ECN pada drawing ini")
+    ack = rr.get("ack") or {}
+
+    import fitz  # PyMuPDF
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)  # A4 portrait
+    W = 595
+    ink = (0.09, 0.11, 0.20)
+    gray = (0.42, 0.45, 0.52)
+    line_c = (0.75, 0.77, 0.82)
+
+    def txt(x, y, s, size=9, color=ink, bold=False):
+        page.insert_text((x, y), str(s or ""), fontsize=size,
+                         fontname="helv" if not bold else "hebo", color=color)
+
+    def hline(y, x0=40, x1=W - 40):
+        page.draw_line((x0, y), (x1, y), color=line_c, width=0.8)
+
+    # Header
+    page.draw_rect(fitz.Rect(40, 36, W - 40, 84), color=ink, fill=(0.93, 0.94, 0.99), width=1)
+    txt(52, 58, "ENGINEERING CHANGE NOTICE (ECN)", size=15, bold=True)
+    txt(52, 74, "Form MKS-F-ENG-004  ·  Lembar Acknowledgment & Distribusi", size=9, color=gray)
+    txt(W - 180, 58, ecn.get("ecn_no"), size=13, bold=True, color=(0.30, 0.16, 0.55))
+
+    y = 104
+    def field(label, value, x=52, w=250):
+        nonlocal_y = y
+        txt(x, nonlocal_y, label.upper(), size=7, color=gray, bold=True)
+        txt(x, nonlocal_y + 13, value or "-", size=10)
+
+    # Info grid (2 kolom)
+    rows_info = [
+        ("No. Drawing", d.get("drawing_no"), "Rev", str(d.get("rev_no") if d.get("rev_no") is not None else "-")),
+        ("Nomor SO", d.get("so_no"), "Customer", d.get("customer_name")),
+        ("Diajukan oleh", rr.get("requested_by"), "Status", (rr.get("status") or "-")),
+    ]
+    for l1, v1, l2, v2 in rows_info:
+        txt(52, y, l1.upper(), size=7, color=gray, bold=True)
+        txt(52, y + 13, v1 or "-", size=10)
+        txt(320, y, l2.upper(), size=7, color=gray, bold=True)
+        txt(320, y + 13, v2 or "-", size=10)
+        y += 34
+    hline(y); y += 16
+
+    # Perubahan
+    txt(52, y, "DETAIL PERUBAHAN", size=8, color=gray, bold=True); y += 16
+    txt(52, y, "Kondisi Saat Ini:", size=8, color=gray); txt(150, y, ecn.get("current_desc") or "-", size=9); y += 16
+    txt(52, y, "Menjadi (Usulan):", size=8, color=gray); txt(150, y, ecn.get("proposed_desc") or "-", size=9); y += 16
+    txt(52, y, "Alasan/Tujuan:", size=8, color=gray); txt(150, y, ecn.get("purpose_explanation") or "-", size=9); y += 20
+    hline(y); y += 16
+
+    # Timeline
+    def fmt(iso):
+        if not iso:
+            return "-"
+        try:
+            return datetime.fromisoformat(iso.replace("Z", "+00:00")).strftime("%d %b %Y %H:%M")
+        except Exception:
+            return str(iso)[:16]
+    txt(52, y, "TIMELINE", size=8, color=gray, bold=True); y += 15
+    tl = [
+        ("Registrasi ECN", rr.get("requested_at")),
+        ("Mulai Revisi", rr.get("started_at")),
+        ("Selesai Revisi (Terbit/IFU)", rr.get("completed_at")),
+        ("Distribusi (Doc Control)", (ack.get("doc_control") or {}).get("at")),
+    ]
+    for lbl, val in tl:
+        txt(60, y, f"•  {lbl}", size=9); txt(320, y, fmt(val), size=9, color=gray); y += 15
+    y += 6
+    hline(y); y += 18
+
+    # Tanda tangan
+    txt(52, y, "TANDA TANGAN / ACKNOWLEDGMENT", size=8, color=gray, bold=True); y += 8
+    signers = [
+        ("Disetujui Eng Head", (ecn.get("approvals") or {}).get("head_of_dept")),
+        ("Acknowledge Produksi", ack.get("production")),
+        ("Tanda Tangan QA/QC", ack.get("qa_qc")),
+        ("Distribusi Doc Control", ack.get("doc_control")),
+    ]
+    box_w = (W - 80 - 30) / 4
+    bx = 40
+    by = y
+    for title, data in signers:
+        rect = fitz.Rect(bx, by, bx + box_w, by + 120)
+        page.draw_rect(rect, color=line_c, width=0.8)
+        txt(bx + 8, by + 16, title.upper(), size=6.5, color=gray, bold=True)
+        data = data or {}
+        uid = data.get("user_id")
+        png = await _sig_png_by_user(uid) if uid else None
+        if png:
+            try:
+                page.insert_image(fitz.Rect(bx + 8, by + 24, bx + box_w - 8, by + 74), stream=png, keep_proportion=True)
+            except Exception:
+                pass
+        elif data.get("auto"):
+            txt(bx + 8, by + 55, "(otomatis)", size=8, color=gray)
+        page.draw_line((bx + 8, by + 84), (bx + box_w - 8, by + 84), color=line_c, width=0.6)
+        nm = data.get("name") or ("Otomatis" if data.get("auto") else "—")
+        txt(bx + 8, by + 98, nm, size=8, bold=True)
+        at = data.get("at")
+        txt(bx + 8, by + 110, fmt(at) if at else "Belum TTD", size=6.5, color=gray)
+        bx += box_w + 10
+
+    # Footer
+    txt(40, 812, f"Dicetak: {datetime.now(timezone.utc).strftime('%d %b %Y %H:%M UTC')} oleh {current.get('name') or current.get('username')}", size=7, color=gray)
+    txt(W - 200, 812, "Dokumen terkendali — PT MKS", size=7, color=gray)
+
+    out = doc.tobytes()
+    doc.close()
+    fname = f"ECN_{ecn.get('ecn_no')}_{d.get('drawing_no', drawing_id)}.pdf"
+    return StreamingResponse(io.BytesIO(out), media_type="application/pdf",
+                             headers={"Content-Disposition": f'inline; filename="{fname}"'})
 
 
 @router.get("/drawings/pending-dc-stamp")

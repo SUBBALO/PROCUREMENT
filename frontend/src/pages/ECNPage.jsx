@@ -38,6 +38,9 @@ export default function ECNPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [kindFilter, setKindFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const pag = usePagination(items, 20);
 
   const load = useCallback(async () => {
@@ -46,12 +49,15 @@ export default function ECNPage() {
       const params = [];
       if (q.trim()) params.push(`q=${encodeURIComponent(q.trim())}`);
       if (kindFilter) params.push(`kind=${kindFilter}`);
+      if (statusFilter) params.push(`status=${statusFilter}`);
+      if (dateFrom) params.push(`date_from=${dateFrom}`);
+      if (dateTo) params.push(`date_to=${dateTo}`);
       const { data } = await api.get(`/ecn-register${params.length ? `?${params.join("&")}` : ""}`);
       setItems(data.items || []);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal muat data");
     } finally { setLoading(false); }
-  }, [q, kindFilter]);
+  }, [q, kindFilter, statusFilter, dateFrom, dateTo]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -96,6 +102,24 @@ export default function ECNPage() {
             <option value="ecn">ECN (Internal MKS)</option>
             <option value="ecr">ECR (Customer)</option>
           </select>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-9 border border-slate-300 rounded-none text-sm px-2" data-testid="ecn-status-filter">
+            <option value="">Semua Status</option>
+            <option value="pending">Menunggu Leader</option>
+            <option value="approved">Disetujui</option>
+            <option value="in_progress">Sedang Revisi</option>
+            <option value="completed">Selesai</option>
+            <option value="rejected">Ditolak</option>
+          </select>
+          <div className="flex items-center gap-1 text-xs text-slate-500">
+            <span>Reg:</span>
+            <Input type="date" className="h-9 rounded-none border-slate-300 w-[140px]" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} data-testid="ecn-date-from" />
+            <span>–</span>
+            <Input type="date" className="h-9 rounded-none border-slate-300 w-[140px]" value={dateTo} onChange={(e) => setDateTo(e.target.value)} data-testid="ecn-date-to" />
+          </div>
+          <Button variant="outline" onClick={load} className="rounded-none h-9" data-testid="ecn-apply-filter">Terapkan</Button>
+          {(statusFilter || dateFrom || dateTo || kindFilter || q) && (
+            <Button variant="ghost" onClick={() => { setQ(""); setKindFilter(""); setStatusFilter(""); setDateFrom(""); setDateTo(""); setTimeout(load, 0); }} className="rounded-none h-9 text-slate-500" data-testid="ecn-reset-filter">Reset</Button>
+          )}
           <Button variant="ghost" onClick={load} className="rounded-none h-9" title="Refresh"><ArrowClockwise size={14} weight="bold" /></Button>
           <div className="flex-1" />
           <div className="text-xs text-slate-500"><b className="text-indigo-700">{items.length}</b> record</div>
@@ -111,7 +135,7 @@ export default function ECNPage() {
                 <th className="text-left p-3">Customer</th>
                 <th className="text-left p-3">Perubahan</th>
                 <th className="text-left p-3">Pemohon</th>
-                <th className="text-left p-3">Tanggal</th>
+                <th className="text-left p-3">Timeline (Reg → Distribusi)</th>
                 <th className="text-center p-3">Status</th>
                 <th className="text-center p-3"></th>
               </tr>
@@ -132,9 +156,27 @@ export default function ECNPage() {
                     ) : (<span className="truncate" title={e.reason}>{e.reason || "-"}</span>)}
                   </td>
                   <td className="p-3 text-xs">{e.requested_by || "-"}</td>
-                  <td className="p-3 text-xs text-slate-500 whitespace-nowrap">{fmtDate(e.at)}</td>
+                  <td className="p-3 text-[11px] whitespace-nowrap">
+                    {e.source === "drawing_revision" ? (
+                      <div className="grid grid-cols-[auto_1fr] gap-x-1.5 gap-y-0.5">
+                        <span className="text-slate-400">Reg:</span><span className="text-slate-700 font-medium">{fmtDate(e.date_reg || e.at)}</span>
+                        <span className="text-slate-400">Mulai:</span><span className={e.date_start ? "text-slate-700 font-medium" : "text-slate-300"}>{e.date_start ? fmtDate(e.date_start) : "—"}</span>
+                        <span className="text-slate-400">Selesai:</span><span className={e.date_done ? "text-slate-700 font-medium" : "text-slate-300"}>{e.date_done ? fmtDate(e.date_done) : "—"}</span>
+                        <span className="text-slate-400">Distribusi:</span><span className={e.date_doco ? "text-emerald-700 font-semibold" : "text-slate-300"}>{e.date_doco ? fmtDate(e.date_doco) : "—"}</span>
+                      </div>
+                    ) : (
+                      <span className="text-slate-500">{fmtDate(e.at)}</span>
+                    )}
+                  </td>
                   <td className="p-3 text-center">
                     <span className={`px-2 py-1 text-[9px] font-bold uppercase tracking-widest border ${STATUS[e.status] || STATUS.draft}`}>{STATUS_LABEL[e.status] || e.status}</span>
+                    {e.source === "drawing_revision" && e.ack_stage && (
+                      <div className="mt-1 flex items-center justify-center gap-0.5" title="Progress TTD: Produksi → QA/QC → Doc Control">
+                        <span className={`w-2 h-2 rounded-full ${e.ack_production ? "bg-emerald-500" : "bg-slate-300"}`} />
+                        <span className={`w-2 h-2 rounded-full ${e.ack_qa_qc ? "bg-emerald-500" : "bg-slate-300"}`} />
+                        <span className={`w-2 h-2 rounded-full ${e.ack_doc_control ? "bg-emerald-500" : "bg-slate-300"}`} />
+                      </div>
+                    )}
                   </td>
                   <td className="p-3 text-center">
                     {e.drawing_id && (

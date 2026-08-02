@@ -1,26 +1,30 @@
 [
   {
-    "content": "Backend: approve gate + start-revision + anti-hapus + eng-designers + ecn-register",
+    "content": "QC portal: hapus kartu 'Riwayat TTD Saya'",
     "status": "completed"
   },
   {
-    "content": "Backend: pembatasan owner (hanya designer boleh ajukan/mulai revisi)",
+    "content": "ECN dates (reg/start/selesai/doco) + register",
     "status": "completed"
   },
   {
-    "content": "Frontend Work Order: gate 'Lanjut Kerja' + panel status revisi",
+    "content": "Filter Register: status + rentang tanggal",
     "status": "completed"
   },
   {
-    "content": "Frontend: Master List ECN & ECR read-only + nav label",
+    "content": "Ringkasan ECN: kartu status di dashboard Engineering",
     "status": "completed"
   },
   {
-    "content": "Frontend Master List utama: tombol ECN (owner-only) + filter Designer/Drawing Saya",
+    "content": "Notifikasi TTD ke Produksi/QA-QC",
     "status": "completed"
   },
   {
-    "content": "Testing agent (17/17 pass) + verifikasi manual owner check",
+    "content": "Lembar ECN PDF + stamp TTD PNG (bukti resmi)",
+    "status": "completed"
+  },
+  {
+    "content": "Modal Review ECN (wajib lihat isi ECN+drawing sebelum TTD)",
     "status": "completed"
   }
 ]

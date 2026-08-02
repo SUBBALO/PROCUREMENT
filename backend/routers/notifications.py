@@ -51,7 +51,48 @@ async def _gather_notifications(user: dict) -> dict:
 
     categories = []
 
-    # ------------- Store Requests (needs admin/supervisor approval) -------------
+    # ------------- ECN menunggu TTD (Produksi / QA-QC) -------------
+    role_prod = role in ("produksi", "production")
+    role_qc = role == "qc"
+    if role_prod or role_qc or admin_like:
+        try:
+            cand = await db.drawings.find(
+                {"approval_status": {"$in": ["controlled", "released"]},
+                 "revision_request.ecn.ecn_no": {"$exists": True},
+                 "deleted_at": {"$exists": False}},
+                {"_id": 0, "id": 1, "drawing_no": 1, "so_no": 1, "revision_request": 1},
+            ).to_list(length=100)
+            ecn_items = []
+            for d in cand:
+                rr = d.get("revision_request") or {}
+                ecn = rr.get("ecn") or {}
+                ack = rr.get("ack") or {"stage": "production"}
+                st = ack.get("stage", "production")
+                if st == "done":
+                    continue
+                mine = (st == "production" and (role_prod or admin_like)) or (st == "qa_qc" and (role_qc or admin_like))
+                if not mine:
+                    continue
+                ecn_items.append({
+                    "id": d.get("id"),
+                    "title": f"{ecn.get('ecn_no')} menunggu TTD Anda",
+                    "detail": f"{'Acknowledge Produksi' if st == 'production' else 'Tanda Tangan QA/QC'} · {d.get('drawing_no', '')}",
+                    "sub": f"SO {d.get('so_no', '') or '-'}",
+                    "link": "/drawings/pending-my-approval",
+                    "kind": "ecn_ttd",
+                    "created_at": rr.get("requested_at"),
+                })
+            if ecn_items:
+                categories.append({
+                    "key": "ecn_ttd",
+                    "label": "Menunggu TTD ECN",
+                    "count": len(ecn_items),
+                    "severity": "warn",
+                    "items": ecn_items,
+                })
+        except Exception:
+            pass
+
     if can_approve:
         try:
             pending_store = await db.store_requests.find({"status": "pending"}, {"_id": 0}).sort("created_at", -1).limit(20).to_list(length=20)

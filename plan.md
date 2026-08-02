@@ -44,6 +44,16 @@ Alur revisi drawing menggunakan Form ECN (MKS-F-ENG-004) dengan rantai persetuju
 - [x] Portal QC & Produksi: satu kartu "Menunggu TTD Saya" (badge = drawing+ECN)
 - [x] Testing agent 14/14 pass (ack chain, sequential, role perms, owner restriction)
 
+## Tahap 5 — Review ECN, Bukti PDF, Notifikasi, Ringkasan, Filter — STATUS: COMPLETED
+- [x] QC portal: kartu 'Riwayat TTD Saya' dihapus (sudah jadi tab di inbox TTD)
+- [x] Modal Review ECN: WAJIB lihat isi ECN + Drawing + centang konfirmasi sebelum TTD (tidak bisa klik buta)
+- [x] Lembar Acknowledgment ECN (PDF, MKS-F-ENG-004) + stamp PNG TTD Produksi & QA/QC sebagai bukti resmi (`GET /drawings/{id}/ecn-sheet`)
+- [x] Notifikasi TTD ke Produksi/QA-QC (kategori 'ecn_ttd' di bell)
+- [x] Ringkasan ECN di dashboard Eng Head (menunggu Produksi/QA-QC/selesai)
+- [x] Register: kolom Timeline (Reg -> Mulai -> Selesai/IFU -> Distribusi Doc Control) + progress TTD
+- [x] Register: filter status + rentang tanggal
+- [x] Tgl selesai revisi ditangkap saat drawing jadi controlled (IFU)
+
 ## Kredensial TTD (final)
 - agus / AgusMks2026 (Produksi - Kepala Produksi)
 - prodstaff / ProdMks2026 (Staff Produksi)

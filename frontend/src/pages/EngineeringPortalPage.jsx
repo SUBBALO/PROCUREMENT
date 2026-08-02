@@ -2,6 +2,7 @@ import React from "react";
 import DeptPortal from "../components/DeptPortal";
 import EngineeringQueuePanel from "../components/EngineeringQueuePanel";
 import MyJobQueuePanel from "../components/MyJobQueuePanel";
+import EcnSummaryPanel from "../components/EcnSummaryPanel";
 import { Wrench, Package, CurrencyCircleDollar, FileText, Kanban, ClipboardText as ClipboardIcon, Tray } from "@phosphor-icons/react";
 import { useAuth } from "../lib/auth";
 
@@ -85,6 +86,7 @@ export default function EngineeringPortalPage() {
     <DeptPortal deptLabel="Engineering Department" deptTagline="Antrian Drawing Request · Tugas Saya · Costing · BOM · Master Drawing" accentColor="amber" cards={CARDS} compactCards>
       <EngineeringQueuePanel isHead={isHead} isEngUser={isEngUser} />
       {isEngUser && <MyJobQueuePanel compact />}
+      {isHead && <EcnSummaryPanel />}
     </DeptPortal>
   );
 }
