@@ -3204,6 +3204,80 @@ async def drawing_page_image(drawing_id: str, page: int = 0, target: str = "mks"
                              headers={"Cache-Control": "no-store"})
 
 
+async def _revision_snapshot_bytes(drawing_id: str, rev_id: str, which: str = "mks") -> bytes:
+    """Ambil bytes PDF versi lama dari snapshot history revisi (berdasarkan file_id yang disimpan)."""
+    d = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}}, {"_id": 0, "revisions": 1})
+    if not d:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    rev = next((r for r in (d.get("revisions") or []) if r.get("id") == rev_id), None)
+    if not rev:
+        raise HTTPException(status_code=404, detail="Riwayat revisi tidak ditemukan")
+    snap = rev.get("snapshot") or {}
+    fid = snap.get("customer_ref_file_id") if which == "customer" else snap.get("file_id")
+    if not fid:
+        raise HTTPException(status_code=404, detail="File versi lama tidak tersedia untuk revisi ini")
+    try:
+        stream = await _fs().open_download_stream(ObjectId(fid))
+        return await stream.read()
+    except Exception:
+        raise HTTPException(status_code=404, detail="File versi lama tidak ditemukan di penyimpanan")
+
+
+@router.get("/drawings/{drawing_id}/revisions/{rev_id}/page-meta")
+async def revision_snapshot_page_meta(drawing_id: str, rev_id: str, which: str = "mks",
+                                      current: dict = Depends(get_current_user)):
+    """Metadata halaman PDF versi lama (history revisi)."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    raw = await _revision_snapshot_bytes(drawing_id, rev_id, which)
+    import fitz  # PyMuPDF
+    try:
+        doc = fitz.open(stream=raw, filetype="pdf")
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"File bukan PDF valid: {e}")
+    sizes = [{"w": round(p.rect.width, 2), "h": round(p.rect.height, 2)} for p in doc]
+    n = doc.page_count
+    doc.close()
+    return {"pages": n, "sizes": sizes}
+
+
+@router.get("/drawings/{drawing_id}/revisions/{rev_id}/page-image")
+async def revision_snapshot_page_image(drawing_id: str, rev_id: str, page: int = 0,
+                                       scale: float = 2.0, which: str = "mks",
+                                       current: dict = Depends(get_current_user)):
+    """Render satu halaman PDF versi lama (history revisi) menjadi PNG."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    raw = await _revision_snapshot_bytes(drawing_id, rev_id, which)
+    import fitz  # PyMuPDF
+    try:
+        doc = fitz.open(stream=raw, filetype="pdf")
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"File bukan PDF valid: {e}")
+    if page < 0 or page >= doc.page_count:
+        doc.close()
+        raise HTTPException(status_code=404, detail="Halaman tidak ada")
+    scale = max(1.0, min(3.0, float(scale or 2.0)))
+    pg = doc.load_page(page)
+    pix = pg.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+    png = pix.tobytes("png")
+    doc.close()
+    return StreamingResponse(io.BytesIO(png), media_type="image/png",
+                             headers={"Cache-Control": "no-store"})
+
+
+@router.get("/drawings/{drawing_id}/revisions/{rev_id}/download")
+async def revision_snapshot_download(drawing_id: str, rev_id: str, which: str = "mks",
+                                     current: dict = Depends(get_current_user)):
+    """Unduh PDF versi lama (history revisi)."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    raw = await _revision_snapshot_bytes(drawing_id, rev_id, which)
+    fname = f"{drawing_id}_rev-{rev_id[:8]}_{which}.pdf"
+    return StreamingResponse(io.BytesIO(raw), media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
 @router.get("/drawings/pending-dc-stamp")
 async def list_pending_dc_stamp(current: dict = Depends(get_current_user)):
     """List drawing yg sudah approved tapi belum di-stamp DC (untuk halaman Document Distribution Record)."""

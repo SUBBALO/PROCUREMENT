@@ -91,6 +91,9 @@ export default function EngineeringWorkOrderPage() {
       {/* Alur Revisi ECN — gate "Lanjut Kerja" setelah ECN disetujui Eng Leader */}
       <RevisionFlowPanel drawing={drawing} rr={rr} isEngUser={isEngUser} onReload={load} />
 
+      {/* Riwayat Revisi ECN — lihat & buka PDF versi lama tiap Rev */}
+      <RevisionHistoryPanel drawing={drawing} />
+
 
       {/* Info card: assign, prepared_by, from DRF */}
       <Card className="rounded-none border-slate-200 p-4 bg-slate-50">
@@ -280,9 +283,85 @@ function RevisionFlowPanel({ drawing, rr, isEngUser, onReload }) {
   return null;
 }
 
+/* ── Revision History Panel ──────────────────────────────────────────────
+ * Menampilkan riwayat revisi ECN (snapshot data lama tiap Rev) dengan
+ * kemampuan membuka/mengunduh PDF MKS versi lama.
+ */
+function RevisionHistoryPanel({ drawing }) {
+  const [preview, setPreview] = useState(null);
+  const apiUrl = process.env.REACT_APP_BACKEND_URL;
+  const history = (drawing.revisions || [])
+    .filter((r) => r.type === "ecn_revision")
+    .slice()
+    .reverse(); // terbaru dulu
+  if (history.length === 0) return null;
+
+  return (
+    <div className="border-2 border-slate-300" data-testid="rev-history-panel">
+      <div className="px-3 py-2 bg-slate-700 text-white flex items-center gap-2">
+        <ClipboardText size={16} weight="bold" />
+        <div className="text-[11px] uppercase tracking-widest font-bold">Riwayat Revisi (History)</div>
+        <span className="ml-auto text-[10px] bg-white/20 px-2 py-0.5 rounded-full">{history.length} versi</span>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {history.map((rev) => {
+          const snap = rev.snapshot || {};
+          const hasMks = !!snap.file_id;
+          return (
+            <div key={rev.id} className="p-3 flex items-center justify-between gap-3 hover:bg-slate-50" data-testid={`rev-hist-${rev.id}`}>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-white">Rev {rev.rev_no ?? 0}</span>
+                  {rev.ecn_no && <span className="font-mono text-xs font-bold text-indigo-700">{rev.ecn_no}</span>}
+                  <span className="text-xs text-slate-500">oleh <b>{rev.started_by || "-"}</b></span>
+                  {rev.at && <span className="text-[11px] text-slate-400">· {new Date(rev.at).toLocaleString("id-ID")}</span>}
+                </div>
+                {rev.reason && <div className="text-xs text-slate-600 mt-0.5 truncate" title={rev.reason}>Alasan: {rev.reason}</div>}
+                <div className="text-[11px] text-slate-400 mt-0.5 font-mono">{snap.drawing_no || drawing.drawing_no} · {(snap.approvals || []).length} TTD tersimpan</div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {hasMks ? (
+                  <>
+                    <button
+                      onClick={() => setPreview(rev)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-slate-700 border border-slate-300 hover:bg-slate-100"
+                      data-testid={`rev-hist-view-${rev.id}`}
+                    >
+                      <Eye size={13} weight="bold" /> Lihat PDF Rev {rev.rev_no ?? 0}
+                    </button>
+                    <a
+                      href={`${apiUrl}/api/drawings/${drawing.id}/revisions/${rev.id}/download`}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-sky-700 border border-sky-300 hover:bg-sky-50"
+                      data-testid={`rev-hist-dl-${rev.id}`}
+                    >
+                      <DownloadSimple size={13} weight="bold" /> Unduh
+                    </a>
+                  </>
+                ) : (
+                  <span className="text-[11px] text-slate-400 italic">Tidak ada PDF versi ini</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {preview && (
+        <PdfPreviewModal
+          metaUrl={`/drawings/${drawing.id}/revisions/${preview.id}/page-meta`}
+          pageUrlBuilder={(n) => `${apiUrl}/api/drawings/${drawing.id}/revisions/${preview.id}/page-image?page=${n}&scale=2`}
+          title={`${preview.snapshot?.drawing_no || drawing.drawing_no} · Rev ${preview.rev_no ?? 0}${preview.ecn_no ? " · " + preview.ecn_no : ""}`}
+          downloadUrl={`${apiUrl}/api/drawings/${drawing.id}/revisions/${preview.id}/download`}
+          onClose={() => setPreview(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 function RevisionNotesPanel({ drawing }) {
   const [preview, setPreview] = useState(null);
-  const revisions = (drawing.revisions || []).slice().reverse(); // terbaru dulu
+  const revisions = (drawing.revisions || []).filter((r) => r.type !== "ecn_revision").slice().reverse(); // reject notes saja, terbaru dulu
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
   if (revisions.length === 0) return null;
   const isDraft = (drawing.approval_status || "draft") === "draft";
