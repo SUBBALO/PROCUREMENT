@@ -1,14 +1,14 @@
-"""Engineering KPI — laporan bulanan yang dihitung dari data ERP nyata (auditable).
+"""Engineering KPI — laporan bulanan (format mengikuti Excel "KPI MKS ENG Rev.0").
 
-Setiap KPI mengembalikan: nilai, target, pembilang/penyebut, mode (auto/manual),
-sumber data (audit trail), dan endpoint detail untuk menelusuri record aslinya.
+Tabel per-tahun: tiap KPI punya nilai per bulan (Jan..Des) + Actual (rata-rata) + Skor + Kategori.
+Semua angka dihitung dari data ERP nyata (auditable): setiap sel bulan bisa ditelusur ke record aslinya.
 
-Sumber data (agar jelas saat audit):
+Sumber data:
 - drawings          : status='Issued' (drawing rilis), pdf_match_status (validasi MKS),
                       revision, revision_request (NC/reject), updated_at (tgl rilis).
 - ecns (kind='ecn') : sumber REVISI drawing/BOM (drawing_no / bom_no yang direvisi).
 - boms              : engineering_status='approved', rev_no.
-- drawing_requests  : expected_due_date (jadwal rencana) + linked_drawing_ids.
+- drawing_requests  : expected_due_date (jadwal) + linked_drawing_ids.
 - inquiries         : completed_at vs customer_deadline (on-time costing).
 """
 from __future__ import annotations
@@ -18,15 +18,72 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from db import db
-from deps import get_current_user, is_engineering
+from deps import get_current_user, is_engineering, is_super_admin_user
 
 router = APIRouter(tags=["engineering_kpi"])
 
-TARGET = 95.0  # target semua KPI (≥ 95%)
+TARGET = 95.0
+
+_KPI_VIEW_ROLES = {"admin", "super_admin", "supervisor", "director", "management"}
 
 
-def _ym(year: int, month: int) -> str:
-    return f"{year:04d}-{month:02d}"
+def _can_view_kpi(user: dict) -> bool:
+    return is_engineering(user) or is_super_admin_user(user) or (user or {}).get("role") in _KPI_VIEW_ROLES
+
+
+# Metadata KPI (urutan & teks mengikuti form Excel yang teregister)
+KPI_DEFS = [
+    {"key": "drawing_customer_nc", "no": 1,
+     "name": "Drawing complies to customer requirements",
+     "name_id": "Drawing sesuai kebutuhan customer (tanpa NC)",
+     "formula": "(Jumlah Drawing Release tanpa Non-Conformity / Total Drawing Release) × 100%",
+     "mode": "auto", "cat": "E",
+     "num_label": "tanpa NC", "den_label": "total drawing rilis",
+     "source": "drawings status='Issued' pada bulan tsb; NC = adanya field revision_request (reject customer/head)."},
+    {"key": "drawing_no_revision", "no": 2,
+     "name": "Drawing compliance with standard requirements",
+     "name_id": "Drawing tanpa revisi (sesuai standar internal & eksternal)",
+     "formula": "(Jumlah Drawing Release tanpa Revisi / Total Drawing Release) × 100%",
+     "mode": "auto", "cat": "E",
+     "num_label": "tanpa revisi", "den_label": "total drawing rilis",
+     "source": "drawings.revision (harus Rev-0) DAN drawing_no tidak ada di ecns(kind='ecn')."},
+    {"key": "bom_no_revision", "no": 3,
+     "name": "BOM compliance rate with project requirements",
+     "name_id": "BOM tanpa revisi (sesuai project)",
+     "formula": "(Jumlah BOM Release tanpa Revisi / Total BOM Release) × 100%",
+     "mode": "auto", "cat": "E",
+     "num_label": "tanpa revisi", "den_label": "total BOM approved",
+     "source": "boms.engineering_status='approved', rev_no=0, DAN bom_no tidak ada di ecns(kind='ecn')."},
+    {"key": "drawing_ontime", "no": 4,
+     "name": "On Time Drawing completion against plan schedule",
+     "name_id": "On-Time Drawing completion (sesuai jadwal)",
+     "formula": "(Jumlah Drawing selesai tepat waktu / Total Drawing ber-jadwal) × 100%",
+     "mode": "auto", "cat": "E",
+     "num_label": "tepat waktu", "den_label": "drawing ber-jadwal",
+     "source": "Tgl rilis drawing vs drawing_requests.expected_due_date (hanya drawing yang punya jadwal DRF)."},
+    {"key": "costing_ontime", "no": 5,
+     "name": "On Time Costing Completion against due date schedule",
+     "name_id": "On-Time Costing completion (sesuai due date)",
+     "formula": "(Jumlah Costing selesai tepat waktu / Total Costing ber-deadline) × 100%",
+     "mode": "auto", "cat": "S",
+     "num_label": "tepat waktu", "den_label": "costing ber-deadline",
+     "source": "inquiries.completed_at vs customer_deadline (hanya inquiry selesai & punya deadline)."},
+    {"key": "drawing_template_mks", "no": 6,
+     "name": "Drawing complies with the standardized template",
+     "name_id": "Drawing sesuai template standar (MKS)",
+     "formula": "(Jumlah Drawing sesuai template MKS / Total Drawing tervalidasi) × 100%",
+     "mode": "auto", "cat": "E",
+     "num_label": "lolos MKS", "den_label": "drawing tervalidasi",
+     "source": "drawings.pdf_match_status: 'verified'=lolos validasi MKS; 'warning'=tidak sesuai (legacy dikecualikan)."},
+    {"key": "response_time", "no": 7,
+     "name": "Response Time to Production Issues / Feedback",
+     "name_id": "Response time isu produksi (≤ 2 jam)",
+     "formula": "(Jumlah respon ≤ 2 jam / Total isu produksi) × 100%",
+     "mode": "manual", "cat": "E",
+     "num_label": "respon ≤ 2 jam", "den_label": "total isu",
+     "source": "Belum ada sistem tiket/log isu produksi di ERP — input MANUAL oleh Eng Leader."},
+]
+KPI_BY_KEY = {k["key"]: k for k in KPI_DEFS}
 
 
 def _date_of(*vals) -> Optional[str]:
@@ -44,19 +101,25 @@ def _pct(num: int, den: int):
     return round(num / den * 100, 1) if den else None
 
 
-async def _compute(year: int, month: int) -> dict:
-    ym = _ym(year, month)
+def _category(v):
+    if v is None:
+        return None
+    if v >= 95:
+        return "Luar Biasa"
+    if v >= 85:
+        return "Baik"
+    if v >= 71:
+        return "Cukup"
+    return "Kurang"
 
+
+async def _load_ctx():
     drawings = await db.drawings.find({}).to_list(length=None)
     boms = await db.boms.find({}).to_list(length=None)
     inquiries = await db.inquiries.find({}).to_list(length=None)
     drfs = await db.drawing_requests.find({}).to_list(length=None)
-
-    # Set drawing_no / bom_no yang PERNAH direvisi (ECN, bukan ECR)
     ecn_dwg = set(x for x in await db.ecns.distinct("drawing_no", {"kind": "ecn"}) if x)
     ecn_bom = set(x for x in await db.ecns.distinct("bom_no", {"kind": "ecn"}) if x)
-
-    # Map drawing_id -> expected_due_date (dari DRF)
     due_by_dwg: dict = {}
     for r in drfs:
         due = r.get("expected_due_date")
@@ -67,164 +130,122 @@ async def _compute(year: int, month: int) -> dict:
             ids.append(r.get("linked_drawing_id"))
         for did in ids:
             due_by_dwg[did] = due
+    return {"drawings": drawings, "boms": boms, "inquiries": inquiries,
+            "ecn_dwg": ecn_dwg, "ecn_bom": ecn_bom, "due_by_dwg": due_by_dwg}
 
-    def dwg_date(d):
-        return _date_of(d.get("updated_at"), d.get("drawing_date"), d.get("created_at"))
 
-    # Drawing "rilis" pada periode = status Issued & tgl rilis di bulan tsb
-    issued = [d for d in drawings if str(d.get("status") or "").lower() == "issued" and _in_period(dwg_date(d), ym)]
+def _dwg_date(d):
+    return _date_of(d.get("updated_at"), d.get("drawing_date"), d.get("created_at"))
 
+
+def _bom_date(b):
+    return _date_of(b.get("bom_date"), b.get("uploaded_at"), b.get("created_at"))
+
+
+def _kpi_records(ctx: dict, key: str, ym: str) -> list:
+    """Record penyusun sebuah KPI pada satu bulan (ym='YYYY-MM'). Sumber tunggal untuk
+    nilai bulanan & audit. Setiap record: {ref, ok, note, date}."""
+    drawings = ctx["drawings"]
+    issued = [d for d in drawings if str(d.get("status") or "").lower() == "issued" and _in_period(_dwg_date(d), ym)]
+
+    if key == "drawing_customer_nc":
+        return [{"ref": d.get("drawing_no"), "ok": not bool(d.get("revision_request")),
+                 "note": "Ada revision_request (NC)" if d.get("revision_request") else "Tidak ada NC",
+                 "date": (_dwg_date(d) or "")[:10]} for d in issued]
+
+    if key == "drawing_no_revision":
+        out = []
+        for d in issued:
+            rev = str(d.get("revision") or "").strip()
+            revised = (rev not in ("", "Rev-0", "REV-0", "rev-0")) or (d.get("drawing_no") in ctx["ecn_dwg"])
+            out.append({"ref": d.get("drawing_no"), "ok": not revised,
+                        "note": f"revision={rev or '-'}" + (" · ada ECN" if d.get("drawing_no") in ctx["ecn_dwg"] else ""),
+                        "date": (_dwg_date(d) or "")[:10]})
+        return out
+
+    if key == "bom_no_revision":
+        approved = [b for b in ctx["boms"] if str(b.get("engineering_status") or "").lower() == "approved" and _in_period(_bom_date(b), ym)]
+        out = []
+        for b in approved:
+            revised = (int(b.get("rev_no") or 0) > 0) or (b.get("bom_no") in ctx["ecn_bom"])
+            out.append({"ref": b.get("bom_no"), "ok": not revised,
+                        "note": f"rev_no={b.get('rev_no', 0)}" + (" · ada ECN" if b.get("bom_no") in ctx["ecn_bom"] else ""),
+                        "date": (_bom_date(b) or "")[:10]})
+        return out
+
+    if key == "drawing_ontime":
+        out = []
+        for d in issued:
+            due = ctx["due_by_dwg"].get(d.get("id"))
+            if not due:
+                continue
+            done = (_dwg_date(d) or "")[:10]
+            out.append({"ref": d.get("drawing_no"), "ok": done <= str(due)[:10],
+                        "note": f"selesai {done} vs due {str(due)[:10]}", "date": done})
+        return out
+
+    if key == "costing_ontime":
+        out = []
+        for i in ctx["inquiries"]:
+            comp = i.get("completed_at")
+            dl = i.get("customer_deadline")
+            if not comp or not _in_period(comp, ym) or not dl:
+                continue
+            out.append({"ref": i.get("inquiry_no"), "ok": str(comp)[:10] <= str(dl)[:10],
+                        "note": f"selesai {str(comp)[:10]} vs deadline {str(dl)[:10]}", "date": str(comp)[:10]})
+        return out
+
+    if key == "drawing_template_mks":
+        validated = [d for d in drawings if str(d.get("pdf_match_status") or "") in ("verified", "warning") and _in_period(_dwg_date(d), ym)]
+        return [{"ref": d.get("drawing_no"), "ok": d.get("pdf_match_status") == "verified",
+                 "note": f"pdf_match_status={d.get('pdf_match_status')}", "date": (_dwg_date(d) or "")[:10]} for d in validated]
+
+    return []  # response_time (manual) & unknown
+
+
+def _month_metric(ctx: dict, key: str, year: int, month: int):
+    if KPI_BY_KEY[key]["mode"] == "manual":
+        return {"value": None, "num": None, "den": None}
+    recs = _kpi_records(ctx, key, f"{year:04d}-{month:02d}")
+    den = len(recs)
+    num = sum(1 for r in recs if r["ok"])
+    return {"value": _pct(num, den), "num": num, "den": den}
+
+
+async def _compute_year(year: int) -> dict:
+    ctx = await _load_ctx()
     kpis = []
-
-    # ---- KPI 1: Drawing sesuai kebutuhan customer (tanpa NC) ----
-    den1 = len(issued)
-    recs1 = [{"ref": d.get("drawing_no"), "ok": not bool(d.get("revision_request")),
-              "note": "Ada revision_request (NC/reject)" if d.get("revision_request") else "Tidak ada NC"} for d in issued]
-    num1 = sum(1 for r in recs1 if r["ok"])
-    kpis.append({
-        "key": "drawing_customer_nc", "no": 1,
-        "name": "Drawing sesuai kebutuhan customer (tanpa NC)",
-        "mode": "auto", "target": TARGET, "unit": "%",
-        "numerator": num1, "denominator": den1, "value": _pct(num1, den1),
-        "source": "drawings status='Issued' pada bulan ini; NC = adanya field revision_request (reject customer/head).",
-        "num_label": "Drawing tanpa NC", "den_label": "Total drawing rilis",
-    })
-
-    # ---- KPI 2: Drawing tanpa revisi (compliance standar) ----
-    den2 = len(issued)
-    recs2 = []
-    for d in issued:
-        rev = str(d.get("revision") or "").strip()
-        revised = (rev not in ("", "Rev-0", "REV-0", "rev-0")) or (d.get("drawing_no") in ecn_dwg)
-        recs2.append({"ref": d.get("drawing_no"), "ok": not revised,
-                      "note": f"revision={rev or '-'}" + (" · ada ECN" if d.get("drawing_no") in ecn_dwg else "")})
-    num2 = sum(1 for r in recs2 if r["ok"])
-    kpis.append({
-        "key": "drawing_no_revision", "no": 2,
-        "name": "Drawing tanpa revisi (sesuai standar)",
-        "mode": "auto", "target": TARGET, "unit": "%",
-        "numerator": num2, "denominator": den2, "value": _pct(num2, den2),
-        "source": "drawings.revision (harus Rev-0) DAN drawing_no tidak ada di ecns(kind='ecn').",
-        "num_label": "Drawing tanpa revisi", "den_label": "Total drawing rilis",
-    })
-
-    # ---- KPI 3: BOM tanpa revisi (compliance project) ----
-    def bom_date(b):
-        return _date_of(b.get("bom_date"), b.get("uploaded_at"), b.get("created_at"))
-    approved_bom = [b for b in boms if str(b.get("engineering_status") or "").lower() == "approved" and _in_period(bom_date(b), ym)]
-    den3 = len(approved_bom)
-    recs3 = []
-    for b in approved_bom:
-        revised = (int(b.get("rev_no") or 0) > 0) or (b.get("bom_no") in ecn_bom)
-        recs3.append({"ref": b.get("bom_no"), "ok": not revised,
-                      "note": f"rev_no={b.get('rev_no', 0)}" + (" · ada ECN" if b.get("bom_no") in ecn_bom else "")})
-    num3 = sum(1 for r in recs3 if r["ok"])
-    kpis.append({
-        "key": "bom_no_revision", "no": 3,
-        "name": "BOM tanpa revisi (sesuai project)",
-        "mode": "auto", "target": TARGET, "unit": "%",
-        "numerator": num3, "denominator": den3, "value": _pct(num3, den3),
-        "source": "boms.engineering_status='approved', rev_no=0, DAN bom_no tidak ada di ecns(kind='ecn').",
-        "num_label": "BOM tanpa revisi", "den_label": "Total BOM approved",
-    })
-
-    # ---- KPI 4: On-Time Drawing completion ----
-    recs4 = []
-    for d in issued:
-        due = due_by_dwg.get(d.get("id"))
-        if not due:
-            continue
-        done = (dwg_date(d) or "")[:10]
-        ok = done <= str(due)[:10]
-        recs4.append({"ref": d.get("drawing_no"), "ok": ok, "note": f"selesai {done} vs due {str(due)[:10]}"})
-    den4 = len(recs4)
-    num4 = sum(1 for r in recs4 if r["ok"])
-    kpis.append({
-        "key": "drawing_ontime", "no": 4,
-        "name": "On-Time Drawing completion",
-        "mode": "auto", "target": TARGET, "unit": "%",
-        "numerator": num4, "denominator": den4, "value": _pct(num4, den4),
-        "source": "Tgl rilis drawing vs drawing_requests.expected_due_date (hanya drawing yang punya jadwal DRF).",
-        "num_label": "Drawing tepat waktu", "den_label": "Drawing ber-jadwal",
-    })
-
-    # ---- KPI 5: On-Time Costing completion ----
-    recs5 = []
-    for i in inquiries:
-        comp = i.get("completed_at")
-        dl = i.get("customer_deadline")
-        if not comp or not _in_period(comp, ym) or not dl:
-            continue
-        ok = str(comp)[:10] <= str(dl)[:10]
-        recs5.append({"ref": i.get("inquiry_no"), "ok": ok, "note": f"selesai {str(comp)[:10]} vs deadline {str(dl)[:10]}"})
-    den5 = len(recs5)
-    num5 = sum(1 for r in recs5 if r["ok"])
-    kpis.append({
-        "key": "costing_ontime", "no": 5,
-        "name": "On-Time Costing completion",
-        "mode": "auto", "target": TARGET, "unit": "%",
-        "numerator": num5, "denominator": den5, "value": _pct(num5, den5),
-        "source": "inquiries.completed_at vs customer_deadline (hanya inquiry yang selesai & punya deadline).",
-        "num_label": "Costing tepat waktu", "den_label": "Costing ber-deadline",
-    })
-
-    # ---- KPI 6: Drawing sesuai template standar (validasi MKS) ----
-    validated = [d for d in drawings if str(d.get("pdf_match_status") or "") in ("verified", "warning") and _in_period(dwg_date(d), ym)]
-    recs6 = [{"ref": d.get("drawing_no"), "ok": d.get("pdf_match_status") == "verified",
-              "note": f"pdf_match_status={d.get('pdf_match_status')}"} for d in validated]
-    den6 = len(recs6)
-    num6 = sum(1 for r in recs6 if r["ok"])
-    kpis.append({
-        "key": "drawing_template_mks", "no": 6,
-        "name": "Drawing sesuai template standar (MKS)",
-        "mode": "auto", "target": TARGET, "unit": "%",
-        "numerator": num6, "denominator": den6, "value": _pct(num6, den6),
-        "source": "drawings.pdf_match_status: 'verified' = lolos validasi MKS; 'warning' = tidak sesuai (legacy dikecualikan).",
-        "num_label": "Lolos validasi MKS", "den_label": "Drawing tervalidasi",
-    })
-
-    # ---- KPI 7: Response time isu produksi (≤ 2 jam) — MANUAL ----
-    kpis.append({
-        "key": "response_time", "no": 7,
-        "name": "Response time isu produksi (≤ 2 jam)",
-        "mode": "manual", "target": TARGET, "unit": "%",
-        "numerator": None, "denominator": None, "value": None,
-        "source": "Belum ada sistem tiket/log isu produksi di ERP — input MANUAL oleh Eng Leader.",
-        "num_label": "Respon ≤ 2 jam", "den_label": "Total isu",
-    })
-
-    auto_vals = [k["value"] for k in kpis if k["mode"] == "auto" and k["value"] is not None]
-    overall = round(sum(auto_vals) / len(auto_vals), 1) if auto_vals else None
-
-    if overall is None:
-        cat = None
-    elif overall >= 95:
-        cat = "Excellent"
-    elif overall >= 85:
-        cat = "Good"
-    elif overall >= 71:
-        cat = "Fair"
-    else:
-        cat = "Poor"
-
-    return {
-        "year": year, "month": month, "period": ym,
-        "target": TARGET,
-        "overall_score": overall,
-        "category": cat,
-        "kpis": kpis,
-    }
+    for d in KPI_DEFS:
+        monthly = {}
+        vals = []
+        for m in range(1, 13):
+            mm = _month_metric(ctx, d["key"], year, m)
+            monthly[m] = mm
+            if mm["value"] is not None:
+                vals.append(mm["value"])
+        actual = round(sum(vals) / len(vals), 1) if vals else None
+        kpis.append({
+            **{k: d[k] for k in ("key", "no", "name", "name_id", "formula", "mode", "cat", "num_label", "den_label", "source")},
+            "target": TARGET, "unit": "%",
+            "monthly": monthly,
+            "actual": actual,
+            "achieved": (actual is not None and actual >= TARGET),
+            "category": _category(actual),
+        })
+    auto_actuals = [k["actual"] for k in kpis if k["mode"] == "auto" and k["actual"] is not None]
+    overall = round(sum(auto_actuals) / len(auto_actuals), 1) if auto_actuals else None
+    return {"year": year, "target": TARGET, "overall_score": overall,
+            "overall_category": _category(overall), "kpis": kpis}
 
 
 @router.get("/engineering/kpi")
 async def get_kpi(
     year: int = Query(...),
-    month: int = Query(..., ge=1, le=12),
     current: dict = Depends(get_current_user),
 ):
-    if not is_engineering(current):
-        raise HTTPException(status_code=403, detail="Hanya Engineering yang dapat melihat KPI.")
-    return await _compute(year, month)
+    if not _can_view_kpi(current):
+        raise HTTPException(status_code=403, detail="Hanya Engineering/Manajemen yang dapat melihat KPI.")
+    return await _compute_year(year)
 
 
 @router.get("/engineering/kpi/{key}/records")
@@ -234,89 +255,13 @@ async def get_kpi_records(
     month: int = Query(..., ge=1, le=12),
     current: dict = Depends(get_current_user),
 ):
-    """Detail record penyusun sebuah KPI (untuk audit / telusur)."""
-    if not is_engineering(current):
-        raise HTTPException(status_code=403, detail="Hanya Engineering yang dapat melihat KPI.")
-    data = await _compute(year, month)
-    kpi = next((k for k in data["kpis"] if k["key"] == key), None)
-    if not kpi:
+    """Detail record penyusun sebuah KPI pada bulan tertentu (untuk audit / telusur)."""
+    if not _can_view_kpi(current):
+        raise HTTPException(status_code=403, detail="Hanya Engineering/Manajemen yang dapat melihat KPI.")
+    meta = KPI_BY_KEY.get(key)
+    if not meta:
         raise HTTPException(status_code=404, detail="KPI tidak ditemukan.")
-    # Hitung ulang records untuk key ini (disimpan sementara di _compute via closure tidak tersedia,
-    # jadi kita hitung ringkas kembali dengan memanggil detail builder).
-    records = await _records_for(key, year, month)
-    return {"key": key, "name": kpi["name"], "source": kpi["source"], "records": records}
-
-
-async def _records_for(key: str, year: int, month: int) -> list:
-    ym = _ym(year, month)
-    drawings = await db.drawings.find({}).to_list(length=None)
-
-    def dwg_date(d):
-        return _date_of(d.get("updated_at"), d.get("drawing_date"), d.get("created_at"))
-
-    ecn_dwg = set(x for x in await db.ecns.distinct("drawing_no", {"kind": "ecn"}) if x)
-    ecn_bom = set(x for x in await db.ecns.distinct("bom_no", {"kind": "ecn"}) if x)
-    issued = [d for d in drawings if str(d.get("status") or "").lower() == "issued" and _in_period(dwg_date(d), ym)]
-
-    if key == "drawing_customer_nc":
-        return [{"ref": d.get("drawing_no"), "ok": not bool(d.get("revision_request")),
-                 "note": "Ada revision_request (NC)" if d.get("revision_request") else "Tidak ada NC",
-                 "date": (dwg_date(d) or "")[:10]} for d in issued]
-    if key == "drawing_no_revision":
-        out = []
-        for d in issued:
-            rev = str(d.get("revision") or "").strip()
-            revised = (rev not in ("", "Rev-0", "REV-0", "rev-0")) or (d.get("drawing_no") in ecn_dwg)
-            out.append({"ref": d.get("drawing_no"), "ok": not revised,
-                        "note": f"revision={rev or '-'}" + (" · ada ECN" if d.get("drawing_no") in ecn_dwg else ""),
-                        "date": (dwg_date(d) or "")[:10]})
-        return out
-    if key == "bom_no_revision":
-        boms = await db.boms.find({}).to_list(length=None)
-        def bom_date(b):
-            return _date_of(b.get("bom_date"), b.get("uploaded_at"), b.get("created_at"))
-        approved_bom = [b for b in boms if str(b.get("engineering_status") or "").lower() == "approved" and _in_period(bom_date(b), ym)]
-        out = []
-        for b in approved_bom:
-            revised = (int(b.get("rev_no") or 0) > 0) or (b.get("bom_no") in ecn_bom)
-            out.append({"ref": b.get("bom_no"), "ok": not revised,
-                        "note": f"rev_no={b.get('rev_no', 0)}" + (" · ada ECN" if b.get("bom_no") in ecn_bom else ""),
-                        "date": (bom_date(b) or "")[:10]})
-        return out
-    if key == "drawing_ontime":
-        drfs = await db.drawing_requests.find({}).to_list(length=None)
-        due_by_dwg = {}
-        for r in drfs:
-            due = r.get("expected_due_date")
-            if not due:
-                continue
-            ids = list(r.get("linked_drawing_ids") or [])
-            if r.get("linked_drawing_id"):
-                ids.append(r.get("linked_drawing_id"))
-            for did in ids:
-                due_by_dwg[did] = due
-        out = []
-        for d in issued:
-            due = due_by_dwg.get(d.get("id"))
-            if not due:
-                continue
-            done = (dwg_date(d) or "")[:10]
-            out.append({"ref": d.get("drawing_no"), "ok": done <= str(due)[:10],
-                        "note": f"selesai {done} vs due {str(due)[:10]}", "date": done})
-        return out
-    if key == "costing_ontime":
-        inquiries = await db.inquiries.find({}).to_list(length=None)
-        out = []
-        for i in inquiries:
-            comp = i.get("completed_at")
-            dl = i.get("customer_deadline")
-            if not comp or not _in_period(comp, ym) or not dl:
-                continue
-            out.append({"ref": i.get("inquiry_no"), "ok": str(comp)[:10] <= str(dl)[:10],
-                        "note": f"selesai {str(comp)[:10]} vs deadline {str(dl)[:10]}", "date": str(comp)[:10]})
-        return out
-    if key == "drawing_template_mks":
-        validated = [d for d in drawings if str(d.get("pdf_match_status") or "") in ("verified", "warning") and _in_period(dwg_date(d), ym)]
-        return [{"ref": d.get("drawing_no"), "ok": d.get("pdf_match_status") == "verified",
-                 "note": f"pdf_match_status={d.get('pdf_match_status')}", "date": (dwg_date(d) or "")[:10]} for d in validated]
-    return []
+    ctx = await _load_ctx()
+    records = _kpi_records(ctx, key, f"{year:04d}-{month:02d}")
+    return {"key": key, "name": meta["name_id"], "source": meta["source"],
+            "year": year, "month": month, "records": records}
