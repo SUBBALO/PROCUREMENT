@@ -12,11 +12,15 @@
     "status": "completed"
   },
   {
-    "content": "Redesain Dashboard Engineering: kartu di atas (cardsFirst) + ECN jadi kartu badge + dialog ringkasan",
+    "content": "Redesain Dashboard Engineering: kartu di atas (cardsFirst) + kartu ECN badge navigasi langsung ke Master List",
+    "status": "completed"
+  },
+  {
+    "content": "Pindah strip statistik ECN ke atas halaman Master List ECN & ECR (1x klik, tanpa dialog)",
     "status": "completed"
   },
   {
     "content": "Uji regresi: endpoint image viewer, alur TTD ECN, Repeat Order pull-repeat (testing agent)",
-    "status": "in_progress"
+    "status": "completed"
   }
 ]

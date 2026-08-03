@@ -7,7 +7,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
-import { ClipboardText, ArrowClockwise, MagnifyingGlass, Archive, ArrowSquareOut } from "@phosphor-icons/react";
+import { ArrowClockwise, MagnifyingGlass, Archive, ArrowSquareOut, Clock, PencilSimpleLine, Factory, ShieldCheck } from "@phosphor-icons/react";
 
 const STATUS = {
   draft: "bg-slate-200 text-slate-700 border-slate-400",
@@ -64,6 +64,16 @@ export default function ECNPage() {
   const ecnCount = items.filter((r) => r.kind === "ecn").length;
   const ecrCount = items.filter((r) => r.kind === "ecr").length;
 
+  // Ringkasan status ECN (perubahan drawing) — dipindah dari dashboard ke sini
+  const ecnItems = items.filter((r) => r.kind === "ecn");
+  const ecnSummary = [
+    { key: "pending", label: "Menunggu Leader", value: ecnItems.filter((r) => r.status === "pending").length, icon: Clock, cls: "border-amber-300 text-amber-700 bg-amber-50/60" },
+    { key: "revising", label: "Sedang Revisi", value: ecnItems.filter((r) => r.status === "in_progress" && !r.ack_stage).length, icon: PencilSimpleLine, cls: "border-teal-300 text-teal-700 bg-teal-50/60" },
+    { key: "prod", label: "Menunggu Produksi", value: ecnItems.filter((r) => r.ack_stage === "production").length, icon: Factory, cls: "border-orange-300 text-orange-700 bg-orange-50/60" },
+    { key: "qc", label: "Menunggu QA/QC", value: ecnItems.filter((r) => r.ack_stage === "qa_qc").length, icon: ShieldCheck, cls: "border-sky-300 text-sky-700 bg-sky-50/60" },
+    { key: "done", label: "Selesai (Distribusi)", value: ecnItems.filter((r) => r.ack_stage === "done" || r.ack_doc_control).length, icon: Archive, cls: "border-emerald-300 text-emerald-700 bg-emerald-50/60" },
+  ];
+
   return (
     <div className="p-4 max-w-[1300px] mx-auto space-y-4">
       <BackLink />
@@ -90,6 +100,26 @@ export default function ECNPage() {
             <div className="text-lg font-bold text-blue-800">{ecrCount}</div>
             <div className="text-[10px] uppercase tracking-widest font-bold text-blue-600">ECR</div>
           </div>
+        </div>
+      </div>
+
+      {/* Ringkasan status ECN — Perubahan Drawing (dipindah dari dashboard, tampil langsung di sini) */}
+      <div className="border border-indigo-200 bg-indigo-50/40 rounded-md p-3" data-testid="ecn-summary-strip">
+        <div className="flex items-center gap-2 mb-2">
+          <PencilSimpleLine size={14} weight="bold" className="text-indigo-700" />
+          <span className="text-[11px] uppercase tracking-widest font-bold text-indigo-700">Ringkasan ECN — Perubahan Drawing</span>
+          <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">{ecnCount} total</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+          {ecnSummary.map((s) => (
+            <div key={s.key} className={`border ${s.cls} px-3 py-2 rounded-md`} data-testid={`ecn-strip-stat-${s.key}`}>
+              <div className="flex items-center gap-1.5">
+                <s.icon size={14} weight="bold" />
+                <span className="text-[10px] uppercase tracking-wider font-bold">{s.label}</span>
+              </div>
+              <div className="text-2xl font-bold mt-0.5 tabular-nums">{s.value}</div>
+            </div>
+          ))}
         </div>
       </div>
 
