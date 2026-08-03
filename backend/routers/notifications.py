@@ -63,6 +63,8 @@ async def _gather_notifications(user: dict) -> dict:
                 {"_id": 0, "id": 1, "drawing_no": 1, "so_no": 1, "revision_request": 1},
             ).to_list(length=100)
             ecn_items = []
+            overdue_any = False
+            now_dt = datetime.now(timezone.utc)
             for d in cand:
                 rr = d.get("revision_request") or {}
                 ecn = rr.get("ecn") or {}
@@ -73,21 +75,40 @@ async def _gather_notifications(user: dict) -> dict:
                 mine = (st == "production" and (role_prod or admin_like)) or (st == "qa_qc" and (role_qc or admin_like))
                 if not mine:
                     continue
+                if st == "production":
+                    since = rr.get("completed_at") or rr.get("requested_at")
+                else:
+                    since = (ack.get("production") or {}).get("at") or rr.get("requested_at")
+                days = None
+                overdue = False
+                try:
+                    if since:
+                        sdt = datetime.fromisoformat(str(since).replace("Z", "+00:00"))
+                        days = (now_dt - sdt).days
+                        overdue = days is not None and days >= 2
+                except Exception:
+                    pass
+                if overdue:
+                    overdue_any = True
                 ecn_items.append({
                     "id": d.get("id"),
-                    "title": f"{ecn.get('ecn_no')} menunggu TTD Anda",
-                    "detail": f"{'Acknowledge Produksi' if st == 'production' else 'Tanda Tangan QA/QC'} · {d.get('drawing_no', '')}",
+                    "title": (("TERLAMBAT · " if overdue else "") + f"{ecn.get('ecn_no')} menunggu TTD Anda"),
+                    "detail": f"{'Acknowledge Produksi' if st == 'production' else 'Tanda Tangan QA/QC'} · {d.get('drawing_no', '')}"
+                              + (f" · sudah {days} hari" if days is not None and days > 0 else ""),
                     "sub": f"SO {d.get('so_no', '') or '-'}",
                     "link": "/drawings/pending-my-approval",
                     "kind": "ecn_ttd",
-                    "created_at": rr.get("requested_at"),
+                    "overdue": overdue,
+                    "days_waiting": days,
+                    "created_at": since,
                 })
             if ecn_items:
+                ecn_items.sort(key=lambda x: (not x.get("overdue"), -(x.get("days_waiting") or 0)))
                 categories.append({
                     "key": "ecn_ttd",
-                    "label": "Menunggu TTD ECN",
+                    "label": "Menunggu TTD ECN" + (" (ada TERLAMBAT)" if overdue_any else ""),
                     "count": len(ecn_items),
-                    "severity": "warn",
+                    "severity": "danger" if overdue_any else "warn",
                     "items": ecn_items,
                 })
         except Exception:

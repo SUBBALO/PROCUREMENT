@@ -49,10 +49,24 @@ Alur revisi drawing menggunakan Form ECN (MKS-F-ENG-004) dengan rantai persetuju
 - [x] Modal Review ECN: WAJIB lihat isi ECN + Drawing + centang konfirmasi sebelum TTD (tidak bisa klik buta)
 - [x] Lembar Acknowledgment ECN (PDF, MKS-F-ENG-004) + stamp PNG TTD Produksi & QA/QC sebagai bukti resmi (`GET /drawings/{id}/ecn-sheet`)
 - [x] Notifikasi TTD ke Produksi/QA-QC (kategori 'ecn_ttd' di bell)
-- [x] Ringkasan ECN di dashboard Eng Head (menunggu Produksi/QA-QC/selesai)
+- [x] Ringkasan ECN di dashboard Eng Head (menunggu Produksi/QA/QC/selesai)
 - [x] Register: kolom Timeline (Reg -> Mulai -> Selesai/IFU -> Distribusi Doc Control) + progress TTD
 - [x] Register: filter status + rentang tanggal
 - [x] Tgl selesai revisi ditangkap saat drawing jadi controlled (IFU)
+
+## Tahap 6 — Stabilitas Preview Inline (Fix Bug Iframe 500) — STATUS: COMPLETED
+**Tujuan:** memastikan tab "Drawing (MKS)" di `EcnReviewModal` tidak pernah memunculkan error 500 walaupun file MKS kosong/rusak.
+- [x] Root cause teridentifikasi: `pymupdf.FileDataError: Failed to open stream` saat `fitz.open(stream=pdf_bytes)` menerima bytes non-PDF/invalid
+- [x] Harden endpoint `GET /api/drawings/{id}/pdf-stamped` agar **anti-gagal** untuk kebutuhan iframe preview
+- [x] Tambah helper `_placeholder_pdf()` (1 halaman A4) dengan pesan ramah Bahasa Indonesia
+- [x] Perilaku baru:
+  - Jika drawing tidak ditemukan / `file_id` kosong / file tidak bisa dibaca / bukan PDF valid / stamping gagal → **HTTP 200** + PDF placeholder (bukan 404/500)
+  - Jika file valid → tetap mengembalikan PDF hasil stamping seperti sebelumnya
+- [x] Tambah fallback konversi file Office (legacy import) → PDF bila memungkinkan sebelum stamping
+- [x] Verifikasi via curl:
+  - drawing tanpa file → HTTP 200, `application/pdf`, placeholder ~1.7KB, magic bytes `%PDF-`
+  - drawing dengan file valid → HTTP 200, `application/pdf`, stamped PDF ~13KB
+- [x] Verifikasi via UI: modal review terbuka & tab "Drawing (MKS)" dapat dibuka tanpa error 500/Internal Server Error
 
 ## Kredensial TTD (final)
 - agus / AgusMks2026 (Produksi - Kepala Produksi)
@@ -60,16 +74,43 @@ Alur revisi drawing menggunakan Form ECN (MKS-F-ENG-004) dengan rantai persetuju
 - qcuser / QcMks2026 (QA/QC)
 
 ## Backlog (Upcoming)
-- P1 ECR vs ECN logic
-- P2 Repeat Orders auto-pull old data
-- P3 Universal image-based PDF viewer
-- P4 Excel-to-Image preview
-- P5 Legacy Data Bulk Import
+### P1 — ECR vs ECN logic (Desain & Implementasi)
+- [ ] Definisikan aturan bisnis final (kapan ECR dipakai, kapan ECN dipakai; dampaknya ke repeat order vs workflow aktif)
+- [ ] Model status/flow ECR (request-only) terpisah dari ECN (notice + distribusi + TTD)
+- [ ] Update UI register "Master List ECN & ECR" agar pembedaan jelas (label, filter, timeline)
+- [ ] Migrasi/normalisasi data legacy ECR/ECN lama bila dibutuhkan
+
+### P2 — Repeat Orders auto-pull old data (Phase 2)
+**Catatan:** butuh klarifikasi desain sebelum coding.
+- [ ] Tetapkan definisi "Repeat Order" (berdasarkan SO? customer+part? drawing_no?)
+- [ ] Tentukan data apa saja yang di-*pull* otomatis (BOM, drawing link, routing approval, catatan QC, dsb)
+- [ ] Tentukan aturan override: kapan user boleh edit vs view-only
+- [ ] Rancang endpoint backend + perubahan UI pada pembuatan order/DRF
+- [ ] Uji dengan data SO lama + validasi audit trail
+
+### P3 — Universal image-based PDF viewer
+**Tujuan:** viewer konsisten (render halaman sebagai gambar) untuk menghindari variasi dukungan PDF viewer browser + kontrol UI (tanpa tombol download bila view-only).
+- [ ] Tentukan pendekatan render: server-side (PyMuPDF → PNG per halaman) vs client-side
+- [ ] Endpoint: render page-by-page, caching, proteksi RBAC, watermark/footnote
+- [ ] Integrasi ke modal review (ECN/Drawing) dan halaman view-only (QC/DC)
+
+### P4 — Excel-to-Image preview
+- [ ] Tentukan format file yang didukung (.xlsx, .xls)
+- [ ] Pipeline konversi: Excel → PDF → PNG (atau langsung ke gambar)
+- [ ] Preview inline (tanpa download) + RBAC
+
+### P5 — Legacy Data Bulk Import
+- [ ] Template import + validasi
+- [ ] Mapping field ke schema `drawings` + `revisions`
+- [ ] Import file ke GridFS + indexing + audit trail
 
 ## File Kunci
 - `frontend/src/components/EcnRevisionModal.jsx`
+- `frontend/src/components/EcnReviewModal.jsx`
 - `frontend/src/pages/EngineeringWorkOrderPage.jsx`
-- `backend/routers/drawing_register.py` (endpoint request-revision & revision-decision)
+- `frontend/src/pages/PendingApprovalDrawingsPage.jsx`
+- `backend/routers/drawing_register.py` (endpoint ECN & `pdf-stamped` hardened)
+- `backend/utils/pdf_stamper.py`
 
 ## Akun Test
 - `trisna` / `eng123` (eng_staff), `engstaff` (eng_staff)

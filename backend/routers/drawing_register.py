@@ -2408,7 +2408,7 @@ async def decide_drawing_revision(drawing_id: str, payload: RevisionDecisionIn, 
     rr["decided_at"] = now
     rr["decision_notes"] = (payload.notes or "").strip()
     ecn = rr.get("ecn") or {}
-    ecn.setdefault("approvals", {})["head_of_dept"] = {"name": who, "at": now, "notes": (payload.notes or "").strip()}
+    ecn.setdefault("approvals", {})["head_of_dept"] = {"name": who, "user_id": current.get("id"), "at": now, "notes": (payload.notes or "").strip()}
     rr["ecn"] = ecn
     if payload.approve:
         # ECN disetujui — TIDAK langsung buka draft. Drawing menunggu staff klik "Lanjut Kerja"
@@ -3153,27 +3153,88 @@ async def drawing_stamp_so(
     return {"success": True, "so_stamp": so_stamp, "approval_status": "released"}
 
 
+def _placeholder_pdf(title: str = "File Tidak Tersedia", subtitle: str = "") -> bytes:
+    """Bangun PDF placeholder 1 halaman yang ramah (dipakai bila file MKS belum ada / rusak),
+    agar preview iframe tidak menampilkan error 500/404 melainkan pesan yang jelas."""
+    import fitz  # PyMuPDF
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)  # A4 portrait
+    ink = (0.09, 0.11, 0.20)
+    gray = (0.42, 0.45, 0.52)
+    violet = (0.30, 0.16, 0.55)
+    # Kotak info di tengah
+    box = fitz.Rect(90, 300, 505, 470)
+    page.draw_rect(box, color=(0.80, 0.78, 0.90), fill=(0.96, 0.95, 0.99), width=1.2)
+    page.insert_text((120, 350), "Drawing (MKS)", fontsize=11, fontname="hebo", color=violet)
+    page.insert_text((120, 385), str(title or "File Tidak Tersedia"), fontsize=18, fontname="hebo", color=ink)
+    if subtitle:
+        # Bungkus teks panjang sederhana per ~60 karakter
+        line = ""
+        yy = 415
+        for word in str(subtitle).split():
+            if len(line) + len(word) + 1 > 62:
+                page.insert_text((120, yy), line, fontsize=10, fontname="helv", color=gray)
+                yy += 16
+                line = word
+            else:
+                line = (line + " " + word).strip()
+        if line:
+            page.insert_text((120, yy), line, fontsize=10, fontname="helv", color=gray)
+    out = doc.tobytes()
+    doc.close()
+    return out
+
+
 @router.get("/drawings/{drawing_id}/pdf-stamped")
 async def drawing_pdf_stamped(drawing_id: str, current: dict = Depends(get_current_user)):
     """Return PDF drawing dengan overlay stamps (approval signatures + DC stamp bila ada).
 
     Watermark 'UNCONTROLLED COPY WHEN PRINTED' otomatis muncul bila user BUKAN doc_control/admin
     dan drawing sudah controlled. Print footer 'Printed by: [nama] | tgl | jam' selalu ada.
+
+    Anti-gagal: bila file MKS belum di-upload / rusak / gagal di-stamp, endpoint mengembalikan
+    PDF placeholder ramah (status 200) alih-alih 500/404, supaya preview iframe tetap mulus.
     """
     from fastapi.responses import StreamingResponse
+
+    def _placeholder_response(title: str, subtitle: str = ""):
+        return StreamingResponse(
+            io.BytesIO(_placeholder_pdf(title, subtitle)),
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'inline; filename="placeholder.pdf"'},
+        )
+
     drawing = await db.drawings.find_one({"id": drawing_id})
     if not drawing:
-        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+        return _placeholder_response("Drawing Tidak Ditemukan",
+                                     "Data drawing tidak tersedia di sistem.")
     file_id = drawing.get("file_id")
     if not file_id:
-        raise HTTPException(status_code=404, detail="File PDF drawing belum di-upload")
+        return _placeholder_response("File MKS Belum Diunggah",
+                                     "Drawing ini belum memiliki file MKS yang diunggah. "
+                                     "Silakan hubungi Engineering untuk melengkapi berkas.")
 
     # Load original PDF from GridFS (bucket "drawings")
     try:
         stream = await _fs().open_download_stream(ObjectId(file_id))
         content = await stream.read()
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"File PDF tidak bisa dibaca: {e}")
+    except Exception:
+        return _placeholder_response("File MKS Tidak Dapat Dibaca",
+                                     "Berkas MKS gagal diambil dari penyimpanan. Mungkin file rusak atau hilang.")
+
+    # Legacy import: file bisa berupa Office (.docx) → konversi ke PDF agar bisa dirender.
+    if not (content or b"")[:5].startswith(b"%PDF"):
+        try:
+            fname = drawing.get("filename") or ""
+            ext = fname.lower().rsplit(".", 1)[-1] if "." in fname else ""
+            from utils.office_render import is_office_ext, office_to_pdf
+            if is_office_ext(ext):
+                content = office_to_pdf(content, ext)
+        except Exception:
+            pass
+        if not (content or b"")[:5].startswith(b"%PDF"):
+            return _placeholder_response("Format File Tidak Didukung",
+                                         "Berkas MKS bukan PDF yang valid dan tidak dapat dikonversi untuk pratinjau.")
 
     # Uncontrolled watermark logic: only if drawing is controlled AND user is not DC/admin
     is_dc_or_admin = is_doc_control(current) or is_admin_like(current)
@@ -3199,15 +3260,20 @@ async def drawing_pdf_stamped(drawing_id: str, current: dict = Depends(get_curre
         except Exception:
             pass
 
-    stamped = _apply_pdf_stamps(
-        content,
-        approvals=approvals,
-        dc_stamp=drawing.get("dc_stamp"),
-        watermark_uncontrolled=show_uncontrolled_watermark,
-        printed_by=current.get("name") or current.get("username") or "",
-        signature_bytes_map=signature_bytes_map,
-        so_stamp=drawing.get("so_stamp"),
-    )
+    try:
+        stamped = _apply_pdf_stamps(
+            content,
+            approvals=approvals,
+            dc_stamp=drawing.get("dc_stamp"),
+            watermark_uncontrolled=show_uncontrolled_watermark,
+            printed_by=current.get("name") or current.get("username") or "",
+            signature_bytes_map=signature_bytes_map,
+            so_stamp=drawing.get("so_stamp"),
+        )
+    except Exception:
+        return _placeholder_response("Gagal Memproses Drawing",
+                                     "Terjadi kesalahan saat menyiapkan pratinjau ber-stempel. "
+                                     "Berkas MKS mungkin rusak atau tidak valid.")
     # Iter 18 — audit trail print/preview history
     try:
         await log_action(current, "drawing_preview_stamped", "drawings", drawing_id, {
@@ -3438,10 +3504,13 @@ async def revision_snapshot_download(drawing_id: str, rev_id: str, which: str = 
                              headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
-async def _sig_png_by_user(uid: str):
-    if not uid:
-        return None
-    u = await db.users.find_one({"id": uid}, {"signature_gridfs_id": 1})
+async def _sig_png_by_user(uid: str, name: str = None):
+    """Ambil PNG tanda tangan berdasarkan user_id; fallback cari user berdasarkan nama."""
+    u = None
+    if uid:
+        u = await db.users.find_one({"id": uid}, {"signature_gridfs_id": 1})
+    if not u and name:
+        u = await db.users.find_one({"name": name}, {"signature_gridfs_id": 1})
     sid = (u or {}).get("signature_gridfs_id")
     if not sid:
         return None
@@ -3538,35 +3607,38 @@ async def ecn_sheet_pdf(drawing_id: str, current: dict = Depends(get_current_use
 
     # Tanda tangan
     txt(52, y, "TANDA TANGAN / ACKNOWLEDGMENT", size=8, color=gray, bold=True); y += 8
+    head = (ecn.get("approvals") or {}).get("head_of_dept") or {}
     signers = [
-        ("Disetujui Eng Head", (ecn.get("approvals") or {}).get("head_of_dept")),
+        ("Dibuat (Eng Staff)", {"name": rr.get("requested_by"), "user_id": rr.get("requested_by_id"), "at": rr.get("requested_at")}),
+        ("Disetujui (Eng Leader)", head),
         ("Acknowledge Produksi", ack.get("production")),
         ("Tanda Tangan QA/QC", ack.get("qa_qc")),
         ("Distribusi Doc Control", ack.get("doc_control")),
     ]
-    box_w = (W - 80 - 30) / 4
+    n_sign = len(signers)
+    gap = 8
+    box_w = (W - 80 - gap * (n_sign - 1)) / n_sign
     bx = 40
     by = y
     for title, data in signers:
         rect = fitz.Rect(bx, by, bx + box_w, by + 120)
         page.draw_rect(rect, color=line_c, width=0.8)
-        txt(bx + 8, by + 16, title.upper(), size=6.5, color=gray, bold=True)
+        txt(bx + 6, by + 15, title.upper(), size=6, color=gray, bold=True)
         data = data or {}
-        uid = data.get("user_id")
-        png = await _sig_png_by_user(uid) if uid else None
+        png = await _sig_png_by_user(data.get("user_id"), data.get("name"))
         if png:
             try:
-                page.insert_image(fitz.Rect(bx + 8, by + 24, bx + box_w - 8, by + 74), stream=png, keep_proportion=True)
+                page.insert_image(fitz.Rect(bx + 6, by + 22, bx + box_w - 6, by + 74), stream=png, keep_proportion=True)
             except Exception:
                 pass
         elif data.get("auto"):
-            txt(bx + 8, by + 55, "(otomatis)", size=8, color=gray)
-        page.draw_line((bx + 8, by + 84), (bx + box_w - 8, by + 84), color=line_c, width=0.6)
-        nm = data.get("name") or ("Otomatis" if data.get("auto") else "—")
-        txt(bx + 8, by + 98, nm, size=8, bold=True)
+            txt(bx + 6, by + 52, "(otomatis)", size=7, color=gray)
+        page.draw_line((bx + 6, by + 84), (bx + box_w - 6, by + 84), color=line_c, width=0.6)
+        nm = data.get("name") or ("Otomatis" if data.get("auto") else "-")
+        txt(bx + 6, by + 97, nm, size=7.5, bold=True)
         at = data.get("at")
-        txt(bx + 8, by + 110, fmt(at) if at else "Belum TTD", size=6.5, color=gray)
-        bx += box_w + 10
+        txt(bx + 6, by + 110, fmt(at) if at else "Belum TTD", size=6, color=gray)
+        bx += box_w + gap
 
     # Footer
     txt(40, 812, f"Dicetak: {datetime.now(timezone.utc).strftime('%d %b %Y %H:%M UTC')} oleh {current.get('name') or current.get('username')}", size=7, color=gray)
