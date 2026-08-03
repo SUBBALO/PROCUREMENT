@@ -40,17 +40,6 @@ export default function EngineeringPortalPage() {
 
   const CARDS = [
     ...(isEngUser ? [{
-      key: "my-queue",
-      label: "Antrian Job Saya",
-      stats: "Terima Job · Mulai Kerja",
-      description: "Job yang ditugaskan Eng Leader kepada Anda. Klik Terima untuk mulai kerja (tanggal start tercatat), lalu buka Work Order saat siap.",
-      icon: Tray,
-      href: "/engineering/my-queue",
-      badgeCount: jobPending,
-      accent: "from-teal-500 via-emerald-500 to-green-500",
-      accentText: "text-teal-400",
-    }] : []),
-    ...(isEngUser ? [{
       key: "so-tracker",
       label: "SO Document Tracker",
       stats: "Progress per-SO · Terbit Partial · BOM Siap Beli",
@@ -63,13 +52,13 @@ export default function EngineeringPortalPage() {
     ...(isEngUser ? [{
       key: "work-orders",
       label: "Work Order Engineering",
-      stats: isHead ? "Terima DRF · Assign · Pantau" : "DRF Ditugaskan ke Saya",
+      stats: isHead ? "Terima DRF · Assign · Pantau" : "Job Saya · Kerjakan Drawing",
       description: isHead
         ? "Satu pintu Engineering: terima Drawing Request dari Sales, tunjuk engineer yang mengerjakan, dan pantau yang sedang dikerjakan. Engineer lalu generate nomor drawing (bisa >1 berbagi 1 BOM), upload & TTD."
-        : "Drawing Request yang ditugaskan Eng Leader kepada Anda. Buka untuk generate nomor drawing (bisa >1 dalam 1 request, berbagi 1 BOM), upload dokumen (MKS, customer dwg, nesting), isi BOM, lalu TTD & submit.",
+        : "Berisi tab Job Saya (terima & mulai kerja job yang ditugaskan) dan Work Order (generate nomor drawing, upload dokumen, isi BOM, lalu TTD & submit).",
       icon: Kanban,
-      href: "/engineering/work-orders",
-      badgeCount: isHead ? drfPending : 0,
+      href: isHead ? "/engineering/work-orders" : "/engineering/my-queue",
+      badgeCount: isHead ? drfPending : jobPending,
       accent: "from-teal-500 via-cyan-500 to-sky-500",
       accentText: "text-teal-400",
     }] : []),
@@ -80,7 +69,7 @@ export default function EngineeringPortalPage() {
       badgeCount: ecnTotal,
       accent: "from-indigo-500 via-violet-500 to-fuchsia-500", accentText: "text-indigo-400",
     },
-    ...(isEngUser ? [{
+    ...(isHead ? [{
       key: "workload", label: "Monitor Beban Kerja", stats: "Beban per Engineer · Overload",
       description: "Pantau beban kerja tiap engineer (DRF + Drawing + Inquiry + ECN). Lihat siapa yang Overload / Sibuk / Normal beserta jumlah tugas terlambat.",
       icon: Gauge, href: "/engineering/workload",
@@ -88,14 +77,8 @@ export default function EngineeringPortalPage() {
       accent: "from-rose-500 via-orange-500 to-amber-500", accentText: "text-rose-400",
     }] : []),
     {
-      key: "costing", label: "Costing (Inquiry Sales)", stats: "Request dari Sales",
-      description: "Lihat permintaan costing dari Sales, accept, upload hasil kerja & drawing.",
-      icon: Wrench, href: "/engineering/inquiries",
-      accent: "from-rose-500 via-red-500 to-orange-500", accentText: "text-rose-400",
-    },
-    {
-      key: "inquiry-masterlist", label: "Masterlist Inquiry", stats: "Kategori · Tgl Terima · Tgl Selesai",
-      description: "Rekap seluruh inquiry costing: kategori pekerjaan (Simple/Moderate/Complex), tanggal terima, dan tanggal selesai. View-only untuk pantau progress.",
+      key: "inquiry-masterlist", label: "Masterlist Inquiry", stats: "Antrian Aktif + Rekap · via Tab",
+      description: "Pusat Inquiry Costing: tab Antrian Aktif (accept & upload hasil kerja dari Sales) dan tab Masterlist (rekap semua inquiry: kategori, tgl terima, tgl selesai, lampiran).",
       icon: ClipboardIcon, href: "/engineering/inquiry-masterlist",
       accent: "from-amber-500 via-orange-500 to-red-500", accentText: "text-amber-400",
     },

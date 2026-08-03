@@ -227,63 +227,60 @@ export default function QuotationPage() {
         )}
       </div>
 
-      {/* Quotation stats — clickable filter */}
+      {/* Quotation stats — ringkas + detail digabung jadi satu kartu per status (clickable filter) */}
       {stats && (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" data-testid="quo-stats-grid">
-            <QuoStatCard label="Total Quotation" value={stats.quotations?.total} accent="slate" testid="quo-stat-total" active={statusFilter === ""} onClick={() => setStatusFilter("")} />
-            <QuoStatCard label="On Bidding" value={stats.quotations?.by_status?.on_bidding} accent="amber" testid="quo-stat-on-bidding" active={statusFilter === "on_bidding"} onClick={() => setStatusFilter(statusFilter === "on_bidding" ? "" : "on_bidding")} />
-            <QuoStatCard label="Confirm Order" value={stats.quotations?.by_status?.confirm_order} accent="emerald" testid="quo-stat-confirm" active={statusFilter === "confirm_order"} onClick={() => setStatusFilter(statusFilter === "confirm_order" ? "" : "confirm_order")} />
-            <QuoStatCard label="Cancel" value={stats.quotations?.by_status?.cancel} accent="red" testid="quo-stat-cancel" active={statusFilter === "cancel"} onClick={() => setStatusFilter(statusFilter === "cancel" ? "" : "cancel")} />
-          </div>
-
-          {/* Total nilai (value) per status per currency */}
-          {stats.quotations?.values_by_status && (
-            <Card className="rounded-none border-slate-200 bg-slate-50 p-3 shadow-none" data-testid="quo-values-panel">
-              <div className="text-[10px] uppercase tracking-[0.15em] font-bold text-slate-500 mb-2">Total Nilai Quotation per Status</div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                {[
-                  { key: "on_bidding", label: "On Bidding", color: "amber-700", bgHead: "bg-amber-50 border-amber-200" },
-                  { key: "confirm_order", label: "Confirm Order", color: "emerald-700", bgHead: "bg-emerald-50 border-emerald-200" },
-                  { key: "cancel", label: "Cancel", color: "red-700", bgHead: "bg-red-50 border-red-200" },
-                ].map(({ key, label, color, bgHead }) => {
-                  const vals = stats.quotations?.values_by_status?.[key] || {};
-                  const entries = Object.entries(vals);
-                  const cnt = stats.quotations?.by_status?.[key] || 0;
-                  const pts = stats.quotations?.unique_pts_by_status?.[key] || 0;
-                  return (
-                    <div key={key} className={`bg-white border border-slate-200 p-2 ${bgHead}`}>
-                      <div className={`text-[10px] uppercase tracking-[0.15em] font-bold text-${color} mb-1.5`}>{label}</div>
-                      <div className="grid grid-cols-2 gap-1 text-[10px] mb-1.5">
-                        <div className="border border-slate-200 bg-white/70 px-1.5 py-1">
-                          <div className="text-slate-500 uppercase tracking-[0.05em]">Quotation</div>
-                          <div className="tabular-nums font-bold text-slate-900 text-sm leading-tight" data-testid={`quo-count-${key}`}>{cnt}</div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2" data-testid="quo-stats-grid">
+          {[
+            { key: "", label: "Total Quotation", dot: "bg-slate-400", testid: "quo-stat-total" },
+            { key: "on_bidding", label: "On Bidding", dot: "bg-amber-500", testid: "quo-stat-on-bidding" },
+            { key: "confirm_order", label: "Confirm Order", dot: "bg-emerald-500", testid: "quo-stat-confirm" },
+            { key: "cancel", label: "Cancel", dot: "bg-red-500", testid: "quo-stat-cancel" },
+          ].map((c) => {
+            const isTotal = c.key === "";
+            const cnt = isTotal ? (stats.quotations?.total ?? 0) : (stats.quotations?.by_status?.[c.key] || 0);
+            const pts = isTotal ? null : (stats.quotations?.unique_pts_by_status?.[c.key] || 0);
+            const vals = isTotal ? null : (stats.quotations?.values_by_status?.[c.key] || {});
+            const active = statusFilter === c.key;
+            return (
+              <button
+                key={c.key || "total"}
+                type="button"
+                onClick={() => setStatusFilter(isTotal ? "" : (statusFilter === c.key ? "" : c.key))}
+                data-testid={c.testid}
+                className={`text-left border p-2.5 transition-colors ${
+                  active ? "border-slate-900 ring-1 ring-slate-900 bg-slate-50" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                }`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full ${c.dot} shrink-0`} />
+                  <span className="text-[10px] uppercase tracking-[0.12em] font-bold text-slate-500">{c.label}</span>
+                </div>
+                <div className="mt-1 flex items-baseline gap-1.5">
+                  <span className="text-2xl font-bold tabular-nums text-slate-900 leading-none" style={{ fontFamily: "Chivo, sans-serif" }} data-testid={isTotal ? undefined : `quo-count-${c.key}`}>{cnt}</span>
+                  {pts != null && (
+                    <span className="text-[10px] text-slate-500 whitespace-nowrap">
+                      · <b className="text-slate-700 tabular-nums" data-testid={`quo-pts-${c.key}`}>{pts}</b> perusahaan
+                    </span>
+                  )}
+                </div>
+                {vals != null && (
+                  <div className="mt-1.5 border-t border-slate-100 pt-1 space-y-0.5">
+                    {Object.entries(vals).length === 0 ? (
+                      <div className="text-[10px] text-slate-400 italic">Belum ada nilai</div>
+                    ) : (
+                      Object.entries(vals).map(([cur, amt]) => (
+                        <div key={cur} className="flex justify-between text-[11px] font-mono">
+                          <span className="text-slate-500">{cur}</span>
+                          <span className="font-bold text-slate-900 tabular-nums">{Number(amt).toLocaleString("id-ID")}</span>
                         </div>
-                        <div className="border border-slate-200 bg-white/70 px-1.5 py-1">
-                          <div className="text-slate-500 uppercase tracking-[0.05em]">Perusahaan</div>
-                          <div className="tabular-nums font-bold text-slate-900 text-sm leading-tight" data-testid={`quo-pts-${key}`}>{pts}</div>
-                        </div>
-                      </div>
-                      <div className="text-[9px] uppercase tracking-[0.1em] text-slate-500 font-semibold">Nilai</div>
-                      {entries.length === 0 ? (
-                        <div className="text-slate-400 italic">Belum ada</div>
-                      ) : (
-                        <div className="space-y-0.5">
-                          {entries.map(([cur, amt]) => (
-                            <div key={cur} className="flex justify-between font-mono">
-                              <span className="text-slate-500">{cur}</span>
-                              <span className="font-bold text-slate-900 tabular-nums">{Number(amt).toLocaleString("id-ID")}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-          )}
-        </>
+                      ))
+                    )}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
       )}
 
       <div className="flex items-end gap-3 flex-wrap">

@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import PdfPreviewModal from "../components/PdfPreviewModal";
+import PageTabNav from "../components/PageTabNav";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { toast } from "sonner";
@@ -13,7 +14,7 @@ import {
   Storefront, Wrench, ArrowLeft, Plus, PaperPlaneTilt, Trash, Paperclip, DownloadSimple,
   FileText, ClockCounterClockwise, ChatCircleDots, Check, X, MagnifyingGlass,
   CircleNotch, Warning, ArrowClockwise, PencilSimple, Receipt, MicrosoftExcelLogo,
-  UserPlus, UserCircle, CalendarBlank,
+  UserPlus, UserCircle, CalendarBlank, ClipboardText,
 } from "@phosphor-icons/react";
 import { SortDropdown, sortItems, cmpStr, cmpDateStr } from "../components/SortDropdown";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
@@ -92,6 +93,12 @@ export default function SalesPage() {
   const [editingInquiry, setEditingInquiry] = useState(null);  // draft object to edit
   const [openInquiry, setOpenInquiry] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const isEngInquiryContext = location.pathname === "/engineering/inquiries";
+  const INQ_TABS = [
+    { key: "inq-active", label: "Antrian Aktif", to: "/engineering/inquiries", icon: Wrench },
+    { key: "inq-master", label: "Masterlist Inquiry", to: "/engineering/inquiry-masterlist", icon: ClipboardText },
+  ];
   // Deep-link: /engineering/inquiries?open=<inquiryId> → langsung buka detail item yang dituju
   useEffect(() => {
     const openId = searchParams.get("open");
@@ -262,6 +269,8 @@ export default function SalesPage() {
         <ArrowLeft size={12} weight="bold" /> {backLabel}
       </Link>
 
+      {isEngInquiryContext && <PageTabNav tabs={INQ_TABS} />}
+
       <div className="flex items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -289,7 +298,7 @@ export default function SalesPage() {
 
       {/* Stats Dashboard — CLICKABLE FILTER */}
       {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2" data-testid="sales-stats-grid">
+        <div className="flex flex-wrap gap-2" data-testid="sales-stats-grid">
           <StatCard label="Total Inquiry" value={stats.inquiries?.total} accent="rose" testid="stat-inq-total" active={statusFilter === ""} onClick={() => setStatusFilter("")} />
           <StatCard label="Draft" value={stats.inquiries?.by_status?.draft} accent="slate" testid="stat-inq-draft" active={statusFilter === "draft"} onClick={() => setStatusFilter(statusFilter === "draft" ? "" : "draft")} />
           <StatCard label="Terkirim" value={stats.inquiries?.by_status?.submitted} accent="amber" testid="stat-inq-submitted" active={statusFilter === "submitted"} onClick={() => setStatusFilter(statusFilter === "submitted" ? "" : "submitted")} />
@@ -312,9 +321,9 @@ export default function SalesPage() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
             {/* Total */}
-            <div className="border border-sky-200 bg-sky-50 p-3">
+            <div className="border border-sky-200 bg-sky-50 p-2.5">
               <div className="text-[10px] uppercase tracking-[0.15em] font-bold text-sky-700">Total Quotation</div>
-              <div className="mt-1 text-3xl font-bold text-sky-900 tabular-nums">{stats.quotations?.total ?? 0}</div>
+              <div className="mt-0.5 text-xl font-bold text-sky-900 tabular-nums">{stats.quotations?.total ?? 0}</div>
               <div className="mt-1 text-[11px] text-sky-800">
                 {Object.entries(stats.quotations?.values_by_status || {}).reduce((all, [, byCur]) => {
                   Object.entries(byCur).forEach(([cur, v]) => { all[cur] = (all[cur] || 0) + v; });
@@ -340,10 +349,10 @@ export default function SalesPage() {
                 cancel: { label: "Cancel", cls: "border-red-300 bg-red-50 text-red-900", sub: "text-red-800", head: "text-red-700" },
               }[st];
               return (
-                <div key={st} className={`border p-3 ${meta.cls}`} data-testid={`quo-stat-${st}`}>
+                <div key={st} className={`border p-2.5 ${meta.cls}`} data-testid={`quo-stat-${st}`}>
                   <div className={`text-[10px] uppercase tracking-[0.15em] font-bold ${meta.head}`}>{meta.label}</div>
-                  <div className="mt-1 flex items-baseline gap-3">
-                    <span className="text-3xl font-bold tabular-nums">{cnt}</span>
+                  <div className="mt-0.5 flex items-baseline gap-2">
+                    <span className="text-xl font-bold tabular-nums">{cnt}</span>
                     <span className={`text-[10px] uppercase tracking-[0.05em] ${meta.sub}`}>Quotation</span>
                   </div>
                   <div className={`mt-1 text-[11px] ${meta.sub}`}>
@@ -1505,28 +1514,33 @@ function Meta({ label, value, highlight = false }) {
   );
 }
 
-const STAT_ACCENT = {
-  slate:   "border-slate-200 bg-white text-slate-700",
-  rose:    "border-rose-200 bg-rose-50 text-rose-800",
-  amber:   "border-amber-200 bg-amber-50 text-amber-800",
-  sky:     "border-sky-200 bg-sky-50 text-sky-800",
-  violet:  "border-violet-200 bg-violet-50 text-violet-800",
-  emerald: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  red:     "border-red-200 bg-red-50 text-red-800",
+const STAT_DOT = {
+  slate:   "bg-slate-400",
+  rose:    "bg-rose-500",
+  amber:   "bg-amber-500",
+  sky:     "bg-sky-500",
+  violet:  "bg-violet-500",
+  emerald: "bg-emerald-500",
+  red:     "bg-red-500",
+  orange:  "bg-orange-500",
 };
 
 function StatCard({ label, value, accent = "slate", testid, active = false, onClick }) {
-  const cls = STAT_ACCENT[accent] || STAT_ACCENT.slate;
-  const activeCls = active ? "ring-2 ring-offset-1 ring-slate-900 shadow-md" : "hover:shadow-sm hover:opacity-90";
+  const dot = STAT_DOT[accent] || STAT_DOT.slate;
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`text-left border ${cls} p-2.5 cursor-pointer transition-all ${activeCls}`}
+      className={`inline-flex items-center gap-2 border px-2.5 py-1.5 cursor-pointer transition-colors ${
+        active
+          ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900"
+          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+      }`}
       data-testid={testid}
     >
-      <div className="text-[10px] uppercase tracking-[0.1em] font-bold opacity-70 leading-tight">{label}</div>
-      <div className="text-2xl font-bold tabular-nums leading-none mt-1" style={{ fontFamily: "Chivo, sans-serif" }}>{value ?? 0}</div>
+      <span className={`w-1.5 h-1.5 rounded-full ${dot} shrink-0`} />
+      <span className="text-lg font-bold tabular-nums leading-none text-slate-800" style={{ fontFamily: "Chivo, sans-serif" }}>{value ?? 0}</span>
+      <span className="text-[10px] uppercase tracking-[0.08em] font-semibold text-slate-500 leading-tight whitespace-nowrap">{label}</span>
     </button>
   );
 }

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import BackLink from "../components/BackLink";
+import PageTabNav from "../components/PageTabNav";
 import api from "../lib/api";
 import { Input } from "../components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
@@ -8,10 +9,15 @@ import {
   MagnifyingGlass, ArrowClockwise, ClipboardText, FunnelSimple, Eye, X,
   Paperclip, FilePdf, MicrosoftExcelLogo, Image as ImageIcon, File as FileIcon,
   DownloadSimple, CircleNotch, User, Buildings, CalendarBlank, CheckCircle,
-  ListBullets, NotePencil,
+  ListBullets, NotePencil, Wrench,
 } from "@phosphor-icons/react";
 
 const backendUrl = process.env.REACT_APP_BACKEND_URL;
+
+const INQ_TABS = [
+  { key: "inq-active", label: "Antrian Aktif", to: "/engineering/inquiries", icon: Wrench },
+  { key: "inq-master", label: "Masterlist Inquiry", to: "/engineering/inquiry-masterlist", icon: ClipboardText },
+];
 
 const STATUS_LABELS = {
   submitted: { t: "Terkirim", c: "bg-amber-100 text-amber-800 border-amber-300" },
@@ -109,6 +115,7 @@ export default function EngineeringInquiryMasterlistPage() {
   return (
     <div className="p-4 max-w-[1200px] mx-auto space-y-4">
       <BackLink />
+      <PageTabNav tabs={INQ_TABS} />
       <div>
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-amber-700 mb-1">
           <ClipboardText size={14} weight="fill" /> Engineering · Masterlist

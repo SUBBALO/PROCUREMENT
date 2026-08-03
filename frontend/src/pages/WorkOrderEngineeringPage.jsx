@@ -7,10 +7,16 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
+import PageTabNav from "../components/PageTabNav";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import { Wrench, ArrowClockwise, MagnifyingGlass, UserPlus, ArrowRight, Eye, CheckCircle, Tray, Gear, PencilSimple, ClockCounterClockwise } from "@phosphor-icons/react";
 
 const LEADER_ROLES = ["eng_head", "eng_leader", "admin", "super_admin", "supervisor"];
+
+const WO_TABS = [
+  { key: "my-queue", label: "Job Saya", to: "/engineering/my-queue", icon: Tray },
+  { key: "work-orders", label: "Work Order", to: "/engineering/work-orders", icon: Wrench },
+];
 
 /**
  * WorkOrderEngineeringPage — SATU pintu Engineering (role-aware), menggantikan 3 kartu lama.
@@ -82,6 +88,7 @@ export default function WorkOrderEngineeringPage() {
   return (
     <div className="p-4 max-w-[1300px] mx-auto space-y-4">
       <BackLink />
+      <PageTabNav tabs={WO_TABS} />
       <div>
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-teal-700 mb-1">
           <Wrench size={14} weight="fill" /> Engineering
