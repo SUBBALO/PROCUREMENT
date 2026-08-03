@@ -254,6 +254,89 @@ async def my_job_queue(current: dict = Depends(get_current_user)):
 
 
 
+@router.get("/engineering/workload")
+async def engineering_workload(current: dict = Depends(get_current_user)):
+    """Monitor beban kerja per engineer (Eng Leader / Admin / Engineering).
+    Beban aktif = DRF aktif + Drawing aktif + Inquiry costing aktif + ECN/revisi aktif.
+    Level: normal (<=3), busy (4-6), overload (>6). Diurutkan dari paling berat."""
+    if not (is_engineering(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering / Admin")
+    from deps import ENGINEERING_ROLES
+    users = await db.users.find(
+        {"role": {"$in": list(ENGINEERING_ROLES)}, "active": {"$ne": False}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "username": 1, "name": 1, "role": 1},
+    ).sort("name", 1).to_list(length=200)
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    def _overdue(v):
+        return bool(v) and str(v)[:10] < today
+
+    stats = {u["id"]: {
+        "user_id": u["id"], "name": u.get("name") or u.get("username"),
+        "username": u.get("username"), "role": u.get("role"),
+        "drf": 0, "drawing": 0, "inquiry": 0, "ecn": 0, "overdue": 0, "total": 0,
+    } for u in users}
+
+    # DRF aktif (accepted + in_progress)
+    drfs = await db.drawing_requests.find(
+        {"status": {"$in": ["accepted", "in_progress"]}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "assigned_engineer_id": 1, "expected_due_date": 1, "due_date": 1},
+    ).to_list(length=2000)
+    for d in drfs:
+        uid = d.get("assigned_engineer_id")
+        if uid in stats:
+            stats[uid]["drf"] += 1
+            if _overdue(d.get("expected_due_date") or d.get("due_date")):
+                stats[uid]["overdue"] += 1
+
+    # Drawing aktif (belum controlled/released) + ECN/revisi aktif
+    drs = await db.drawings.find(
+        {"approval_status": {"$nin": ["controlled", "released"]}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "assigned_to_user_id": 1, "revision_request": 1},
+    ).to_list(length=8000)
+    for d in drs:
+        uid = d.get("assigned_to_user_id")
+        if uid in stats:
+            stats[uid]["drawing"] += 1
+        rr = d.get("revision_request") or {}
+        if rr.get("status") in ("pending", "in_progress"):
+            euid = rr.get("requested_by_id") or d.get("assigned_to_user_id")
+            if euid in stats:
+                stats[euid]["ecn"] += 1
+
+    # Inquiry costing aktif (di-assign, belum selesai/tolak)
+    inqs = await db.inquiries.find(
+        {"assigned_to_id": {"$nin": ["", None]},
+         "status": {"$nin": ["completed", "rejected", "cancelled", "draft"]},
+         "deleted_at": {"$exists": False}},
+        {"_id": 0, "assigned_to_id": 1, "due_date": 1, "target_date": 1},
+    ).to_list(length=3000)
+    for iq in inqs:
+        uid = iq.get("assigned_to_id")
+        if uid in stats:
+            stats[uid]["inquiry"] += 1
+            if _overdue(iq.get("due_date") or iq.get("target_date")):
+                stats[uid]["overdue"] += 1
+
+    out = []
+    for s in stats.values():
+        s["total"] = s["drf"] + s["drawing"] + s["inquiry"] + s["ecn"]
+        s["level"] = "overload" if s["total"] > 6 else ("busy" if s["total"] >= 4 else "normal")
+        out.append(s)
+    out.sort(key=lambda x: (x["total"], x["overdue"]), reverse=True)
+
+    summary = {
+        "engineers": len(out),
+        "total_active": sum(s["total"] for s in out),
+        "overload": len([s for s in out if s["level"] == "overload"]),
+        "busy": len([s for s in out if s["level"] == "busy"]),
+        "normal": len([s for s in out if s["level"] == "normal"]),
+        "overdue": sum(s["overdue"] for s in out),
+    }
+    return {"items": out, "summary": summary, "thresholds": {"busy": 4, "overload": 7}}
+
+
 @router.get("/drawing-requests/{drf_id}")
 async def get_drawing_request(drf_id: str, current: dict = Depends(get_current_user)):
     doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}}, {"_id": 0})

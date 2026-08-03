@@ -5,7 +5,7 @@ import MyJobQueuePanel from "../components/MyJobQueuePanel";
 import api from "../lib/api";
 import {
   Wrench, Package, CurrencyCircleDollar, FileText, Kanban, ClipboardText as ClipboardIcon,
-  Tray, PencilSimpleLine,
+  Tray, PencilSimpleLine, Gauge,
 } from "@phosphor-icons/react";
 import { useAuth } from "../lib/auth";
 
@@ -18,6 +18,7 @@ export default function EngineeringPortalPage() {
   const [ecnTotal, setEcnTotal] = useState(0);
   const [jobPending, setJobPending] = useState(0);   // job menunggu diterima (my-queue)
   const [drfPending, setDrfPending] = useState(0);    // DRF menunggu ditangani (Eng Leader)
+  const [overloadCount, setOverloadCount] = useState(0); // engineer overload (monitor beban)
   useEffect(() => {
     api.get("/ecn-register?kind=ecn")
       .then(({ data }) => setEcnTotal((data.items || []).length))
@@ -26,6 +27,9 @@ export default function EngineeringPortalPage() {
       api.get("/drawing-requests/my-queue")
         .then(({ data }) => setJobPending(data.pending_count || 0))
         .catch(() => setJobPending(0));
+      api.get("/engineering/workload")
+        .then(({ data }) => setOverloadCount(data?.summary?.overload || 0))
+        .catch(() => setOverloadCount(0));
     }
     if (isHead) {
       api.get("/drawing-requests/pending-count-for-engineering")
@@ -76,6 +80,13 @@ export default function EngineeringPortalPage() {
       badgeCount: ecnTotal,
       accent: "from-indigo-500 via-violet-500 to-fuchsia-500", accentText: "text-indigo-400",
     },
+    ...(isEngUser ? [{
+      key: "workload", label: "Monitor Beban Kerja", stats: "Beban per Engineer · Overload",
+      description: "Pantau beban kerja tiap engineer (DRF + Drawing + Inquiry + ECN). Lihat siapa yang Overload / Sibuk / Normal beserta jumlah tugas terlambat.",
+      icon: Gauge, href: "/engineering/workload",
+      badgeCount: overloadCount,
+      accent: "from-rose-500 via-orange-500 to-amber-500", accentText: "text-rose-400",
+    }] : []),
     {
       key: "costing", label: "Costing (Inquiry Sales)", stats: "Request dari Sales",
       description: "Lihat permintaan costing dari Sales, accept, upload hasil kerja & drawing.",

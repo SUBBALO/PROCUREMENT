@@ -1,22 +1,30 @@
 [
   {
-    "content": "Viewer image-based (view-only, tanpa unduh) di Drawing Master List — konsisten dgn ECN modal",
+    "content": "Viewer no-download di Drawing Master List",
+    "status": "completed"
+  },
+  {
+    "content": "Badge antrian di kartu Work Order & Antrian Job",
+    "status": "completed"
+  },
+  {
+    "content": "ECN: chip ECN/ECR + kotak statistik bisa diklik untuk filter tabel",
+    "status": "completed"
+  },
+  {
+    "content": "Backend: endpoint GET /engineering/workload",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: halaman Monitor Beban Kerja + kartu di dashboard",
+    "status": "completed"
+  },
+  {
+    "content": "Gabung Antrian: DRF + Inquiry jadi 1 daftar dgn label tipe + link",
+    "status": "completed"
+  },
+  {
+    "content": "Uji regresi backend (testing agent)",
     "status": "in_progress"
-  },
-  {
-    "content": "ECR terpisah: kartu/filter khusus ECR (permintaan customer) di portal & Master List",
-    "status": "pending"
-  },
-  {
-    "content": "Ringkasan klik-filter: tiap kotak statistik ECN & chip ECN/ECR bisa diklik untuk menyaring tabel",
-    "status": "pending"
-  },
-  {
-    "content": "Badge antrian di kartu Work Order Engineering & Antrian Job Saya (angka tugas menunggu)",
-    "status": "pending"
-  },
-  {
-    "content": "Uji regresi semua perubahan (testing agent)",
-    "status": "pending"
   }
 ]

@@ -45,6 +45,7 @@ const STATUS_META = {
 export default function EngineeringQueuePanel({ isHead, isEngUser }) {
   const navigate = useNavigate();
   const [drfs, setDrfs] = useState([]);
+  const [inquiries, setInquiries] = useState([]);
   const [pendingApproval, setPendingApproval] = useState(0);
   const [myTasks, setMyTasks] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -61,6 +62,8 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
             .then(({ data }) => setDrfs(data?.items || [])).catch(() => {}),
           api.get("/drawings/pending-my-approval")
             .then(({ data }) => setPendingApproval(data?.total || 0)).catch(() => {}),
+          api.get("/inquiries")
+            .then(({ data }) => setInquiries(data?.items || [])).catch(() => {}),
         );
       }
       if (isEngUser) {
@@ -82,11 +85,37 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
     return () => clearInterval(t);
   }, [fetchAll]);
 
+  // Normalisasi DRF + Inquiry → satu daftar antrian ("rows"), dibedakan via _kind
+  const drfRows = drfs.map((d) => ({
+    id: d.id, _kind: "drawing", _raw: d,
+    form_no: d.form_no,
+    subtype: TYPE_LABEL[d.request_type] || d.request_type,
+    so_no: d.so_no || "-",
+    customer_name: d.customer_name, project_name: d.project_name,
+    engineer: d.assigned_engineer_name,
+    status: d.status,
+    due: d.expected_due_date || d.due_date,
+  }));
+  const normInqStatus = (s) => (s === "submitted" ? "submitted" : (s === "accepted" ? "accepted" : "in_progress"));
+  const inqRows = inquiries
+    .filter((q) => !["draft", "completed", "rejected", "cancelled"].includes(q.status))
+    .map((q) => ({
+      id: q.id, _kind: "inquiry", _raw: q,
+      form_no: q.inquiry_no || q.title || q.id,
+      subtype: q.category || "Costing",
+      so_no: "-",
+      customer_name: q.customer_name, project_name: q.project_name || q.title,
+      engineer: q.assigned_to_name,
+      status: normInqStatus(q.status),
+      due: q.due_date || q.target_date || "",
+    }));
+  const rows = [...drfRows, ...inqRows];
+
   const counts = {
-    all: drfs.length,
-    submitted: drfs.filter((d) => d.status === "submitted").length,
-    accepted: drfs.filter((d) => d.status === "accepted").length,
-    in_progress: drfs.filter((d) => d.status === "in_progress").length,
+    all: rows.length,
+    submitted: rows.filter((r) => r.status === "submitted").length,
+    accepted: rows.filter((r) => r.status === "accepted").length,
+    in_progress: rows.filter((r) => r.status === "in_progress").length,
   };
 
   const FILTERS = [
@@ -96,25 +125,24 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
     { key: "in_progress", label: "Sedang Dikerjakan", icon: Gear, accent: "text-violet-600", ring: "border-l-violet-500" },
   ];
 
-  // PRIORITAS: urutkan berdasarkan DUE DATE terdekat duluan (yang kosong ditaruh paling akhir),
-  // lalu berdasarkan status (submitted → accepted → in_progress).
+  // PRIORITAS: due date terdekat dulu (kosong paling akhir), lalu status.
   const order = { submitted: 0, accepted: 1, in_progress: 2 };
-  const dueMs = (d) => {
-    const v = d.expected_due_date || d.due_date || "";
+  const dueMs = (r) => {
+    const v = r.due || "";
     if (!v) return Infinity;
     const t = Date.parse(v);
     return isNaN(t) ? Infinity : t;
   };
-  const sorted = [...drfs].sort((a, b) => {
+  const sorted = [...rows].sort((a, b) => {
     const da = dueMs(a), dbb = dueMs(b);
     if (da !== dbb) return da - dbb;
     return (order[a.status] ?? 9) - (order[b.status] ?? 9);
   });
   const qLower = search.trim().toLowerCase();
-  const filtered = sorted.filter((d) => {
-    if (filter !== "all" && d.status !== filter) return false;
+  const filtered = sorted.filter((r) => {
+    if (filter !== "all" && r.status !== filter) return false;
     if (!qLower) return true;
-    return [d.form_no, d.so_no, d.customer_name, d.project_name, d.assigned_engineer_name]
+    return [r.form_no, r.so_no, r.customer_name, r.project_name, r.engineer]
       .some((x) => (x || "").toLowerCase().includes(qLower));
   });
 
@@ -125,7 +153,7 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
         <div className="flex items-center gap-2">
           <Tray size={16} weight="fill" className="text-amber-600" />
           <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-slate-800" style={{ fontFamily: "Chivo, sans-serif" }}>
-            Antrian Drawing Request
+            Antrian Drawing Request &amp; Inquiry
           </h2>
           {loading && <span className="text-[10px] text-slate-400 animate-pulse">memuat…</span>}
         </div>
@@ -171,7 +199,7 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
           <div className="p-3">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-slate-400">
-                {filter === "all" ? "Semua DRF di antrian" : `Filter: ${STATUS_META[filter]?.label || filter}`} · {filtered.length}
+                {filter === "all" ? "Semua antrian (Drawing & Inquiry)" : `Filter: ${STATUS_META[filter]?.label || filter}`} · {filtered.length}
                 <span className="ml-2 normal-case tracking-normal text-slate-400 font-normal">(urut: due date terdekat)</span>
               </div>
               <div className="flex items-center gap-2">
@@ -195,16 +223,16 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
             {filtered.length === 0 ? (
               <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-400" data-testid="eng-queue-empty">
                 <CheckCircle size={16} weight="fill" className="text-emerald-500" />
-                {filter === "all" ? "Tidak ada antrian DRF saat ini." : `Tidak ada DRF pada filter "${STATUS_META[filter]?.label || filter}".`}
+                {filter === "all" ? "Tidak ada antrian (Drawing/Inquiry) saat ini." : `Tidak ada item pada filter "${STATUS_META[filter]?.label || filter}".`}
               </div>
             ) : (
               <div className="overflow-x-auto max-h-[340px] overflow-y-auto border border-slate-100">
                 <table className="w-full text-sm" data-testid="eng-queue-list">
                   <thead className="sticky top-0 bg-white z-[1]">
                     <tr className="text-[9px] uppercase tracking-[0.1em] font-bold text-slate-400 border-b border-slate-100">
-                      <th className="text-left py-1.5 px-2">Form No</th>
+                      <th className="text-left py-1.5 px-2">Form / No</th>
                       <th className="text-left py-1.5 px-2">Due Date</th>
-                      <th className="text-left py-1.5 px-2">Tipe</th>
+                      <th className="text-left py-1.5 px-2">Jenis / Tipe</th>
                       <th className="text-left py-1.5 px-2">SO</th>
                       <th className="text-left py-1.5 px-2">Customer / Project</th>
                       <th className="text-left py-1.5 px-2">Engineer</th>
@@ -213,44 +241,47 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map((d) => {
-                      const meta = STATUS_META[d.status] || { label: d.status, cls: "bg-slate-100 text-slate-700 border-slate-300" };
-                      const dv = d.expected_due_date || d.due_date;
+                    {filtered.map((r) => {
+                      const meta = STATUS_META[r.status] || { label: r.status, cls: "bg-slate-100 text-slate-700 border-slate-300" };
+                      const dv = r.due;
                       const dt = dv ? Date.parse(dv) : NaN;
-                      const isOverdue = !isNaN(dt) && (dt - Date.now()) / 86400000 < 0 && d.status !== "completed";
+                      const isOverdue = !isNaN(dt) && (dt - Date.now()) / 86400000 < 0 && r.status !== "completed";
+                      const isInquiry = r._kind === "inquiry";
+                      const openRow = () => (isInquiry ? navigate("/engineering/inquiries") : setDetailDrf(r._raw));
                       return (
                         <tr
-                          key={d.id}
+                          key={`${r._kind}-${r.id}`}
                           className={`border-b cursor-pointer ${isOverdue ? "bg-rose-50 hover:bg-rose-100 border-rose-200" : "border-slate-50 hover:bg-amber-50/50"}`}
-                          onClick={() => setDetailDrf(d)}
-                          data-testid={`eng-queue-row-${d.form_no}`}
+                          onClick={openRow}
+                          data-testid={`eng-queue-row-${r.form_no}`}
                         >
                           <td className="py-1.5 px-2 font-mono text-xs font-semibold whitespace-nowrap">
                             {isOverdue && <span className="mr-1 text-rose-600" title="Lewat due date">⚠</span>}
-                            <span className={isOverdue ? "text-rose-800" : "text-slate-800"}>{d.form_no}</span>
+                            <span className={isOverdue ? "text-rose-800" : "text-slate-800"}>{r.form_no}</span>
                           </td>
-                          <td className="py-1.5 px-2 whitespace-nowrap"><DueBadge value={d.expected_due_date || d.due_date} /></td>
-                          <td className="py-1.5 px-2">
-                            <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${d.request_type === "repeat_order" ? "bg-blue-50 text-blue-700 border-blue-300" : "bg-emerald-50 text-emerald-700 border-emerald-300"}`}>
-                              {TYPE_LABEL[d.request_type] || d.request_type}
+                          <td className="py-1.5 px-2 whitespace-nowrap"><DueBadge value={r.due} /></td>
+                          <td className="py-1.5 px-2 whitespace-nowrap">
+                            <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${isInquiry ? "bg-sky-50 text-sky-700 border-sky-300" : "bg-amber-50 text-amber-700 border-amber-300"}`}>
+                              {isInquiry ? "Inquiry" : "Drawing"}
                             </span>
+                            {r.subtype ? <span className="ml-1 text-[10px] text-slate-400">{r.subtype}</span> : null}
                           </td>
-                          <td className="py-1.5 px-2 font-mono text-xs text-slate-600 whitespace-nowrap">{d.so_no || "-"}</td>
-                          <td className="py-1.5 px-2 text-xs text-slate-700 max-w-[220px] truncate" title={`${d.customer_name || ""} ${d.project_name || ""}`}>
-                            <span className="font-medium">{d.customer_name || "-"}</span>
-                            {d.project_name ? <span className="text-slate-400"> · {d.project_name}</span> : null}
+                          <td className="py-1.5 px-2 font-mono text-xs text-slate-600 whitespace-nowrap">{r.so_no || "-"}</td>
+                          <td className="py-1.5 px-2 text-xs text-slate-700 max-w-[220px] truncate" title={`${r.customer_name || ""} ${r.project_name || ""}`}>
+                            <span className="font-medium">{r.customer_name || "-"}</span>
+                            {r.project_name ? <span className="text-slate-400"> · {r.project_name}</span> : null}
                           </td>
-                          <td className="py-1.5 px-2 text-xs text-slate-600 whitespace-nowrap">{d.assigned_engineer_name || <span className="text-slate-300">—</span>}</td>
+                          <td className="py-1.5 px-2 text-xs text-slate-600 whitespace-nowrap">{r.engineer || <span className="text-slate-300">—</span>}</td>
                           <td className="py-1.5 px-2">
                             <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${meta.cls}`}>{meta.label}</span>
                           </td>
                           <td className="py-1.5 px-2 text-right">
                             <button
-                              onClick={(e) => { e.stopPropagation(); setDetailDrf(d); }}
-                              className="inline-flex items-center gap-1 px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold uppercase tracking-wider"
-                              data-testid={`eng-queue-open-${d.form_no}`}
+                              onClick={(e) => { e.stopPropagation(); openRow(); }}
+                              className={`inline-flex items-center gap-1 px-2 py-1 text-white text-[10px] font-bold uppercase tracking-wider ${isInquiry ? "bg-sky-600 hover:bg-sky-700" : "bg-amber-600 hover:bg-amber-700"}`}
+                              data-testid={`eng-queue-open-${r.form_no}`}
                             >
-                              <Eye size={11} weight="bold" /> Buka
+                              {isInquiry ? <><ArrowRight size={11} weight="bold" /> Buka Inquiry</> : <><Eye size={11} weight="bold" /> Buka</>}
                             </button>
                           </td>
                         </tr>
