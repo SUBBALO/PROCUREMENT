@@ -1,26 +1,22 @@
 [
   {
-    "content": "Refactor ecn_sheet_pdf jadi _build_ecn_sheet_bytes + tambah endpoint ecn-sheet/page-meta & page-image",
-    "status": "completed"
+    "content": "Viewer image-based (view-only, tanpa unduh) di Drawing Master List — konsisten dgn ECN modal",
+    "status": "in_progress"
   },
   {
-    "content": "Buat komponen reusable InlinePdfImageViewer (image-based, view-only, error/empty state ramah)",
-    "status": "completed"
+    "content": "ECR terpisah: kartu/filter khusus ECR (permintaan customer) di portal & Master List",
+    "status": "pending"
   },
   {
-    "content": "Ganti <iframe> di EcnReviewModal dengan InlinePdfImageViewer untuk kedua tab (Drawing MKS + Lembar ECN)",
-    "status": "completed"
+    "content": "Ringkasan klik-filter: tiap kotak statistik ECN & chip ECN/ECR bisa diklik untuk menyaring tabel",
+    "status": "pending"
   },
   {
-    "content": "Redesain Dashboard Engineering: kartu di atas (cardsFirst) + kartu ECN badge navigasi langsung ke Master List",
-    "status": "completed"
+    "content": "Badge antrian di kartu Work Order Engineering & Antrian Job Saya (angka tugas menunggu)",
+    "status": "pending"
   },
   {
-    "content": "Pindah strip statistik ECN ke atas halaman Master List ECN & ECR (1x klik, tanpa dialog)",
-    "status": "completed"
-  },
-  {
-    "content": "Uji regresi: endpoint image viewer, alur TTD ECN, Repeat Order pull-repeat (testing agent)",
-    "status": "completed"
+    "content": "Uji regresi semua perubahan (testing agent)",
+    "status": "pending"
   }
 ]

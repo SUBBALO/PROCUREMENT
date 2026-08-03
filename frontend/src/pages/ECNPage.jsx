@@ -41,7 +41,7 @@ export default function ECNPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const pag = usePagination(items, 20);
+  const [quick, setQuick] = useState(null); // {type:'kind'|'stat', value} — filter cepat klik (client-side)
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,15 +64,40 @@ export default function ECNPage() {
   const ecnCount = items.filter((r) => r.kind === "ecn").length;
   const ecrCount = items.filter((r) => r.kind === "ecr").length;
 
+  // Predikat status ECN (dipakai untuk hitung ringkasan & filter-cepat klik)
+  const STAT_PRED = {
+    pending: (r) => r.kind === "ecn" && r.status === "pending",
+    revising: (r) => r.kind === "ecn" && r.status === "in_progress" && !r.ack_stage,
+    prod: (r) => r.kind === "ecn" && r.ack_stage === "production",
+    qc: (r) => r.kind === "ecn" && r.ack_stage === "qa_qc",
+    done: (r) => r.kind === "ecn" && (r.ack_stage === "done" || r.ack_doc_control),
+  };
+
   // Ringkasan status ECN (perubahan drawing) — dipindah dari dashboard ke sini
-  const ecnItems = items.filter((r) => r.kind === "ecn");
   const ecnSummary = [
-    { key: "pending", label: "Menunggu Leader", value: ecnItems.filter((r) => r.status === "pending").length, icon: Clock, cls: "border-amber-300 text-amber-700 bg-amber-50/60" },
-    { key: "revising", label: "Sedang Revisi", value: ecnItems.filter((r) => r.status === "in_progress" && !r.ack_stage).length, icon: PencilSimpleLine, cls: "border-teal-300 text-teal-700 bg-teal-50/60" },
-    { key: "prod", label: "Menunggu Produksi", value: ecnItems.filter((r) => r.ack_stage === "production").length, icon: Factory, cls: "border-orange-300 text-orange-700 bg-orange-50/60" },
-    { key: "qc", label: "Menunggu QA/QC", value: ecnItems.filter((r) => r.ack_stage === "qa_qc").length, icon: ShieldCheck, cls: "border-sky-300 text-sky-700 bg-sky-50/60" },
-    { key: "done", label: "Selesai (Distribusi)", value: ecnItems.filter((r) => r.ack_stage === "done" || r.ack_doc_control).length, icon: Archive, cls: "border-emerald-300 text-emerald-700 bg-emerald-50/60" },
-  ];
+    { key: "pending", label: "Menunggu Leader", icon: Clock, cls: "border-amber-300 text-amber-700 bg-amber-50/60" },
+    { key: "revising", label: "Sedang Revisi", icon: PencilSimpleLine, cls: "border-teal-300 text-teal-700 bg-teal-50/60" },
+    { key: "prod", label: "Menunggu Produksi", icon: Factory, cls: "border-orange-300 text-orange-700 bg-orange-50/60" },
+    { key: "qc", label: "Menunggu QA/QC", icon: ShieldCheck, cls: "border-sky-300 text-sky-700 bg-sky-50/60" },
+    { key: "done", label: "Selesai (Distribusi)", icon: Archive, cls: "border-emerald-300 text-emerald-700 bg-emerald-50/60" },
+  ].map((s) => ({ ...s, value: items.filter(STAT_PRED[s.key]).length }));
+
+  // Filter-cepat client-side: klik chip jenis / kotak statistik → saring tabel
+  const quickMatch = (r) => {
+    if (!quick) return true;
+    if (quick.type === "kind") return r.kind === quick.value;
+    if (quick.type === "stat") return (STAT_PRED[quick.value] || (() => true))(r);
+    return true;
+  };
+  const displayItems = items.filter(quickMatch);
+  const pag = usePagination(displayItems, 20);
+  const toggleQuick = (type, value) =>
+    setQuick((cur) => (cur && cur.type === type && cur.value === value ? null : { type, value }));
+  const quickLabel = quick
+    ? (quick.type === "kind"
+        ? `Jenis: ${quick.value.toUpperCase()}`
+        : `Status: ${(ecnSummary.find((s) => s.key === quick.value) || {}).label || quick.value}`)
+    : "";
 
   return (
     <div className="p-4 max-w-[1300px] mx-auto space-y-4">
@@ -92,14 +117,26 @@ export default function ECNPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <div className="border border-fuchsia-300 bg-fuchsia-50 px-3 py-2 text-center min-w-[80px]" data-testid="ecn-count">
+          <button
+            type="button"
+            onClick={() => toggleQuick("kind", "ecn")}
+            className={`border px-3 py-2 text-center min-w-[80px] transition-colors ${quick?.type === "kind" && quick?.value === "ecn" ? "border-fuchsia-500 bg-fuchsia-100 ring-2 ring-fuchsia-300" : "border-fuchsia-300 bg-fuchsia-50 hover:bg-fuchsia-100"}`}
+            data-testid="ecn-count"
+            title="Klik untuk filter hanya ECN"
+          >
             <div className="text-lg font-bold text-fuchsia-800">{ecnCount}</div>
             <div className="text-[10px] uppercase tracking-widest font-bold text-fuchsia-600">ECN</div>
-          </div>
-          <div className="border border-blue-300 bg-blue-50 px-3 py-2 text-center min-w-[80px]" data-testid="ecr-count">
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleQuick("kind", "ecr")}
+            className={`border px-3 py-2 text-center min-w-[80px] transition-colors ${quick?.type === "kind" && quick?.value === "ecr" ? "border-blue-500 bg-blue-100 ring-2 ring-blue-300" : "border-blue-300 bg-blue-50 hover:bg-blue-100"}`}
+            data-testid="ecr-count"
+            title="Klik untuk filter hanya ECR (permintaan customer)"
+          >
             <div className="text-lg font-bold text-blue-800">{ecrCount}</div>
             <div className="text-[10px] uppercase tracking-widest font-bold text-blue-600">ECR</div>
-          </div>
+          </button>
         </div>
       </div>
 
@@ -109,17 +146,37 @@ export default function ECNPage() {
           <PencilSimpleLine size={14} weight="bold" className="text-indigo-700" />
           <span className="text-[11px] uppercase tracking-widest font-bold text-indigo-700">Ringkasan ECN — Perubahan Drawing</span>
           <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">{ecnCount} total</span>
+          {quick && (
+            <button
+              type="button"
+              onClick={() => setQuick(null)}
+              className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-800"
+              data-testid="ecn-quick-clear"
+            >
+              <X size={12} weight="bold" /> Filter: {quickLabel} · Hapus
+            </button>
+          )}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-          {ecnSummary.map((s) => (
-            <div key={s.key} className={`border ${s.cls} px-3 py-2 rounded-md`} data-testid={`ecn-strip-stat-${s.key}`}>
-              <div className="flex items-center gap-1.5">
-                <s.icon size={14} weight="bold" />
-                <span className="text-[10px] uppercase tracking-wider font-bold">{s.label}</span>
-              </div>
-              <div className="text-2xl font-bold mt-0.5 tabular-nums">{s.value}</div>
-            </div>
-          ))}
+          {ecnSummary.map((s) => {
+            const active = quick?.type === "stat" && quick?.value === s.key;
+            return (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => toggleQuick("stat", s.key)}
+                className={`text-left border ${s.cls} px-3 py-2 rounded-md transition-all hover:shadow-sm ${active ? "ring-2 ring-offset-1 ring-indigo-400 shadow-sm" : ""}`}
+                data-testid={`ecn-strip-stat-${s.key}`}
+                title={`Klik untuk filter: ${s.label}`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <s.icon size={14} weight="bold" />
+                  <span className="text-[10px] uppercase tracking-wider font-bold">{s.label}</span>
+                </div>
+                <div className="text-2xl font-bold mt-0.5 tabular-nums">{s.value}</div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -152,7 +209,7 @@ export default function ECNPage() {
           )}
           <Button variant="ghost" onClick={load} className="rounded-none h-9" title="Refresh"><ArrowClockwise size={14} weight="bold" /></Button>
           <div className="flex-1" />
-          <div className="text-xs text-slate-500"><b className="text-indigo-700">{items.length}</b> record</div>
+          <div className="text-xs text-slate-500"><b className="text-indigo-700">{displayItems.length}</b> record{quick ? ` (dari ${items.length})` : ""}</div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

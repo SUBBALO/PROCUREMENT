@@ -16,11 +16,23 @@ export default function EngineeringPortalPage() {
 
   // Badge jumlah ECN pada kartu (angka total perubahan drawing)
   const [ecnTotal, setEcnTotal] = useState(0);
+  const [jobPending, setJobPending] = useState(0);   // job menunggu diterima (my-queue)
+  const [drfPending, setDrfPending] = useState(0);    // DRF menunggu ditangani (Eng Leader)
   useEffect(() => {
     api.get("/ecn-register?kind=ecn")
       .then(({ data }) => setEcnTotal((data.items || []).length))
       .catch(() => setEcnTotal(0));
-  }, []);
+    if (isEngUser) {
+      api.get("/drawing-requests/my-queue")
+        .then(({ data }) => setJobPending(data.pending_count || 0))
+        .catch(() => setJobPending(0));
+    }
+    if (isHead) {
+      api.get("/drawing-requests/pending-count-for-engineering")
+        .then(({ data }) => setDrfPending(data.count || 0))
+        .catch(() => setDrfPending(0));
+    }
+  }, [isEngUser, isHead]);
 
   const CARDS = [
     ...(isEngUser ? [{
@@ -30,6 +42,7 @@ export default function EngineeringPortalPage() {
       description: "Job yang ditugaskan Eng Leader kepada Anda. Klik Terima untuk mulai kerja (tanggal start tercatat), lalu buka Work Order saat siap.",
       icon: Tray,
       href: "/engineering/my-queue",
+      badgeCount: jobPending,
       accent: "from-teal-500 via-emerald-500 to-green-500",
       accentText: "text-teal-400",
     }] : []),
@@ -52,6 +65,7 @@ export default function EngineeringPortalPage() {
         : "Drawing Request yang ditugaskan Eng Leader kepada Anda. Buka untuk generate nomor drawing (bisa >1 dalam 1 request, berbagi 1 BOM), upload dokumen (MKS, customer dwg, nesting), isi BOM, lalu TTD & submit.",
       icon: Kanban,
       href: "/engineering/work-orders",
+      badgeCount: isHead ? drfPending : 0,
       accent: "from-teal-500 via-cyan-500 to-sky-500",
       accentText: "text-teal-400",
     }] : []),

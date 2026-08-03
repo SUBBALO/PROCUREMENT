@@ -511,9 +511,11 @@ function DrawingDetailModal({ it, previewOnly, onView, onClose, canEcn, onReques
   const firstNesting = att?.nesting?.[0];
   const subtitle = `${it.title || ""}${it.project_name ? " · " + it.project_name : ""}${it.so_no ? " · SO " + it.so_no : ""}`;
 
-  const openMks = () => onView({ mode: "drawing", drawingId: it.id, target: "mks", stamped: true, hideSo: true, title: it.drawing_no, subtitle, noDownload: previewOnly, downloadUrl: `${backendUrl}/api/drawings/${it.id}/pdf-stamped` });
-  const openCustomer = () => onView({ mode: "drawing", drawingId: it.id, target: "customer_ref", stamped: true, hideSo: true, title: `${it.drawing_no} · Customer DWG`, subtitle, noDownload: previewOnly, downloadUrl: `${backendUrl}/api/drawings/${it.id}/customer-ref/download` });
-  const openAtt = (a, label) => onView({ mode: "generic", metaUrl: `/bom/${it.bom_id}/attachments/${a.id}/page-meta`, pageBase: `${backendUrl}/api/bom/${it.bom_id}/attachments/${a.id}/page-image`, downloadUrl: `${backendUrl}/api/bom/${it.bom_id}/attachments/${a.id}/download`, title: `${it.drawing_no} · ${label}`, subtitle: a.filename || "", noDownload: previewOnly });
+  // Master Drawing List = katalog VIEW-ONLY → preview tanpa tombol download untuk SEMUA role
+  // (konsisten dengan viewer image-based di modal ECN). Unduhan asli lewat Work Order.
+  const openMks = () => onView({ mode: "drawing", drawingId: it.id, target: "mks", stamped: true, hideSo: true, title: it.drawing_no, subtitle, noDownload: true, downloadUrl: `${backendUrl}/api/drawings/${it.id}/pdf-stamped` });
+  const openCustomer = () => onView({ mode: "drawing", drawingId: it.id, target: "customer_ref", stamped: true, hideSo: true, title: `${it.drawing_no} · Customer DWG`, subtitle, noDownload: true, downloadUrl: `${backendUrl}/api/drawings/${it.id}/customer-ref/download` });
+  const openAtt = (a, label) => onView({ mode: "generic", metaUrl: `/bom/${it.bom_id}/attachments/${a.id}/page-meta`, pageBase: `${backendUrl}/api/bom/${it.bom_id}/attachments/${a.id}/page-image`, downloadUrl: `${backendUrl}/api/bom/${it.bom_id}/attachments/${a.id}/download`, title: `${it.drawing_no} · ${label}`, subtitle: a.filename || "", noDownload: true });
 
   const approvals = (it.approvals || []).filter((a) => !String(a.stage || "").startsWith("reject_"));
   const ttdByStage = {};
