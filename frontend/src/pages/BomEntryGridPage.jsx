@@ -973,6 +973,15 @@ function WorkOrderView() {
 
   const isEngLeader = useMemo(() => ["eng_leader", "eng_head", "engineering", "admin", "super_admin", "supervisor"].includes(role), [role]);
 
+  // Konsisten dgn Work Order: kunci BOM bila ada drawing terkait yang sudah di-submit
+  // (approval_status bukan draft). Saat siklus revisi ECN dimulai, drawing kembali draft → BOM terbuka lagi.
+  const drawingSubmitted = useMemo(() => {
+    return (linkedDrawings || []).some((d) => {
+      const st = (d.approval_status || "draft").toLowerCase();
+      return st !== "draft" && st !== "";
+    });
+  }, [linkedDrawings]);
+
   const canEditItems = useMemo(() => {
     if (!bom) return false;
     const st = bom.engineering_status || "approved";
@@ -981,8 +990,11 @@ function WorkOrderView() {
     if (!engRoles.includes(role)) return false;
     // Approved BOM with items = frozen. But approved-empty (legacy pre-Iter35) is still editable.
     if (st === "approved" && hasItems) return false;
+    // Konsisten dengan Work Order: bila ada drawing terkait yang SUDAH di-submit
+    // (approval_status bukan draft), BOM dikunci agar item tidak berubah setelah submit.
+    if (drawingSubmitted) return false;
     return true;
-  }, [bom, role]);
+  }, [bom, role, drawingSubmitted]);
 
   const canSubmit = useMemo(() => {
     if (!bom) return false;
@@ -1202,6 +1214,17 @@ function WorkOrderView() {
           {statusBadge.label}
         </div>
       </div>
+
+      {/* Banner kunci — BOM dikunci karena drawing terkait sudah di-submit */}
+      {drawingSubmitted && status !== "approved" && (
+        <div className="flex items-center gap-2 border border-slate-300 bg-slate-100 px-4 py-2.5 text-[12px] text-slate-600" data-testid="wo-bom-drawing-locked">
+          <span className="text-slate-500">🔒</span>
+          <span>
+            BOM terkunci — drawing terkait sudah di-<b>submit</b> untuk approval, jadi item BOM tidak bisa diubah lagi.
+            Item akan bisa diedit kembali saat siklus <b>revisi (ECN)</b> dimulai.
+          </span>
+        </div>
+      )}
 
       {/* SECTION 1 - Info Drawing / SO */}
       <SectionCard title="1. Info Drawing / Order" icon={FileText}>
