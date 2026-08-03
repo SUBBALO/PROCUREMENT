@@ -1,30 +1,18 @@
 [
   {
-    "content": "QC portal: hapus kartu 'Riwayat TTD Saya'",
+    "content": "Refactor ecn_sheet_pdf jadi _build_ecn_sheet_bytes + tambah endpoint ecn-sheet/page-meta & page-image",
     "status": "completed"
   },
   {
-    "content": "ECN dates (reg/start/selesai/doco) + register",
+    "content": "Buat komponen reusable InlinePdfImageViewer (image-based, view-only, error/empty state ramah)",
     "status": "completed"
   },
   {
-    "content": "Filter Register: status + rentang tanggal",
-    "status": "completed"
+    "content": "Ganti <iframe> di EcnReviewModal dengan InlinePdfImageViewer untuk kedua tab (Drawing MKS + Lembar ECN)",
+    "status": "in_progress"
   },
   {
-    "content": "Ringkasan ECN: kartu status di dashboard Engineering",
-    "status": "completed"
-  },
-  {
-    "content": "Notifikasi TTD ke Produksi/QA-QC",
-    "status": "completed"
-  },
-  {
-    "content": "Lembar ECN PDF + stamp TTD PNG (bukti resmi)",
-    "status": "completed"
-  },
-  {
-    "content": "Modal Review ECN (wajib lihat isi ECN+drawing sebelum TTD)",
-    "status": "completed"
+    "content": "Uji viewer image-based + verifikasi alur Repeat Order end-to-end (testing agent)",
+    "status": "pending"
   }
 ]

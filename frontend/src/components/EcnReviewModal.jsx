@@ -2,10 +2,12 @@ import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
-import { Signature, ArrowClockwise, ArrowRight, FilePdf, FileText, ArrowSquareOut, Factory, ShieldCheck, CheckCircle } from "@phosphor-icons/react";
+import { Signature, ArrowClockwise, ArrowRight, FilePdf, FileText, Eye, Factory, ShieldCheck, CheckCircle } from "@phosphor-icons/react";
+import InlinePdfImageViewer from "./InlinePdfImageViewer";
 
 /**
- * Modal review ECN sebelum TTD — user WAJIB melihat isi ECN & drawing dulu (preview inline),
+ * Modal review ECN sebelum TTD — user WAJIB melihat isi ECN & drawing dulu (preview inline
+ * berbasis GAMBAR / image-based, konsisten lintas browser & view-only tanpa download),
  * lalu centang konfirmasi, baru bisa TTD. Tidak bisa klik TTD buta.
  */
 export default function EcnReviewModal({ item, onClose, onConfirm, busy }) {
@@ -15,8 +17,6 @@ export default function EcnReviewModal({ item, onClose, onConfirm, busy }) {
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
   if (!item) return null;
 
-  const drawingUrl = `${apiUrl}/api/drawings/${item.drawing_id}/pdf-stamped`;
-  const sheetUrl = `${apiUrl}/api/drawings/${item.drawing_id}/ecn-sheet`;
   const StageIcon = item.stage === "production" ? Factory : ShieldCheck;
 
   const showTab = (t) => { setView(t); setSeen((s) => ({ ...s, [t]: true })); };
@@ -69,22 +69,33 @@ export default function EcnReviewModal({ item, onClose, onConfirm, busy }) {
             </div>
           </div>
 
-          {/* Kanan: preview inline */}
+          {/* Kanan: preview inline berbasis gambar (view-only, tanpa download) */}
           <div className="flex flex-col min-w-0">
             <div className="flex items-center border-b border-slate-200 px-2 bg-slate-50">
               <TabBtn id="drawing" icon={FileText} label="Drawing (MKS)" />
               <TabBtn id="sheet" icon={FilePdf} label="Lembar ECN" />
               <div className="flex-1" />
-              <a href={view === "drawing" ? drawingUrl : sheetUrl} target="_blank" rel="noreferrer" className="text-[11px] text-slate-500 hover:text-violet-700 inline-flex items-center gap-1 pr-2" data-testid="ecn-review-newtab">
-                Tab baru <ArrowSquareOut size={12} weight="bold" />
-              </a>
+              <span className="text-[10px] text-slate-400 inline-flex items-center gap-1 pr-2 uppercase tracking-wider font-bold" data-testid="ecn-review-viewonly">
+                <Eye size={13} weight="bold" /> Baca-saja
+              </span>
             </div>
-            <iframe
-              title="ecn-preview"
-              src={view === "drawing" ? drawingUrl : sheetUrl}
-              className="w-full h-[60vh] bg-slate-100"
-              data-testid="ecn-review-iframe"
-            />
+            {view === "drawing" ? (
+              <InlinePdfImageViewer
+                key="drawing"
+                metaUrl={`/drawings/${item.drawing_id}/page-meta?target=mks`}
+                pageUrlBuilder={(n) => `${apiUrl}/api/drawings/${item.drawing_id}/page-image?target=mks&page=${n}&scale=2&stamped=1`}
+                emptyMessage="File MKS belum diunggah untuk drawing ini."
+                className="h-[60vh]"
+              />
+            ) : (
+              <InlinePdfImageViewer
+                key="sheet"
+                metaUrl={`/drawings/${item.drawing_id}/ecn-sheet/page-meta`}
+                pageUrlBuilder={(n) => `${apiUrl}/api/drawings/${item.drawing_id}/ecn-sheet/page-image?page=${n}&scale=2`}
+                emptyMessage="Lembar ECN belum tersedia."
+                className="h-[60vh]"
+              />
+            )}
           </div>
         </div>
 

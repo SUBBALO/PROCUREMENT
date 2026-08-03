@@ -3379,18 +3379,22 @@ async def _build_stamped_for_target(drawing: dict, target: str, extra_id: str, r
 async def drawing_page_meta(drawing_id: str, target: str = "mks", extra_id: str = "",
                             current: dict = Depends(get_current_user)):
     """Metadata halaman PDF (jumlah halaman + ukuran tiap halaman) — dipakai stamp picker
-    multi-halaman agar bisa render + scroll semua halaman."""
+    multi-halaman & viewer image-based. Bila file belum ada / bukan PDF valid → kembalikan
+    {pages:0, message} (HTTP 200) supaya viewer menampilkan empty-state ramah, bukan error."""
     if not _can_view(current):
         raise HTTPException(status_code=403, detail="Akses ditolak")
     drawing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
     if not drawing:
         raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
-    raw = await _target_raw_bytes(drawing, target, extra_id)
     import fitz  # PyMuPDF
     try:
+        raw = await _target_raw_bytes(drawing, target, extra_id)
         doc = fitz.open(stream=raw, filetype="pdf")
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"File bukan PDF valid: {e}")
+    except HTTPException as he:
+        return {"pages": 0, "sizes": [], "message": he.detail}
+    except Exception:
+        return {"pages": 0, "sizes": [],
+                "message": "File belum diunggah atau bukan PDF yang valid untuk pratinjau."}
     sizes = [{"w": round(p.rect.width, 2), "h": round(p.rect.height, 2)} for p in doc]
     n = doc.page_count
     doc.close()
@@ -3522,10 +3526,10 @@ async def _sig_png_by_user(uid: str, name: str = None):
         return None
 
 
-@router.get("/drawings/{drawing_id}/ecn-sheet")
-async def ecn_sheet_pdf(drawing_id: str, current: dict = Depends(get_current_user)):
-    """Lembar Acknowledgment ECN (PDF) — Form MKS-F-ENG-004 dengan stamp TTD digital
-    (PNG + tanggal/jam) Produksi & QA/QC sebagai bukti resmi distribusi."""
+async def _build_ecn_sheet_bytes(drawing_id: str, current: dict) -> tuple:
+    """Bangun bytes PDF Lembar Acknowledgment ECN (Form MKS-F-ENG-004) + stamp TTD digital.
+    Dipakai oleh endpoint download (ecn-sheet) maupun viewer image-based (page-meta/page-image).
+    Return: (pdf_bytes, filename)."""
     if not _can_view(current):
         raise HTTPException(status_code=403, detail="Akses ditolak")
     d = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
@@ -3647,8 +3651,39 @@ async def ecn_sheet_pdf(drawing_id: str, current: dict = Depends(get_current_use
     out = doc.tobytes()
     doc.close()
     fname = f"ECN_{ecn.get('ecn_no')}_{d.get('drawing_no', drawing_id)}.pdf"
+    return out, fname
+
+
+@router.get("/drawings/{drawing_id}/ecn-sheet")
+async def ecn_sheet_pdf(drawing_id: str, current: dict = Depends(get_current_user)):
+    """Lembar Acknowledgment ECN (PDF) — Form MKS-F-ENG-004 dengan stamp TTD digital
+    (PNG + tanggal/jam) Produksi & QA/QC sebagai bukti resmi distribusi."""
+    out, fname = await _build_ecn_sheet_bytes(drawing_id, current)
     return StreamingResponse(io.BytesIO(out), media_type="application/pdf",
                              headers={"Content-Disposition": f'inline; filename="{fname}"'})
+
+
+@router.get("/drawings/{drawing_id}/ecn-sheet/page-meta")
+async def ecn_sheet_page_meta(drawing_id: str, current: dict = Depends(get_current_user)):
+    """Metadata halaman Lembar ECN untuk viewer image-based (jumlah halaman + ukuran)."""
+    out, _ = await _build_ecn_sheet_bytes(drawing_id, current)
+    from utils.pdf_render import pdf_page_meta
+    return pdf_page_meta(out)
+
+
+@router.get("/drawings/{drawing_id}/ecn-sheet/page-image")
+async def ecn_sheet_page_image(drawing_id: str, page: int = 0, scale: float = 2.0,
+                               current: dict = Depends(get_current_user)):
+    """Render 1 halaman Lembar ECN sebagai PNG (viewer image-based, konsisten lintas browser)."""
+    out, _ = await _build_ecn_sheet_bytes(drawing_id, current)
+    from utils.pdf_render import pdf_page_png
+    scale = max(1.0, min(3.0, float(scale or 2.0)))
+    try:
+        png = pdf_page_png(out, page=page, scale=scale)
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Halaman tidak ada")
+    return StreamingResponse(io.BytesIO(png), media_type="image/png",
+                             headers={"Cache-Control": "no-store"})
 
 
 @router.get("/drawings/pending-dc-stamp")
