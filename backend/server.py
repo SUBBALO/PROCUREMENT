@@ -81,6 +81,10 @@ api_router.include_router(so_requests_router.router)
 from routers import legacy_import as legacy_import_router  # noqa: E402
 api_router.include_router(legacy_import_router.router)
 
+# Engineering KPI — laporan bulanan (auditable, dihitung dari data ERP)
+from routers import kpi as kpi_router  # noqa: E402
+api_router.include_router(kpi_router.router)
+
 
 @api_router.get("/")
 async def root():
@@ -229,6 +233,12 @@ async def startup():
     await db.form_templates.create_index("code")
     await seed_admin()
     await seed_form_templates()
+    # Pre-warm LibreOffice (background) agar preview Excel siap sebelum request pertama.
+    try:
+        from utils.office_render import prewarm_soffice_async
+        prewarm_soffice_async()
+    except Exception:
+        pass
     # One-time migration: Riski role renamed eng_head → eng_leader (Feb 2026)
     try:
         migrated = await db.users.update_one(

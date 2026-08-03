@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -96,6 +97,53 @@ def _cache_set(key: str, pdf: bytes) -> None:
     _PDF_CACHE[key] = {"pdf": pdf, "ts": time.time()}
 
 
+# ---------------- Auto-install & pre-warm (Linux) ----------------
+_ENSURE_LOCK = threading.Lock()
+
+
+def _install_libreoffice() -> bool:
+    """Install LibreOffice (calc) di container Linux. Robust: apt-get update dulu,
+    lalu coba beberapa nama paket. Return True bila soffice akhirnya tersedia."""
+    try:
+        subprocess.run(["apt-get", "update"], capture_output=True, timeout=180)
+    except Exception as e:  # pragma: no cover
+        logger.warning("apt-get update gagal (lanjut coba install): %s", e)
+    for pkg in (["libreoffice-calc"], ["libreoffice"]):
+        try:
+            subprocess.run(
+                ["apt-get", "install", "-y", "--no-install-recommends", *pkg],
+                capture_output=True, timeout=600,
+            )
+            if find_soffice():
+                return True
+        except Exception as e:  # pragma: no cover
+            logger.error("LibreOffice install (%s) gagal: %s", pkg, e)
+    return find_soffice() is not None
+
+
+def ensure_soffice() -> Optional[str]:
+    """Pastikan soffice tersedia; install sekali bila belum (khusus Linux). Thread-safe."""
+    s = find_soffice()
+    if s:
+        return s
+    if not sys.platform.startswith("linux"):
+        return None
+    with _ENSURE_LOCK:
+        s = find_soffice()
+        if s:
+            return s
+        _install_libreoffice()
+        return find_soffice()
+
+
+def prewarm_soffice_async() -> None:
+    """Pre-warm LibreOffice di background thread saat startup, agar preview Excel
+    pertama tidak lambat / timeout. Aman dipanggil berkali-kali."""
+    if find_soffice() or not sys.platform.startswith("linux"):
+        return
+    threading.Thread(target=ensure_soffice, name="soffice-prewarm", daemon=True).start()
+
+
 def office_to_pdf(raw: bytes, ext: str) -> bytes:
     """Konversi bytes dokumen Office → bytes PDF via LibreOffice headless.
 
@@ -117,16 +165,9 @@ def office_to_pdf(raw: bytes, ext: str) -> bytes:
 
     soffice = find_soffice()
 
-    # Linux container: coba auto-install sekali sebagai upaya terakhir.
+    # Linux container: coba auto-install (robust) sebagai upaya terakhir.
     if not soffice and sys.platform.startswith("linux"):
-        try:
-            subprocess.run(
-                ["apt-get", "install", "-y", "libreoffice-calc", "--no-install-recommends"],
-                capture_output=True, timeout=240,
-            )
-            soffice = find_soffice()
-        except Exception as e:  # pragma: no cover
-            logger.error("LibreOffice auto-install gagal: %s", e)
+        soffice = ensure_soffice()
 
     if not soffice:
         raise HTTPException(

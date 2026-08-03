@@ -2,18 +2,14 @@ import React from "react";
 import BackLink from "../components/BackLink";
 import PageTabNav from "../components/PageTabNav";
 import MyJobQueuePanel from "../components/MyJobQueuePanel";
-import { Tray, Wrench } from "@phosphor-icons/react";
-
-const WO_TABS = [
-  { key: "my-queue", label: "Job Saya", to: "/engineering/my-queue", icon: Tray },
-  { key: "work-orders", label: "Work Order", to: "/engineering/work-orders", icon: Wrench },
-];
+import { useWorkOrderTabs } from "../hooks/useEngTabs";
 
 export default function EngineeringMyQueuePage() {
+  const woTabs = useWorkOrderTabs();
   return (
     <div className="p-4 max-w-[1100px] mx-auto space-y-4">
       <BackLink />
-      <PageTabNav tabs={WO_TABS} />
+      <PageTabNav tabs={woTabs} />
       <div>
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-teal-700 mb-1">
           <Tray size={14} weight="fill" /> Engineering · Antrian Job

@@ -5,7 +5,7 @@ import MyJobQueuePanel from "../components/MyJobQueuePanel";
 import api from "../lib/api";
 import {
   Wrench, Package, CurrencyCircleDollar, FileText, Kanban, ClipboardText as ClipboardIcon,
-  Tray, PencilSimpleLine, Gauge,
+  Tray, PencilSimpleLine, Gauge, ChartLineUp,
 } from "@phosphor-icons/react";
 import { useAuth } from "../lib/auth";
 
@@ -69,6 +69,12 @@ export default function EngineeringPortalPage() {
       badgeCount: ecnTotal,
       accent: "from-indigo-500 via-violet-500 to-fuchsia-500", accentText: "text-indigo-400",
     },
+    ...(isHead ? [{
+      key: "kpi", label: "KPI Engineering", stats: "Laporan Bulanan · Auditable",
+      description: "Skor KPI bulanan (drawing/BOM compliance, on-time, validasi MKS) dihitung otomatis dari data ERP. Klik tiap indikator untuk telusur audit record aslinya.",
+      icon: ChartLineUp, href: "/engineering/kpi",
+      accent: "from-emerald-500 via-teal-500 to-cyan-500", accentText: "text-emerald-400",
+    }] : []),
     ...(isHead ? [{
       key: "workload", label: "Monitor Beban Kerja", stats: "Beban per Engineer · Overload",
       description: "Pantau beban kerja tiap engineer (DRF + Drawing + Inquiry + ECN). Lihat siapa yang Overload / Sibuk / Normal beserta jumlah tugas terlambat.",

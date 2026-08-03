@@ -34,6 +34,7 @@ import StorePortalPage from "./pages/StorePortalPage";
 import SalesPortalPage from "./pages/SalesPortalPage";
 import EngineeringPortalPage from "./pages/EngineeringPortalPage";
 import EngineeringWorkloadPage from "./pages/EngineeringWorkloadPage";
+import EngineeringKpiPage from "./pages/EngineeringKpiPage";
 import QuotationPage from "./pages/QuotationPage";
 import CustomerMasterPage from "./pages/CustomerMasterPage";
 import QCPage from "./pages/QCPage";
@@ -225,6 +226,7 @@ function AppRoutes() {
       <Route path="/engineering/ecn" element={<ProtectedRoute><ECNPage /></ProtectedRoute>} />
       <Route path="/engineering/work-orders" element={<ProtectedRoute><WorkOrderEngineeringPage /></ProtectedRoute>} />
       <Route path="/engineering/workload" element={<ProtectedRoute><EngineeringWorkloadPage /></ProtectedRoute>} />
+      <Route path="/engineering/kpi" element={<ProtectedRoute><EngineeringKpiPage /></ProtectedRoute>} />
       <Route path="/engineering/work-order/:drawingId" element={<ProtectedRoute><EngineeringWorkOrderPage /></ProtectedRoute>} />
       <Route path="/my/signature-history" element={<ProtectedRoute><MySignatureHistoryPage /></ProtectedRoute>} />
       <Route path="/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />

@@ -8,15 +8,11 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
 import PageTabNav from "../components/PageTabNav";
+import { useWorkOrderTabs } from "../hooks/useEngTabs";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import { Wrench, ArrowClockwise, MagnifyingGlass, UserPlus, ArrowRight, Eye, CheckCircle, Tray, Gear, PencilSimple, ClockCounterClockwise } from "@phosphor-icons/react";
 
 const LEADER_ROLES = ["eng_head", "eng_leader", "admin", "super_admin", "supervisor"];
-
-const WO_TABS = [
-  { key: "my-queue", label: "Job Saya", to: "/engineering/my-queue", icon: Tray },
-  { key: "work-orders", label: "Work Order", to: "/engineering/work-orders", icon: Wrench },
-];
 
 /**
  * WorkOrderEngineeringPage — SATU pintu Engineering (role-aware), menggantikan 3 kartu lama.
@@ -28,6 +24,7 @@ const WO_TABS = [
 export default function WorkOrderEngineeringPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const woTabs = useWorkOrderTabs();
   const isLeader = LEADER_ROLES.includes(user?.role);
 
   const [items, setItems] = useState([]);
@@ -88,7 +85,7 @@ export default function WorkOrderEngineeringPage() {
   return (
     <div className="p-4 max-w-[1300px] mx-auto space-y-4">
       <BackLink />
-      <PageTabNav tabs={WO_TABS} />
+      <PageTabNav tabs={woTabs} />
       <div>
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-teal-700 mb-1">
           <Wrench size={14} weight="fill" /> Engineering

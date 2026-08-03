@@ -7,6 +7,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import PdfPreviewModal from "../components/PdfPreviewModal";
 import PageTabNav from "../components/PageTabNav";
+import { useInquiryTabs } from "../hooks/useEngTabs";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { toast } from "sonner";
@@ -95,10 +96,7 @@ export default function SalesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const isEngInquiryContext = location.pathname === "/engineering/inquiries";
-  const INQ_TABS = [
-    { key: "inq-active", label: "Antrian Aktif", to: "/engineering/inquiries", icon: Wrench },
-    { key: "inq-master", label: "Masterlist Inquiry", to: "/engineering/inquiry-masterlist", icon: ClipboardText },
-  ];
+  const inqTabs = useInquiryTabs();
   // Deep-link: /engineering/inquiries?open=<inquiryId> → langsung buka detail item yang dituju
   useEffect(() => {
     const openId = searchParams.get("open");
@@ -269,7 +267,7 @@ export default function SalesPage() {
         <ArrowLeft size={12} weight="bold" /> {backLabel}
       </Link>
 
-      {isEngInquiryContext && <PageTabNav tabs={INQ_TABS} />}
+      {isEngInquiryContext && <PageTabNav tabs={inqTabs} />}
 
       <div className="flex items-end justify-between gap-4">
         <div>
