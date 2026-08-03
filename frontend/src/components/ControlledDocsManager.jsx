@@ -93,7 +93,7 @@ export default function ControlledDocsManager({ view = "pending", onChanged }) {
           <DownloadSimple size={13} weight="bold" /> PDF
         </a>
         <div className="flex-1" />
-        {view === "pending" && canManage && (
+        {(view === "pending" || view === "controlled") && canManage && (
           <Button onClick={() => setUploadOpen(true)} className="rounded-none bg-red-700 hover:bg-red-800 text-white h-9" data-testid="iso-upload-btn">
             <UploadSimple size={14} weight="bold" className="mr-1" /> Upload Dokumen ISO
           </Button>
@@ -202,7 +202,7 @@ function UploadModal({ onClose, onDone }) {
       fd.append("category", "iso"); fd.append("doc_type", form.doc_type); fd.append("notes", form.notes);
       fd.append("file", file);
       await api.post("/controlled-documents", fd, { headers: { "Content-Type": "multipart/form-data" } });
-      toast.success("✓ Dokumen diupload — menunggu stamp DC");
+      toast.success("✓ Dokumen ISO berhasil diarsipkan ke database");
       onDone();
     } catch (e) { toast.error(e.response?.data?.detail || "Gagal upload"); }
     finally { setBusy(false); }

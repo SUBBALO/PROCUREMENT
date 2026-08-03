@@ -136,10 +136,12 @@ async def create_controlled_document(
     file: UploadFile = File(...),
     current: dict = Depends(get_current_user),
 ):
-    """Upload dokumen baru (status 'pending' — menunggu stamp DC)."""
+    """Upload dokumen baru. Untuk kategori ISO → langsung diarsipkan sebagai 'controlled'
+    (DC tidak lagi men-stamp dokumen ISO, hanya mengarsipkan ke database)."""
     _require_manage(current)
     stored = await _store_file(file)
     now = _now_iso()
+    is_iso = (category or "iso").strip().lower() == "iso"
     doc = {
         "id": str(uuid.uuid4()),
         "doc_no": doc_no.strip(),
@@ -149,14 +151,14 @@ async def create_controlled_document(
         "notes": (notes or "").strip(),
         "revision": 0,
         "rev_label": "Rev-0",
-        "status": "pending",
+        "status": "controlled" if is_iso else "pending",
         "dc_stamp": None,
         "supersedes": None,
         "superseded_by": None,
         "uploaded_by": {"id": current.get("id"), "name": current.get("name") or current.get("username")},
         "created_at": now,
         "updated_at": now,
-        "controlled_at": None,
+        "controlled_at": now if is_iso else None,
         "obsoleted_at": None,
         **stored,
     }

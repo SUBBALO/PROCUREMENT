@@ -10,7 +10,6 @@ import { Stamp, MagnifyingGlass, ArrowClockwise, Eye, FileText, Paperclip } from
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import PdfStampCanvas from "../components/PdfStampCanvas";
-import ControlledDocsManager from "../components/ControlledDocsManager";
 
 /**
  * Document Distribution Record — Dashboard khusus Admin Document Control (Salma).
@@ -108,30 +107,9 @@ export default function DocumentDistributionRecordPage() {
           <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
             Menunggu Stamp DC
           </h1>
-          <div className="text-xs text-slate-500 mt-1">Antrian dokumen yang perlu di-stamp Document Control — Drawing MKS (approved) & Dokumen ISO (upload manual)</div>
+          <div className="text-xs text-slate-500 mt-1">Antrian Drawing MKS (approved) yang perlu di-stamp Document Control. Dokumen ISO tidak lagi di-stamp — cukup diarsipkan lewat Controlled Document Register.</div>
         </div>
       </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-slate-200">
-        {[
-          { key: "pending", label: "🕐 Drawing (Menunggu Stamp)", color: "bg-amber-100 text-amber-800 border-amber-500" },
-          { key: "iso", label: "📄 Dokumen ISO", color: "bg-red-100 text-red-800 border-red-500" },
-        ].map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-xs font-bold uppercase tracking-widest border-b-2 -mb-px ${tab === t.key ? t.color : "border-transparent text-slate-500 hover:text-slate-800"}`}
-            data-testid={`ddr-tab-${t.key}`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "iso" && (
-        <ControlledDocsManager view="pending" />
-      )}
 
       {tab !== "iso" && (
       <Card className="rounded-none border-slate-200 overflow-hidden">
