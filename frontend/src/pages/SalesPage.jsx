@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
@@ -91,6 +91,18 @@ export default function SalesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingInquiry, setEditingInquiry] = useState(null);  // draft object to edit
   const [openInquiry, setOpenInquiry] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Deep-link: /engineering/inquiries?open=<inquiryId> → langsung buka detail item yang dituju
+  useEffect(() => {
+    const openId = searchParams.get("open");
+    if (openId) {
+      setOpenInquiry({ id: openId });
+      const next = new URLSearchParams(searchParams);
+      next.delete("open");
+      setSearchParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [pending, setPending] = useState(0);
   const [pendingKind, setPendingKind] = useState("");
   const [stats, setStats] = useState(null);

@@ -247,7 +247,7 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
                       const dt = dv ? Date.parse(dv) : NaN;
                       const isOverdue = !isNaN(dt) && (dt - Date.now()) / 86400000 < 0 && r.status !== "completed";
                       const isInquiry = r._kind === "inquiry";
-                      const openRow = () => (isInquiry ? navigate("/engineering/inquiries") : setDetailDrf(r._raw));
+                      const openRow = () => (isInquiry ? navigate(`/engineering/inquiries?open=${r.id}`) : setDetailDrf(r._raw));
                       return (
                         <tr
                           key={`${r._kind}-${r.id}`}
