@@ -75,13 +75,6 @@ KPI_DEFS = [
      "mode": "auto", "cat": "E",
      "num_label": "lolos MKS", "den_label": "drawing tervalidasi",
      "source": "drawings.pdf_match_status: 'verified'=lolos validasi MKS; 'warning'=tidak sesuai (legacy dikecualikan)."},
-    {"key": "response_time", "no": 7,
-     "name": "Response Time to Production Issues / Feedback",
-     "name_id": "Response time isu produksi (≤ 2 jam)",
-     "formula": "(Jumlah respon ≤ 2 jam / Total isu produksi) × 100%",
-     "mode": "manual", "cat": "E",
-     "num_label": "respon ≤ 2 jam", "den_label": "total isu",
-     "source": "Belum ada sistem tiket/log isu produksi di ERP — input MANUAL oleh Eng Leader."},
 ]
 KPI_BY_KEY = {k["key"]: k for k in KPI_DEFS}
 
