@@ -1,30 +1,26 @@
 [
   {
-    "content": "Viewer no-download di Drawing Master List",
+    "content": "Baris Masterlist Inquiry bisa diklik + tombol Lihat",
     "status": "completed"
   },
   {
-    "content": "Badge antrian di kartu Work Order & Antrian Job",
+    "content": "Modal detail inquiry (info, items, lampiran sales & engineer)",
     "status": "completed"
   },
   {
-    "content": "ECN: chip ECN/ECR + kotak statistik bisa diklik untuk filter tabel",
+    "content": "Integrasi InlinePdfImageViewer untuk pratinjau lampiran PDF/Excel + gambar",
     "status": "completed"
   },
   {
-    "content": "Backend: endpoint GET /engineering/workload",
+    "content": "Panel Customer Code Master jadi minimalis di Drawing Master List",
     "status": "completed"
   },
   {
-    "content": "Frontend: halaman Monitor Beban Kerja + kartu di dashboard",
+    "content": "Kunci semua tombol edit Work Order setelah drawing di-submit",
     "status": "completed"
   },
   {
-    "content": "Gabung Antrian: DRF + Inquiry jadi 1 daftar dgn label tipe + link",
-    "status": "completed"
-  },
-  {
-    "content": "Uji regresi backend (testing agent)",
+    "content": "Tombol Kembali di halaman Monitor Beban Kerja",
     "status": "completed"
   }
 ]

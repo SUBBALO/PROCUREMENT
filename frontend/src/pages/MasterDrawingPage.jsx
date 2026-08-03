@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { FileText, MagnifyingGlass, Plus, PencilSimple, Trash, ArrowClockwise, UploadSimple, Eye, DownloadSimple, Warning, CheckCircle, Printer, Stamp, FileXls, FilePdf, X, PencilSimpleLine, Clock } from "@phosphor-icons/react";
+import { FileText, MagnifyingGlass, Plus, PencilSimple, Trash, ArrowClockwise, UploadSimple, Eye, DownloadSimple, Warning, CheckCircle, Printer, Stamp, FileXls, FilePdf, X, PencilSimpleLine, Clock, Users, CaretDown, CaretRight } from "@phosphor-icons/react";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
@@ -1539,7 +1539,7 @@ function SOAutocompleteInput({ value, onChange, testid, required }) {
 
 /* ============ ATTACHMENTS PANEL (inline in DrawingForm) ============ */
 
-export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
+export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated, editable = true }) {
   const [bomAttachments, setBomAttachments] = useState({ drawing: [], nesting: [], costing: [] });
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -1671,7 +1671,7 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
       setLocalDrawing((d) => ({ ...d, ...patch }));
 
       // Wajib pilih Kategori Pekerjaan setelah upload MKS (kalau belum ada).
-      if (!activeDwg.work_category) setWorkCatPopup(true);
+      if (editable && !activeDwg.work_category) setWorkCatPopup(true);
 
       // Auto-baca nomor DWG dari isi PDF (repeat/manual upload).
       const detected = (data?.detected_no || "").trim();
@@ -1873,7 +1873,7 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
         <div className={`inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.12em] font-bold text-${accent}-800`}>
           <Icon size={14} weight="bold" /> {label}
         </div>
-        <label className={`inline-flex items-center gap-1 px-2 h-7 text-[11px] font-bold cursor-pointer whitespace-nowrap bg-${accent}-700 hover:bg-${accent}-800 text-white ${uploading === category ? "opacity-60 pointer-events-none" : ""}`}>
+        <label className={`inline-flex items-center gap-1 px-2 h-7 text-[11px] font-bold cursor-pointer whitespace-nowrap bg-${accent}-700 hover:bg-${accent}-800 text-white ${uploading === category ? "opacity-60 pointer-events-none" : ""} ${editable ? "" : "hidden"}`}>
           <UploadSimple size={12} weight="bold" />
           {uploading === category ? "Uploading..." : (files.length > 0 && !allowMulti ? "Replace" : "+ Upload")}
           <input
@@ -1905,7 +1905,7 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
               >
                 <Eye size={13} />
               </button>
-              {(category !== "drawing_pdf" && category !== "customer_ref") && f.id && (
+              {editable && (category !== "drawing_pdf" && category !== "customer_ref") && f.id && (
                 <button
                   type="button"
                   onClick={() => deleteBomAttachment(category, f.id)}
@@ -1915,7 +1915,7 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
                   <Trash size={13} />
                 </button>
               )}
-              {category === "drawing_pdf" && (
+              {editable && category === "drawing_pdf" && (
                 <button
                   type="button"
                   onClick={deleteDrawingPdf}
@@ -1926,7 +1926,7 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
                   <Trash size={13} />
                 </button>
               )}
-              {category === "customer_ref" && (
+              {editable && category === "customer_ref" && (
                 <button
                   type="button"
                   onClick={deleteCustomerRef}
@@ -1979,9 +1979,15 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
 
   return (
     <div className="border-2 border-slate-300 bg-slate-50 p-3 space-y-3" data-testid="dw-attachments-panel">
+      {!editable && (
+        <div className="flex items-center gap-2 border border-slate-300 bg-slate-100 px-3 py-2 text-[11px] text-slate-600" data-testid="dw-att-locked-banner">
+          <span className="text-slate-500">🔒</span>
+          <span>Drawing sudah di-submit / dikunci — mode <b>baca saja</b>. Upload, Replace, hapus, ubah nomor &amp; kategori dinonaktifkan.</span>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div className="text-[11px] uppercase tracking-[0.15em] font-bold text-slate-700">
-          📎 File Attachments — Upload &amp; Preview
+          📎 File Attachments — {editable ? "Upload & Preview" : "Preview"}
         </div>
         <div className="flex items-center gap-2">
           {activeDwg.bom_id && (
@@ -1991,12 +1997,12 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 px-2 h-7 bg-amber-700 hover:bg-amber-800 text-white text-[11px] font-bold whitespace-nowrap"
               data-testid="dw-goto-bom"
-              title={`Buka BOM ${activeDwg.bom_no || ""} untuk isi/edit items (Grid Excel-like)`}
+              title={editable ? `Buka BOM ${activeDwg.bom_no || ""} untuk isi/edit items` : `Lihat BOM ${activeDwg.bom_no || ""}`}
             >
-              ➕ Isi Data BOM {activeDwg.bom_no ? `(${activeDwg.bom_no})` : ""}
+              {editable ? "➕ Isi Data BOM" : "👁 Lihat BOM"} {activeDwg.bom_no ? `(${activeDwg.bom_no})` : ""}
             </a>
           )}
-          {!activeDwg.bom_id && (
+          {!activeDwg.bom_id && editable && (
             <div className="text-[10px] text-amber-700 italic">
               Nesting &amp; Costing memerlukan Link BOM — set di form saat register.
             </div>
@@ -2010,15 +2016,19 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
         {!editingNo ? (
           <>
             <span className="font-mono font-bold text-slate-900 text-sm" data-testid="dw-no-value">{activeDwg.drawing_no || "(belum ada)"}</span>
-            <button
-              onClick={() => { setNoInput(activeDwg.drawing_no || ""); setEditingNo(true); }}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider border border-slate-300 text-slate-600 hover:bg-slate-100"
-              data-testid="dw-no-edit-btn"
-              title="Ketik/koreksi nomor DWG manual (bila auto-baca salah / tidak terbaca)"
-            >
-              <PencilSimple size={12} /> Ubah manual
-            </button>
-            <span className="text-[10px] text-slate-400 italic">Nomor otomatis dibaca dari isi PDF saat upload; ubah di sini bila salah.</span>
+            {editable && (
+              <button
+                onClick={() => { setNoInput(activeDwg.drawing_no || ""); setEditingNo(true); }}
+                className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider border border-slate-300 text-slate-600 hover:bg-slate-100"
+                data-testid="dw-no-edit-btn"
+                title="Ketik/koreksi nomor DWG manual (bila auto-baca salah / tidak terbaca)"
+              >
+                <PencilSimple size={12} /> Ubah manual
+              </button>
+            )}
+            {editable && (
+              <span className="text-[10px] text-slate-400 italic">Nomor otomatis dibaca dari isi PDF saat upload; ubah di sini bila salah.</span>
+            )}
             {(activeDwg.rename_history || []).length > 0 && (
               <button
                 onClick={() => setShowHist((v) => !v)}
@@ -2062,9 +2072,9 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
           return (
             <button
               key={c}
-              onClick={() => saveWorkCategory(c)}
-              disabled={savingCat}
-              className={`px-3 py-1 text-[11px] font-bold uppercase tracking-wider border transition-colors ${active ? styleMap[c].on : styleMap[c].off}`}
+              onClick={() => editable && saveWorkCategory(c)}
+              disabled={savingCat || !editable}
+              className={`px-3 py-1 text-[11px] font-bold uppercase tracking-wider border transition-colors ${active ? styleMap[c].on : styleMap[c].off} ${!editable ? "opacity-60 cursor-not-allowed" : ""}`}
               data-testid={`dw-workcat-${c}`}
             >
               {c}
@@ -2078,7 +2088,7 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated }) {
 
 
       {/* Saran nomor via OCR (PDF scan) — tidak diterapkan otomatis */}
-      {ocrSuggestion && (
+      {editable && ocrSuggestion && (
         <div className="flex flex-wrap items-center gap-2 border border-amber-300 bg-amber-50 px-3 py-2" data-testid="dw-ocr-suggestion">
           <span className="text-[10px] uppercase tracking-widest font-bold text-amber-700">OCR</span>
           <span className="text-xs text-amber-800">Nomor terbaca dari scan (cek dulu, bisa kurang akurat):</span>
@@ -2679,37 +2689,30 @@ function CustomerCodeMasterPanel() {
   const withoutCode = items.filter((c) => !c.customer_code).length;
 
   return (
-    <Card className="rounded-none border-2 border-indigo-300 overflow-hidden" data-testid="customer-code-master-panel">
+    <Card className="rounded-none border border-slate-200 overflow-hidden" data-testid="customer-code-master-panel">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full px-4 py-3 bg-gradient-to-r from-indigo-100 to-indigo-50 border-b border-indigo-200 flex items-center justify-between hover:from-indigo-200 hover:to-indigo-100 transition"
+        className={`w-full px-3 py-2 flex items-center gap-2.5 text-left transition-colors ${expanded ? "bg-slate-50 border-b border-slate-200" : "bg-white hover:bg-slate-50"}`}
         data-testid="ccm-toggle"
       >
-        <div className="text-left flex items-center gap-3">
-          <div className="w-8 h-8 bg-indigo-600 text-white flex items-center justify-center font-bold text-sm rounded-none">
-            {expanded ? "−" : "+"}
-          </div>
-          <div>
-            <div className="text-sm uppercase tracking-[0.12em] font-bold text-indigo-800 flex items-center gap-2">
-              Customer Code Master
-              <span className="text-[10px] font-mono bg-indigo-700 text-white px-2 py-0.5 tracking-tight">
-                {items.length} customer
-              </span>
-              {withoutCode > 0 && (
-                <span className="text-[10px] font-mono bg-amber-500 text-white px-2 py-0.5 tracking-tight animate-pulse">
-                  {withoutCode} BELUM ADA KODE
-                </span>
-              )}
-            </div>
-            <div className="text-[11px] text-indigo-700 mt-0.5">
-              Kelola kode singkat customer untuk penomoran drawing. Klik {expanded ? "untuk sembunyikan" : "untuk buka & isi kode"}.
-            </div>
-          </div>
-        </div>
-        <div className="text-[10px] font-bold text-indigo-700 uppercase tracking-widest">
-          {expanded ? "▲ TUTUP" : "▼ BUKA"}
-        </div>
+        {expanded
+          ? <CaretDown size={13} weight="bold" className="text-slate-400 shrink-0" />
+          : <CaretRight size={13} weight="bold" className="text-slate-400 shrink-0" />}
+        <Users size={15} weight="bold" className="text-slate-500 shrink-0" />
+        <span className="text-[12px] font-semibold text-slate-700">Customer Code Master</span>
+        <span className="text-[10px] font-mono text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5">
+          {items.length}
+        </span>
+        {withoutCode > 0 && (
+          <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5" title={`${withoutCode} customer belum punya kode`}>
+            {withoutCode} belum ada kode
+          </span>
+        )}
+        <span className="flex-1" />
+        <span className="text-[10px] text-slate-400 hidden sm:inline">
+          {expanded ? "Tutup" : "Kelola kode singkat customer"}
+        </span>
       </button>
 
       {expanded && (
