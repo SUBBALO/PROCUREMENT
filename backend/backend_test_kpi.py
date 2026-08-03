@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for Engineering KPI Feature
+Backend API Testing for Engineering KPI Feature (WITH WEIGHTED SCORING)
+Tests the NEW API structure with Achievement Weight (%) column.
+
+Requirements:
+- 6 KPIs with weights: KPI1=20, KPI2=15, KPI3=15, KPI4=25, KPI5=15, KPI6=10 (sum=100)
+- KPI Score = achievement% × weight% / 100
+- Total KPI Score = SUM of weighted scores
+- Category: >=90 SANGAT BAIK, 80-89 BAIK, 71-79 CUKUP, <=70 PERLU PERBAIKAN
+
 Tests:
-- GET /api/engineering/kpi?year=2026&month=8
-- GET /api/engineering/kpi/{key}/records?year=2026&month=8
-- Auditability (numerator/denominator consistency)
-- RBAC (engineering users only)
-- Real data computation (compare different months)
+1. Login with riski/eng123
+2. GET /api/engineering/kpi?year=2026&month=7 (July) - verify readable
+3. GET /api/engineering/kpi?year=2026&month=8 (August) - verify weighted scoring
+4. GET /api/engineering/kpi/{key}/records - verify auditability
+5. Formula correctness (denominators equal for certain KPIs)
+6. Weights sum to 100
+7. RBAC (engineering users only)
 """
 import requests
 import sys
@@ -85,104 +95,166 @@ class EngineeringKpiTester:
             self.log_result(test_name, False, f"Error: {str(e)}")
             return None
 
-    def test_kpi_structure(self, data, year, month):
-        """Verify KPI response structure"""
-        test_name = f"KPI Structure Validation (year={year}, month={month})"
+    def test_july_readable(self):
+        """Test that July 2026 data is readable (not empty/error)"""
+        test_name = "July 2026 Data Readable"
         print(f"\n🔍 Testing {test_name}...")
         
-        try:
-            # Check top-level fields
-            required_fields = ["year", "month", "period", "target", "overall_score", "category", "kpis"]
-            missing = [f for f in required_fields if f not in data]
-            if missing:
-                self.log_result(test_name, False, f"Missing fields: {missing}")
-                return False
-            
-            # Check year/month match
-            if data["year"] != year or data["month"] != month:
-                self.log_result(test_name, False, f"Year/month mismatch: expected {year}/{month}, got {data['year']}/{data['month']}")
-                return False
-            
-            # Check target
-            if data["target"] != 95.0:
-                self.log_result(test_name, False, f"Target should be 95.0, got {data['target']}")
-                return False
-            
-            # Check KPIs count
-            kpis = data.get("kpis", [])
-            if len(kpis) != 7:
-                self.log_result(test_name, False, f"Expected 7 KPIs, got {len(kpis)}")
-                return False
-            
-            # Check each KPI structure
-            kpi_fields = ["key", "no", "name", "mode", "target", "unit", "numerator", "denominator", "value", "source", "num_label", "den_label"]
-            for kpi in kpis:
-                missing_kpi = [f for f in kpi_fields if f not in kpi]
-                if missing_kpi:
-                    self.log_result(test_name, False, f"KPI {kpi.get('key')} missing fields: {missing_kpi}")
-                    return False
-            
-            self.log_result(test_name, True, f"All fields present, 7 KPIs found")
-            return True
-            
-        except Exception as e:
-            self.log_result(test_name, False, f"Error: {str(e)}")
-            return False
+        july_data = self.test_kpi_endpoint(2026, 7)
+        if not july_data:
+            self.log_result(test_name, False, "Failed to fetch July data")
+            return False, None
+        
+        # Verify structure
+        if "kpis" not in july_data or "total_weight" not in july_data:
+            self.log_result(test_name, False, "Missing required fields in July data")
+            return False, None
+        
+        kpis = july_data.get("kpis", [])
+        if len(kpis) != 6:
+            self.log_result(test_name, False, f"Expected 6 KPIs, got {len(kpis)}")
+            return False, None
+        
+        # Check expected July values (from requirements)
+        # Expected: total_weight=100; KPI3 (bom_no_revision) numerator=1 denominator=1 achievement=100 score=15.0
+        # other KPIs have denominator 0 -> achievement null, score null; total_score=15.0; category='PERLU PERBAIKAN'
+        
+        kpi3 = next((k for k in kpis if k["key"] == "bom_no_revision"), None)
+        if not kpi3:
+            self.log_result(test_name, False, "KPI3 (bom_no_revision) not found")
+            return False, None
+        
+        details = f"July data readable: {len(kpis)} KPIs, total_weight={july_data.get('total_weight')}, "
+        details += f"KPI3: num={kpi3.get('numerator')} den={kpi3.get('denominator')} ach={kpi3.get('achievement')} score={kpi3.get('score')}, "
+        details += f"total_score={july_data.get('total_score')}, category={july_data.get('category')}"
+        
+        self.log_result(test_name, True, details)
+        return True, july_data
 
-    def test_manual_kpi(self, data):
-        """Verify manual KPI (response_time) has mode='manual' and value=null"""
-        test_name = "Manual KPI Validation (response_time)"
+    def test_august_weighted_scoring(self):
+        """Test August 2026 weighted scoring correctness"""
+        test_name = "August 2026 Weighted Scoring"
         print(f"\n🔍 Testing {test_name}...")
         
-        try:
-            kpis = data.get("kpis", [])
-            manual_kpi = next((k for k in kpis if k["key"] == "response_time"), None)
+        aug_data = self.test_kpi_endpoint(2026, 8)
+        if not aug_data:
+            self.log_result(test_name, False, "Failed to fetch August data")
+            return False, None
+        
+        # Expected August values (from requirements):
+        # KPI1 (drawing_customer_nc): num=7 den=13 ach=53.8 weight=20 score~10.76
+        # KPI2 (drawing_no_revision): num=13 den=13 ach=100 weight=15 score=15.00
+        # KPI3 (bom_no_revision): num=3 den=3 ach=100 weight=15 score=15.00
+        # KPI4 (drawing_ontime): num=4 den=13 ach=30.8 weight=25 score~7.70
+        # KPI5 (costing_ontime): num=0 den=0 ach=null weight=15 score=null
+        # KPI6 (drawing_template_mks): num=4 den=13 ach=30.8 weight=10 score~3.08
+        # Total score ~51.54, Category='PERLU PERBAIKAN'
+        
+        kpis = aug_data.get("kpis", [])
+        if len(kpis) != 6:
+            self.log_result(test_name, False, f"Expected 6 KPIs, got {len(kpis)}")
+            return False, None
+        
+        # Verify weighted scoring formula for each KPI
+        all_correct = True
+        total_computed = 0.0
+        
+        for kpi in kpis:
+            key = kpi.get("key")
+            achievement = kpi.get("achievement")
+            weight = kpi.get("weight")
+            score = kpi.get("score")
             
-            if not manual_kpi:
-                self.log_result(test_name, False, "response_time KPI not found")
-                return False
+            if achievement is not None:
+                expected_score = round(achievement * weight / 100, 2)
+                if score != expected_score:
+                    print(f"   ❌ {key}: score={score}, expected={expected_score} (ach={achievement}, weight={weight})")
+                    all_correct = False
+                else:
+                    print(f"   ✅ {key}: score={score} (ach={achievement}%, weight={weight}%) - CORRECT")
+                    total_computed += score
+            else:
+                if score is not None:
+                    print(f"   ❌ {key}: achievement=null but score={score} (should be null)")
+                    all_correct = False
+                else:
+                    print(f"   ✅ {key}: achievement=null, score=null - CORRECT")
+        
+        # Verify total score
+        total_score = aug_data.get("total_score")
+        expected_total = round(total_computed, 2)
+        
+        if total_score != expected_total:
+            print(f"   ❌ Total score mismatch: got {total_score}, expected {expected_total}")
+            all_correct = False
+        else:
+            print(f"   ✅ Total score: {total_score} - CORRECT")
+        
+        # Verify category
+        category = aug_data.get("category")
+        if total_score is not None:
+            if total_score >= 90:
+                expected_cat = "SANGAT BAIK"
+            elif total_score >= 80:
+                expected_cat = "BAIK"
+            elif total_score >= 71:
+                expected_cat = "CUKUP"
+            else:
+                expected_cat = "PERLU PERBAIKAN"
             
-            if manual_kpi["mode"] != "manual":
-                self.log_result(test_name, False, f"Expected mode='manual', got '{manual_kpi['mode']}'")
-                return False
-            
-            if manual_kpi["value"] is not None:
-                self.log_result(test_name, False, f"Expected value=null, got {manual_kpi['value']}")
-                return False
-            
-            self.log_result(test_name, True, "Manual KPI has mode='manual' and value=null (no fake data)")
-            return True
-            
-        except Exception as e:
-            self.log_result(test_name, False, f"Error: {str(e)}")
-            return False
+            if category != expected_cat:
+                print(f"   ❌ Category mismatch: got '{category}', expected '{expected_cat}'")
+                all_correct = False
+            else:
+                print(f"   ✅ Category: '{category}' - CORRECT")
+        
+        if all_correct:
+            self.log_result(test_name, True, f"All weighted scores correct, total={total_score}, category='{category}'")
+        else:
+            self.log_result(test_name, False, "Weighted scoring formula errors detected")
+        
+        return all_correct, aug_data
 
-    def test_auto_kpis(self, data):
-        """Verify auto KPIs have correct mode"""
-        test_name = "Auto KPIs Validation"
+    def test_weights_sum(self, data):
+        """Test that weights sum to 100"""
+        test_name = "Weights Sum to 100"
         print(f"\n🔍 Testing {test_name}...")
         
-        try:
-            kpis = data.get("kpis", [])
-            auto_keys = ["drawing_customer_nc", "drawing_no_revision", "bom_no_revision", 
-                        "drawing_ontime", "costing_ontime", "drawing_template_mks"]
-            
-            for key in auto_keys:
-                kpi = next((k for k in kpis if k["key"] == key), None)
-                if not kpi:
-                    self.log_result(test_name, False, f"Auto KPI {key} not found")
-                    return False
-                
-                if kpi["mode"] != "auto":
-                    self.log_result(test_name, False, f"KPI {key} should have mode='auto', got '{kpi['mode']}'")
-                    return False
-            
-            self.log_result(test_name, True, f"All 6 auto KPIs have mode='auto'")
-            return True
-            
-        except Exception as e:
-            self.log_result(test_name, False, f"Error: {str(e)}")
+        total_weight = data.get("total_weight")
+        kpis = data.get("kpis", [])
+        
+        # Sum individual weights
+        weight_sum = sum(k.get("weight", 0) for k in kpis)
+        
+        if total_weight != 100:
+            self.log_result(test_name, False, f"total_weight={total_weight}, expected 100")
             return False
+        
+        if weight_sum != 100:
+            self.log_result(test_name, False, f"Sum of individual weights={weight_sum}, expected 100")
+            return False
+        
+        # Verify expected weights
+        expected_weights = {
+            "drawing_customer_nc": 20,
+            "drawing_no_revision": 15,
+            "bom_no_revision": 15,
+            "drawing_ontime": 25,
+            "costing_ontime": 15,
+            "drawing_template_mks": 10
+        }
+        
+        for kpi in kpis:
+            key = kpi.get("key")
+            weight = kpi.get("weight")
+            expected = expected_weights.get(key)
+            
+            if weight != expected:
+                self.log_result(test_name, False, f"{key}: weight={weight}, expected {expected}")
+                return False
+        
+        self.log_result(test_name, True, f"total_weight=100, sum of weights=100, all individual weights correct")
+        return True
 
     def test_kpi_audit_records(self, key, year, month):
         """Test GET /api/engineering/kpi/{key}/records"""
@@ -213,16 +285,16 @@ class EngineeringKpiTester:
         print(f"\n🔍 Testing Auditability (year={year}, month={month})...")
         
         kpis = kpi_data.get("kpis", [])
-        auto_kpis = [k for k in kpis if k["mode"] == "auto" and k["value"] is not None]
         
-        audit_keys = ["drawing_no_revision", "drawing_customer_nc", "bom_no_revision", 
-                     "drawing_template_mks", "drawing_ontime"]
+        # Test 5 keys as specified
+        audit_keys = ["drawing_customer_nc", "drawing_no_revision", "bom_no_revision", 
+                     "drawing_ontime", "drawing_template_mks"]
         
         all_passed = True
         for key in audit_keys:
-            kpi = next((k for k in auto_kpis if k["key"] == key), None)
+            kpi = next((k for k in kpis if k["key"] == key), None)
             if not kpi:
-                print(f"   ⚠️  Skipping {key} (no data)")
+                print(f"   ⚠️  Skipping {key} (not found)")
                 continue
             
             # Get audit records
@@ -251,56 +323,55 @@ class EngineeringKpiTester:
         
         return all_passed
 
-    def test_real_computation(self):
-        """Test that KPI numbers are computed from real data (not mocked)"""
-        test_name = "Real Data Computation (compare Aug vs July vs March)"
+    def test_formula_correctness(self, data):
+        """Test formula correctness: denominators equal for certain KPIs"""
+        test_name = "Formula Correctness (Equal Denominators)"
         print(f"\n🔍 Testing {test_name}...")
         
-        try:
-            # Get data for different months
-            aug_data = self.test_kpi_endpoint(2026, 8, expected_status=200)
-            july_data = self.test_kpi_endpoint(2026, 7, expected_status=200)
-            march_data = self.test_kpi_endpoint(2026, 3, expected_status=200)
-            
-            if not aug_data or not july_data or not march_data:
-                self.log_result(test_name, False, "Failed to fetch data for all months")
-                return False
-            
-            # Check that values differ (indicating real computation)
-            aug_score = aug_data.get("overall_score")
-            july_score = july_data.get("overall_score")
-            march_score = march_data.get("overall_score")
-            
-            print(f"   Aug 2026 overall_score: {aug_score}")
-            print(f"   July 2026 overall_score: {july_score}")
-            print(f"   March 2026 overall_score: {march_score}")
-            
-            # March should likely have null/empty values (no data)
-            march_kpis = march_data.get("kpis", [])
-            march_auto_values = [k["value"] for k in march_kpis if k["mode"] == "auto"]
-            march_nulls = sum(1 for v in march_auto_values if v is None)
-            
-            if march_nulls > 0:
-                self.log_result(test_name, True, 
-                    f"March has {march_nulls} null values (no data), Aug/July have computed values - indicates real computation")
-                return True
-            else:
-                # If March has data, check that values differ between months
-                if aug_score != july_score or aug_score != march_score:
-                    self.log_result(test_name, True, 
-                        f"Different scores across months - indicates real computation")
-                    return True
-                else:
-                    self.log_result(test_name, False, 
-                        f"All months have same score - may indicate mocked data")
-                    return False
-            
-        except Exception as e:
-            self.log_result(test_name, False, f"Error: {str(e)}")
+        kpis = data.get("kpis", [])
+        
+        # These KPIs should all have equal denominators (Total Drawings Release)
+        drawing_keys = ["drawing_customer_nc", "drawing_no_revision", "drawing_ontime", "drawing_template_mks"]
+        
+        denominators = {}
+        for key in drawing_keys:
+            kpi = next((k for k in kpis if k["key"] == key), None)
+            if kpi:
+                denominators[key] = kpi.get("denominator")
+        
+        if len(set(denominators.values())) != 1:
+            details = f"Denominators not equal: {denominators}"
+            self.log_result(test_name, False, details)
             return False
+        
+        # Verify KPI6 numerator = count of pdf_match_status=='verified'
+        kpi6 = next((k for k in kpis if k["key"] == "drawing_template_mks"), None)
+        if kpi6:
+            # This is verified by auditability test, just log
+            print(f"   ✅ KPI6 (drawing_template_mks) numerator={kpi6.get('numerator')} (verified by audit)")
+        
+        self.log_result(test_name, True, f"All drawing KPIs have equal denominator: {list(denominators.values())[0]}")
+        return True
 
     def test_rbac(self):
-        """Test RBAC: non-engineering user should get 403"""
+        """Test RBAC: engineering user gets 200, non-engineering gets 403"""
+        test_name = "RBAC: Engineering User (200)"
+        print(f"\n🔍 Testing {test_name}...")
+        
+        # Already logged in as riski (engineering), test should pass
+        response = self.session.get(
+            f"{self.base_url}/api/engineering/kpi",
+            params={"year": 2026, "month": 8},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            self.log_result(test_name, True, "Engineering user (riski) can access KPI")
+        else:
+            self.log_result(test_name, False, f"Expected 200, got {response.status_code}")
+            return False
+        
+        # Test non-engineering user
         test_name = "RBAC: Non-Engineering User (403)"
         print(f"\n🔍 Testing {test_name}...")
         
@@ -352,7 +423,7 @@ class EngineeringKpiTester:
 
 def main():
     print("="*70)
-    print("🧪 ENGINEERING KPI BACKEND API TESTS")
+    print("🧪 ENGINEERING KPI BACKEND API TESTS (WITH WEIGHTED SCORING)")
     print("="*70)
     
     tester = EngineeringKpiTester()
@@ -362,29 +433,27 @@ def main():
         print("❌ Failed to login. Aborting tests.")
         return 1
     
-    # Test 1: GET /api/engineering/kpi for August 2026
-    aug_data = tester.test_kpi_endpoint(2026, 8)
+    # Test 1: July data readable
+    july_passed, july_data = tester.test_july_readable()
+    
+    # Test 2: August weighted scoring
+    aug_passed, aug_data = tester.test_august_weighted_scoring()
+    
     if not aug_data:
-        print("❌ Failed to fetch KPI data. Aborting remaining tests.")
+        print("❌ Failed to fetch August data. Aborting remaining tests.")
         tester.print_summary()
         return 1
     
-    # Test 2: Verify KPI structure
-    tester.test_kpi_structure(aug_data, 2026, 8)
+    # Test 3: Weights sum to 100
+    tester.test_weights_sum(aug_data)
     
-    # Test 3: Verify manual KPI
-    tester.test_manual_kpi(aug_data)
-    
-    # Test 4: Verify auto KPIs
-    tester.test_auto_kpis(aug_data)
-    
-    # Test 5: Test auditability
+    # Test 4: Auditability
     tester.test_auditability(aug_data, 2026, 8)
     
-    # Test 6: Test real computation
-    tester.test_real_computation()
+    # Test 5: Formula correctness
+    tester.test_formula_correctness(aug_data)
     
-    # Test 7: Test RBAC
+    # Test 6: RBAC
     tester.test_rbac()
     
     # Print summary

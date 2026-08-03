@@ -35,47 +35,47 @@ def _can_view_kpi(user: dict) -> bool:
 
 KPI_DEFS = [
     {"key": "drawing_customer_nc", "no": 1,
-     "name": "Drawing complies to customer requirements",
-     "name_id": "Drawing sesuai kebutuhan customer",
-     "description": "Persentase drawing yang dirilis tanpa ketidaksesuaian (Non-Conformity) terhadap kebutuhan customer",
-     "formula_num": "Jumlah Drawing Release tanpa NC",
-     "formula_den": "Total Drawing Release",
-     "source": "drawings status='Issued' pada bulan tsb; NC = adanya field revision_request (reject customer/head)."},
+     "name_id": "Drawing compliance with standard requirements (internal & external)",
+     "description": "No receive NC related drawing",
+     "formula_num": "Number of Drawings Release Without Non-Conformity (NC)",
+     "formula_den": "Total Drawings Release",
+     "target": "100%", "weight": 20,
+     "source": "drawings status='Issued' pada bulan tsb; tanpa NC = tidak ada field revision_request (reject customer/head)."},
     {"key": "drawing_no_revision", "no": 2,
-     "name": "Drawing compliance with standard requirements",
-     "name_id": "Drawing tanpa revisi (sesuai standar)",
-     "description": "Persentase drawing yang dirilis tanpa revisi terhadap standar internal & eksternal",
-     "formula_num": "Jumlah Drawing Release tanpa Revisi",
-     "formula_den": "Total Drawing Release",
+     "name_id": "Drawing complies to customer requirements",
+     "description": "Minimized Drawing Revision",
+     "formula_num": "Number of Drawings Release Without Revision",
+     "formula_den": "Total Drawings Release",
+     "target": "≥ 95%", "weight": 15,
      "source": "drawings.revision (harus Rev-0) DAN drawing_no tidak ada di ecns(kind='ecn')."},
     {"key": "bom_no_revision", "no": 3,
-     "name": "BOM compliance rate with project requirements",
-     "name_id": "BOM tanpa revisi (sesuai project)",
-     "description": "Persentase BOM yang dirilis tanpa revisi sesuai kebutuhan project",
-     "formula_num": "Jumlah BOM Release tanpa Revisi",
-     "formula_den": "Total BOM Release",
+     "name_id": "BOM compliance rate with project requirements",
+     "description": "Minimized BOM Revision & Nesting Error",
+     "formula_num": "Number of BOMs Release Without Revision",
+     "formula_den": "Total BOMs Release",
+     "target": "≥ 95%", "weight": 15,
      "source": "boms.engineering_status='approved', rev_no=0, DAN bom_no tidak ada di ecns(kind='ecn')."},
     {"key": "drawing_ontime", "no": 4,
-     "name": "On Time Drawing completion against plan schedule",
-     "name_id": "On-Time Drawing completion",
-     "description": "Persentase drawing yang selesai tepat waktu sesuai jadwal rencana (DRF) dibanding total drawing release",
-     "formula_num": "Jumlah Drawing selesai On Time",
-     "formula_den": "Total Drawing Release",
+     "name_id": "On Time Drawing completion against plan schedule",
+     "description": "Minimized Drawing Lateness Issued",
+     "formula_num": "Number of Drawings On Time (meet schedule)",
+     "formula_den": "Total Drawings Release",
+     "target": "≥ 95%", "weight": 25,
      "source": "Numerator = drawing rilis yang tgl selesainya ≤ drawing_requests.expected_due_date; Denominator = total drawing status='Issued' bulan tsb (drawing tanpa jadwal DRF tidak dihitung on-time)."},
     {"key": "costing_ontime", "no": 5,
-     "name": "On Time Costing Completion against due date",
-     "name_id": "On-Time Costing completion",
-     "description": "Persentase costing (inquiry) yang selesai tepat waktu sesuai due date",
-     "formula_num": "Jumlah Costing selesai On Time",
-     "formula_den": "Total Costing Completed",
-     "source": "Numerator = inquiry selesai (completed_at) yang ≤ customer_deadline; Denominator = total inquiry selesai (completed_at) bulan tsb (yang tanpa deadline tidak dihitung on-time)."},
+     "name_id": "On Time Costing Completion against due date schedule",
+     "description": "Minimized Costing Lateness Issued",
+     "formula_num": "Number of Costings Release On Time",
+     "formula_den": "Total Costings Completed",
+     "target": "≥ 95%", "weight": 15,
+     "source": "Numerator = inquiry selesai (completed_at) yang ≤ customer_deadline; Denominator = total inquiry selesai (completed_at) bulan tsb (tanpa deadline tidak dihitung on-time)."},
     {"key": "drawing_template_mks", "no": 6,
-     "name": "Drawing complies with the standardized template",
-     "name_id": "Drawing sesuai template standar (MKS)",
-     "description": "Persentase drawing yang sesuai template standar MKS (lolos validasi PDF)",
-     "formula_num": "Jumlah Drawing sesuai Template MKS",
-     "formula_den": "Total Drawing tervalidasi",
-     "source": "drawings.pdf_match_status: 'verified'=lolos validasi MKS; 'warning'=tidak sesuai (legacy dikecualikan)."},
+     "name_id": "Drawing complies with the standardized template",
+     "description": "Drawing compliance with Standards template",
+     "formula_num": "Number of Standard-Compliant Drawings",
+     "formula_den": "Total Drawings Release",
+     "target": "100%", "weight": 10,
+     "source": "Numerator = drawing status='Issued' dgn pdf_match_status='verified' (lolos validasi MKS); Denominator = total drawing release bulan tsb."},
 ]
 KPI_BY_KEY = {k["key"]: k for k in KPI_DEFS}
 
@@ -196,9 +196,8 @@ def _kpi_records(ctx: dict, key: str, ym: str) -> list:
         return out
 
     if key == "drawing_template_mks":
-        validated = [d for d in drawings if str(d.get("pdf_match_status") or "") in ("verified", "warning") and _in_period(_dwg_date(d), ym)]
         return [{"ref": d.get("drawing_no"), "ok": d.get("pdf_match_status") == "verified",
-                 "note": f"pdf_match_status={d.get('pdf_match_status')}", "date": (_dwg_date(d) or "")[:10]} for d in validated]
+                 "note": f"pdf_match_status={d.get('pdf_match_status') or '(kosong)'}", "date": (_dwg_date(d) or "")[:10]} for d in issued]
 
     return []
 
@@ -207,28 +206,33 @@ async def _compute_month(year: int, month: int) -> dict:
     ctx = await _load_ctx()
     ym = f"{year:04d}-{month:02d}"
     kpis = []
-    achievements = []
+    total_score = 0.0
+    total_weight = 0
+    have_data = False
     for d in KPI_DEFS:
         recs = _kpi_records(ctx, d["key"], ym)
         den = len(recs)
         num = sum(1 for r in recs if r["ok"])
         ach = _pct(num, den)
+        weight = d["weight"]
+        score = round(ach * weight / 100, 2) if ach is not None else None
         if ach is not None:
-            achievements.append(ach)
+            have_data = True
+            total_score += score
+            total_weight += weight
         kpis.append({
-            **{k: d[k] for k in ("key", "no", "name", "name_id", "description", "formula_num", "formula_den", "source")},
-            "target": TARGET_TEXT,
+            **{k: d[k] for k in ("key", "no", "name_id", "description", "formula_num", "formula_den", "source", "target", "weight")},
             "numerator": num, "denominator": den,
             "achievement": ach,
-            "score": ach,  # tanpa bobot: skor = capaian
+            "score": score,
             "category": _category(ach),
         })
-    total = round(sum(achievements) / len(achievements), 2) if achievements else None
+    total = round(total_score, 2) if have_data else None
     last_day = calendar.monthrange(year, month)[1]
     return {
         "year": year, "month": month,
         "period": {"start_date": f"{ym}-01", "end_date": f"{year:04d}-{month:02d}-{last_day:02d}"},
-        "target": TARGET_TEXT,
+        "total_weight": sum(d["weight"] for d in KPI_DEFS),
         "kpis": kpis,
         "total_score": total,
         "category": _category(total),

@@ -123,11 +123,12 @@ export default function EngineeringKpiPage() {
               <thead>
                 <tr className="bg-teal-50 text-slate-900 text-xs">
                   <th className="border border-slate-400 p-2 w-10">No</th>
-                  <th className="border border-slate-400 p-2 text-left">KPI Departemen</th>
-                  <th className="border border-slate-400 p-2 w-[260px]">Formula Perhitungan</th>
-                  <th className="border border-slate-400 p-2 w-20">Target Capaian</th>
-                  <th className="border border-slate-400 p-2 w-28 bg-emerald-100">Capaian Aktual</th>
-                  <th className="border border-slate-400 p-2 w-20 bg-teal-200">SKOR KPI</th>
+                  <th className="border border-slate-400 p-2 text-left">Department KPI</th>
+                  <th className="border border-slate-400 p-2 w-[260px]">Calculation Formula</th>
+                  <th className="border border-slate-400 p-2 w-20">Target Achievement</th>
+                  <th className="border border-slate-400 p-2 w-16">Achievement Weight (%)</th>
+                  <th className="border border-slate-400 p-2 w-28 bg-emerald-100">Actual Achievements</th>
+                  <th className="border border-slate-400 p-2 w-20 bg-teal-200">KPI Score (%)</th>
                   <th className="border border-slate-400 p-2 w-16 print:hidden">Audit</th>
                 </tr>
               </thead>
@@ -151,17 +152,18 @@ export default function EngineeringKpiPage() {
                       </div>
                     </td>
                     <td className="border border-slate-400 p-2 text-center font-semibold">{k.target}</td>
+                    <td className="border border-slate-400 p-2 text-center font-bold tabular-nums" data-testid={`kpi-weight-${k.key}`}>{k.weight}%</td>
                     <td className="border border-slate-400 p-0 text-center">
                       <div className="grid grid-rows-2">
                         <div className="border-b border-slate-400 tabular-nums py-1 text-sm" data-testid={`kpi-num-${k.key}`}>{k.numerator}</div>
                         <div className="tabular-nums py-1 text-sm" data-testid={`kpi-den-${k.key}`}>{k.denominator}</div>
                       </div>
-                      <div className={`border-t border-slate-400 py-1 font-bold tabular-nums ${achColor(k.achievement)}`}>
+                      <div className={`border-t border-slate-400 py-1 font-bold tabular-nums ${achColor(k.achievement)}`} data-testid={`kpi-ach-${k.key}`}>
                         {k.achievement == null ? "–" : `${k.achievement.toFixed(0)}%`}
                       </div>
                     </td>
-                    <td className={`border border-slate-400 p-2 text-center bg-teal-100 font-bold tabular-nums text-lg ${achColor(k.score)}`} style={{ fontFamily: "Chivo, sans-serif" }} data-testid={`kpi-score-${k.key}`}>
-                      {k.score == null ? "–" : k.score.toFixed(2)}
+                    <td className={`border border-slate-400 p-2 text-center bg-teal-100 font-bold tabular-nums text-lg ${achColor(k.achievement)}`} style={{ fontFamily: "Chivo, sans-serif" }} data-testid={`kpi-score-${k.key}`}>
+                      {k.score == null ? "–" : `${k.score.toFixed(2)} %`}
                     </td>
                     <td className="border border-slate-400 p-1 text-center print:hidden">
                       <button onClick={() => openAudit(k)} className="inline-flex items-center gap-1 px-1.5 py-1 text-[10px] font-bold uppercase tracking-wide border border-teal-300 text-teal-700 hover:bg-teal-600 hover:text-white transition-colors" data-testid={`kpi-audit-btn-${k.key}`} title="Telusur record (audit)">
@@ -172,8 +174,9 @@ export default function EngineeringKpiPage() {
                 ))}
                 {/* Total row */}
                 <tr>
-                  <td colSpan={4} className="border border-slate-400 p-2 text-right font-bold uppercase text-xs tracking-wider text-slate-600">Total Skor KPI (rata-rata)</td>
-                  <td className="border border-slate-400 p-2 text-center font-bold bg-yellow-100 text-[11px] text-slate-500">tanpa bobot</td>
+                  <td colSpan={4} className="border border-slate-400 p-2 text-right font-bold uppercase text-xs tracking-wider text-slate-600">Total</td>
+                  <td className="border border-slate-400 p-2 text-center font-black bg-yellow-200 tabular-nums" data-testid="kpi-total-weight">{data.total_weight}%</td>
+                  <td className="border border-slate-400"></td>
                   <td className="border border-slate-400 p-2 text-center font-black bg-yellow-300 tabular-nums text-lg" data-testid="kpi-total-score" style={{ fontFamily: "Chivo, sans-serif" }}>
                     {data.total_score == null ? "–" : `${data.total_score.toFixed(2)} %`}
                   </td>
@@ -181,8 +184,8 @@ export default function EngineeringKpiPage() {
                 </tr>
                 {/* Category */}
                 <tr>
-                  <td colSpan={4} className="border border-slate-400 p-3 align-top">
-                    <div className="font-semibold underline mb-1">Kategori Capaian:</div>
+                  <td colSpan={5} className="border border-slate-400 p-3 align-top">
+                    <div className="font-semibold underline mb-1">Achievement Category (Kategori Capaian):</div>
                     <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-xs max-w-sm">
                       <div>≤ 70%</div><div className="text-red-600 font-bold">→ PERLU PERBAIKAN</div>
                       <div>71% - 79%</div><div className="text-amber-600 font-bold">→ CUKUP</div>
