@@ -186,6 +186,18 @@ async def list_controlled_documents(
     return {"items": items, "total": len(items)}
 
 
+@router.get("/controlled-documents/doc-types")
+async def controlled_document_doc_types(category: str = "iso", current: dict = Depends(get_current_user)):
+    """Daftar Tipe Dokumen yang pernah dipakai (untuk dropdown upload — tipe custom 'Lainnya'
+    otomatis tersimpan & muncul lagi di upload berikutnya)."""
+    query: dict = {"deleted_at": {"$exists": False}}
+    if category:
+        query["category"] = category.lower()
+    vals = await db.controlled_documents.distinct("doc_type", query)
+    types = sorted({(v or "").strip() for v in vals if v and v.strip()})
+    return {"types": types}
+
+
 @router.get("/controlled-documents/counts")
 async def controlled_document_counts(current: dict = Depends(get_current_user)):
     """Jumlah per status (untuk badge/kartu)."""

@@ -337,6 +337,72 @@ async def engineering_workload(current: dict = Depends(get_current_user)):
     return {"items": out, "summary": summary, "thresholds": {"busy": 4, "overload": 7}}
 
 
+@router.get("/engineering/workload/detail")
+async def engineering_workload_detail(user_id: str, current: dict = Depends(get_current_user)):
+    """Rincian item beban aktif seorang engineer (view-only): daftar DRF, Drawing, Inquiry, ECN
+    yang sedang menjadi beban. Dipakai saat angka breakdown di Monitor diklik."""
+    if not (is_engineering(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering / Admin")
+    u = await db.users.find_one({"id": user_id}, {"_id": 0, "id": 1, "name": 1, "username": 1})
+    if not u:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+
+    # DRF aktif
+    drf = []
+    for d in await db.drawing_requests.find(
+        {"assigned_engineer_id": user_id, "status": {"$in": ["accepted", "in_progress"]}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "form_no": 1, "so_no": 1, "customer_name": 1, "project_name": 1, "status": 1, "expected_due_date": 1, "due_date": 1},
+    ).sort("created_at", -1).to_list(length=1000):
+        drf.append({
+            "id": d.get("id"), "no": d.get("form_no", "-"), "so_no": d.get("so_no", "-"),
+            "title": " · ".join([x for x in [d.get("customer_name"), d.get("project_name")] if x]) or "-",
+            "status": d.get("status", "-"), "due": d.get("expected_due_date") or d.get("due_date") or "",
+        })
+
+    # Drawing aktif + ECN/revisi aktif
+    drawing, ecn = [], []
+    for d in await db.drawings.find(
+        {"assigned_to_user_id": user_id, "approval_status": {"$nin": ["controlled", "released"]}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "drawing_no": 1, "so_no": 1, "part_name": 1, "description": 1, "approval_status": 1},
+    ).sort("created_at", -1).to_list(length=5000):
+        drawing.append({
+            "id": d.get("id"), "no": d.get("drawing_no", "-"), "so_no": d.get("so_no", "-"),
+            "title": d.get("part_name") or d.get("description") or "-",
+            "status": d.get("approval_status", "-"), "due": "",
+        })
+    # ECN aktif = revision_request pending/in_progress (untuk user ini)
+    for d in await db.drawings.find(
+        {"revision_request.status": {"$in": ["pending", "in_progress"]}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "drawing_no": 1, "so_no": 1, "assigned_to_user_id": 1, "revision_request": 1},
+    ).to_list(length=5000):
+        rr = d.get("revision_request") or {}
+        euid = rr.get("requested_by_id") or d.get("assigned_to_user_id")
+        if euid == user_id:
+            ecn.append({
+                "id": d.get("id"), "no": rr.get("ecn_no") or d.get("drawing_no", "-"), "so_no": d.get("so_no", "-"),
+                "title": rr.get("reason") or rr.get("notes") or d.get("drawing_no", "-"),
+                "status": rr.get("status", "-"), "due": "",
+            })
+
+    # Inquiry aktif
+    inquiry = []
+    for iq in await db.inquiries.find(
+        {"assigned_to_id": user_id, "status": {"$nin": ["completed", "rejected", "cancelled", "draft"]}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "inquiry_no": 1, "customer_name": 1, "title": 1, "project_name": 1, "status": 1, "due_date": 1, "target_date": 1},
+    ).sort("created_at", -1).to_list(length=2000):
+        inquiry.append({
+            "id": iq.get("id"), "no": iq.get("inquiry_no", "-"), "so_no": "-",
+            "title": iq.get("title") or iq.get("project_name") or iq.get("customer_name") or "-",
+            "status": iq.get("status", "-"), "due": iq.get("due_date") or iq.get("target_date") or "",
+        })
+
+    return {
+        "user": {"id": u.get("id"), "name": u.get("name") or u.get("username")},
+        "drf": drf, "drawing": drawing, "inquiry": inquiry, "ecn": ecn,
+        "counts": {"drf": len(drf), "drawing": len(drawing), "inquiry": len(inquiry), "ecn": len(ecn)},
+    }
+
+
 @router.get("/engineering/workload/trend")
 async def engineering_workload_trend(weeks: int = 8, current: dict = Depends(get_current_user)):
     """Tren beban mingguan per engineer (N minggu terakhir).

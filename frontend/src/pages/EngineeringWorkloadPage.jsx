@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import api from "../lib/api";
 import { Card } from "../components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import {
   Gauge, ArrowClockwise, Warning, CheckCircle, Fire, Kanban, FileText,
-  CurrencyCircleDollar, PencilSimpleLine, Clock, UsersThree, ChartBar, X,
+  CurrencyCircleDollar, PencilSimpleLine, Clock, UsersThree, ChartBar, X, CircleNotch,
 } from "@phosphor-icons/react";
 
 const LEVEL = {
@@ -25,6 +26,25 @@ export default function EngineeringWorkloadPage() {
   const [loading, setLoading] = useState(true);
   const [levelFilter, setLevelFilter] = useState(null); // 'overload'|'busy'|'normal'|'overdue'
   const [showTrend, setShowTrend] = useState(true);
+  const [detailUser, setDetailUser] = useState(null);   // {user_id, name} untuk modal rincian
+  const [detailTab, setDetailTab] = useState("drf");
+  const [detailData, setDetailData] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const openDetail = useCallback(async (row, tabKey) => {
+    setDetailUser({ user_id: row.user_id, name: row.name });
+    setDetailTab(tabKey || "drf");
+    setDetailData(null);
+    setDetailLoading(true);
+    try {
+      const { data } = await api.get(`/engineering/workload/detail?user_id=${row.user_id}`);
+      setDetailData(data);
+    } catch {
+      setDetailData({ drf: [], drawing: [], inquiry: [], ecn: [], counts: {} });
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,7 +100,7 @@ export default function EngineeringWorkloadPage() {
     { label: "Terlambat", value: s.overdue ?? 0, icon: Clock, cls: "border-orange-300 text-orange-700 bg-orange-50/60", key: "overdue" },
   ];
 
-  const toggleLevel = (k) => k && setLevelFilter((cur) => (cur === k ? null : k));
+  const toggleLevel = (k) => (k ? setLevelFilter((cur) => (cur === k ? null : k)) : setLevelFilter(null));
 
   return (
     <div className="space-y-4" data-testid="workload-page">
@@ -116,15 +136,15 @@ export default function EngineeringWorkloadPage() {
       {/* Summary (clickable filters) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5" data-testid="workload-summary">
         {SUMMARY.map((x) => {
-          const clickable = !!x.key;
-          const active = levelFilter === x.key && clickable;
+          const isReset = !x.key; // Total Engineer / Total Tugas Aktif → reset ke semua
+          const active = isReset ? levelFilter === null : levelFilter === x.key;
           return (
             <button
               key={x.label}
               type="button"
               onClick={() => toggleLevel(x.key)}
-              disabled={!clickable}
-              className={`text-left border ${x.cls} px-3 py-2.5 rounded-md transition-all ${clickable ? "hover:shadow-sm cursor-pointer" : "cursor-default"} ${active ? "ring-2 ring-offset-1 ring-slate-400 shadow-sm" : ""}`}
+              className={`text-left border ${x.cls} px-3 py-2.5 rounded-md transition-all hover:shadow-sm cursor-pointer ${active ? "ring-2 ring-offset-1 ring-slate-400 shadow-sm" : ""}`}
+              title={isReset ? "Tampilkan semua engineer" : `Saring: ${x.label}`}
               data-testid={`workload-summary-${x.key || x.label.toLowerCase().replace(/\s+/g, "-")}`}
             >
               <div className="flex items-center gap-1.5">
@@ -195,15 +215,26 @@ export default function EngineeringWorkloadPage() {
                   </div>
                   <span className="text-sm font-bold text-slate-700 tabular-nums w-8 text-right">{it.total}</span>
                 </div>
-                <div className="flex flex-wrap gap-x-4 gap-y-1">
-                  {BREAKDOWN.map((b) => (
-                    <span key={b.key} className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                      <b.icon size={12} weight="bold" className={b.cls} />
-                      {b.label}: <b className="text-slate-700">{it[b.key]}</b>
-                    </span>
-                  ))}
+                <div className="flex flex-wrap gap-x-2 gap-y-1">
+                  {BREAKDOWN.map((b) => {
+                    const val = it[b.key] || 0;
+                    return (
+                      <button
+                        key={b.key}
+                        type="button"
+                        onClick={() => val > 0 && openDetail(it, b.key)}
+                        disabled={val === 0}
+                        className={`inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border transition-colors ${val > 0 ? "border-slate-200 text-slate-500 hover:bg-slate-100 hover:border-slate-300 cursor-pointer" : "border-transparent text-slate-300 cursor-default"}`}
+                        data-testid={`workload-breakdown-${it.username}-${b.key}`}
+                        title={val > 0 ? `Lihat ${val} ${b.label}` : `Tidak ada ${b.label}`}
+                      >
+                        <b.icon size={12} weight="bold" className={val > 0 ? b.cls : "text-slate-300"} />
+                        {b.label}: <b className={val > 0 ? "text-slate-700" : "text-slate-300"}>{val}</b>
+                      </button>
+                    );
+                  })}
                   {it.overdue > 0 && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-orange-600">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-orange-600 px-1.5 py-0.5">
                       <Clock size={12} weight="bold" /> Terlambat: {it.overdue}
                     </span>
                   )}
@@ -238,6 +269,83 @@ export default function EngineeringWorkloadPage() {
           );
         })}
       </Card>
+
+      {/* Modal rincian breakdown (view-only) */}
+      <Dialog open={!!detailUser} onOpenChange={(o) => { if (!o) setDetailUser(null); }}>
+        <DialogContent className="max-w-3xl" data-testid="workload-detail-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-800">
+              <FileText size={18} weight="bold" className="text-amber-600" />
+              Rincian Beban — {detailUser?.name}
+              <span className="text-[10px] uppercase tracking-wider bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-bold">View-only</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* Tabs */}
+          <div className="flex flex-wrap gap-1 border-b border-slate-200">
+            {[
+              { key: "drf", label: "DRF", icon: Kanban },
+              { key: "drawing", label: "Drawing", icon: FileText },
+              { key: "inquiry", label: "Inquiry", icon: CurrencyCircleDollar },
+              { key: "ecn", label: "ECN/Revisi", icon: PencilSimpleLine },
+            ].map((t) => {
+              const cnt = detailData?.counts?.[t.key] ?? 0;
+              const active = detailTab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setDetailTab(t.key)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold uppercase tracking-wider border-b-2 -mb-px ${active ? "border-amber-500 text-amber-700" : "border-transparent text-slate-400 hover:text-slate-700"}`}
+                  data-testid={`workload-detail-tab-${t.key}`}
+                >
+                  <t.icon size={13} weight="bold" /> {t.label}
+                  <span className={`px-1 rounded-sm text-[10px] ${active ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>{cnt}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="max-h-[55vh] overflow-auto">
+            {detailLoading && (
+              <div className="py-10 text-center text-slate-400 text-sm flex flex-col items-center gap-2">
+                <CircleNotch size={22} className="animate-spin text-amber-500" weight="bold" /> Memuat rincian…
+              </div>
+            )}
+            {!detailLoading && detailData && (
+              (() => {
+                const rows = detailData[detailTab] || [];
+                if (rows.length === 0) {
+                  return <div className="py-10 text-center text-slate-400 text-sm" data-testid="workload-detail-empty">Tidak ada item pada kategori ini.</div>;
+                }
+                return (
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-slate-50 text-slate-500 uppercase tracking-wider text-[10px]">
+                      <tr>
+                        <th className="text-left py-2 px-2">No.</th>
+                        <th className="text-left py-2 px-2">SO</th>
+                        <th className="text-left py-2 px-2">Keterangan</th>
+                        <th className="text-left py-2 px-2">Status</th>
+                        <th className="text-left py-2 px-2">Due</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r, i) => (
+                        <tr key={r.id || i} className="border-b border-slate-50" data-testid={`workload-detail-row-${detailTab}-${i}`}>
+                          <td className="py-1.5 px-2 font-mono font-semibold text-slate-800 whitespace-nowrap">{r.no}</td>
+                          <td className="py-1.5 px-2 font-mono text-slate-500 whitespace-nowrap">{r.so_no || "-"}</td>
+                          <td className="py-1.5 px-2 text-slate-600 max-w-[280px] truncate" title={r.title}>{r.title || "-"}</td>
+                          <td className="py-1.5 px-2"><span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border border-slate-200 bg-slate-50 text-slate-600">{(r.status || "-").replace(/_/g, " ")}</span></td>
+                          <td className={`py-1.5 px-2 whitespace-nowrap ${r.due && String(r.due).slice(0,10) < new Date().toISOString().slice(0,10) ? "text-rose-600 font-bold" : "text-slate-500"}`}>{r.due ? String(r.due).slice(0, 10) : "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

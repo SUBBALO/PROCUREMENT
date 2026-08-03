@@ -11,7 +11,7 @@ import {
   ArrowsClockwise, DownloadSimple, Warning,
 } from "@phosphor-icons/react";
 
-const DOC_TYPES = ["Prosedur", "Manual", "Instruksi Kerja", "Form", "Kebijakan", "Rekaman", "Lainnya"];
+const DOC_TYPES = ["Prosedur", "Manual", "Instruksi Kerja", "Formulir", "Kebijakan", "Rekaman", "Lainnya"];
 
 const STATUS_META = {
   pending: { label: "Menunggu Stamp DC", cls: "bg-amber-100 text-amber-800 border-amber-400" },
@@ -38,6 +38,7 @@ export default function ControlledDocsManager({ view = "pending", onChanged }) {
   const [stampDoc, setStampDoc] = useState(null);
   const [preview, setPreview] = useState(null);
   const [revisionDoc, setRevisionDoc] = useState(null);
+  const [typeFilter, setTypeFilter] = useState("Semua"); // pengelompokan per jenis dokumen ISO
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,6 +68,15 @@ export default function ControlledDocsManager({ view = "pending", onChanged }) {
     try { return new Date(iso).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Jakarta" }); }
     catch { return iso.slice(0, 10); }
   };
+
+  // Pengelompokan per jenis (Prosedur / Manual / Instruksi Kerja / Formulir / dll)
+  const typeOf = (d) => (d.doc_type && d.doc_type.trim() ? d.doc_type.trim() : "Lainnya");
+  const typeCounts = items.reduce((m, d) => { const t = typeOf(d); m[t] = (m[t] || 0) + 1; return m; }, {});
+  const typeList = Object.keys(typeCounts).sort((a, b) => {
+    const order = DOC_TYPES;
+    return (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99) || a.localeCompare(b);
+  });
+  const visibleItems = typeFilter === "Semua" ? items : items.filter((d) => typeOf(d) === typeFilter);
 
   return (
     <div className="space-y-3" data-testid={`iso-docs-${view}`}>
@@ -100,6 +110,27 @@ export default function ControlledDocsManager({ view = "pending", onChanged }) {
         )}
       </div>
 
+      {/* Pengelompokan per jenis dokumen ISO */}
+      {items.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5" data-testid="iso-type-filter">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mr-0.5">Jenis:</span>
+          {[{ t: "Semua", c: items.length }, ...typeList.map((t) => ({ t, c: typeCounts[t] }))].map(({ t, c }) => {
+            const active = typeFilter === t;
+            return (
+              <button
+                key={t}
+                onClick={() => setTypeFilter(t)}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider border transition-colors ${active ? "bg-red-700 border-red-700 text-white" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"}`}
+                data-testid={`iso-type-chip-${t}`}
+              >
+                {t}
+                <span className={`px-1 rounded-sm text-[10px] ${active ? "bg-white/25" : "bg-slate-100 text-slate-500"}`}>{c}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Table */}
       <div className="border border-slate-200 overflow-x-auto">
         <table className="w-full text-sm">
@@ -123,7 +154,13 @@ export default function ControlledDocsManager({ view = "pending", onChanged }) {
                 {view === "pending" ? "Tidak ada dokumen menunggu stamp DC." : view === "controlled" ? "Belum ada dokumen ISO terkontrol." : "Tidak ada dokumen obsolete."}
               </td></tr>
             )}
-            {!loading && items.map((d) => {
+            {!loading && items.length > 0 && visibleItems.length === 0 && (
+              <tr><td colSpan={8} className="p-10 text-center text-slate-400">
+                <FileText size={28} className="mx-auto mb-2 opacity-40" />
+                Tidak ada dokumen jenis "{typeFilter}".
+              </td></tr>
+            )}
+            {!loading && visibleItems.map((d) => {
               const st = STATUS_META[d.status] || { label: d.status, cls: "bg-slate-100 text-slate-700 border-slate-400" };
               return (
                 <tr key={d.id} className="border-b border-slate-100 hover:bg-red-50/40" data-testid={`iso-row-${d.doc_no}`}>
@@ -189,17 +226,33 @@ export default function ControlledDocsManager({ view = "pending", onChanged }) {
 // ---------------- Upload Modal ----------------
 function UploadModal({ onClose, onDone }) {
   const [form, setForm] = useState({ doc_no: "", title: "", doc_type: "Prosedur", notes: "" });
+  const [customType, setCustomType] = useState("");
+  const [usedTypes, setUsedTypes] = useState([]);
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
 
+  // Ambil tipe yang pernah dipakai (tipe custom 'Lainnya' otomatis muncul lagi di sini)
+  useEffect(() => {
+    api.get("/controlled-documents/doc-types?category=iso")
+      .then(({ data }) => setUsedTypes(data.types || []))
+      .catch(() => setUsedTypes([]));
+  }, []);
+
+  // Gabungan opsi: tipe baku + tipe custom yang pernah dipakai, "Lainnya" selalu paling akhir
+  const baseTypes = DOC_TYPES.filter((t) => t !== "Lainnya");
+  const typeOptions = [...new Set([...baseTypes, ...usedTypes])];
+  const isCustom = form.doc_type === "Lainnya";
+
   const submit = async () => {
     if (!form.doc_no.trim() || !form.title.trim()) return toast.error("No. Dokumen & Judul wajib diisi");
+    const effType = isCustom ? customType.trim() : form.doc_type;
+    if (isCustom && !effType) return toast.error("Isi nama Tipe Dokumen custom dulu");
     if (!file) return toast.error("Pilih file PDF");
     setBusy(true);
     try {
       const fd = new FormData();
       fd.append("doc_no", form.doc_no); fd.append("title", form.title);
-      fd.append("category", "iso"); fd.append("doc_type", form.doc_type); fd.append("notes", form.notes);
+      fd.append("category", "iso"); fd.append("doc_type", effType); fd.append("notes", form.notes);
       fd.append("file", file);
       await api.post("/controlled-documents", fd, { headers: { "Content-Type": "multipart/form-data" } });
       toast.success("✓ Dokumen ISO berhasil diarsipkan ke database");
@@ -220,9 +273,22 @@ function UploadModal({ onClose, onDone }) {
           <Field label="Judul Dokumen *"><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="mis. Prosedur Pengendalian Dokumen" className="rounded-none border-slate-300" data-testid="iso-form-title" /></Field>
           <Field label="Tipe Dokumen">
             <select value={form.doc_type} onChange={(e) => setForm({ ...form, doc_type: e.target.value })} className="w-full h-10 border border-slate-300 px-2 text-sm rounded-none" data-testid="iso-form-type">
-              {DOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              {typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+              <option value="Lainnya">Lainnya (isi sendiri…)</option>
             </select>
           </Field>
+          {isCustom && (
+            <Field label="Tipe Dokumen Custom *">
+              <Input
+                value={customType}
+                onChange={(e) => setCustomType(e.target.value)}
+                placeholder="mis. Dokumen QC — akan tersimpan untuk upload berikutnya"
+                className="rounded-none border-slate-300"
+                data-testid="iso-form-type-custom"
+                autoFocus
+              />
+            </Field>
+          )}
           <Field label="Catatan"><Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="rounded-none border-slate-300" /></Field>
           <Field label="File PDF *">
             <input type="file" accept="application/pdf,.pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} className="block w-full text-sm border border-slate-300 p-2" data-testid="iso-form-file" />
