@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/
 import {
   Gauge, ArrowClockwise, Warning, CheckCircle, Fire, Kanban, FileText,
   CurrencyCircleDollar, PencilSimpleLine, Clock, UsersThree, ChartBar, X, CircleNotch,
+  DownloadSimple, CalendarBlank, FilePdf, MicrosoftExcelLogo,
 } from "@phosphor-icons/react";
 
 const LEVEL = {
@@ -26,6 +27,10 @@ export default function EngineeringWorkloadPage() {
   const [loading, setLoading] = useState(true);
   const [levelFilter, setLevelFilter] = useState(null); // 'overload'|'busy'|'normal'|'overdue'
   const [showTrend, setShowTrend] = useState(true);
+  const [range, setRange] = useState({ mode: "active", start: "", end: "" });
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+  const apiUrl = process.env.REACT_APP_BACKEND_URL;
   const [detailUser, setDetailUser] = useState(null);   // {user_id, name} untuk modal rincian
   const [detailTab, setDetailTab] = useState("drf");
   const [detailData, setDetailData] = useState(null);
@@ -48,9 +53,10 @@ export default function EngineeringWorkloadPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    const qs = range.start && range.end ? `?start=${range.start}&end=${range.end}` : "";
     try {
       const [w, t] = await Promise.all([
-        api.get("/engineering/workload"),
+        api.get(`/engineering/workload${qs}`),
         api.get("/engineering/workload/trend?weeks=8").catch(() => ({ data: null })),
       ]);
       setData(w.data);
@@ -60,13 +66,39 @@ export default function EngineeringWorkloadPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [range]);
 
   useEffect(() => {
     load();
     const iv = setInterval(load, 60000);
     return () => clearInterval(iv);
   }, [load]);
+
+  // Hitung rentang tanggal untuk preset periode
+  const fmt = (d) => d.toISOString().slice(0, 10);
+  const applyPreset = (mode) => {
+    const now = new Date();
+    if (mode === "active") return setRange({ mode, start: "", end: "" });
+    if (mode === "week") {
+      const day = (now.getDay() + 6) % 7; // Senin=0
+      const mon = new Date(now); mon.setDate(now.getDate() - day);
+      const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+      return setRange({ mode, start: fmt(mon), end: fmt(sun) });
+    }
+    if (mode === "month") {
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return setRange({ mode, start: fmt(first), end: fmt(last) });
+    }
+  };
+  const applyCustom = () => {
+    if (!customStart || !customEnd) return;
+    setRange({ mode: "custom", start: customStart, end: customEnd });
+  };
+  const exportUrl = (format) => {
+    const qs = range.start && range.end ? `&start=${range.start}&end=${range.end}` : "";
+    return `${apiUrl}/api/engineering/workload/export?format=${format}${qs}`;
+  };
 
   const allItems = data?.items || [];
   const s = data?.summary || {};
@@ -131,6 +163,44 @@ export default function EngineeringWorkloadPage() {
             <ArrowClockwise size={14} weight="bold" className={loading ? "animate-spin" : ""} /> Segarkan
           </button>
         </div>
+      </div>
+
+      {/* Toolbar periode + export */}
+      <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-md p-2.5" data-testid="workload-period-toolbar">
+        <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest font-bold text-slate-400 mr-1">
+          <CalendarBlank size={13} weight="bold" /> Periode:
+        </span>
+        {[
+          { k: "active", label: "Beban Aktif" },
+          { k: "week", label: "Minggu Ini" },
+          { k: "month", label: "Bulan Ini" },
+        ].map((p) => (
+          <button
+            key={p.k}
+            onClick={() => applyPreset(p.k)}
+            className={`px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider border transition-colors ${range.mode === p.k ? "bg-amber-600 border-amber-600 text-white" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"}`}
+            data-testid={`workload-period-${p.k}`}
+          >
+            {p.label}
+          </button>
+        ))}
+        {/* Rentang tanggal custom */}
+        <div className="flex items-center gap-1 ml-1">
+          <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="h-8 border border-slate-300 px-2 text-xs rounded-none" data-testid="workload-custom-start" />
+          <span className="text-slate-400 text-xs">s/d</span>
+          <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="h-8 border border-slate-300 px-2 text-xs rounded-none" data-testid="workload-custom-end" />
+          <button onClick={applyCustom} className={`px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider border transition-colors ${range.mode === "custom" ? "bg-amber-600 border-amber-600 text-white" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"}`} data-testid="workload-custom-apply">Terapkan</button>
+        </div>
+        <div className="flex-1" />
+        {range.start && range.end && (
+          <span className="text-[11px] text-slate-500 mr-1">{range.start} → {range.end}</span>
+        )}
+        <a href={exportUrl("xlsx")} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded transition-colors" data-testid="workload-export-xlsx">
+          <MicrosoftExcelLogo size={14} weight="bold" /> Excel
+        </a>
+        <a href={exportUrl("pdf")} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded transition-colors" data-testid="workload-export-pdf">
+          <FilePdf size={14} weight="bold" /> PDF
+        </a>
       </div>
 
       {/* Summary (clickable filters) */}

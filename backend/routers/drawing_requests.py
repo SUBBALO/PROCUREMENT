@@ -254,23 +254,28 @@ async def my_job_queue(current: dict = Depends(get_current_user)):
 
 
 
-@router.get("/engineering/workload")
-async def engineering_workload(current: dict = Depends(get_current_user)):
-    """Monitor beban kerja per engineer (Eng Leader / Admin / Engineering).
-    Beban aktif = DRF aktif + Drawing aktif + Inquiry costing aktif + ECN/revisi aktif.
-    Level: normal (<=3), busy (4-6), overload (>6). Diurutkan dari paling berat."""
-    if not (is_engineering(current) or is_admin_like(current)):
-        raise HTTPException(status_code=403, detail="Hanya Engineering / Admin")
+async def _compute_workload(start: str = "", end: str = ""):
+    """Hitung beban kerja per engineer.
+    - Mode AKTIF (tanpa start/end): item yang sedang berjalan sekarang.
+    - Mode PERIODE (start & end diisi): item yang DIBUAT/di-assign dalam rentang tanggal (semua status),
+      untuk laporan mingguan/bulanan."""
     from deps import ENGINEERING_ROLES
     users = await db.users.find(
         {"role": {"$in": list(ENGINEERING_ROLES)}, "active": {"$ne": False}, "deleted_at": {"$exists": False}},
         {"_id": 0, "id": 1, "username": 1, "name": 1, "role": 1},
     ).sort("name", 1).to_list(length=200)
-
+    ids = [u["id"] for u in users]
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    period = bool(start and end)
+    s0, s1 = (start or "")[:10], (end or "")[:10]
 
     def _overdue(v):
         return bool(v) and str(v)[:10] < today
+
+    def _in_range(v):
+        if not v:
+            return False
+        return s0 <= str(v)[:10] <= s1
 
     stats = {u["id"]: {
         "user_id": u["id"], "name": u.get("name") or u.get("username"),
@@ -278,54 +283,56 @@ async def engineering_workload(current: dict = Depends(get_current_user)):
         "drf": 0, "drawing": 0, "inquiry": 0, "ecn": 0, "overdue": 0, "total": 0,
     } for u in users}
 
-    # DRF aktif (accepted + in_progress)
-    drfs = await db.drawing_requests.find(
-        {"status": {"$in": ["accepted", "in_progress"]}, "deleted_at": {"$exists": False}},
-        {"_id": 0, "assigned_engineer_id": 1, "expected_due_date": 1, "due_date": 1},
-    ).to_list(length=2000)
-    for d in drfs:
+    # DRF
+    drf_q = ({"assigned_engineer_id": {"$in": ids}, "deleted_at": {"$exists": False}} if period
+             else {"status": {"$in": ["accepted", "in_progress"]}, "deleted_at": {"$exists": False}})
+    for d in await db.drawing_requests.find(drf_q, {"_id": 0, "assigned_engineer_id": 1, "created_at": 1, "received_at": 1, "expected_due_date": 1, "due_date": 1}).to_list(length=5000):
         uid = d.get("assigned_engineer_id")
-        if uid in stats:
-            stats[uid]["drf"] += 1
-            if _overdue(d.get("expected_due_date") or d.get("due_date")):
-                stats[uid]["overdue"] += 1
+        if uid not in stats:
+            continue
+        if period and not _in_range(d.get("received_at") or d.get("created_at")):
+            continue
+        stats[uid]["drf"] += 1
+        if _overdue(d.get("expected_due_date") or d.get("due_date")):
+            stats[uid]["overdue"] += 1
 
-    # Drawing aktif (belum controlled/released) + ECN/revisi aktif
-    drs = await db.drawings.find(
-        {"approval_status": {"$nin": ["controlled", "released"]}, "deleted_at": {"$exists": False}},
-        {"_id": 0, "assigned_to_user_id": 1, "revision_request": 1},
-    ).to_list(length=8000)
-    for d in drs:
+    # Drawing + ECN
+    dr_q = ({"assigned_to_user_id": {"$in": ids}, "deleted_at": {"$exists": False}} if period
+            else {"approval_status": {"$nin": ["controlled", "released"]}, "deleted_at": {"$exists": False}})
+    for d in await db.drawings.find(dr_q, {"_id": 0, "assigned_to_user_id": 1, "created_at": 1, "revision_request": 1}).to_list(length=20000):
         uid = d.get("assigned_to_user_id")
-        if uid in stats:
+        if uid in stats and (not period or _in_range(d.get("created_at"))):
             stats[uid]["drawing"] += 1
         rr = d.get("revision_request") or {}
-        if rr.get("status") in ("pending", "in_progress"):
+        if period:
+            if rr and _in_range(rr.get("created_at") or rr.get("requested_at")):
+                euid = rr.get("requested_by_id") or d.get("assigned_to_user_id")
+                if euid in stats:
+                    stats[euid]["ecn"] += 1
+        elif rr.get("status") in ("pending", "in_progress"):
             euid = rr.get("requested_by_id") or d.get("assigned_to_user_id")
             if euid in stats:
                 stats[euid]["ecn"] += 1
 
-    # Inquiry costing aktif (di-assign, belum selesai/tolak)
-    inqs = await db.inquiries.find(
-        {"assigned_to_id": {"$nin": ["", None]},
-         "status": {"$nin": ["completed", "rejected", "cancelled", "draft"]},
-         "deleted_at": {"$exists": False}},
-        {"_id": 0, "assigned_to_id": 1, "due_date": 1, "target_date": 1},
-    ).to_list(length=3000)
-    for iq in inqs:
+    # Inquiry
+    inq_q = ({"assigned_to_id": {"$in": ids}, "deleted_at": {"$exists": False}} if period
+             else {"assigned_to_id": {"$nin": ["", None]}, "status": {"$nin": ["completed", "rejected", "cancelled", "draft"]}, "deleted_at": {"$exists": False}})
+    for iq in await db.inquiries.find(inq_q, {"_id": 0, "assigned_to_id": 1, "assigned_at": 1, "created_at": 1, "due_date": 1, "target_date": 1}).to_list(length=5000):
         uid = iq.get("assigned_to_id")
-        if uid in stats:
-            stats[uid]["inquiry"] += 1
-            if _overdue(iq.get("due_date") or iq.get("target_date")):
-                stats[uid]["overdue"] += 1
+        if uid not in stats:
+            continue
+        if period and not _in_range(iq.get("assigned_at") or iq.get("created_at")):
+            continue
+        stats[uid]["inquiry"] += 1
+        if _overdue(iq.get("due_date") or iq.get("target_date")):
+            stats[uid]["overdue"] += 1
 
     out = []
-    for s in stats.values():
-        s["total"] = s["drf"] + s["drawing"] + s["inquiry"] + s["ecn"]
-        s["level"] = "overload" if s["total"] > 6 else ("busy" if s["total"] >= 4 else "normal")
-        out.append(s)
+    for st in stats.values():
+        st["total"] = st["drf"] + st["drawing"] + st["inquiry"] + st["ecn"]
+        st["level"] = "overload" if st["total"] > 6 else ("busy" if st["total"] >= 4 else "normal")
+        out.append(st)
     out.sort(key=lambda x: (x["total"], x["overdue"]), reverse=True)
-
     summary = {
         "engineers": len(out),
         "total_active": sum(s["total"] for s in out),
@@ -334,7 +341,93 @@ async def engineering_workload(current: dict = Depends(get_current_user)):
         "normal": len([s for s in out if s["level"] == "normal"]),
         "overdue": sum(s["overdue"] for s in out),
     }
-    return {"items": out, "summary": summary, "thresholds": {"busy": 4, "overload": 7}}
+    return {"items": out, "summary": summary, "thresholds": {"busy": 4, "overload": 7},
+            "mode": "period" if period else "active", "start": s0, "end": s1}
+
+
+@router.get("/engineering/workload")
+async def engineering_workload(start: str = "", end: str = "", current: dict = Depends(get_current_user)):
+    """Monitor beban kerja per engineer. Tanpa start/end = beban aktif sekarang.
+    Dengan start & end (YYYY-MM-DD) = laporan periode (mingguan/bulanan)."""
+    if not (is_engineering(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering / Admin")
+    return await _compute_workload(start, end)
+
+
+@router.get("/engineering/workload/export")
+async def engineering_workload_export(format: str = "xlsx", start: str = "", end: str = "",
+                                      current: dict = Depends(get_current_user)):
+    """Export laporan beban kerja (Excel/PDF) sesuai tampilan monitor + rentang tanggal."""
+    if not (is_engineering(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering / Admin")
+    from fastapi.responses import StreamingResponse
+    data = await _compute_workload(start, end)
+    rows = data["items"]
+    period_txt = f"{data['start']} s/d {data['end']}" if data["mode"] == "period" else "Beban Aktif (Saat Ini)"
+    headers = ["Engineer", "Role", "DRF", "Drawing", "Inquiry", "ECN/Revisi", "Terlambat", "Total", "Status"]
+    lvl_id = {"overload": "OVERLOAD", "busy": "SIBUK", "normal": "NORMAL"}
+    fname_base = f"Beban_Kerja_Engineer_{(data['start'] or 'aktif')}_{(data['end'] or '')}".strip("_")
+
+    if format == "pdf":
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib import colors
+        from reportlab.lib.units import mm
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=12 * mm, rightMargin=12 * mm, topMargin=12 * mm, bottomMargin=12 * mm)
+        styles = getSampleStyleSheet()
+        elems = [Paragraph("Laporan Beban Kerja Engineer — PT. Mitra Karya Sarana", styles["Title"]),
+                 Paragraph(f"Periode: {period_txt}", styles["Normal"]), Spacer(1, 8)]
+        table_data = [headers] + [[r["name"], (r.get("role") or "").replace("_", " "), r["drf"], r["drawing"], r["inquiry"], r["ecn"], r["overdue"], r["total"], lvl_id.get(r["level"], r["level"])] for r in rows]
+        t = Table(table_data, repeatRows=1)
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#b45309")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTSIZE", (0, 0), (-1, -1), 8), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+            ("ALIGN", (2, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        elems.append(t)
+        doc.build(elems)
+        buf.seek(0)
+        return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{fname_base}.pdf"'})
+
+    # Excel (default)
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Beban Kerja"
+    ws["A1"] = "Laporan Beban Kerja Engineer — PT. Mitra Karya Sarana"
+    ws["A1"].font = Font(bold=True, size=13)
+    ws["A2"] = f"Periode: {period_txt}"
+    ws["A2"].font = Font(italic=True, size=10)
+    hdr_fill = PatternFill("solid", fgColor="B45309")
+    thin = Side(style="thin", color="CBD5E1")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for c, h in enumerate(headers, start=1):
+        cell = ws.cell(row=4, column=c, value=h)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = hdr_fill
+        cell.alignment = Alignment(horizontal="center")
+        cell.border = border
+    for i, r in enumerate(rows, start=5):
+        vals = [r["name"], (r.get("role") or "").replace("_", " "), r["drf"], r["drawing"], r["inquiry"], r["ecn"], r["overdue"], r["total"], lvl_id.get(r["level"], r["level"])]
+        for c, v in enumerate(vals, start=1):
+            cell = ws.cell(row=i, column=c, value=v)
+            cell.border = border
+            if c >= 3:
+                cell.alignment = Alignment(horizontal="center")
+    widths = [22, 16, 8, 10, 10, 12, 11, 8, 12]
+    from openpyxl.utils import get_column_letter
+    for c, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(c)].width = w
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="{fname_base}.xlsx"'})
 
 
 @router.get("/engineering/workload/detail")
