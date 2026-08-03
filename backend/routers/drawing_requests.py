@@ -30,7 +30,7 @@ from __future__ import annotations
 import io
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 
 from bson import ObjectId
@@ -335,6 +335,93 @@ async def engineering_workload(current: dict = Depends(get_current_user)):
         "overdue": sum(s["overdue"] for s in out),
     }
     return {"items": out, "summary": summary, "thresholds": {"busy": 4, "overload": 7}}
+
+
+@router.get("/engineering/workload/trend")
+async def engineering_workload_trend(weeks: int = 8, current: dict = Depends(get_current_user)):
+    """Tren beban mingguan per engineer (N minggu terakhir).
+    Menghitung jumlah tugas BARU (DRF + Drawing + Inquiry + ECN) yang di-assign ke tiap engineer
+    berdasarkan tanggal dibuat, dikelompokkan per minggu (Senin–Minggu). Untuk lihat siapa yang
+    konsisten padat."""
+    if not (is_engineering(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering / Admin")
+    from deps import ENGINEERING_ROLES
+    weeks = max(4, min(16, int(weeks or 8)))
+
+    now = datetime.now(timezone.utc)
+    monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    starts = [monday - timedelta(weeks=(weeks - 1 - i)) for i in range(weeks)]  # lama → baru
+    labels = [s.strftime("%d %b") for s in starts]
+    first = starts[0]
+
+    def _week_index(v):
+        if not v:
+            return None
+        s = str(v)
+        try:
+            d = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except Exception:
+            try:
+                d = datetime.strptime(s[:10], "%Y-%m-%d")
+            except Exception:
+                return None
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=timezone.utc)
+        if d < first:
+            return None
+        for i in range(weeks):
+            if starts[i] <= d < starts[i] + timedelta(weeks=1):
+                return i
+        return None
+
+    users = await db.users.find(
+        {"role": {"$in": list(ENGINEERING_ROLES)}, "active": {"$ne": False}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "username": 1, "name": 1, "role": 1},
+    ).sort("name", 1).to_list(length=200)
+    ids = [u["id"] for u in users]
+    series = {u["id"]: [0] * weeks for u in users}
+
+    def _bump(uid, when):
+        if uid in series:
+            idx = _week_index(when)
+            if idx is not None:
+                series[uid][idx] += 1
+
+    # DRF
+    for d in await db.drawing_requests.find(
+        {"assigned_engineer_id": {"$in": ids}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "assigned_engineer_id": 1, "created_at": 1, "received_at": 1},
+    ).to_list(length=5000):
+        _bump(d.get("assigned_engineer_id"), d.get("received_at") or d.get("created_at"))
+
+    # Drawing + ECN
+    for d in await db.drawings.find(
+        {"assigned_to_user_id": {"$in": ids}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "assigned_to_user_id": 1, "created_at": 1, "revision_request": 1},
+    ).to_list(length=20000):
+        _bump(d.get("assigned_to_user_id"), d.get("created_at"))
+        rr = d.get("revision_request") or {}
+        if rr:
+            _bump(rr.get("requested_by_id") or d.get("assigned_to_user_id"),
+                  rr.get("created_at") or rr.get("requested_at"))
+
+    # Inquiry
+    for iq in await db.inquiries.find(
+        {"assigned_to_id": {"$in": ids}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "assigned_to_id": 1, "assigned_at": 1, "created_at": 1},
+    ).to_list(length=5000):
+        _bump(iq.get("assigned_to_id"), iq.get("assigned_at") or iq.get("created_at"))
+
+    items = []
+    for u in users:
+        s = series[u["id"]]
+        items.append({
+            "user_id": u["id"], "name": u.get("name") or u.get("username"),
+            "username": u.get("username"), "role": u.get("role"),
+            "series": s, "total": sum(s), "peak": max(s) if s else 0,
+        })
+    items.sort(key=lambda x: x["total"], reverse=True)
+    return {"weeks": labels, "items": items}
 
 
 @router.get("/drawing-requests/{drf_id}")
