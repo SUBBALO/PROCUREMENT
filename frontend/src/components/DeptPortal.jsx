@@ -5,8 +5,35 @@ import { ArrowRight, ArrowLeft, Sparkle } from "@phosphor-icons/react";
 /**
  * Reusable department sub-portal (LIGHT theme, 1-screen compact).
  */
-export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky", cards, children, compactCards = false }) {
+export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky", cards, children, compactCards = false, cardsFirst = false, cardsLabel = "Menu" }) {
   const navigate = useNavigate();
+
+  const cardsBlock = (
+    <>
+      {compactCards && (
+        <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-400 mb-2">{cardsLabel}</div>
+      )}
+      <div className={compactCards
+        ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2"
+        : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3"}>
+        {cards.map((c, idx) => (
+          <Card
+            key={c.key}
+            card={c}
+            compact={compactCards}
+            onEnter={() => {
+              if (c.comingSoon) return;
+              if (typeof c.onClick === "function") { c.onClick(); return; }
+              if (c.href && c.href !== "#") navigate(c.href);
+            }}
+            delay={idx * 60}
+          />
+        ))}
+      </div>
+    </>
+  );
+
+  const childrenBlock = children && <div className={cardsFirst ? "mt-6" : "mb-5"}>{children}</div>;
 
   return (
     <div className="min-h-[calc(100vh-60px)] bg-slate-50 text-slate-900 relative overflow-hidden -mx-6 -my-6">
@@ -35,18 +62,17 @@ export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky"
           {deptTagline && <p className="mt-1.5 text-xs text-slate-600">{deptTagline}</p>}
         </div>
 
-        {children && <div className="mb-5">{children}</div>}
-
-        {compactCards && (
-          <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-400 mb-2">Menu Engineering</div>
+        {cardsFirst ? (
+          <>
+            {cardsBlock}
+            {childrenBlock}
+          </>
+        ) : (
+          <>
+            {childrenBlock}
+            {cardsBlock}
+          </>
         )}
-        <div className={compactCards
-          ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2"
-          : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3"}>
-          {cards.map((c, idx) => (
-            <Card key={c.key} card={c} compact={compactCards} onEnter={() => c.href && c.href !== "#" && !c.comingSoon && navigate(c.href)} delay={idx * 60} />
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -62,7 +88,7 @@ function Card({ card, onEnter, delay, compact = false }) {
       <button
         data-testid={`subcard-${card.key}`}
         onClick={onEnter}
-        disabled={card.comingSoon || !card.href || card.href === "#"}
+        disabled={card.comingSoon || (!card.href && typeof card.onClick !== "function") || card.href === "#"}
         className="group relative text-left bg-white border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all duration-300 overflow-hidden disabled:cursor-not-allowed hover:-translate-y-0.5"
         style={{ animationDelay: `${delay}ms`, animationName: "fadeSlideIn", animationDuration: "400ms", animationFillMode: "backwards" }}
         title={card.description}
@@ -86,7 +112,7 @@ function Card({ card, onEnter, delay, compact = false }) {
     <button
       data-testid={`subcard-${card.key}`}
       onClick={onEnter}
-      disabled={card.comingSoon || !card.href || card.href === "#"}
+      disabled={card.comingSoon || (!card.href && typeof card.onClick !== "function") || card.href === "#"}
       className="group relative text-left bg-white border border-slate-200 hover:border-slate-300 hover:shadow-lg transition-all duration-300 overflow-hidden disabled:cursor-not-allowed hover:-translate-y-0.5"
       style={{ animationDelay: `${delay}ms`, animationName: "fadeSlideIn", animationDuration: "500ms", animationFillMode: "backwards" }}
     >

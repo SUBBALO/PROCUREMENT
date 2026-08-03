@@ -9,10 +9,14 @@
   },
   {
     "content": "Ganti <iframe> di EcnReviewModal dengan InlinePdfImageViewer untuk kedua tab (Drawing MKS + Lembar ECN)",
-    "status": "in_progress"
+    "status": "completed"
   },
   {
-    "content": "Uji viewer image-based + verifikasi alur Repeat Order end-to-end (testing agent)",
-    "status": "pending"
+    "content": "Redesain Dashboard Engineering: kartu di atas (cardsFirst) + ECN jadi kartu badge + dialog ringkasan",
+    "status": "completed"
+  },
+  {
+    "content": "Uji regresi: endpoint image viewer, alur TTD ECN, Repeat Order pull-repeat (testing agent)",
+    "status": "in_progress"
   }
 ]
