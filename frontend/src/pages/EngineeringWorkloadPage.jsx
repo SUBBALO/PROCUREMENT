@@ -1,5 +1,9 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import api from "../lib/api";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
+  ResponsiveContainer, Cell, LabelList,
+} from "recharts";
 import { Card } from "../components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import {
@@ -14,6 +18,9 @@ const LEVEL = {
   normal: { label: "Normal", cls: "bg-emerald-100 text-emerald-700 border-emerald-300", bar: "bg-emerald-500", icon: CheckCircle },
 };
 
+// Warna batang grafik sesuai level beban
+const LEVEL_HEX = { overload: "#f43f5e", busy: "#f59e0b", normal: "#10b981" };
+
 const BREAKDOWN = [
   { key: "drf", label: "DRF", icon: Kanban, cls: "text-teal-600" },
   { key: "drawing", label: "Drawing", icon: FileText, cls: "text-violet-600" },
@@ -27,6 +34,7 @@ export default function EngineeringWorkloadPage() {
   const [loading, setLoading] = useState(true);
   const [levelFilter, setLevelFilter] = useState(null); // 'overload'|'busy'|'normal'|'overdue'
   const [showTrend, setShowTrend] = useState(true);
+  const [showChart, setShowChart] = useState(true);
   const [range, setRange] = useState({ mode: "active", start: "", end: "" });
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -123,6 +131,19 @@ export default function EngineeringWorkloadPage() {
 
   const maxTotal = Math.max(7, ...allItems.map((i) => i.total || 0));
 
+  // Data grafik ringkasan — semua engineer, urutan apa adanya
+  const chartData = useMemo(
+    () =>
+      allItems.map((i) => ({
+        name: (i.name || "?").split(" ")[0],
+        fullName: i.name,
+        total: i.total || 0,
+        level: i.level || "normal",
+        fill: LEVEL_HEX[i.level] || LEVEL_HEX.normal,
+      })),
+    [allItems]
+  );
+
   const SUMMARY = [
     { label: "Total Engineer", value: s.engineers ?? 0, icon: UsersThree, cls: "border-slate-300 text-slate-700 bg-slate-50", key: null },
     { label: "Total Tugas Aktif", value: s.total_active ?? 0, icon: Gauge, cls: "border-indigo-300 text-indigo-700 bg-indigo-50/60", key: null },
@@ -148,6 +169,13 @@ export default function EngineeringWorkloadPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowChart((v) => !v)}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 border text-sm font-bold rounded transition-colors ${showChart ? "bg-amber-600 border-amber-600 text-white" : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"}`}
+            data-testid="workload-chart-toggle"
+          >
+            <ChartBar size={14} weight="bold" /> Grafik Ringkasan
+          </button>
           <button
             onClick={() => setShowTrend((v) => !v)}
             className={`inline-flex items-center gap-1.5 px-3 py-2 border text-sm font-bold rounded transition-colors ${showTrend ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"}`}
@@ -236,6 +264,74 @@ export default function EngineeringWorkloadPage() {
           </span>
           <span className="text-slate-400">({items.length} engineer)</span>
         </div>
+      )}
+
+      {/* Grafik Ringkasan — perbandingan total beban antar engineer */}
+      {showChart && (
+        <Card className="border-slate-200 p-4" data-testid="workload-chart-card">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold text-slate-700 flex items-center gap-1.5 uppercase tracking-wider">
+              <ChartBar size={16} weight="bold" className="text-amber-600" />
+              Grafik Ringkasan Beban Engineer
+            </h2>
+            <div className="hidden sm:flex items-center gap-3 text-[10px] font-bold uppercase tracking-wider">
+              {Object.entries(LEVEL_HEX).map(([k, hex]) => (
+                <span key={k} className="inline-flex items-center gap-1 text-slate-500">
+                  <span className="w-3 h-3 rounded-sm" style={{ background: hex }} />
+                  {LEVEL[k].label}
+                </span>
+              ))}
+            </div>
+          </div>
+          {chartData.length === 0 ? (
+            <div className="py-10 text-center text-slate-400 text-sm" data-testid="workload-chart-empty">
+              Belum ada data untuk ditampilkan.
+            </div>
+          ) : (
+            <div style={{ width: "100%", height: 280 }} data-testid="workload-chart">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 20, right: 12, left: -8, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
+                    axisLine={{ stroke: "#e2e8f0" }}
+                    tickLine={false}
+                    interval={0}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fontSize: 11, fill: "#94a3b8" }}
+                    axisLine={{ stroke: "#e2e8f0" }}
+                    tickLine={false}
+                  />
+                  <ReTooltip
+                    cursor={{ fill: "rgba(148,163,184,0.12)" }}
+                    content={({ active, payload }) => {
+                      if (!active || !payload || !payload.length) return null;
+                      const d = payload[0].payload;
+                      return (
+                        <div className="bg-white border border-slate-200 shadow-md rounded-md px-3 py-2 text-xs">
+                          <div className="font-bold text-slate-800">{d.fullName}</div>
+                          <div className="text-slate-500">Total beban: <b className="text-slate-800">{d.total}</b></div>
+                          <div className="mt-0.5 inline-flex items-center gap-1 font-bold" style={{ color: d.fill }}>
+                            {LEVEL[d.level]?.label || d.level}
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar dataKey="total" radius={[4, 4, 0, 0]} maxBarSize={64} isAnimationActive={false}>
+                    <LabelList dataKey="total" position="top" style={{ fontSize: 11, fontWeight: 700, fill: "#475569" }} />
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </Card>
       )}
 
       {/* Week labels legend (when trend on) */}
