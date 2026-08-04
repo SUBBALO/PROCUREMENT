@@ -562,11 +562,188 @@ async def eng006_nc_log_excel(month: Optional[str] = None, current: dict = Depen
     )
 
 
+# ── TEMPLATE WORD (.docx) CAR — dikelola Admin/Management ─────────────────────
+# Bila ada template aktif, "Cetak PDF" akan mengisi data ke template lalu
+# konversi ke PDF (LibreOffice Writer). Jika tidak ada / gagal → fallback bawaan.
+_tpl_gridfs: Optional[AsyncIOMotorGridFSBucket] = None
+
+
+def _tpl_fs() -> AsyncIOMotorGridFSBucket:
+    global _tpl_gridfs
+    if _tpl_gridfs is None:
+        _tpl_gridfs = AsyncIOMotorGridFSBucket(db, bucket_name="car_templates")
+    return _tpl_gridfs
+
+
+def _require_tpl_admin(current: dict):
+    if not is_admin_like(current):
+        raise HTTPException(status_code=403, detail="Hanya Admin/Management yang boleh mengelola template CAR")
+
+
+async def _active_car_template_bytes() -> Optional[bytes]:
+    t = await db.car_templates.find_one({"active": True, "deleted_at": {"$exists": False}})
+    if not t:
+        return None
+    try:
+        stream = await _tpl_fs().open_download_stream(ObjectId(t["file_id"]))
+        return await stream.read()
+    except Exception:
+        return None
+
+
+@router.get("/nonconformance/car-template")
+async def get_car_template(current: dict = Depends(get_current_user)):
+    """Meta template CAR yang aktif + daftar semua template (Admin/Management)."""
+    _require_tpl_admin(current)
+    items = await db.car_templates.find(
+        {"deleted_at": {"$exists": False}}, {"_id": 0, "file_id": 0},
+    ).sort("uploaded_at", -1).to_list(length=50)
+    active = next((x for x in items if x.get("active")), None)
+    return {"active": active, "items": items}
+
+
+@router.get("/nonconformance/car-template/fields")
+async def car_template_fields(current: dict = Depends(get_current_user)):
+    """Daftar placeholder yang tersedia (untuk cheatsheet UI)."""
+    _require_tpl_admin(current)
+    from utils.car_word import CAR_FIELDS
+    return {"fields": [{"key": k, "desc": d} for k, d in CAR_FIELDS]}
+
+
+@router.get("/nonconformance/car-template/starter")
+async def car_template_starter(current: dict = Depends(get_current_user)):
+    """Unduh Starter .docx (replika MKS-F-QAD-004 + placeholder)."""
+    _require_tpl_admin(current)
+    from utils.car_word import build_car_docx_starter
+    data = build_car_docx_starter()
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": 'attachment; filename="STARTER_CAR_MKS-F-QAD-004.docx"'},
+    )
+
+
+@router.post("/nonconformance/car-template/upload")
+async def car_template_upload(
+    file: UploadFile = File(...),
+    current: dict = Depends(get_current_user),
+):
+    """Upload template .docx CAR → langsung AKTIF menggantikan yang lama."""
+    _require_tpl_admin(current)
+    ext = _ext(file.filename)
+    if ext not in (".docx",):
+        raise HTTPException(status_code=400, detail="Hanya file Word .docx yang diizinkan")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="File kosong")
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File > 25 MB tidak diizinkan")
+    # Validasi bisa dibuka python-docx
+    try:
+        from docx import Document
+        Document(io.BytesIO(content))
+    except Exception:
+        raise HTTPException(status_code=400, detail="File .docx tidak valid / rusak")
+
+    file_id = await _tpl_fs().upload_from_stream(file.filename, content,
+                                                 metadata={"content_type": file.content_type})
+    now = _now_iso()
+    doc = {
+        "id": str(uuid.uuid4()), "filename": file.filename, "file_id": str(file_id),
+        "size_bytes": len(content), "active": True,
+        "uploaded_at": now, "uploaded_by": current.get("name") or current.get("username"),
+    }
+    # Nonaktifkan template lain
+    await db.car_templates.update_many({"active": True}, {"$set": {"active": False}})
+    await db.car_templates.insert_one(doc.copy())
+    await log_action(current, "car_template_upload", "car_templates", doc["id"], {"filename": file.filename})
+    doc.pop("file_id", None)
+    return {"success": True, "template": doc}
+
+
+@router.post("/nonconformance/car-template/{tid}/activate")
+async def car_template_activate(tid: str, current: dict = Depends(get_current_user)):
+    _require_tpl_admin(current)
+    t = await db.car_templates.find_one({"id": tid, "deleted_at": {"$exists": False}})
+    if not t:
+        raise HTTPException(status_code=404, detail="Template tidak ditemukan")
+    await db.car_templates.update_many({"active": True}, {"$set": {"active": False}})
+    await db.car_templates.update_one({"id": tid}, {"$set": {"active": True}})
+    return {"success": True}
+
+
+@router.delete("/nonconformance/car-template/{tid}")
+async def car_template_delete(tid: str, current: dict = Depends(get_current_user)):
+    _require_tpl_admin(current)
+    t = await db.car_templates.find_one({"id": tid, "deleted_at": {"$exists": False}})
+    if not t:
+        raise HTTPException(status_code=404, detail="Template tidak ditemukan")
+    try:
+        await _tpl_fs().delete(ObjectId(t["file_id"]))
+    except Exception:
+        pass
+    await db.car_templates.update_one({"id": tid}, {"$set": {
+        "deleted_at": _now_iso(), "deleted_by": current.get("username"), "active": False}})
+    return {"success": True}
+
+
+@router.get("/nonconformance/car-template/{tid}/download")
+async def car_template_download(tid: str, current: dict = Depends(get_current_user)):
+    _require_tpl_admin(current)
+    t = await db.car_templates.find_one({"id": tid, "deleted_at": {"$exists": False}})
+    if not t:
+        raise HTTPException(status_code=404, detail="Template tidak ditemukan")
+    stream = await _tpl_fs().open_download_stream(ObjectId(t["file_id"]))
+    raw = await stream.read()
+    return StreamingResponse(
+        io.BytesIO(raw),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{t["filename"]}"'},
+    )
+
+
+async def _car_template_preview_pdf(tid: str) -> bytes:
+    """Render sebuah template (id) dengan data contoh → PDF."""
+    t = await db.car_templates.find_one({"id": tid, "deleted_at": {"$exists": False}})
+    if not t:
+        raise HTTPException(status_code=404, detail="Template tidak ditemukan")
+    stream = await _tpl_fs().open_download_stream(ObjectId(t["file_id"]))
+    raw = await stream.read()
+    from utils.car_word import sample_car_data, substitute_docx
+    from utils.office_render import office_to_pdf
+    sub = substitute_docx(raw, sample_car_data())
+    return office_to_pdf(sub, "docx")
+
+
+@router.get("/nonconformance/car-template/{tid}/preview-page-meta")
+async def car_template_preview_meta(tid: str, current: dict = Depends(get_current_user)):
+    _require_tpl_admin(current)
+    from utils.pdf_render import pdf_page_meta
+    raw = await _car_template_preview_pdf(tid)
+    return pdf_page_meta(raw)
+
+
+@router.get("/nonconformance/car-template/{tid}/preview-page-image")
+async def car_template_preview_image(tid: str, page: int = 0, scale: float = 2.0,
+                                     current: dict = Depends(get_current_user)):
+    _require_tpl_admin(current)
+    from utils.pdf_render import pdf_page_png
+    raw = await _car_template_preview_pdf(tid)
+    try:
+        png = pdf_page_png(raw, page, scale)
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
+    return StreamingResponse(io.BytesIO(png), media_type="image/png",
+                             headers={"Cache-Control": "private, max-age=120"})
+
+
 # ── DETAIL ───────────────────────────────────────────────────────────────────
 @router.get("/nonconformance/{nc_id}/pdf")
 async def car_pdf(nc_id: str, attachments: bool = True, current: dict = Depends(get_current_user)):
     """Cetak CAR ke PDF sesuai format resmi ISO MKS-F-QAD-004 Rev.02.
 
+    Bila ada template Word (.docx) aktif → data diisi ke template lalu konversi PDF.
+    Jika tidak ada / gagal → fallback ke generator bawaan (reportlab).
     Lampiran bukti (foto + PDF) otomatis di-append sebagai halaman setelah form.
     Set ?attachments=false untuk mencetak form saja tanpa lampiran.
     """
@@ -574,7 +751,18 @@ async def car_pdf(nc_id: str, attachments: bool = True, current: dict = Depends(
         raise HTTPException(status_code=403, detail="Akses ditolak")
     doc = await _get_nc_or_404(nc_id)
     from utils.car_pdf import build_car_pdf, merge_attachments
-    pdf = build_car_pdf(doc)
+
+    pdf = None
+    tpl = await _active_car_template_bytes()
+    if tpl:
+        try:
+            from utils.car_word import render_car_pdf_from_docx
+            pdf = render_car_pdf_from_docx(
+                tpl, doc, printed_by=current.get("name") or current.get("username"))
+        except Exception:
+            pdf = None  # fallback ke reportlab bila konversi gagal
+    if pdf is None:
+        pdf = build_car_pdf(doc)
 
     if attachments:
         atts = await db.nc_attachments.find(

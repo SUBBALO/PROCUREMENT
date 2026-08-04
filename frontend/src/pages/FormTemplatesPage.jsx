@@ -126,6 +126,9 @@ export default function FormTemplatesPage() {
       {/* -------- EXCEL TEMPLATE UPLOAD (recommended path) -------- */}
       <ExcelTemplateSection />
 
+      {/* -------- CAR WORD TEMPLATE (MKS-F-QAD-004) -------- */}
+      <CarWordTemplateSection />
+
       <div className="pt-4">
         <div className="text-[10px] uppercase tracking-[0.15em] font-bold text-slate-500 mb-2">Template Canvas (Alternatif)</div>
       </div>
@@ -451,6 +454,182 @@ function ExcelTemplateSection() {
           subtitle="Hasil substitusi data contoh · Download = file Excel asli"
           downloadUrl={`${process.env.REACT_APP_BACKEND_URL}/api/excel-templates/${previewExcel.id}/download`}
           onClose={() => setPreviewExcel(null)}
+        />
+      )}
+    </Card>
+  );
+}
+
+
+
+// ---------- CAR Word Template Section (MKS-F-QAD-004) ----------
+function CarWordTemplateSection() {
+  const [active, setActive] = useState(null);
+  const [items, setItems] = useState([]);
+  const [fields, setFields] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [previewTid, setPreviewTid] = useState(null);
+  const fileRef = useRef(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [t, f] = await Promise.all([
+        api.get("/nonconformance/car-template"),
+        api.get("/nonconformance/car-template/fields"),
+      ]);
+      setActive(t.data.active || null);
+      setItems(t.data.items || []);
+      setFields(f.data.fields || []);
+    } catch { toast.error("Gagal memuat template CAR"); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const onDownloadStarter = async () => {
+    try {
+      const res = await api.get("/nonconformance/car-template/starter", { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url; a.download = "STARTER_CAR_MKS-F-QAD-004.docx";
+      a.click(); URL.revokeObjectURL(url);
+    } catch { toast.error("Gagal unduh starter"); }
+  };
+
+  const onUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      await api.post("/nonconformance/car-template/upload", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success("Template CAR di-upload & LANGSUNG AKTIF untuk cetak PDF");
+      await load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal upload"); }
+    finally { setUploading(false); if (fileRef.current) fileRef.current.value = ""; }
+  };
+
+  const onDownload = async (it) => {
+    try {
+      const res = await api.get(`/nonconformance/car-template/${it.id}/download`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url; a.download = it.filename || "CAR_template.docx";
+      a.click(); URL.revokeObjectURL(url);
+    } catch { toast.error("Gagal unduh"); }
+  };
+
+  const onActivate = async (it) => {
+    try { await api.post(`/nonconformance/car-template/${it.id}/activate`); toast.success("Diaktifkan"); load(); }
+    catch { toast.error("Gagal aktifkan"); }
+  };
+
+  const onDelete = async (it) => {
+    if (!confirm(`Hapus template "${it.filename}"?`)) return;
+    try { await api.delete(`/nonconformance/car-template/${it.id}`); toast.success("Terhapus"); load(); }
+    catch { toast.error("Gagal hapus"); }
+  };
+
+  return (
+    <Card className="rounded-none border-rose-300 bg-rose-50/30 p-5 shadow-none" data-testid="car-word-template-section">
+      <div className="mb-3">
+        <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+          <FileText size={20} weight="duotone" className="text-rose-700" /> Template CAR — Word (MKS-F-QAD-004)
+        </h3>
+        <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+          Desain form CAR langsung di <b>Microsoft Word</b> memakai placeholder <span className="font-mono bg-white px-1 border border-slate-300">{"{{nc_no}}"}</span>, <span className="font-mono bg-white px-1 border border-slate-300">{"{{description}}"}</span> dst.
+          Saat <b>Cetak PDF</b> di halaman CAR, data otomatis diisi ke template Anda lalu dikonversi ke PDF (lampiran foto/PDF tetap ikut).<br />
+          <b className="text-rose-800">Setiap upload langsung AKTIF menggantikan template lama.</b> Jika belum ada template, cetak memakai format bawaan sistem.
+        </p>
+      </div>
+
+      {/* Guide */}
+      <div className="mb-3 p-3 bg-white border border-rose-200 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+        <div className="flex gap-2">
+          <span className="flex-shrink-0 w-6 h-6 bg-rose-700 text-white font-bold flex items-center justify-center">1</span>
+          <div><div className="font-semibold text-slate-800">Unduh Starter</div><div className="text-[11px] text-slate-500">Ambil file .docx berisi form + placeholder.</div></div>
+        </div>
+        <div className="flex gap-2">
+          <span className="flex-shrink-0 w-6 h-6 bg-rose-700 text-white font-bold flex items-center justify-center">2</span>
+          <div><div className="font-semibold text-slate-800">Edit di Word</div><div className="text-[11px] text-slate-500">Atur layout, border, logo. <b>Jangan hapus</b> placeholder <span className="font-mono">{"{{..}}"}</span>.</div></div>
+        </div>
+        <div className="flex gap-2">
+          <span className="flex-shrink-0 w-6 h-6 bg-rose-700 text-white font-bold flex items-center justify-center">3</span>
+          <div><div className="font-semibold text-slate-800">Upload kembali</div><div className="text-[11px] text-slate-500">File baru otomatis aktif untuk cetak PDF CAR.</div></div>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-3 flex-wrap p-3 bg-white border border-rose-200">
+        <Button data-testid="car-download-starter" onClick={onDownloadStarter} className="h-9 rounded-none bg-slate-700 hover:bg-slate-800 text-white text-xs font-semibold uppercase tracking-[0.1em]">
+          <Download size={14} weight="bold" className="mr-1.5" /> Unduh Starter Word
+        </Button>
+        <input ref={fileRef} type="file" accept=".docx" onChange={onUpload} className="hidden" data-testid="car-word-file-input" />
+        <Button data-testid="car-upload-word" onClick={() => fileRef.current?.click()} disabled={uploading} className="h-9 rounded-none bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold uppercase tracking-[0.1em]">
+          <UploadSimple size={14} weight="bold" className="mr-1.5" /> {uploading ? "Mengunggah..." : "Upload Template Word"}
+        </Button>
+        {active && (
+          <span className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-300 px-2 py-1 flex items-center gap-1">
+            <CheckCircle size={12} weight="fill" /> Aktif: {active.filename}
+          </span>
+        )}
+      </div>
+
+      {/* Placeholder cheatsheet */}
+      {fields.length > 0 && (
+        <div className="mt-3 p-3 bg-white border border-slate-200">
+          <div className="text-[10px] uppercase tracking-[0.15em] font-bold text-slate-500 mb-1.5">Placeholder Tersedia</div>
+          <div className="flex flex-wrap gap-1">
+            {fields.map((f) => (
+              <code key={f.key} title={f.desc} className="text-[10px] px-1.5 py-0.5 bg-rose-50 border border-rose-200 text-rose-800 font-mono">{`{{${f.key}}}`}</code>
+            ))}
+          </div>
+          <div className="text-[10px] text-slate-500 mt-1.5 italic">Checkbox pakai pola <span className="font-mono">[{"{{chk_inhouse}}"}] IN-HOUSE</span> — sistem isi "X" bila sesuai.</div>
+        </div>
+      )}
+
+      {/* List */}
+      <div className="mt-3">
+        <div className="text-[10px] uppercase tracking-[0.15em] font-bold text-slate-500 mb-1">Template Word Terpasang</div>
+        {loading && <div className="text-xs text-slate-400 p-3">Memuat...</div>}
+        {!loading && items.length === 0 && (
+          <div className="text-xs text-slate-500 p-3 bg-white border border-dashed border-slate-300 italic">
+            Belum ada template Word. Unduh Starter → edit di Word → upload kembali.
+          </div>
+        )}
+        {items.map((it) => (
+          <div key={it.id} data-testid={`car-word-tpl-${it.id}`} className="flex items-center justify-between gap-3 p-2.5 bg-white border border-slate-200 mb-1">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="px-2 py-0.5 text-[10px] uppercase tracking-[0.1em] font-bold bg-slate-900 text-white">CAR</span>
+              <span className="text-sm text-slate-900 truncate">{it.filename}</span>
+              {it.active && (
+                <span className="px-1.5 py-0.5 text-[9px] uppercase tracking-[0.1em] font-bold bg-emerald-100 border border-emerald-400 text-emerald-800 flex items-center gap-1">
+                  <CheckCircle size={10} weight="fill" /> Aktif
+                </span>
+              )}
+              <span className="text-[10px] text-slate-500 tabular-nums">{(it.size_bytes/1024).toFixed(1)} KB · {(it.uploaded_at||"").slice(0,16).replace("T"," ")} · by {it.uploaded_by}</span>
+            </div>
+            <div className="flex gap-1 flex-wrap">
+              <Button size="sm" onClick={() => setPreviewTid(it.id)} title="Preview PDF (data contoh)" className="h-7 rounded-none px-2 bg-sky-100 hover:bg-sky-200 text-sky-800 text-[10px] font-bold flex items-center gap-1"><Eye size={12} weight="bold" /> Preview PDF</Button>
+              <Button size="sm" onClick={() => onDownload(it)} title="Unduh .docx untuk edit" className="h-7 rounded-none px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold flex items-center gap-1"><Download size={12} weight="bold" /> Unduh & Edit</Button>
+              {!it.active && (
+                <Button size="sm" onClick={() => onActivate(it)} title="Jadikan aktif" className="h-7 rounded-none px-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[10px] font-bold">Aktifkan</Button>
+              )}
+              <Button size="sm" onClick={() => onDelete(it)} title="Hapus" className="h-7 w-7 rounded-none p-0 bg-rose-100 hover:bg-rose-200 text-rose-700"><TrashSimple size={13} weight="bold" /></Button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {previewTid && (
+        <PdfPreviewModal
+          metaUrl={`/nonconformance/car-template/${previewTid}/preview-page-meta`}
+          pageUrlBuilder={(n) => `${process.env.REACT_APP_BACKEND_URL}/api/nonconformance/car-template/${previewTid}/preview-page-image?page=${n}&scale=2`}
+          title="Preview Template CAR (data contoh)"
+          subtitle="Hasil isian data contoh ke template Word Anda"
+          onClose={() => setPreviewTid(null)}
         />
       )}
     </Card>
