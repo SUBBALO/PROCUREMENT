@@ -1,22 +1,22 @@
 [
   {
-    "content": "Backend: universal CAR (all users), issued_to dept/user, flexible link (drawing/other), relaxed RBAC, assignable-users/departments endpoints",
+    "content": "Universal CAR module (all users create, issued_to dept/user, flexible link types, relaxed RBAC)",
     "status": "completed"
   },
   {
-    "content": "Frontend carConstants + CarCreateModal (Issued To + link toggle) + CarDetailModal (generalized follow-up) + Masterlist columns",
+    "content": "Expand link categories: Drawing/SO/Produk-Part/Supplier/Proses-Umum (only Drawing affects KPI)",
     "status": "completed"
   },
   {
-    "content": "Universal menu: LandingPage CAR card (all roles) + portal cards",
+    "content": "Remove separate Assign step (use Issued To only)",
     "status": "completed"
   },
   {
-    "content": "Backend automated tests + UI screenshots verified",
+    "content": "Frontend: create modal category select, detail modal, masterlist columns, universal LandingPage menu",
     "status": "completed"
   },
   {
-    "content": "Comprehensive testing via testing_agent (backend + frontend RBAC across roles)",
-    "status": "in_progress"
+    "content": "Testing: backend automated (all pass) + testing_agent (100%, 0 bugs) + UI screenshots",
+    "status": "completed"
   }
 ]

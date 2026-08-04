@@ -43,7 +43,6 @@ function SectionTitle({ n, title, hint }) {
 export default function CarDetailModal({ open, ncId, user, onClose, onChanged }) {
   const [nc, setNc] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [deptUsers, setDeptUsers] = useState([]);
   const [attachments, setAttachments] = useState([]);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(null); // attachment being previewed
@@ -52,8 +51,7 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
   const [inv, setInv] = useState({});
   // Section 3 form
   const [clo, setClo] = useState({});
-  // follow-up
-  const [assignee, setAssignee] = useState("");
+  // ECN link
   const [ecnNo, setEcnNo] = useState("");
 
   const admin = isAdminLike(user);
@@ -75,12 +73,6 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
   }, [ncId]);
 
   useEffect(() => { if (open) load(); }, [open, load]);
-  useEffect(() => {
-    if (open && nc?.issued_to_dept) {
-      api.get(`/nonconformance/assignable-users?dept=${nc.issued_to_dept}`)
-        .then(({ data }) => setDeptUsers(data.users || [])).catch(() => setDeptUsers([]));
-    }
-  }, [open, nc?.issued_to_dept]);
 
   if (!open) return null;
   const closed = nc?.status === "closed";
@@ -96,18 +88,6 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
   const canEditClo = !closed && (admin || isInitiator || isCarQc(user) || isTarget);
 
   const refresh = () => { load(); onChanged && onChanged(); };
-
-  const doAssign = async () => {
-    if (!assignee) { toast.error("Pilih staff Engineering"); return; }
-    setBusy(true);
-    try {
-      const d = deptUsers.find((x) => x.id === assignee);
-      await api.post(`/nonconformance/${ncId}/assign`, { assignee_id: assignee, assignee_name: d?.name || "" });
-      toast.success("NC ditugaskan");
-      refresh();
-    } catch (e) { toast.error(formatApiErrorDetail(e.response?.data?.detail)); }
-    finally { setBusy(false); }
-  };
 
   const setStatus = async (status) => {
     setBusy(true);
@@ -340,28 +320,19 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
 
               {/* RIGHT: Follow-up + Attachments + Timeline */}
               <div className="p-5 space-y-5 bg-slate-50/40">
-                {/* Follow-up (dept tujuan / admin) */}
+                {/* Follow-up (dept tujuan / admin) — tanpa assign, cukup Issued To */}
                 {canFollow && !closed && (
                   <div className="border border-indigo-200 bg-indigo-50/50 p-3 space-y-2.5">
                     <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-widest font-bold text-indigo-700">
-                      <UserGear size={14} weight="bold" /> Tindak Lanjut
+                      <UserGear size={14} weight="bold" /> Tindak Lanjut ({DEPT_FULL_LABEL[nc.issued_to_dept] || nc.issued_to_dept})
                     </div>
-                    <div>
-                      <Label className="text-[11px] font-bold text-slate-500">Tugaskan ke User ({DEPT_FULL_LABEL[nc.issued_to_dept] || nc.issued_to_dept})</Label>
-                      <div className="flex gap-1.5 mt-1">
-                        <select value={assignee} onChange={(e) => setAssignee(e.target.value)} className="flex-1 h-8 border border-slate-300 text-sm px-2 bg-white" data-testid="car-assignee-select">
-                          <option value="">— Pilih user —</option>
-                          {deptUsers.map((d) => <option key={d.id} value={d.id}>{d.name} ({d.role})</option>)}
-                        </select>
-                        <Button onClick={doAssign} disabled={busy} size="sm" className="rounded-none bg-sky-600 hover:bg-sky-700" data-testid="car-assign-btn">Assign</Button>
-                      </div>
-                    </div>
+                    <p className="text-[11px] text-slate-500">Isi Section 2 (Investigation) di kiri, lalu ubah status.</p>
                     <div>
                       <Label className="text-[11px] font-bold text-slate-500">No. ECN (MKS-F-ENG-004) — jika drawing</Label>
                       <Input value={ecnNo} onChange={(e) => setEcnNo(e.target.value)} placeholder="ECN-YY-MM-NN" className="rounded-none h-8 mt-1" data-testid="car-ecn-input" />
                     </div>
                     <div className="flex gap-1.5 flex-wrap">
-                      <Button onClick={() => setStatus("in_progress")} disabled={busy} size="sm" variant="outline" className="rounded-none" data-testid="car-set-inprogress">In Progress</Button>
+                      <Button onClick={() => setStatus("in_progress")} disabled={busy} size="sm" variant="outline" className="rounded-none" data-testid="car-set-inprogress">Tandai In Progress</Button>
                       {canClose && (
                         <Button onClick={() => setStatus("closed")} disabled={busy} size="sm" className="rounded-none bg-emerald-600 hover:bg-emerald-700" data-testid="car-set-closed">Tutup (Closed)</Button>
                       )}

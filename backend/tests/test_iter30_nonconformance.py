@@ -72,14 +72,14 @@ def test_full_flow():
     # 2. Everyone can create (sales, prod, eng_staff)
     for role in ("sales", "prod", "staff"):
         rr = requests.post(f"{BASE}/nonconformance", json={
-            "issued_to_dept": "produksi", "link_type": "other",
+            "issued_to_dept": "produksi", "link_type": "process_general",
             "object_ref": f"Objek uji dari {role}", "description": f"NC {role}",
         }, headers=hdr(role), timeout=30)
         assert rr.status_code == 200, f"{role}: {rr.text}"
     print("OK semua user bisa create (sales/prod/eng_staff)")
 
     # 3. Missing issued_to_dept → 400
-    rr = requests.post(f"{BASE}/nonconformance", json={"link_type": "other", "object_ref": "x", "description": "y"}, headers=hdr("sales"), timeout=30)
+    rr = requests.post(f"{BASE}/nonconformance", json={"link_type": "process_general", "object_ref": "x", "description": "y"}, headers=hdr("sales"), timeout=30)
     assert rr.status_code == 400, rr.text
     print("OK issued_to_dept wajib")
 

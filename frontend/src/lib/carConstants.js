@@ -44,7 +44,14 @@ export const DEPARTMENTS = [
 ];
 export const DEPT_FULL_LABEL = DEPARTMENTS.reduce((a, d) => ((a[d.key] = d.label), a), {});
 
-export const LINK_TYPE_LABEL = { drawing: "Drawing", other: "Objek/Proses Lain" };
+export const LINK_TYPES = [
+  { key: "drawing", label: "Drawing" },
+  { key: "so", label: "SO (Sales Order)" },
+  { key: "product_part", label: "Produk/Part" },
+  { key: "supplier", label: "Supplier/Vendor" },
+  { key: "process_general", label: "Proses/Umum" },
+];
+export const LINK_TYPE_LABEL = LINK_TYPES.reduce((a, d) => ((a[d.key] = d.label), a), {});
 
 const ADMIN_LIKE = ["admin", "super_admin", "supervisor"];
 

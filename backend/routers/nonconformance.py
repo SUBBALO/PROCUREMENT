@@ -65,7 +65,12 @@ DEPARTMENTS = {
     "management": {"label": "Management", "roles": ["admin", "super_admin", "supervisor"]},
     "other": {"label": "Lainnya", "roles": []},
 }
-LINK_TYPES = {"drawing", "other"}  # drawing = memengaruhi KPI Engineering; other = teks bebas
+# Kategori objek yang bisa "kena NC". Hanya "drawing" yang memengaruhi KPI Engineering.
+LINK_TYPES = {"drawing", "so", "product_part", "supplier", "process_general"}
+LINK_TYPE_LABELS = {
+    "drawing": "Drawing", "so": "SO (Sales Order)", "product_part": "Produk/Part",
+    "supplier": "Supplier/Vendor", "process_general": "Proses/Umum",
+}
 
 _ROMAN = {1: "I", 2: "II", 3: "III", 4: "IV", 5: "V", 6: "VI",
           7: "VII", 8: "VIII", 9: "IX", 10: "X", 11: "XI", 12: "XII"}
@@ -167,7 +172,7 @@ class NonconformanceCreate(BaseModel):
     issued_to: Optional[str] = ""         # legacy free-text (fallback tampilan)
     expected_reply_date: Optional[str] = ""
     # ── Objek yang kena NC (fleksibel) ──
-    link_type: str = "other"             # "drawing" (memengaruhi KPI Eng) | "other"
+    link_type: str = "process_general"  # drawing (memengaruhi KPI Eng) | so | product_part | supplier | process_general
     drawings: List[DrawingRef] = Field(default_factory=list)  # dipakai bila link_type=drawing
     object_ref: str = ""                  # teks bebas objek yang kena NC (bila 'other')
     so_no: Optional[str] = ""
@@ -227,7 +232,7 @@ class NoteIn(BaseModel):
 @router.post("/nonconformance")
 async def create_nc(payload: NonconformanceCreate, current: dict = Depends(get_current_user)):
     # CAR berlaku untuk SEMUA departemen → semua user terautentikasi boleh menerbitkan.
-    link_type = payload.link_type if payload.link_type in LINK_TYPES else "other"
+    link_type = payload.link_type if payload.link_type in LINK_TYPES else "process_general"
 
     # Departemen tujuan (Issued To) wajib.
     to_dept = (payload.issued_to_dept or "").strip().lower()
@@ -262,9 +267,11 @@ async def create_nc(payload: NonconformanceCreate, current: dict = Depends(get_c
                 resolved.append({"drawing_id": d.drawing_id, "drawing_no": d.drawing_no,
                                  "so_no": "", "customer_name": "", "project_name": ""})
     else:
-        # Objek bebas (mis. barang salah terima, hasil kerja produksi, dll).
-        if not (payload.object_ref or "").strip():
-            raise HTTPException(status_code=400, detail="Isi objek yang kena NC (mis. barang/part/proses)")
+        # Objek bebas: SO / Produk-Part / Supplier / Proses-Umum.
+        if link_type == "so" and not so_no and not (payload.object_ref or "").strip():
+            raise HTTPException(status_code=400, detail="Isi No. SO yang kena NC")
+        if link_type != "so" and not (payload.object_ref or "").strip():
+            raise HTTPException(status_code=400, detail="Isi objek yang kena NC (mis. part/supplier/proses)")
 
     sev = payload.severity if payload.severity in SEVERITY_LEVELS else "major"
     dept = _issuer_dept_of(current)   # dept penerbit otomatis dari role

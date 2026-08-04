@@ -9,7 +9,7 @@ import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
 import { MagnifyingGlass, X, Plus, WarningCircle, CircleNotch, Info } from "@phosphor-icons/react";
-import { SOURCE_LABEL, DEPARTMENTS } from "../lib/carConstants";
+import { SOURCE_LABEL, DEPARTMENTS, LINK_TYPES } from "../lib/carConstants";
 
 /**
  * CarCreateModal — Terbitkan Corrective Action Report (CAR / NC).
@@ -18,7 +18,7 @@ import { SOURCE_LABEL, DEPARTMENTS } from "../lib/carConstants";
  */
 export default function CarCreateModal({ open, onClose, onCreated }) {
   // link
-  const [linkType, setLinkType] = useState("other");
+  const [linkType, setLinkType] = useState("process_general");
   const [drawings, setDrawings] = useState([]);
   const [loadingDwg, setLoadingDwg] = useState(false);
   const [search, setSearch] = useState("");
@@ -41,7 +41,7 @@ export default function CarCreateModal({ open, onClose, onCreated }) {
 
   useEffect(() => {
     if (!open) return;
-    setLinkType("other"); setSelected([]); setSearch(""); setObjectRef(""); setSoNo("");
+    setLinkType("process_general"); setSelected([]); setSearch(""); setObjectRef(""); setSoNo("");
     setToDept(""); setToUserId(""); setToUsers([]); setExpectedReply("");
     setSource("in_house"); setSeverity("major"); setTitle(""); setDescription("");
   }, [open]);
@@ -90,7 +90,8 @@ export default function CarCreateModal({ open, onClose, onCreated }) {
     if (!toDept) { toast.error("Pilih departemen tujuan (Issued To)"); return; }
     if (!description.trim() && !title.trim()) { toast.error("Deskripsi ketidaksesuaian wajib diisi"); return; }
     if (linkType === "drawing" && selected.length === 0) { toast.error("Pilih minimal satu Drawing"); return; }
-    if (linkType === "other" && !objectRef.trim()) { toast.error("Isi objek yang kena NC"); return; }
+    if (linkType === "so" && !objectRef.trim() && !soNo.trim()) { toast.error("Isi No. SO yang kena NC"); return; }
+    if (linkType !== "drawing" && linkType !== "so" && !objectRef.trim()) { toast.error("Isi objek yang kena NC"); return; }
     setSaving(true);
     try {
       const toUser = toUsers.find((u) => u.id === toUserId);
@@ -101,7 +102,7 @@ export default function CarCreateModal({ open, onClose, onCreated }) {
         expected_reply_date: expectedReply,
         link_type: linkType,
         drawings: linkType === "drawing" ? selected.map((s) => ({ drawing_id: s.id || "", drawing_no: s.drawing_no || "" })) : [],
-        object_ref: linkType === "other" ? objectRef.trim() : "",
+        object_ref: linkType !== "drawing" ? objectRef.trim() : "",
         so_no: soNo.trim(),
         source, severity, title: title.trim(), description: description.trim(),
       };
@@ -154,16 +155,10 @@ export default function CarCreateModal({ open, onClose, onCreated }) {
 
           {/* Link type */}
           <div>
-            <Label className="text-xs font-bold uppercase tracking-wider text-slate-600">Objek yang Kena NC</Label>
-            <div className="flex gap-2 mt-1">
-              {[["other", "Objek / Proses Lain"], ["drawing", "Drawing"]].map(([k, lbl]) => (
-                <button key={k} type="button" onClick={() => setLinkType(k)}
-                  className={`flex-1 h-9 text-xs font-bold uppercase tracking-wider border transition-colors ${linkType === k ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-600 border-slate-300 hover:border-indigo-400"}`}
-                  data-testid={`car-linktype-${k}`}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
+            <Label className="text-xs font-bold uppercase tracking-wider text-slate-600">Objek yang Kena NC *</Label>
+            <select value={linkType} onChange={(e) => setLinkType(e.target.value)} className="w-full h-9 border border-slate-300 text-sm px-2 mt-1 bg-white" data-testid="car-linktype">
+              {LINK_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+            </select>
             {linkType === "drawing" && (
               <div className="mt-1 flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1">
                 <Info size={13} className="mt-0.5 shrink-0" /> NC bertipe Drawing akan memengaruhi <b>KPI #1 Engineering</b> pada bulan penerbitan.
@@ -203,15 +198,15 @@ export default function CarCreateModal({ open, onClose, onCreated }) {
             </div>
           )}
 
-          {/* Object ref (other) */}
-          {linkType === "other" && (
+          {/* Object ref (non-drawing) */}
+          {linkType !== "drawing" && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label className="text-xs font-bold uppercase tracking-wider text-slate-600">Objek / Referensi *</Label>
-                <Input value={objectRef} onChange={(e) => setObjectRef(e.target.value)} placeholder="mis. Part XYZ, PO-123, barang datang salah" className="rounded-none h-9 mt-1" data-testid="car-object-ref" />
+                <Label className="text-xs font-bold uppercase tracking-wider text-slate-600">Objek / Referensi {linkType === "so" ? "" : "*"}</Label>
+                <Input value={objectRef} onChange={(e) => setObjectRef(e.target.value)} placeholder="mis. Part XYZ, Vendor ABC, proses welding" className="rounded-none h-9 mt-1" data-testid="car-object-ref" />
               </div>
               <div>
-                <Label className="text-xs font-bold uppercase tracking-wider text-slate-600">SO No. (opsional)</Label>
+                <Label className="text-xs font-bold uppercase tracking-wider text-slate-600">SO No. {linkType === "so" ? "*" : "(opsional)"}</Label>
                 <Input value={soNo} onChange={(e) => setSoNo(e.target.value)} placeholder="SO terkait" className="rounded-none h-9 mt-1" data-testid="car-so" />
               </div>
             </div>
