@@ -82,6 +82,12 @@ export default function EngineeringPortalPage() {
       badgeCount: ncActive,
       accent: "from-rose-500 via-red-500 to-orange-500", accentText: "text-rose-400",
     }] : []),
+    ...(isEngUser ? [{
+      key: "eng-process", label: "Internal Engineering Process", stats: "MKS-F-ENG-006 · Log NC + Export Excel",
+      description: "Log proses internal Engineering (tab NC) dari data CAR: Root Cause, Corrective & Preventive Action, No ECN, status. Filter per bulan dan export ke Excel untuk arsip/audit.",
+      icon: ClipboardIcon, href: "/engineering/process",
+      accent: "from-amber-500 via-orange-500 to-rose-500", accentText: "text-amber-400",
+    }] : []),
     ...(isHead ? [{
       key: "kpi", label: "KPI Engineering", stats: "Laporan Bulanan · Auditable",
       description: "Skor KPI bulanan (drawing/BOM compliance, on-time, validasi MKS) dihitung otomatis dari data ERP. Klik tiap indikator untuk telusur audit record aslinya.",

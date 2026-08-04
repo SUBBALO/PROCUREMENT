@@ -460,13 +460,7 @@ async def nc_stats(current: dict = Depends(get_current_user)):
 
 
 # ── ENG-006 NC LOG (Internal Engineering Process — tab NC) ────────────────────
-@router.get("/nonconformance/eng006-nc-log")
-async def eng006_nc_log(month: Optional[str] = None, current: dict = Depends(get_current_user)):
-    """Sajikan data NC untuk dicatat ke Form MKS-F-ENG-006 (Internal Engineering Process),
-    tab 'NC': SO No | Date | Root Cause | Status | Preventive Action | Corrective Action.
-    Alur: NC drawing → Engineer terbit ECN (MKS-F-ENG-004) → input ke ENG-006."""
-    if not (is_engineering(current) or is_admin_like(current)):
-        raise HTTPException(status_code=403, detail="Hanya Engineering/Admin")
+async def _eng006_rows(month: Optional[str]) -> list:
     filt: dict = {"deleted_at": {"$exists": False}}
     if month and len(month) == 7:
         filt["issued_at"] = {"$regex": f"^{month}"}
@@ -485,18 +479,122 @@ async def eng006_nc_log(month: Optional[str] = None, current: dict = Depends(get
             "corrective_action": inv.get("corrective_action") or "",
             "ecn_no": d.get("ecn_no") or "",
         })
+    return rows
+
+
+@router.get("/nonconformance/eng006-nc-log")
+async def eng006_nc_log(month: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Sajikan data NC untuk dicatat ke Form MKS-F-ENG-006 (Internal Engineering Process),
+    tab 'NC': SO No | Date | Root Cause | Status | Preventive Action | Corrective Action.
+    Alur: NC drawing → Engineer terbit ECN (MKS-F-ENG-004) → input ke ENG-006."""
+    if not (is_engineering(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering/Admin")
+    rows = await _eng006_rows(month)
     return {"rows": rows, "total": len(rows)}
+
+
+@router.get("/nonconformance/eng006-nc-log/excel")
+async def eng006_nc_log_excel(month: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Export log Internal Engineering Process (tab NC) ke Excel (MKS-F-ENG-006)."""
+    if not (is_engineering(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering/Admin")
+    rows = await _eng006_rows(month)
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    cols = [
+        ("nc_no", "No CAR"), ("so_no", "No SO"), ("date", "Tanggal"),
+        ("drawing", "Drawing"), ("root_cause", "Root Cause"),
+        ("corrective_action", "Corrective Action"), ("preventive_action", "Preventive Action"),
+        ("status", "Status"), ("ecn_no", "No ECN"),
+    ]
+    status_label = {v: k for k, v in STATUS_LABELS.items()}  # noqa: F841
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Internal Eng Process - NC"
+    ws.cell(row=1, column=1, value="MKS-F-ENG-006 Internal Engineering Process — Nonconformance (NC)").font = \
+        Font(bold=True, size=13, color="1E293B")
+    meta = f"Periode: {month or 'Semua'} · Dicetak: {datetime.now(timezone.utc).strftime('%d %b %Y')} · Total: {len(rows)} NC"
+    ws.cell(row=2, column=1, value=meta).font = Font(size=9, italic=True, color="64748B")
+
+    header_row = 4
+    header_fill = PatternFill("solid", fgColor="0F172A")
+    header_font = Font(bold=True, color="FFFFFF", size=9)
+    thin = Side(style="thin", color="CBD5E1")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for ci, (_, label) in enumerate(cols, start=1):
+        c = ws.cell(row=header_row, column=ci, value=label)
+        c.fill = header_fill
+        c.font = header_font
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        c.border = border
+
+    for ri, row in enumerate(rows, start=header_row + 1):
+        values = {
+            "nc_no": row["nc_no"], "so_no": row["so_no"], "date": row["date"],
+            "drawing": ", ".join(row["drawing_nos"]) if row["drawing_nos"] else "",
+            "root_cause": row["root_cause"], "corrective_action": row["corrective_action"],
+            "preventive_action": row["preventive_action"],
+            "status": STATUS_LABELS.get(row["status"], row["status"]),
+            "ecn_no": row["ecn_no"],
+        }
+        for ci, (key, _) in enumerate(cols, start=1):
+            c = ws.cell(row=ri, column=ci, value=values.get(key, ""))
+            c.font = Font(size=9)
+            c.alignment = Alignment(vertical="top", wrap_text=True)
+            c.border = border
+
+    widths = [20, 12, 12, 24, 34, 34, 34, 12, 16]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    fname = f"MKS-F-ENG-006_NC_{month or 'all'}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(buf.getvalue()),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 # ── DETAIL ───────────────────────────────────────────────────────────────────
 @router.get("/nonconformance/{nc_id}/pdf")
-async def car_pdf(nc_id: str, current: dict = Depends(get_current_user)):
-    """Cetak CAR ke PDF sesuai format resmi ISO MKS-F-QAD-004 Rev.02."""
+async def car_pdf(nc_id: str, attachments: bool = True, current: dict = Depends(get_current_user)):
+    """Cetak CAR ke PDF sesuai format resmi ISO MKS-F-QAD-004 Rev.02.
+
+    Lampiran bukti (foto + PDF) otomatis di-append sebagai halaman setelah form.
+    Set ?attachments=false untuk mencetak form saja tanpa lampiran.
+    """
     if not _can_view(current):
         raise HTTPException(status_code=403, detail="Akses ditolak")
     doc = await _get_nc_or_404(nc_id)
-    from utils.car_pdf import build_car_pdf
+    from utils.car_pdf import build_car_pdf, merge_attachments
     pdf = build_car_pdf(doc)
+
+    if attachments:
+        atts = await db.nc_attachments.find(
+            {"nc_id": nc_id, "deleted_at": {"$exists": False}},
+        ).sort("uploaded_at", 1).to_list(length=200)
+        merge_list = []
+        for a in atts:
+            ext = _ext(a.get("filename", "")).lstrip(".")
+            if ext not in {"pdf", "jpg", "jpeg", "png", "webp"}:
+                continue  # user: hanya foto + PDF yang digabung
+            try:
+                stream = await _fs().open_download_stream(ObjectId(a["file_id"]))
+                raw = await stream.read()
+            except Exception:
+                continue
+            merge_list.append({"filename": a.get("filename"), "content": raw,
+                               "remark": a.get("remark")})
+        if merge_list:
+            pdf = merge_attachments(pdf, merge_list)
+
     safe = str(doc.get("nc_no") or nc_id).replace("/", "-")
     return StreamingResponse(
         io.BytesIO(pdf), media_type="application/pdf",

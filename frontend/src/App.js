@@ -35,6 +35,7 @@ import SalesPortalPage from "./pages/SalesPortalPage";
 import EngineeringPortalPage from "./pages/EngineeringPortalPage";
 import EngineeringWorkloadPage from "./pages/EngineeringWorkloadPage";
 import EngineeringKpiPage from "./pages/EngineeringKpiPage";
+import EngineeringProcessPage from "./pages/EngineeringProcessPage";
 import QuotationPage from "./pages/QuotationPage";
 import CustomerMasterPage from "./pages/CustomerMasterPage";
 import QCPage from "./pages/QCPage";
@@ -234,6 +235,7 @@ function AppRoutes() {
       <Route path="/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
       <Route path="/engineering/master-list" element={<ProtectedRoute><EngineeringMasterListPage /></ProtectedRoute>} />
       <Route path="/nonconformance" element={<ProtectedRoute><NonconformanceMasterlistPage /></ProtectedRoute>} />
+      <Route path="/engineering/process" element={<ProtectedRoute><EngineeringProcessPage /></ProtectedRoute>} />
       <Route path="/engineering/bom-entry/:bomId" element={<ProtectedRoute><BomEntryGridPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

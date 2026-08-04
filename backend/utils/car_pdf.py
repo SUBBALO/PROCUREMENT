@@ -252,3 +252,65 @@ def build_car_pdf(nc: dict) -> bytes:
 
     doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
     return buf.getvalue()
+
+
+# ── Lampiran bukti (foto + PDF) di-append setelah form utama ──────────────────
+_IMG_EXT = {"jpg", "jpeg", "png", "webp"}
+
+
+def merge_attachments(main_pdf: bytes, attachments: list) -> bytes:
+    """Gabungkan lampiran bukti ke PDF CAR.
+
+    - Foto (jpg/jpeg/png/webp) → dijadikan halaman A4 tersendiri (dengan judul
+      "LAMPIRAN n: <nama file>" + remark), gambar di-fit menjaga proporsi.
+    - PDF → seluruh halamannya di-append apa adanya, didahului 1 baris penanda.
+
+    Setiap attachment: {"filename": str, "content": bytes, "remark": str}.
+    Lampiran yang gagal dibaca akan dilewati agar cetak CAR tetap berjalan.
+    """
+    if not attachments:
+        return main_pdf
+    import os as _os
+
+    import fitz  # PyMuPDF
+
+    out = fitz.open(stream=main_pdf, filetype="pdf")
+    A4W, A4H = fitz.paper_size("a4")   # (595, 842) pt
+    margin = 40
+    idx = 0
+    for att in attachments:
+        content = att.get("content")
+        if not content:
+            continue
+        fname = att.get("filename") or "lampiran"
+        remark = (att.get("remark") or "").strip()
+        ext = _os.path.splitext(fname)[1].lower().lstrip(".")
+        idx += 1
+        try:
+            if ext == "pdf":
+                page = out.new_page(width=A4W, height=A4H)
+                page.insert_text((margin, margin), f"LAMPIRAN {idx}: {fname}",
+                                 fontsize=11, fontname="helv", color=(0, 0, 0))
+                if remark:
+                    page.insert_text((margin, margin + 16), remark,
+                                     fontsize=8, fontname="helv", color=(0.3, 0.3, 0.3))
+                src = fitz.open(stream=content, filetype="pdf")
+                out.insert_pdf(src)
+                src.close()
+            elif ext in _IMG_EXT:
+                page = out.new_page(width=A4W, height=A4H)
+                page.insert_text((margin, margin), f"LAMPIRAN {idx}: {fname}",
+                                 fontsize=11, fontname="helv", color=(0, 0, 0))
+                if remark:
+                    page.insert_text((margin, margin + 16), remark,
+                                     fontsize=8, fontname="helv", color=(0.3, 0.3, 0.3))
+                top = margin + (34 if remark else 22)
+                rect = fitz.Rect(margin, top, A4W - margin, A4H - margin)
+                page.insert_image(rect, stream=content, keep_proportion=True)
+            else:
+                idx -= 1  # jenis tak didukung, tidak dihitung
+        except Exception:
+            continue
+    data = out.tobytes()
+    out.close()
+    return data

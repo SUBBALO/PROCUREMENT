@@ -1,22 +1,30 @@
 [
   {
-    "content": "Universal CAR module (all users create, issued_to dept/user, flexible link types, relaxed RBAC)",
+    "content": "Task 1 Backend: Add merge_attachments() to car_pdf.py (append foto + PDF lampiran)",
     "status": "completed"
   },
   {
-    "content": "Expand link categories: Drawing/SO/Produk-Part/Supplier/Proses-Umum (only Drawing affects KPI)",
+    "content": "Task 1 Backend: Wire attachments into /nonconformance/{id}/pdf route",
     "status": "completed"
   },
   {
-    "content": "Remove separate Assign step (use Issued To only)",
+    "content": "Task 1: Test merged CAR PDF visually",
     "status": "completed"
   },
   {
-    "content": "Frontend: create modal category select, detail modal, masterlist columns, universal LandingPage menu",
+    "content": "Task 2 Backend: Add ENG-006 Excel export endpoint",
     "status": "completed"
   },
   {
-    "content": "Testing: backend automated (all pass) + testing_agent (100%, 0 bugs) + UI screenshots",
+    "content": "Task 2 Frontend: Create EngineeringProcessPage.jsx (filter bulan + tabel + export)",
     "status": "completed"
+  },
+  {
+    "content": "Task 2 Frontend: Add route + Engineering portal card",
+    "status": "completed"
+  },
+  {
+    "content": "Test both tasks (testing agent) & show results",
+    "status": "in_progress"
   }
 ]
