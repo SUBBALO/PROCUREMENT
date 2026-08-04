@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 from db import db
 from deps import (
     get_current_user, log_action, is_admin_like, is_eng_head, is_engineering,
-    is_nc_issuer, is_qc, is_production, is_sales,
+    is_nc_issuer, is_qc, is_production, is_sales, is_mr,
 )
 
 router = APIRouter(tags=["nonconformance"])
@@ -548,8 +548,8 @@ async def update_status(nc_id: str, payload: StatusIn, current: dict = Depends(g
     is_priv = is_admin_like(current)
     is_init = _is_initiator(current, doc)
     is_tgt = _is_target(current, doc)
-    if new_status == STATUS_CLOSED and not (is_priv or is_init or is_qc(current) or is_eng_head(current)):
-        raise HTTPException(status_code=403, detail="Hanya penerbit / QA / Admin yang bisa menutup (Closed) NC")
+    if new_status == STATUS_CLOSED and not (is_priv or is_mr(current)):
+        raise HTTPException(status_code=403, detail="Hanya MR / Document Control / Admin yang bisa menutup (Closed) CAR")
     if new_status == STATUS_IN_PROGRESS and not (is_priv or is_tgt):
         raise HTTPException(status_code=403, detail="Hanya dept tujuan/assignee/Admin yang bisa set In Progress")
     if new_status in (STATUS_OPEN, STATUS_ASSIGNED) and not (is_priv or is_tgt or is_init):
@@ -636,11 +636,12 @@ async def save_investigation(nc_id: str, payload: InvestigationIn, current: dict
 @router.post("/nonconformance/{nc_id}/closeout")
 async def save_closeout(nc_id: str, payload: CloseoutIn, current: dict = Depends(get_current_user)):
     doc = await _get_nc_or_404(nc_id)
-    # Closeout diisi Initiator / QA / Admin (atau dept tujuan)
+    # Section 3 (Closeout) diisi oleh MR / Document Control (mis. salma) / Admin.
+    # Form resmi: "Completed by Initiator or MR" → Initiator juga diizinkan.
     is_priv = is_admin_like(current)
     is_initiator = _is_initiator(current, doc)
-    if not (is_priv or is_initiator or is_qc(current) or _is_target(current, doc)):
-        raise HTTPException(status_code=403, detail="Hanya Penerbit/QA/Admin/dept tujuan yang bisa mengisi closeout")
+    if not (is_priv or is_mr(current) or is_initiator):
+        raise HTTPException(status_code=403, detail="Section 3 (Closeout) hanya untuk MR / Document Control / Initiator / Admin")
 
     now = _now_iso()
     closeout = {
@@ -657,8 +658,8 @@ async def save_closeout(nc_id: str, payload: CloseoutIn, current: dict = Depends
     updates = {"closeout": closeout, "updated_at": now}
     action = "closeout"
     if payload.close:
-        if not (is_priv or is_initiator or is_qc(current)):
-            raise HTTPException(status_code=403, detail="Hanya Penerbit/QA/Admin yang bisa menutup (Closed) NC")
+        if not (is_priv or is_mr(current)):
+            raise HTTPException(status_code=403, detail="Hanya MR / Document Control / Admin yang bisa menutup (Closed) CAR")
         updates["status"] = STATUS_CLOSED
         updates["closed_at"] = now
         updates["closed_by"] = _actor(current)

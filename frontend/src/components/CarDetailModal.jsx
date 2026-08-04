@@ -12,7 +12,7 @@ import InlinePdfImageViewer from "./InlinePdfImageViewer";
 import {
   CAR_STATUS_LABEL, CAR_STATUS_CLS, SEVERITY_LABEL, SEVERITY_CLS,
   SOURCE_LABEL, SOURCE_CLS, DEPT_FULL_LABEL, LINK_TYPE_LABEL,
-  isAdminLike, isCarQc, roleToDept,
+  isAdminLike, isCarQc, isCarMR, roleToDept,
 } from "../lib/carConstants";
 import {
   WarningCircle, UserGear, ClockCounterClockwise, Paperclip, Eye, Trash,
@@ -82,10 +82,10 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
     nc.assigned_to?.id === user?.id ||
     nc.issued_to_user?.id === user?.id
   );
-  const canFollow = admin || isTarget;               // assign / set status / investigation
-  const canClose = admin || isInitiator || isCarQc(user);
+  const canFollow = admin || isTarget;               // set status / investigation (Section 2)
+  const canClose = admin || isCarMR(user);           // tutup (Closed) → MR/DocControl/Admin
   const canEditInv = !closed && canFollow;
-  const canEditClo = !closed && (admin || isInitiator || isCarQc(user) || isTarget);
+  const canEditClo = !closed && (admin || isCarMR(user) || isInitiator);  // Section 3 → MR/DocControl/Initiator
 
   const refresh = () => { load(); onChanged && onChanged(); };
 
@@ -278,7 +278,7 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
 
                 {/* Section 3: Closeout */}
                 <div className="space-y-2.5">
-                  <SectionTitle n="3" title="CAR Closeout Information" hint="Diisi oleh Initiator / MR / QA" />
+                  <SectionTitle n="3" title="CAR Closeout Information" hint="Diisi oleh MR / Document Control" />
                   {!canEditClo && !nc.closeout && <div className="text-xs text-slate-400 italic">Belum diisi.</div>}
                   {(canEditClo || nc.closeout) && (
                     <div className="space-y-2.5">
@@ -353,7 +353,7 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
                 {/* Penerbit/QA yang bukan dept tujuan tetap bisa menutup */}
                 {!canFollow && canClose && !closed && (
                   <div className="border border-emerald-200 bg-emerald-50/50 p-3 space-y-2">
-                    <div className="text-[11px] uppercase tracking-widest font-bold text-emerald-700">Aksi Penerbit / QA</div>
+                    <div className="text-[11px] uppercase tracking-widest font-bold text-emerald-700">Aksi MR / Document Control</div>
                     <Button onClick={() => setStatus("closed")} disabled={busy} size="sm" className="rounded-none bg-emerald-600 hover:bg-emerald-700 w-full" data-testid="car-set-closed">
                       <CheckCircle size={14} weight="bold" className="mr-1" /> Tutup (Closed)
                     </Button>

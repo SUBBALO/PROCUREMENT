@@ -92,6 +92,15 @@ def is_qc(user: dict) -> bool:
     return (user or {}).get("role") in QC_ROLES
 
 
+# Management Representative / Document Control — pengisi & penutup Section 3 CAR.
+MR_ROLES = ("mr", "management_representative", "doc_control", "document_control")
+
+
+def is_mr(user: dict) -> bool:
+    """MR / Document Control (mis. salma) atau admin-like — berwenang atas CAR Closeout."""
+    return (user or {}).get("role") in MR_ROLES or is_admin_like(user)
+
+
 def is_production(user: dict) -> bool:
     return (user or {}).get("role") in PRODUCTION_ROLES
 

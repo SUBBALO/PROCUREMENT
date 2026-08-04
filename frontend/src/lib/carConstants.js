@@ -66,6 +66,9 @@ const ROLE_DEPT = {
 export const roleToDept = (role) => ROLE_DEPT[role] || "other";
 
 export const isAdminLike = (u) => ADMIN_LIKE.includes(u?.role);
+// MR / Document Control (mis. salma) — pengisi & penutup Section 3 (Closeout).
+const MR_ROLES = ["mr", "management_representative", "doc_control", "document_control"];
+export const isCarMR = (u) => MR_ROLES.includes(u?.role) || isAdminLike(u);
 // CAR berlaku SEMUA departemen → semua user boleh menerbitkan.
 export const isCarIssuer = (u) => !!u;
 export const isCarQc = (u) => u?.role === "qc";
