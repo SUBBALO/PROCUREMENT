@@ -1,26 +1,26 @@
 [
   {
-    "content": "Baris Masterlist Inquiry bisa diklik + tombol Lihat",
+    "content": "Add role helpers (is_production, is_sales) + NC roles to deps.py",
     "status": "completed"
   },
   {
-    "content": "Modal detail inquiry (info, items, lampiran sales & engineer)",
+    "content": "Create /app/backend/routers/nonconformance.py with CRUD + assign/status/note + attachments",
     "status": "completed"
   },
   {
-    "content": "Integrasi InlinePdfImageViewer untuk pratinjau lampiran PDF/Excel + gambar",
+    "content": "Register nonconformance router in server.py + add startup indexes",
     "status": "completed"
   },
   {
-    "content": "Panel Customer Code Master jadi minimalis di Drawing Master List",
+    "content": "Wire KPI #1 (drawing_customer_nc) to nonconformances collection with auditability",
     "status": "completed"
   },
   {
-    "content": "Kunci semua tombol edit Work Order setelah drawing di-submit",
+    "content": "Backend test: create(multi-drawing)→assign→in_progress→close + RBAC + KPI",
     "status": "completed"
   },
   {
-    "content": "Tombol Kembali di halaman Monitor Beban Kerja",
-    "status": "completed"
+    "content": "Wait for user NCR template before finalizing frontend form UI",
+    "status": "in_progress"
   }
 ]

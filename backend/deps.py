@@ -92,6 +92,23 @@ def is_qc(user: dict) -> bool:
     return (user or {}).get("role") in QC_ROLES
 
 
+def is_production(user: dict) -> bool:
+    return (user or {}).get("role") in PRODUCTION_ROLES
+
+
+def is_sales(user: dict) -> bool:
+    return (user or {}).get("role") in SALES_ROLES
+
+
+# Role yang boleh MENERBITKAN Nonconformance (CAR) terhadap Drawing.
+NC_ISSUER_ROLES = QC_ROLES + PRODUCTION_ROLES + SALES_ROLES
+
+
+def is_nc_issuer(user: dict) -> bool:
+    """QC / Produksi / Sales (atau admin-like) boleh menerbitkan NC."""
+    return (user or {}).get("role") in NC_ISSUER_ROLES or is_admin_like(user)
+
+
 def is_doc_control(user: dict) -> bool:
     return (user or {}).get("role") in DOC_CONTROL_ROLES
 

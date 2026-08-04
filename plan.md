@@ -1,118 +1,106 @@
-# Rencana Pengembangan — Alur ECN (Engineering Change Notice)
+# plan.md — Modul NONCONFORMANCE (CAR)
 
-Bahasa aplikasi & komunikasi: **Indonesia**.
+## 1) Objectives
+- Menyediakan modul **NONCONFORMANCE (CAR)** untuk QC/Produksi/Sales menerbitkan NC terhadap **Drawing**.
+- Menyediakan alur tindak lanjut oleh Engineering Leader: **Open → Assigned → In Progress → Closed** dan menjadi dasar pembuatan **ECN**.
+- Mengubah **KPI #1** agar menghitung “Drawing tanpa NC” berdasarkan **record NC** (bulan NC diterbitkan) dengan auditability (numerator/denominator + daftar record).
+- Menyediakan masterlist CAR lintas portal (QC/Produksi/Sales/Engineering) dengan hak akses yang jelas.
+- Menunda desain UI form detail sampai user mengirim **template NCR** (jangan menebak field).
 
-## Konteks
-Alur revisi drawing menggunakan Form ECN (MKS-F-ENG-004) dengan rantai persetujuan bertingkat:
-1. Eng Staff menyiapkan Form ECN
-2. Head/Leader Eng meng-approve
-3. Setelah IFU → minta TTD Produksi untuk acknowledge
-4. Lanjut ke QA/QC (sign)
-5. Drawing revisi + Form ECN dikirim ke Document Control
+## 2) Implementation Steps
 
-## Tahap 1 — Integrasi Modal ECN (Staff → Leader) — STATUS: COMPLETED
-- [x] Wire `EcnRevisionModal.jsx` ke `EngineeringWorkOrderPage.jsx`
-- [x] Section "Ajukan ECN" tampil saat drawing sudah tidak draft (controlled/released/pending) untuk role Engineering
-- [x] Banner status pengajuan ECN (pending/approved/rejected) + catatan keputusan
-- [x] Backend `POST /drawings/{id}/request-revision` (Staff) & `POST /drawings/{id}/revision-decision` (Leader) tervalidasi via curl
-- [x] Verifikasi UI via screenshot (modal terbuka penuh)
+### Phase 1 — Core Flow POC (Backend saja, minimal tapi end-to-end)
+**User stories (POC)**
+1. Sebagai user QC/Produksi/Sales, saya bisa membuat NC dan menautkan **1 atau banyak drawing**.
+2. Sebagai user, saya bisa melihat daftar NC yang saya buat dan statusnya.
+3. Sebagai Eng Leader, saya bisa meng-assign NC ke staff Engineering.
+4. Sebagai Eng staff, saya bisa mengubah status NC menjadi In Progress dan menambahkan catatan.
+5. Sebagai Eng Leader, saya bisa menutup NC (Closed) dan menyimpan referensi ECN bila sudah terbit.
 
-## Tahap 2 — Alur Revisi ECN End-to-End — STATUS: COMPLETED
-- [x] Approve ECN = gate (tidak langsung draft); status tetap controlled/released
-- [x] `POST /drawings/{id}/start-revision` — snapshot history (data lama TIDAK dihapus), rev_no+1, reset TTD, buka draft
-- [x] Proteksi anti-hapus file lama yang ada di history
-- [x] `GET /drawings/eng-designers` untuk filter
-- [x] `GET /ecn-register` — agregasi ECN (revisi drawing) + ECR/ECN lama (db.ecns)
-- [x] Pembatasan OWNER: hanya engineer yang menggambar drawing (designer/assignee) yang boleh ajukan/mulai revisi (admin override)
-- [x] Work Order: gate "Lanjut Kerja" (pending/approved/in_progress/rejected panels)
-- [x] Master Drawing List: tombol "Ajukan ECN" (owner-only) di popup + filter Designer & "Drawing Saya"
-- [x] Menu lama "Perubahan ECN/ECR" -> "Master List ECN & ECR" (read-only record)
-- [x] Testing agent 17/17 pass + verifikasi manual owner check
+**Langkah implementasi**
+- DB + Model
+  - Tambah koleksi `nonconformances`.
+  - Buat Pydantic models di `/app/backend/models.py` (atau file model baru jika pola codebase mendukung) untuk:
+    - `NonconformanceCreate` (baseline fields minimal)
+    - `NonconformanceUpdateStatus/Assign`.
+  - Desain baseline field (sementara, bisa diextend setelah template NCR):
+    - `id`, `nc_no` (counter per bulan), `issuer_dept` (qc/produksi/sales), `issued_by`, `issued_at`, `status`,
+    - `drawing_ids: []`, `drawing_nos: []` (denormalized untuk filter cepat),
+    - `description` (ringkas), `attachments: []` (opsional, mengikuti pola GridFS bila diperlukan),
+    - `assigned_to` (id+name), `notes[]` (timeline), `ecn_id/ecn_no` (opsional), `closed_at`.
+- Router
+  - Buat `/app/backend/routers/nonconformance.py`:
+    - `POST /api/nonconformance` (QC/Produksi/Sales/Admin)
+    - `GET /api/nonconformance` (filter: status, issuer_dept, drawing_no, date range)
+    - `GET /api/nonconformance/{id}`
+    - `POST /api/nonconformance/{id}/assign` (Eng Leader/Admin)
+    - `POST /api/nonconformance/{id}/status` (Assigned/In Progress/Closed; role guard)
+    - `POST /api/nonconformance/{id}/note` (tambahkan catatan timeline)
+  - Tambahkan router ke `server.py`.
+- Indexes
+  - Buat index untuk `issued_at`, `status`, `drawing_nos`, `assigned_to.id`, `issuer_dept`.
+- POC Testing (backend)
+  - Tambah test script/pytest minimal di `/app/backend/tests/`:
+    - create NC dengan multi-drawing, assign, update status, close.
+    - pastikan RBAC (issuer vs eng_staff vs eng_leader) berjalan.
 
-## Tahap 3 — Rantai TTD (Produksi -> QA/QC -> Doc Control) — STATUS: COMPLETED
-- [x] Akun: agus (produksi/kepala produksi), prodstaff (produksi), qcuser (qc) + TTD PNG
-- [x] `POST /drawings/{id}/ecn-ack` — berurutan Produksi->QA/QC->auto Doc Control, role-gated
-- [x] `GET /drawings/{id}/ecn-ack-state` & `GET /drawings/ecn-pending-ttd` (queue per role)
-- [x] Work Order: panel Acknowledgment ECN (TTD PNG + tanggal/jam)
-- [x] Halaman `/ecn-ttd` (universal) + kartu di Portal QC & Produksi (badge count)
-- [x] Portal Produksi baru + entry di Landing; drawing revisi pakai alur TTD normal (QC review)
-- [x] History Revisi Viewer (buka/unduh PDF versi lama) di Work Order
+### Phase 2 — V1 App Development (MVP UI + KPI wiring)
+**User stories (V1)**
+1. Sebagai QC/Produksi/Sales, saya bisa membuka halaman masterlist CAR dan membuat NC sederhana.
+2. Sebagai user, saya bisa mencari NC berdasarkan nomor drawing / status.
+3. Sebagai Eng Leader, saya bisa melihat queue NC Open/Assigned dan melakukan assign.
+4. Sebagai Eng staff, saya bisa update progress NC tanpa bisa mengubah issuer/issued_at.
+5. Sebagai manajemen/engineering, saya bisa melihat KPI #1 yang berubah otomatis berdasarkan data NC bulan berjalan.
 
-## Tahap 4 — Inbox TTD Tunggal (semua dept) — STATUS: COMPLETED
-- [x] `/drawings/pending-my-approval` jadi "Menunggu TTD Saya": Drawing + ECN dalam satu halaman
-- [x] Section ECN inline (TTD digital) + tabel Drawing (review+TTD/Reject) + empty-state gabungan
-- [x] Portal QC & Produksi: satu kartu "Menunggu TTD Saya" (badge = drawing+ECN)
-- [x] Testing agent 14/14 pass (ack chain, sequential, role perms, owner restriction)
+**Langkah implementasi**
+- KPI #1 (backend)
+  - Update `/app/backend/routers/kpi.py`:
+    - KPI `drawing_customer_nc`: Denominator = total drawing rilis bulan tsb (tetap) atau disepakati ulang menjadi “total drawings release” di bulan tsb.
+    - Numerator = drawings release bulan tsb yang **tidak punya NC yang issued pada bulan tsb** (atau aturan final: NC issued month menjadi basis KPI #1).
+    - Endpoint records tetap auditable: return list `ref` (drawing_no) + `ok` + catatan + tanggal + id NC terkait (jika ada).
+  - Pastikan performa: query `nonconformances` by `issued_at` month + explode `drawing_nos`.
+- Frontend (tanpa final form detail)
+  - Tambah halaman:
+    - `/app/frontend/src/pages/NonconformanceMasterlistPage.jsx` (tabel + filter + status pill).
+  - Tambah “Create NC (Sederhana)” modal sementara:
+    - input minimal: daftar drawing (multi-select by drawing_no), deskripsi singkat.
+    - copy UI 100% Indonesian.
+  - Tambah action sesuai role:
+    - Eng Leader: tombol Assign, ubah status.
+    - Eng staff: tombol In Progress/Closed (sesuai guard backend).
+- Navigasi portal
+  - Tambahkan menu/tab ke portal QC/Produksi/Sales/Engineering sesuai pola yang sudah ada.
 
-## Tahap 5 — Review ECN, Bukti PDF, Notifikasi, Ringkasan, Filter — STATUS: COMPLETED
-- [x] QC portal: kartu 'Riwayat TTD Saya' dihapus (sudah jadi tab di inbox TTD)
-- [x] Modal Review ECN: WAJIB lihat isi ECN + Drawing + centang konfirmasi sebelum TTD (tidak bisa klik buta)
-- [x] Lembar Acknowledgment ECN (PDF, MKS-F-ENG-004) + stamp PNG TTD Produksi & QA/QC sebagai bukti resmi (`GET /drawings/{id}/ecn-sheet`)
-- [x] Notifikasi TTD ke Produksi/QA-QC (kategori 'ecn_ttd' di bell)
-- [x] Ringkasan ECN di dashboard Eng Head (menunggu Produksi/QA/QC/selesai)
-- [x] Register: kolom Timeline (Reg -> Mulai -> Selesai/IFU -> Distribusi Doc Control) + progress TTD
-- [x] Register: filter status + rentang tanggal
-- [x] Tgl selesai revisi ditangkap saat drawing jadi controlled (IFU)
+### Phase 3 — Form NCR sesuai template + Attachments + Hardening
+**User stories (Phase 3)**
+1. Sebagai issuer, saya bisa mengisi form NC sesuai format perusahaan dan menyimpan field lengkap.
+2. Sebagai user, saya bisa upload lampiran bukti (foto/pdf) ke NC dan mempreview tanpa download jika role tertentu dibatasi.
+3. Sebagai Eng Leader, saya bisa reject/return (opsional jika diminta) dengan catatan dan lampiran.
+4. Sebagai user, saya bisa export/print CAR bila dibutuhkan (opsional, setelah template jelas).
+5. Sebagai admin, saya bisa audit semua perubahan status/notes (timeline jelas).
 
-## Tahap 6 — Stabilitas Preview Inline (Fix Bug Iframe 500) — STATUS: COMPLETED
-**Tujuan:** memastikan tab "Drawing (MKS)" di `EcnReviewModal` tidak pernah memunculkan error 500 walaupun file MKS kosong/rusak.
-- [x] Root cause teridentifikasi: `pymupdf.FileDataError: Failed to open stream` saat `fitz.open(stream=pdf_bytes)` menerima bytes non-PDF/invalid
-- [x] Harden endpoint `GET /api/drawings/{id}/pdf-stamped` agar **anti-gagal** untuk kebutuhan iframe preview
-- [x] Tambah helper `_placeholder_pdf()` (1 halaman A4) dengan pesan ramah Bahasa Indonesia
-- [x] Perilaku baru:
-  - Jika drawing tidak ditemukan / `file_id` kosong / file tidak bisa dibaca / bukan PDF valid / stamping gagal → **HTTP 200** + PDF placeholder (bukan 404/500)
-  - Jika file valid → tetap mengembalikan PDF hasil stamping seperti sebelumnya
-- [x] Tambah fallback konversi file Office (legacy import) → PDF bila memungkinkan sebelum stamping
-- [x] Verifikasi via curl:
-  - drawing tanpa file → HTTP 200, `application/pdf`, placeholder ~1.7KB, magic bytes `%PDF-`
-  - drawing dengan file valid → HTTP 200, `application/pdf`, stamped PDF ~13KB
-- [x] Verifikasi via UI: modal review terbuka & tab "Drawing (MKS)" dapat dibuka tanpa error 500/Internal Server Error
+**Langkah implementasi**
+- Setelah user mengirim template NCR:
+  - Map field template → schema final (extend tanpa breaking: default null/empty).
+  - Update UI form lengkap mengikuti urutan/label form asli.
+- Attachments untuk NC (bila diminta)
+  - Implement GridFS bucket `nonconformance_attachments` mirip `bom_attachments`.
+  - Preview via viewer image-based yang sudah ada.
+- Observability
+  - Log action via `log_action` untuk create/assign/status/close.
+- Testing end-to-end
+  - Tambah test iterasi baru (backend + frontend smoke).
 
-## Kredensial TTD (final)
-- agus / AgusMks2026 (Produksi - Kepala Produksi)
-- prodstaff / ProdMks2026 (Staff Produksi)
-- qcuser / QcMks2026 (QA/QC)
+## 3) Next Actions
+1. Implement koleksi + router `nonconformance.py` + include ke `server.py`.
+2. Tambah indexes startup (atau migration ringan) untuk `nonconformances`.
+3. Buat backend tests untuk core flow (create → assign → in_progress → closed).
+4. Wire KPI #1 ke data `nonconformances` (tanpa mengubah KPI lainnya).
+5. Buat halaman masterlist minimal + modal create sederhana (sementara).
+6. Tunggu user kirim template NCR → finalisasi schema & UI form lengkap.
 
-## Backlog (Upcoming)
-### P1 — ECR vs ECN logic (Desain & Implementasi)
-- [ ] Definisikan aturan bisnis final (kapan ECR dipakai, kapan ECN dipakai; dampaknya ke repeat order vs workflow aktif)
-- [ ] Model status/flow ECR (request-only) terpisah dari ECN (notice + distribusi + TTD)
-- [ ] Update UI register "Master List ECN & ECR" agar pembedaan jelas (label, filter, timeline)
-- [ ] Migrasi/normalisasi data legacy ECR/ECN lama bila dibutuhkan
-
-### P2 — Repeat Orders auto-pull old data (Phase 2)
-**Catatan:** butuh klarifikasi desain sebelum coding.
-- [ ] Tetapkan definisi "Repeat Order" (berdasarkan SO? customer+part? drawing_no?)
-- [ ] Tentukan data apa saja yang di-*pull* otomatis (BOM, drawing link, routing approval, catatan QC, dsb)
-- [ ] Tentukan aturan override: kapan user boleh edit vs view-only
-- [ ] Rancang endpoint backend + perubahan UI pada pembuatan order/DRF
-- [ ] Uji dengan data SO lama + validasi audit trail
-
-### P3 — Universal image-based PDF viewer
-**Tujuan:** viewer konsisten (render halaman sebagai gambar) untuk menghindari variasi dukungan PDF viewer browser + kontrol UI (tanpa tombol download bila view-only).
-- [ ] Tentukan pendekatan render: server-side (PyMuPDF → PNG per halaman) vs client-side
-- [ ] Endpoint: render page-by-page, caching, proteksi RBAC, watermark/footnote
-- [ ] Integrasi ke modal review (ECN/Drawing) dan halaman view-only (QC/DC)
-
-### P4 — Excel-to-Image preview
-- [ ] Tentukan format file yang didukung (.xlsx, .xls)
-- [ ] Pipeline konversi: Excel → PDF → PNG (atau langsung ke gambar)
-- [ ] Preview inline (tanpa download) + RBAC
-
-### P5 — Legacy Data Bulk Import
-- [ ] Template import + validasi
-- [ ] Mapping field ke schema `drawings` + `revisions`
-- [ ] Import file ke GridFS + indexing + audit trail
-
-## File Kunci
-- `frontend/src/components/EcnRevisionModal.jsx`
-- `frontend/src/components/EcnReviewModal.jsx`
-- `frontend/src/pages/EngineeringWorkOrderPage.jsx`
-- `frontend/src/pages/PendingApprovalDrawingsPage.jsx`
-- `backend/routers/drawing_register.py` (endpoint ECN & `pdf-stamped` hardened)
-- `backend/utils/pdf_stamper.py`
-
-## Akun Test
-- `trisna` / `eng123` (eng_staff), `engstaff` (eng_staff)
-- `riski` / `eng123` (eng_leader)
-- `qcuser` (qc), `salma` (doc_control)
+## 4) Success Criteria
+- Backend: NC bisa dibuat oleh QC/Produksi/Sales, bisa link **multi drawing**, status flow berjalan, RBAC benar.
+- KPI #1: angka numerator/denominator + records audit **konsisten** dengan data `nonconformances` per bulan.
+- Frontend MVP: masterlist tampil, filter berjalan, create NC sederhana berhasil.
+- Tidak ada regresi di modul Engineering KPI Dashboard, Excel preview (LibreOffice prewarm), dan portal Engineering yang sudah ada.

@@ -85,6 +85,10 @@ api_router.include_router(legacy_import_router.router)
 from routers import kpi as kpi_router  # noqa: E402
 api_router.include_router(kpi_router.router)
 
+# Nonconformance (CAR) — QC/Produksi/Sales terbitkan NC atas Drawing; Eng Leader tindak lanjut → ECN
+from routers import nonconformance as nonconformance_router  # noqa: E402
+api_router.include_router(nonconformance_router.router)
+
 
 @api_router.get("/")
 async def root():
@@ -231,6 +235,17 @@ async def startup():
     await db.sales_orders.create_index("so_no", unique=True)
     await db.sales_orders.create_index("so_date")
     await db.form_templates.create_index("code")
+    # Nonconformance (CAR) indexes
+    try:
+        await db.nonconformances.create_index("issued_at")
+        await db.nonconformances.create_index("status")
+        await db.nonconformances.create_index("issuer_dept")
+        await db.nonconformances.create_index("drawing_nos")
+        await db.nonconformances.create_index("assigned_to.id")
+        await db.nonconformances.create_index("issued_by.id")
+        await db.nc_attachments.create_index("nc_id")
+    except Exception as e:
+        logger.warning(f"nonconformance index skip: {e}")
     await seed_admin()
     await seed_form_templates()
     # Pre-warm LibreOffice (background) agar preview Excel siap sebelum request pertama.

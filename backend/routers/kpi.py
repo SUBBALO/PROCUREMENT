@@ -40,7 +40,7 @@ KPI_DEFS = [
      "formula_num": "Number of Drawings Release Without Non-Conformity (NC)",
      "formula_den": "Total Drawings Release",
      "target": "100%", "weight": 20,
-     "source": "drawings status='Issued' pada bulan tsb; tanpa NC = tidak ada field revision_request (reject customer/head)."},
+     "source": "drawings status='Issued' pada bulan tsb; drawing dianggap ber-NC bila ada record Nonconformance (CAR) yang diterbitkan (issued_at) pada bulan yang sama, menautkan drawing_no tsb."},
     {"key": "drawing_no_revision", "no": 2,
      "name_id": "Drawing complies to customer requirements",
      "description": "Minimized Drawing Revision",
@@ -114,6 +114,21 @@ async def _load_ctx():
     drfs = await db.drawing_requests.find({}).to_list(length=None)
     ecn_dwg = set(x for x in await db.ecns.distinct("drawing_no", {"kind": "ecn"}) if x)
     ecn_bom = set(x for x in await db.ecns.distinct("bom_no", {"kind": "ecn"}) if x)
+    # Nonconformance (CAR) — untuk KPI #1. Map: drawing_no → list {nc_no, ym, id, severity}.
+    nc_by_dwg: dict = {}
+    ncs = await db.nonconformances.find(
+        {"deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "nc_no": 1, "issued_at": 1, "drawing_nos": 1, "severity": 1},
+    ).to_list(length=None)
+    for nc in ncs:
+        ym = str(nc.get("issued_at") or "")[:7]
+        for dno in (nc.get("drawing_nos") or []):
+            if not dno:
+                continue
+            nc_by_dwg.setdefault(dno, []).append({
+                "nc_no": nc.get("nc_no"), "ym": ym, "id": nc.get("id"),
+                "severity": nc.get("severity"),
+            })
     due_by_dwg: dict = {}
     for r in drfs:
         due = r.get("expected_due_date")
@@ -125,7 +140,8 @@ async def _load_ctx():
         for did in ids:
             due_by_dwg[did] = due
     return {"drawings": drawings, "boms": boms, "inquiries": inquiries,
-            "ecn_dwg": ecn_dwg, "ecn_bom": ecn_bom, "due_by_dwg": due_by_dwg}
+            "ecn_dwg": ecn_dwg, "ecn_bom": ecn_bom, "due_by_dwg": due_by_dwg,
+            "nc_by_dwg": nc_by_dwg}
 
 
 def _dwg_date(d):
@@ -141,9 +157,27 @@ def _kpi_records(ctx: dict, key: str, ym: str) -> list:
     issued = [d for d in drawings if str(d.get("status") or "").lower() == "issued" and _in_period(_dwg_date(d), ym)]
 
     if key == "drawing_customer_nc":
-        return [{"ref": d.get("drawing_no"), "ok": not bool(d.get("revision_request")),
-                 "note": "Ada revision_request (NC)" if d.get("revision_request") else "Tidak ada NC",
-                 "date": (_dwg_date(d) or "")[:10]} for d in issued]
+        # KPI #1: Drawing tanpa NC. Basis = record Nonconformance (CAR) yang
+        # DITERBITKAN pada bulan tsb (issued_at bulan = ym) — sesuai kesepakatan
+        # "dinilai pada bulan NC diterbitkan". Auditable via nc_no.
+        nc_by_dwg = ctx.get("nc_by_dwg", {})
+        out = []
+        for d in issued:
+            dno = d.get("drawing_no")
+            ncs_this_month = [n for n in nc_by_dwg.get(dno, []) if n.get("ym") == ym]
+            has_nc = bool(ncs_this_month)
+            if has_nc:
+                nc_refs = ", ".join(n.get("nc_no") or "-" for n in ncs_this_month)
+                note = f"Ada NC ({nc_refs})"
+            else:
+                note = "Tidak ada NC"
+            out.append({
+                "ref": dno, "ok": not has_nc, "note": note,
+                "date": (_dwg_date(d) or "")[:10],
+                "nc_ids": [n.get("id") for n in ncs_this_month],
+                "nc_nos": [n.get("nc_no") for n in ncs_this_month],
+            })
+        return out
 
     if key == "drawing_no_revision":
         out = []
