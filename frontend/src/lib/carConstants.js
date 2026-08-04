@@ -47,6 +47,7 @@ export const DEPT_FULL_LABEL = DEPARTMENTS.reduce((a, d) => ((a[d.key] = d.label
 export const LINK_TYPES = [
   { key: "drawing", label: "Drawing" },
   { key: "so", label: "SO (Sales Order)" },
+  { key: "incoming_material", label: "Incoming Material/Goods" },
   { key: "product_part", label: "Produk/Part" },
   { key: "supplier", label: "Supplier/Vendor" },
   { key: "process_general", label: "Proses/Umum" },

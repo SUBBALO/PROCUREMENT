@@ -206,7 +206,17 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
                       {(nc.drawing_nos || []).length === 0 && <span className="text-slate-300 text-xs">—</span>}
                     </div>
                   ) : (
-                    <div className="text-sm text-slate-800 bg-white border border-slate-200 px-3 py-2" data-testid="car-detail-object">{nc.object_ref || "—"}</div>
+                    <div className="text-sm text-slate-800 bg-white border border-slate-200 px-3 py-2 space-y-1" data-testid="car-detail-object">
+                      <div>{nc.object_ref || "—"}</div>
+                      {nc.link_type === "incoming_material" && nc.incoming && (
+                        <div className="text-[11px] text-slate-500 border-t border-slate-100 pt-1">
+                          Item: <b>{nc.incoming.item_name || "-"}</b> · Vendor: {nc.incoming.vendor_name || "-"} · Terima: {nc.incoming.receive_date || "-"}
+                          {nc.incoming.qty_received ? ` · Qty: ${nc.incoming.qty_received} ${nc.incoming.unit || ""}` : ""}
+                          {nc.incoming.invoice_no ? ` · INV: ${nc.incoming.invoice_no}` : ""}
+                          {nc.incoming.po_no && nc.incoming.po_no !== "0" ? ` · PO: ${nc.incoming.po_no}` : ""}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
 

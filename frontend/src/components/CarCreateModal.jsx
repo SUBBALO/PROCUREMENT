@@ -25,6 +25,10 @@ export default function CarCreateModal({ open, onClose, onCreated }) {
   const [selected, setSelected] = useState([]);
   const [objectRef, setObjectRef] = useState("");
   const [soNo, setSoNo] = useState("");
+  // incoming goods
+  const [incomingList, setIncomingList] = useState([]);
+  const [incomingSearch, setIncomingSearch] = useState("");
+  const [incomingSel, setIncomingSel] = useState(null); // selected receipt
 
   // issued to
   const [toDept, setToDept] = useState("");
@@ -42,6 +46,7 @@ export default function CarCreateModal({ open, onClose, onCreated }) {
   useEffect(() => {
     if (!open) return;
     setLinkType("process_general"); setSelected([]); setSearch(""); setObjectRef(""); setSoNo("");
+    setIncomingList([]); setIncomingSearch(""); setIncomingSel(null);
     setToDept(""); setToUserId(""); setToUsers([]); setExpectedReply("");
     setSource("in_house"); setSeverity("major"); setTitle(""); setDescription("");
   }, [open]);
@@ -69,6 +74,18 @@ export default function CarCreateModal({ open, onClose, onCreated }) {
     }
   }, [open, toDept]);
 
+  // load incoming goods when needed
+  useEffect(() => {
+    if (open && linkType === "incoming_material") {
+      const t = setTimeout(() => {
+        api.get(`/nonconformance/incoming-goods${incomingSearch.trim() ? `?q=${encodeURIComponent(incomingSearch.trim())}` : ""}`)
+          .then(({ data }) => setIncomingList(data.items || []))
+          .catch(() => setIncomingList([]));
+      }, 250);
+      return () => clearTimeout(t);
+    }
+  }, [open, linkType, incomingSearch]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const selIds = new Set(selected.map((s) => s.id || s.drawing_no));
@@ -91,7 +108,8 @@ export default function CarCreateModal({ open, onClose, onCreated }) {
     if (!description.trim() && !title.trim()) { toast.error("Deskripsi ketidaksesuaian wajib diisi"); return; }
     if (linkType === "drawing" && selected.length === 0) { toast.error("Pilih minimal satu Drawing"); return; }
     if (linkType === "so" && !objectRef.trim() && !soNo.trim()) { toast.error("Isi No. SO yang kena NC"); return; }
-    if (linkType !== "drawing" && linkType !== "so" && !objectRef.trim()) { toast.error("Isi objek yang kena NC"); return; }
+    if (linkType === "incoming_material" && !incomingSel && !objectRef.trim()) { toast.error("Pilih data Incoming Goods"); return; }
+    if (linkType !== "drawing" && linkType !== "so" && linkType !== "incoming_material" && !objectRef.trim()) { toast.error("Isi objek yang kena NC"); return; }
     setSaving(true);
     try {
       const toUser = toUsers.find((u) => u.id === toUserId);
@@ -103,6 +121,7 @@ export default function CarCreateModal({ open, onClose, onCreated }) {
         link_type: linkType,
         drawings: linkType === "drawing" ? selected.map((s) => ({ drawing_id: s.id || "", drawing_no: s.drawing_no || "" })) : [],
         object_ref: linkType !== "drawing" ? objectRef.trim() : "",
+        incoming_receipt_id: linkType === "incoming_material" ? (incomingSel?.id || "") : "",
         so_no: soNo.trim(),
         source, severity, title: title.trim(), description: description.trim(),
       };
@@ -198,8 +217,41 @@ export default function CarCreateModal({ open, onClose, onCreated }) {
             </div>
           )}
 
-          {/* Object ref (non-drawing) */}
-          {linkType !== "drawing" && (
+          {/* Incoming Goods picker */}
+          {linkType === "incoming_material" && (
+            <div>
+              <Label className="text-xs font-bold uppercase tracking-wider text-slate-600">Pilih Data Incoming Goods *</Label>
+              {incomingSel ? (
+                <div className="mt-1 flex items-start justify-between gap-2 bg-emerald-50 border border-emerald-300 px-3 py-2" data-testid="car-incoming-selected">
+                  <div className="text-xs text-slate-800">
+                    <div className="font-bold">{incomingSel.item_name}</div>
+                    <div className="text-slate-500">{incomingSel.vendor_name} · {incomingSel.receive_date} · {incomingSel.qty_received} {incomingSel.unit}{incomingSel.invoice_no ? ` · INV ${incomingSel.invoice_no}` : ""}{incomingSel.po_no && incomingSel.po_no !== "0" ? ` · PO ${incomingSel.po_no}` : ""}</div>
+                  </div>
+                  <button type="button" onClick={() => setIncomingSel(null)} className="text-slate-400 hover:text-rose-600" data-testid="car-incoming-clear"><X size={14} weight="bold" /></button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 border border-slate-300 px-2 h-9 bg-white mt-1">
+                    <MagnifyingGlass size={14} className="text-slate-400" />
+                    <input value={incomingSearch} onChange={(e) => setIncomingSearch(e.target.value)} placeholder="Cari item / vendor / invoice / PO..." className="flex-1 text-sm outline-none" data-testid="car-incoming-search" />
+                  </div>
+                  <div className="mt-1 border border-slate-200 max-h-44 overflow-y-auto divide-y divide-slate-100">
+                    {incomingList.length === 0 && <div className="p-3 text-center text-slate-400 text-xs">Tidak ada data incoming goods.</div>}
+                    {incomingList.map((r) => (
+                      <button key={r.id} type="button" onClick={() => setIncomingSel(r)} className="w-full text-left px-3 py-2 hover:bg-emerald-50/60 flex items-center gap-2" data-testid={`car-incoming-opt-${r.id}`}>
+                        <Plus size={13} weight="bold" className="text-emerald-500 shrink-0" />
+                        <span className="text-xs text-slate-800 font-semibold">{r.item_name}</span>
+                        <span className="text-[11px] text-slate-400 truncate">· {r.vendor_name} · {r.receive_date}{r.invoice_no ? ` · INV ${r.invoice_no}` : ""}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Object ref (non-drawing, non-incoming) */}
+          {linkType !== "drawing" && linkType !== "incoming_material" && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label className="text-xs font-bold uppercase tracking-wider text-slate-600">Objek / Referensi {linkType === "so" ? "" : "*"}</Label>

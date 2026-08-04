@@ -66,9 +66,11 @@ DEPARTMENTS = {
     "other": {"label": "Lainnya", "roles": []},
 }
 # Kategori objek yang bisa "kena NC". Hanya "drawing" yang memengaruhi KPI Engineering.
-LINK_TYPES = {"drawing", "so", "product_part", "supplier", "process_general"}
+LINK_TYPES = {"drawing", "so", "incoming_material", "product_part", "supplier", "process_general"}
 LINK_TYPE_LABELS = {
-    "drawing": "Drawing", "so": "SO (Sales Order)", "product_part": "Produk/Part",
+    "drawing": "Drawing", "so": "SO (Sales Order)",
+    "incoming_material": "Incoming Material/Goods",
+    "product_part": "Produk/Part",
     "supplier": "Supplier/Vendor", "process_general": "Proses/Umum",
 }
 
@@ -174,7 +176,8 @@ class NonconformanceCreate(BaseModel):
     # ── Objek yang kena NC (fleksibel) ──
     link_type: str = "process_general"  # drawing (memengaruhi KPI Eng) | so | product_part | supplier | process_general
     drawings: List[DrawingRef] = Field(default_factory=list)  # dipakai bila link_type=drawing
-    object_ref: str = ""                  # teks bebas objek yang kena NC (bila 'other')
+    object_ref: str = ""                  # teks bebas objek yang kena NC (bila non-drawing)
+    incoming_receipt_id: Optional[str] = ""  # id store_receipts (bila link_type=incoming_material)
     so_no: Optional[str] = ""
     customer_name: Optional[str] = ""
     # ── Section 1: NONCONFORMANCE INFORMATION ──
@@ -245,6 +248,7 @@ async def create_nc(payload: NonconformanceCreate, current: dict = Depends(get_c
     resolved: List[dict] = []
     so_no = (payload.so_no or "").strip()
     customer_name = (payload.customer_name or "").strip()
+    incoming = None
 
     if link_type == "drawing":
         drawings = [d for d in (payload.drawings or []) if (d.drawing_id or d.drawing_no)]
@@ -267,11 +271,33 @@ async def create_nc(payload: NonconformanceCreate, current: dict = Depends(get_c
                 resolved.append({"drawing_id": d.drawing_id, "drawing_no": d.drawing_no,
                                  "so_no": "", "customer_name": "", "project_name": ""})
     else:
-        # Objek bebas: SO / Produk-Part / Supplier / Proses-Umum.
-        if link_type == "so" and not so_no and not (payload.object_ref or "").strip():
+        # Objek bebas: SO / Incoming Material / Produk-Part / Supplier / Proses-Umum.
+        if link_type == "incoming_material" and (payload.incoming_receipt_id or "").strip():
+            rc = await db.store_receipts.find_one(
+                {"id": payload.incoming_receipt_id.strip(), "deleted_at": {"$exists": False}}, {"_id": 0})
+            if not rc:
+                raise HTTPException(status_code=404, detail="Data Incoming Goods tidak ditemukan")
+            incoming = {
+                "receipt_id": rc.get("id"), "item_name": rc.get("item_name"),
+                "vendor_name": rc.get("vendor_name"), "receive_date": rc.get("receive_date"),
+                "qty_received": rc.get("qty_received"), "unit": rc.get("unit"),
+                "po_no": rc.get("po_no"), "invoice_no": rc.get("invoice_no"),
+                "do_number": rc.get("do_number"), "so_no": rc.get("so_no"),
+            }
+            so_no = so_no or (rc.get("so_no") or "")
+            customer_name = customer_name or (rc.get("customer_name") or "")
+            # object_ref otomatis (mudah dibaca di masterlist)
+            auto = f"{rc.get('item_name') or '-'} · {rc.get('vendor_name') or '-'}"
+            if rc.get("invoice_no"):
+                auto += f" · INV {rc.get('invoice_no')}"
+            if not (payload.object_ref or "").strip():
+                payload.object_ref = auto
+        elif link_type == "so" and not so_no and not (payload.object_ref or "").strip():
             raise HTTPException(status_code=400, detail="Isi No. SO yang kena NC")
-        if link_type != "so" and not (payload.object_ref or "").strip():
+        elif link_type not in ("so", "incoming_material") and not (payload.object_ref or "").strip():
             raise HTTPException(status_code=400, detail="Isi objek yang kena NC (mis. part/supplier/proses)")
+        if link_type == "incoming_material" and not incoming and not (payload.object_ref or "").strip():
+            raise HTTPException(status_code=400, detail="Pilih data Incoming Goods atau isi objeknya")
 
     sev = payload.severity if payload.severity in SEVERITY_LEVELS else "major"
     dept = _issuer_dept_of(current)   # dept penerbit otomatis dari role
@@ -306,6 +332,7 @@ async def create_nc(payload: NonconformanceCreate, current: dict = Depends(get_c
         # ── Objek NC ──
         "link_type": link_type,
         "object_ref": (payload.object_ref or "").strip(),
+        "incoming": incoming,
         "drawings": resolved,
         "drawing_ids": [r["drawing_id"] for r in resolved if r.get("drawing_id")],
         "drawing_nos": [r["drawing_no"] for r in resolved if r.get("drawing_no")],
@@ -399,6 +426,22 @@ async def assignable_users(dept: Optional[str] = None, current: dict = Depends(g
     users = await db.users.find(q, {"_id": 0, "id": 1, "name": 1, "username": 1, "role": 1}).to_list(length=300)
     users.sort(key=lambda u: (u.get("name") or u.get("username") or "").lower())
     return {"users": [{"id": u["id"], "name": u.get("name") or u.get("username"), "role": u.get("role")} for u in users]}
+
+
+@router.get("/nonconformance/incoming-goods")
+async def incoming_goods(q: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Daftar Incoming Goods (store_receipts) untuk dipilih saat NC bertipe Incoming Material/Goods.
+    Dapat diakses semua user agar CAR universal bisa menautkan barang masuk nyata."""
+    filt = {"deleted_at": {"$exists": False}}
+    if q and q.strip():
+        rx = {"$regex": q.strip(), "$options": "i"}
+        filt["$or"] = [{"item_name": rx}, {"vendor_name": rx}, {"invoice_no": rx},
+                       {"po_no": rx}, {"do_number": rx}, {"so_no": rx}]
+    docs = await db.store_receipts.find(
+        filt, {"_id": 0, "id": 1, "item_name": 1, "vendor_name": 1, "receive_date": 1,
+               "qty_received": 1, "unit": 1, "po_no": 1, "invoice_no": 1, "do_number": 1, "so_no": 1},
+    ).sort("receive_date", -1).limit(300).to_list(length=300)
+    return {"items": docs, "total": len(docs)}
 
 
 # ── STATS (untuk badge/queue) ─────────────────────────────────────────────────
