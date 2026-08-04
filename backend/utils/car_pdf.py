@@ -63,12 +63,15 @@ def build_car_pdf(nc: dict) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm,
-        topMargin=33 * mm, bottomMargin=14 * mm, title=f"CAR {nc.get('nc_no','')}",
+        topMargin=12 * mm, bottomMargin=14 * mm, title=f"CAR {nc.get('nc_no','')}",
     )
     content_w = doc.width
     story = []
 
-    # ── Judul (kop surat digambar sebagai background di _on_page) ──
+    # ── Header polos sesuai template (tanpa kop surat) ──
+    story.append(_p("PT. MITRA KARYA SARANA", 12, bold=True, align=TA_CENTER))
+    story.append(Spacer(1, 3))
+    # ── Judul ──
     title = Table([[_p("CORRECTIVE ACTION REPORT (CAR)", 12, bold=True, align=TA_CENTER, color=colors.white)]],
                   colWidths=[content_w])
     title.setStyle(TableStyle([
@@ -201,13 +204,6 @@ def build_car_pdf(nc: dict) -> bytes:
 
     def _on_page(canvas, _doc):
         canvas.saveState()
-        # Kop surat / letterhead sebagai background full-page
-        if os.path.exists(_LETTERHEAD):
-            try:
-                canvas.drawImage(_LETTERHEAD, 0, 0, width=A4[0], height=A4[1],
-                                 preserveAspectRatio=False, mask="auto")
-            except Exception:
-                pass
         canvas.setFont("Helvetica", 7.5)
         canvas.setFillColor(_LABEL)
         canvas.drawString(14 * mm, 7 * mm, "MKS-F-QAD-004#Rev.02")

@@ -595,6 +595,91 @@ async def _gather_notifications(user: dict) -> dict:
     except Exception:
         pass
 
+    # ------------- Nonconformance (CAR) -------------
+    try:
+        _ROLE_DEPT = {
+            "eng_leader": "engineering", "eng_head": "engineering", "engineering": "engineering",
+            "eng_staff": "engineering", "qc": "qc", "produksi": "produksi", "production": "produksi",
+            "sales": "sales", "purchasing": "purchasing", "staff": "purchasing", "store": "store",
+            "doc_control": "document_control", "document_control": "document_control",
+            "finance": "finance", "admin": "management", "super_admin": "management", "supervisor": "management",
+        }
+        my_dept = _ROLE_DEPT.get(role, "other")
+        now_dt = datetime.now(timezone.utc)
+
+        # (a) CAR ditujukan ke dept/user ini & masih aktif → perlu ditindaklanjuti
+        active = await db.nonconformances.find(
+            {"deleted_at": {"$exists": False},
+             "status": {"$in": ["open", "assigned", "in_progress"]},
+             "$or": [{"issued_to_dept": my_dept}, {"issued_to_user.id": user_id}, {"assigned_to.id": user_id}]},
+            {"_id": 0},
+        ).sort("created_at", -1).limit(50).to_list(length=50)
+        if active:
+            items = []
+            overdue_any = False
+            for nc in active:
+                overdue = False
+                erd = nc.get("expected_reply_date")
+                if erd:
+                    try:
+                        overdue = datetime.fromisoformat(str(erd)[:10]).replace(tzinfo=timezone.utc) < now_dt
+                    except Exception:
+                        overdue = False
+                if overdue:
+                    overdue_any = True
+                obj = ", ".join(nc.get("drawing_nos") or []) if nc.get("link_type") == "drawing" else (nc.get("object_ref") or "-")
+                items.append({
+                    "id": nc.get("id"),
+                    "title": ("TERLAMBAT · " if overdue else "") + f"{nc.get('nc_no')} perlu ditindaklanjuti",
+                    "detail": f"{(nc.get('title') or nc.get('description') or '')[:60]}",
+                    "sub": f"Objek: {obj[:50]} · dari {(nc.get('issued_by') or {}).get('name', '-')}",
+                    "link": "/nonconformance",
+                    "kind": "car_followup",
+                    "overdue": overdue,
+                    "created_at": nc.get("issued_at"),
+                })
+            items.sort(key=lambda x: (not x.get("overdue"), x.get("created_at") or ""))
+            categories.append({
+                "key": "car_followup",
+                "label": "CAR Perlu Ditindaklanjuti" + (" (ada TERLAMBAT)" if overdue_any else ""),
+                "count": len(items),
+                "severity": "danger" if overdue_any else "warn",
+                "items": items,
+            })
+
+        # (b) CAR yang ANDA terbitkan sudah Closed (info untuk penerbit)
+        closed_mine = await db.nonconformances.find(
+            {"deleted_at": {"$exists": False}, "status": "closed", "issued_by.id": user_id},
+            {"_id": 0},
+        ).sort("closed_at", -1).limit(20).to_list(length=20)
+        # hanya yang closed dalam 30 hari terakhir
+        recent = []
+        for nc in closed_mine:
+            ca = nc.get("closed_at")
+            try:
+                if ca and (now_dt - datetime.fromisoformat(str(ca).replace("Z", "+00:00"))).days <= 30:
+                    recent.append(nc)
+            except Exception:
+                recent.append(nc)
+        if recent:
+            categories.append({
+                "key": "car_closed",
+                "label": "CAR Anda Sudah Ditutup (Closed)",
+                "count": len(recent),
+                "severity": "info",
+                "items": [{
+                    "id": nc.get("id"),
+                    "title": f"{nc.get('nc_no')} telah Closed",
+                    "detail": (nc.get("title") or nc.get("description") or "")[:60],
+                    "sub": f"Ditutup: {str(nc.get('closed_at') or '')[:10]}",
+                    "link": "/nonconformance",
+                    "kind": "car_closed",
+                    "created_at": nc.get("closed_at"),
+                } for nc in recent],
+            })
+    except Exception:
+        pass
+
     total_count = sum(c["count"] for c in categories)
     return {
         "role": role,
