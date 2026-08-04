@@ -29,13 +29,35 @@ export const SOURCE_CLS = {
 
 export const DEPT_LABEL = { qc: "QC", produksi: "Produksi", sales: "Sales" };
 
+// Departemen tujuan (Issued To) — CAR berlaku semua dept.
+export const DEPARTMENTS = [
+  { key: "engineering", label: "Engineering" },
+  { key: "qc", label: "Quality Control" },
+  { key: "produksi", label: "Produksi" },
+  { key: "sales", label: "Sales" },
+  { key: "purchasing", label: "Purchasing" },
+  { key: "store", label: "Store" },
+  { key: "document_control", label: "Document Control" },
+  { key: "finance", label: "Finance" },
+  { key: "management", label: "Management" },
+  { key: "other", label: "Lainnya" },
+];
+export const DEPT_FULL_LABEL = DEPARTMENTS.reduce((a, d) => ((a[d.key] = d.label), a), {});
+
+export const LINK_TYPE_LABEL = { drawing: "Drawing", other: "Objek/Proses Lain" };
+
 const ADMIN_LIKE = ["admin", "super_admin", "supervisor"];
-const ENG_LEADER = ["eng_leader", "eng_head", "engineering"];
-const ENG_ALL = ["eng_leader", "eng_head", "engineering", "eng_staff"];
-const ISSUER = ["qc", "produksi", "production", "sales"];
+
+const ROLE_DEPT = {
+  eng_leader: "engineering", eng_head: "engineering", engineering: "engineering", eng_staff: "engineering",
+  qc: "qc", produksi: "produksi", production: "produksi", sales: "sales",
+  purchasing: "purchasing", staff: "purchasing", store: "store",
+  doc_control: "document_control", document_control: "document_control",
+  finance: "finance", admin: "management", super_admin: "management", supervisor: "management",
+};
+export const roleToDept = (role) => ROLE_DEPT[role] || "other";
 
 export const isAdminLike = (u) => ADMIN_LIKE.includes(u?.role);
-export const isCarLeader = (u) => ENG_LEADER.includes(u?.role) || isAdminLike(u);
-export const isCarEng = (u) => ENG_ALL.includes(u?.role);
-export const isCarIssuer = (u) => ISSUER.includes(u?.role) || isAdminLike(u);
+// CAR berlaku SEMUA departemen → semua user boleh menerbitkan.
+export const isCarIssuer = (u) => !!u;
 export const isCarQc = (u) => u?.role === "qc";

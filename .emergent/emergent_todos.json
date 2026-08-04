@@ -1,18 +1,18 @@
 [
   {
-    "content": "Backend: official CAR form schema + 3 sections + endpoints + ENG-006 NC log + preventive_action",
+    "content": "Backend: universal CAR (all users), issued_to dept/user, flexible link (drawing/other), relaxed RBAC, assignable-users/departments endpoints",
     "status": "completed"
   },
   {
-    "content": "Frontend: NonconformanceMasterlistPage + CarCreateModal + CarDetailModal",
+    "content": "Frontend carConstants + CarCreateModal (Issued To + link toggle) + CarDetailModal (generalized follow-up) + Masterlist columns",
     "status": "completed"
   },
   {
-    "content": "Wire route + portal cards (QC/Produksi/Sales/Engineering) + RBAC whitelist",
+    "content": "Universal menu: LandingPage CAR card (all roles) + portal cards",
     "status": "completed"
   },
   {
-    "content": "Manual test (backend script + UI screenshots): create/assign/investigation/closeout/KPI",
+    "content": "Backend automated tests + UI screenshots verified",
     "status": "completed"
   },
   {

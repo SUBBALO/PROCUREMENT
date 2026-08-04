@@ -11,8 +11,8 @@ import { Label } from "./ui/label";
 import InlinePdfImageViewer from "./InlinePdfImageViewer";
 import {
   CAR_STATUS_LABEL, CAR_STATUS_CLS, SEVERITY_LABEL, SEVERITY_CLS,
-  SOURCE_LABEL, SOURCE_CLS, DEPT_LABEL,
-  isCarLeader, isCarEng, isCarQc,
+  SOURCE_LABEL, SOURCE_CLS, DEPT_FULL_LABEL, LINK_TYPE_LABEL,
+  isAdminLike, isCarQc, roleToDept,
 } from "../lib/carConstants";
 import {
   WarningCircle, UserGear, ClockCounterClockwise, Paperclip, Eye, Trash,
@@ -43,7 +43,7 @@ function SectionTitle({ n, title, hint }) {
 export default function CarDetailModal({ open, ncId, user, onClose, onChanged }) {
   const [nc, setNc] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [designers, setDesigners] = useState([]);
+  const [deptUsers, setDeptUsers] = useState([]);
   const [attachments, setAttachments] = useState([]);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(null); // attachment being previewed
@@ -56,8 +56,7 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
   const [assignee, setAssignee] = useState("");
   const [ecnNo, setEcnNo] = useState("");
 
-  const leader = isCarLeader(user);
-  const eng = isCarEng(user);
+  const admin = isAdminLike(user);
 
   const load = useCallback(async () => {
     if (!ncId) return;
@@ -77,17 +76,24 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
 
   useEffect(() => { if (open) load(); }, [open, load]);
   useEffect(() => {
-    if (open && leader) {
-      api.get("/drawings/eng-designers").then(({ data }) => setDesigners(data.designers || [])).catch(() => {});
+    if (open && nc?.issued_to_dept) {
+      api.get(`/nonconformance/assignable-users?dept=${nc.issued_to_dept}`)
+        .then(({ data }) => setDeptUsers(data.users || [])).catch(() => setDeptUsers([]));
     }
-  }, [open, leader]);
+  }, [open, nc?.issued_to_dept]);
 
   if (!open) return null;
   const closed = nc?.status === "closed";
   const isInitiator = nc?.issued_by?.id === user?.id;
-  const isAssignee = nc?.assigned_to?.id === user?.id;
-  const canEditInv = !closed && (leader || eng);
-  const canEditClo = !closed && (leader || isInitiator || isCarQc(user));
+  const isTarget = !!nc && (
+    roleToDept(user?.role) === nc.issued_to_dept ||
+    nc.assigned_to?.id === user?.id ||
+    nc.issued_to_user?.id === user?.id
+  );
+  const canFollow = admin || isTarget;               // assign / set status / investigation
+  const canClose = admin || isInitiator || isCarQc(user);
+  const canEditInv = !closed && canFollow;
+  const canEditClo = !closed && (admin || isInitiator || isCarQc(user) || isTarget);
 
   const refresh = () => { load(); onChanged && onChanged(); };
 
@@ -95,7 +101,7 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
     if (!assignee) { toast.error("Pilih staff Engineering"); return; }
     setBusy(true);
     try {
-      const d = designers.find((x) => x.id === assignee);
+      const d = deptUsers.find((x) => x.id === assignee);
       await api.post(`/nonconformance/${ncId}/assign`, { assignee_id: assignee, assignee_name: d?.name || "" });
       toast.success("NC ditugaskan");
       refresh();
@@ -192,9 +198,10 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
                 {/* Header info */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-50/70 border border-slate-200 p-3">
                   <Field label="Date of Issue">{formatDateID(nc.issued_at)}</Field>
-                  <Field label="Issued By">{nc.issued_by?.name} <span className="text-slate-400">({DEPT_LABEL[nc.issuer_dept] || nc.issuer_dept})</span></Field>
-                  <Field label="Issued To">{nc.issued_to}</Field>
+                  <Field label="Issued By">{nc.issued_by?.name} <span className="text-slate-400">({DEPT_FULL_LABEL[nc.issuer_dept] || nc.issuer_dept})</span></Field>
+                  <Field label="Ditujukan Ke">{DEPT_FULL_LABEL[nc.issued_to_dept] || nc.issued_to || "-"}{nc.issued_to_user?.name ? ` · ${nc.issued_to_user.name}` : ""}</Field>
                   <Field label="Expected Reply">{nc.expected_reply_date ? formatDateID(nc.expected_reply_date) : null}</Field>
+                  <Field label="Tipe Objek">{LINK_TYPE_LABEL[nc.link_type] || nc.link_type}</Field>
                   <Field label="SO No.">{nc.so_no}</Field>
                   <Field label="Customer">{nc.customer_name}</Field>
                   <Field label="Sumber">
@@ -206,15 +213,21 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
                   <Field label="Assignee">{nc.assigned_to?.name}</Field>
                 </div>
 
-                {/* Linked drawings */}
+                {/* Objek terkait */}
                 <div>
-                  <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1">Drawing Terkait</div>
-                  <div className="flex flex-wrap gap-1.5" data-testid="car-detail-drawings">
-                    {(nc.drawing_nos || []).map((dn) => (
-                      <span key={dn} className="font-mono text-xs bg-indigo-50 border border-indigo-300 text-indigo-800 px-2 py-1">{dn}</span>
-                    ))}
-                    {(nc.drawing_nos || []).length === 0 && <span className="text-slate-300 text-xs">—</span>}
+                  <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1">
+                    {nc.link_type === "drawing" ? "Drawing Terkait" : "Objek yang Kena NC"}
                   </div>
+                  {nc.link_type === "drawing" ? (
+                    <div className="flex flex-wrap gap-1.5" data-testid="car-detail-drawings">
+                      {(nc.drawing_nos || []).map((dn) => (
+                        <span key={dn} className="font-mono text-xs bg-indigo-50 border border-indigo-300 text-indigo-800 px-2 py-1">{dn}</span>
+                      ))}
+                      {(nc.drawing_nos || []).length === 0 && <span className="text-slate-300 text-xs">—</span>}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-slate-800 bg-white border border-slate-200 px-3 py-2" data-testid="car-detail-object">{nc.object_ref || "—"}</div>
+                  )}
                 </div>
 
                 {/* Section 1 */}
@@ -313,7 +326,7 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
                       {canEditClo && (
                         <div className="flex gap-2">
                           <Button onClick={() => saveCloseout(false)} disabled={busy} size="sm" variant="outline" className="rounded-none" data-testid="car-save-closeout">Simpan Closeout</Button>
-                          {(leader || isCarQc(user)) && (
+                          {canClose && (
                             <Button onClick={() => saveCloseout(true)} disabled={busy} size="sm" className="rounded-none bg-emerald-600 hover:bg-emerald-700" data-testid="car-close-nc">
                               <CheckCircle size={14} weight="bold" className="mr-1" /> Simpan & Tutup (Closed)
                             </Button>
@@ -327,30 +340,41 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
 
               {/* RIGHT: Follow-up + Attachments + Timeline */}
               <div className="p-5 space-y-5 bg-slate-50/40">
-                {/* Follow-up (Eng Leader) */}
-                {leader && !closed && (
+                {/* Follow-up (dept tujuan / admin) */}
+                {canFollow && !closed && (
                   <div className="border border-indigo-200 bg-indigo-50/50 p-3 space-y-2.5">
                     <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-widest font-bold text-indigo-700">
-                      <UserGear size={14} weight="bold" /> Tindak Lanjut (Eng Leader)
+                      <UserGear size={14} weight="bold" /> Tindak Lanjut
                     </div>
                     <div>
-                      <Label className="text-[11px] font-bold text-slate-500">Tugaskan ke Staff Engineering</Label>
+                      <Label className="text-[11px] font-bold text-slate-500">Tugaskan ke User ({DEPT_FULL_LABEL[nc.issued_to_dept] || nc.issued_to_dept})</Label>
                       <div className="flex gap-1.5 mt-1">
                         <select value={assignee} onChange={(e) => setAssignee(e.target.value)} className="flex-1 h-8 border border-slate-300 text-sm px-2 bg-white" data-testid="car-assignee-select">
-                          <option value="">— Pilih staff —</option>
-                          {designers.map((d) => <option key={d.id} value={d.id}>{d.name} ({d.role})</option>)}
+                          <option value="">— Pilih user —</option>
+                          {deptUsers.map((d) => <option key={d.id} value={d.id}>{d.name} ({d.role})</option>)}
                         </select>
                         <Button onClick={doAssign} disabled={busy} size="sm" className="rounded-none bg-sky-600 hover:bg-sky-700" data-testid="car-assign-btn">Assign</Button>
                       </div>
                     </div>
                     <div>
-                      <Label className="text-[11px] font-bold text-slate-500">No. ECN (MKS-F-ENG-004)</Label>
+                      <Label className="text-[11px] font-bold text-slate-500">No. ECN (MKS-F-ENG-004) — jika drawing</Label>
                       <Input value={ecnNo} onChange={(e) => setEcnNo(e.target.value)} placeholder="ECN-YY-MM-NN" className="rounded-none h-8 mt-1" data-testid="car-ecn-input" />
                     </div>
                     <div className="flex gap-1.5 flex-wrap">
                       <Button onClick={() => setStatus("in_progress")} disabled={busy} size="sm" variant="outline" className="rounded-none" data-testid="car-set-inprogress">In Progress</Button>
-                      <Button onClick={() => setStatus("closed")} disabled={busy} size="sm" className="rounded-none bg-emerald-600 hover:bg-emerald-700" data-testid="car-set-closed">Tutup (Closed)</Button>
+                      {canClose && (
+                        <Button onClick={() => setStatus("closed")} disabled={busy} size="sm" className="rounded-none bg-emerald-600 hover:bg-emerald-700" data-testid="car-set-closed">Tutup (Closed)</Button>
+                      )}
                     </div>
+                  </div>
+                )}
+                {/* Penerbit/QA yang bukan dept tujuan tetap bisa menutup */}
+                {!canFollow && canClose && !closed && (
+                  <div className="border border-emerald-200 bg-emerald-50/50 p-3 space-y-2">
+                    <div className="text-[11px] uppercase tracking-widest font-bold text-emerald-700">Aksi Penerbit / QA</div>
+                    <Button onClick={() => setStatus("closed")} disabled={busy} size="sm" className="rounded-none bg-emerald-600 hover:bg-emerald-700 w-full" data-testid="car-set-closed">
+                      <CheckCircle size={14} weight="bold" className="mr-1" /> Tutup (Closed)
+                    </Button>
                   </div>
                 )}
 

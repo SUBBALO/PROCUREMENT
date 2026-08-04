@@ -11,7 +11,7 @@ import CarCreateModal from "../components/CarCreateModal";
 import CarDetailModal from "../components/CarDetailModal";
 import {
   CAR_STATUS_LABEL, CAR_STATUS_CLS, SEVERITY_CLS, SEVERITY_LABEL,
-  SOURCE_CLS, SOURCE_LABEL, DEPT_LABEL, isCarIssuer,
+  SOURCE_CLS, SOURCE_LABEL, DEPT_FULL_LABEL, DEPARTMENTS, isCarIssuer,
 } from "../lib/carConstants";
 import {
   WarningCircle, MagnifyingGlass, ArrowClockwise, Plus, Warning,
@@ -70,9 +70,10 @@ export default function NonconformanceMasterlistPage() {
             Nonconformance (CAR) Masterlist
           </h1>
           <p className="text-sm text-slate-500 mt-1 max-w-3xl">
-            Corrective Action Report atas <b>Drawing</b>. Diterbitkan oleh <b>QC / Produksi / Sales</b>,
-            ditindaklanjuti <b>Engineering Leader</b> (assign → revisi → terbit <b>ECN</b>). NC yang diterbitkan
-            memengaruhi <b>KPI #1 Engineering</b> pada bulan penerbitannya.
+            Corrective Action Report berlaku untuk <b>semua departemen</b> — terhadap Drawing maupun objek/proses lain
+            (mis. hasil kerja Produksi, barang salah terima di Store, komplain customer). Diterbitkan siapa saja,
+            <b> ditujukan ke dept/user</b> tertentu untuk ditindaklanjuti (investigasi → tindakan → Closed).
+            NC bertipe <b>Drawing</b> memengaruhi <b>KPI #1 Engineering</b> pada bulan penerbitannya.
           </p>
         </div>
         {canIssue && (
@@ -114,7 +115,7 @@ export default function NonconformanceMasterlistPage() {
           </select>
           <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="h-9 border border-slate-300 text-sm px-2 bg-white" data-testid="car-dept-filter">
             <option value="">Semua Penerbit</option>
-            {Object.entries(DEPT_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            {DEPARTMENTS.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
           </select>
           <Button variant="outline" onClick={load} className="rounded-none h-9" data-testid="car-apply">Terapkan</Button>
           {(statusFilter || deptFilter || q) && (
@@ -131,10 +132,10 @@ export default function NonconformanceMasterlistPage() {
                 <th className="text-left p-3">No CAR</th>
                 <th className="text-left p-3">Tgl Terbit</th>
                 <th className="text-left p-3">Penerbit</th>
+                <th className="text-left p-3">Ditujukan Ke</th>
                 <th className="text-left p-3">Sumber</th>
-                <th className="text-left p-3">Drawing</th>
+                <th className="text-left p-3">Objek NC</th>
                 <th className="text-left p-3">SO</th>
-                <th className="text-left p-3">Customer</th>
                 <th className="text-center p-3">Severity</th>
                 <th className="text-left p-3">Assignee</th>
                 <th className="text-center p-3">Status</th>
@@ -147,14 +148,20 @@ export default function NonconformanceMasterlistPage() {
                 <tr key={e.id} onClick={() => setDetailId(e.id)} className="border-b border-slate-100 hover:bg-rose-50/40 cursor-pointer" data-testid={`car-row-${e.nc_no}`}>
                   <td className="p-3 font-mono font-bold text-slate-900 text-xs">{e.nc_no}</td>
                   <td className="p-3 text-xs whitespace-nowrap">{formatDateID(e.issued_at)}</td>
-                  <td className="p-3 text-xs">{e.issued_by?.name}<div className="text-[10px] text-slate-400 uppercase">{DEPT_LABEL[e.issuer_dept] || e.issuer_dept}</div></td>
+                  <td className="p-3 text-xs">{e.issued_by?.name}<div className="text-[10px] text-slate-400">{DEPT_FULL_LABEL[e.issuer_dept] || e.issuer_dept}</div></td>
+                  <td className="p-3 text-xs">{DEPT_FULL_LABEL[e.issued_to_dept] || e.issued_to || "-"}{e.issued_to_user?.name ? <div className="text-[10px] text-slate-400">{e.issued_to_user.name}</div> : null}</td>
                   <td className="p-3"><span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase border ${SOURCE_CLS[e.source] || SOURCE_CLS.in_house}`}>{SOURCE_LABEL[e.source] || "-"}</span></td>
-                  <td className="p-3 text-xs font-mono max-w-[180px]">
-                    <span className="line-clamp-2" title={(e.drawing_nos || []).join(", ")}>{(e.drawing_nos || []).join(", ") || "-"}</span>
-                    {(e.drawing_nos || []).length > 1 && <span className="text-[9px] text-slate-400"> ({e.drawing_nos.length} drawing)</span>}
+                  <td className="p-3 text-xs max-w-[200px]">
+                    {e.link_type === "drawing" ? (
+                      <span className="font-mono line-clamp-2" title={(e.drawing_nos || []).join(", ")}>
+                        {(e.drawing_nos || []).join(", ") || "-"}
+                        {(e.drawing_nos || []).length > 1 && <span className="text-[9px] text-slate-400"> ({e.drawing_nos.length})</span>}
+                      </span>
+                    ) : (
+                      <span className="line-clamp-2 text-slate-700" title={e.object_ref}>{e.object_ref || "-"}</span>
+                    )}
                   </td>
                   <td className="p-3 text-xs font-mono">{e.so_no || "-"}</td>
-                  <td className="p-3 text-xs">{e.customer_name || "-"}</td>
                   <td className="p-3 text-center"><span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase border ${SEVERITY_CLS[e.severity]}`}>{SEVERITY_LABEL[e.severity]}</span></td>
                   <td className="p-3 text-xs">{e.assigned_to?.name || <span className="text-slate-300">—</span>}</td>
                   <td className="p-3 text-center"><span className={`px-2 py-1 text-[9px] font-bold uppercase tracking-widest border ${CAR_STATUS_CLS[e.status]}`}>{CAR_STATUS_LABEL[e.status]}</span></td>

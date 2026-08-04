@@ -2,7 +2,7 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import {
-  Storefront, Wrench, ShoppingBag, Package, ClipboardText, FileText, Factory, ArrowRight, Sparkle, Stamp
+  Storefront, Wrench, ShoppingBag, Package, ClipboardText, FileText, Factory, ArrowRight, Sparkle, Stamp, WarningCircle
 } from "@phosphor-icons/react";
 
 /* -------------------- Department Definitions -------------------- */
@@ -119,6 +119,20 @@ const DEPARTMENTS = [
     stats: "TTD ECN · Controlled Drawing",
     roles: ["admin", "super_admin", "supervisor", "production", "produksi"],
   },
+  {
+    key: "nonconformance",
+    label: "Nonconformance (CAR)",
+    tagline: "Corrective Action Report · Semua Dept",
+    description: "Terbitkan & pantau CAR/NC terhadap Drawing maupun objek/proses lain (mis. hasil kerja produksi, barang salah terima). Ditujukan ke dept/user, ditindaklanjuti hingga Closed.",
+    icon: WarningCircle,
+    href: "/nonconformance",
+    accent: "from-rose-500 via-red-500 to-orange-500",
+    accentSolid: "bg-rose-600",
+    accentText: "text-rose-600",
+    accentBorder: "border-rose-300",
+    stats: "CAR · NC · Corrective Action",
+    roles: ["admin", "super_admin", "supervisor", "finance", "sales", "engineering", "eng_leader", "eng_head", "eng_staff", "purchasing", "staff", "qc", "store", "doc_control", "document_control", "production", "produksi"],
+  },
 ];
 
 export default function LandingPage() {
@@ -157,7 +171,7 @@ export default function LandingPage() {
             {greeting}, <span className="italic text-amber-600 font-normal">{(user?.name || user?.username || "user").split(" ")[0]}</span>.
           </h1>
           <p className="mt-1.5 text-xs text-slate-600 max-w-2xl">
-            Pilih departemen untuk mulai. Anda punya akses ke <b className="text-slate-900">{visible.length} departemen</b> dari total 7.
+            Pilih menu untuk mulai. Anda punya akses ke <b className="text-slate-900">{visible.length} menu</b>.
           </p>
         </div>
 

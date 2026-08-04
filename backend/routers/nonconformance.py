@@ -49,11 +49,33 @@ STATUS_LABELS = {
 }
 
 SEVERITY_LEVELS = {"minor", "major", "critical"}
-ISSUER_DEPTS = {"qc", "produksi", "sales"}
 NC_SOURCES = {"in_house", "external"}  # Sesuai form: IN-HOUSE / EXTERNAL
+
+# ── Departemen (CAR berlaku untuk SEMUA dept) ────────────────────────────────
+# key → {label, roles}. Dipakai untuk "Issued To" + daftar user yang bisa ditugaskan.
+DEPARTMENTS = {
+    "engineering": {"label": "Engineering", "roles": ["eng_leader", "eng_head", "engineering", "eng_staff"]},
+    "qc": {"label": "Quality Control", "roles": ["qc"]},
+    "produksi": {"label": "Produksi", "roles": ["produksi", "production"]},
+    "sales": {"label": "Sales", "roles": ["sales"]},
+    "purchasing": {"label": "Purchasing", "roles": ["purchasing", "staff"]},
+    "store": {"label": "Store", "roles": ["store"]},
+    "document_control": {"label": "Document Control", "roles": ["doc_control", "document_control"]},
+    "finance": {"label": "Finance", "roles": ["finance"]},
+    "management": {"label": "Management", "roles": ["admin", "super_admin", "supervisor"]},
+    "other": {"label": "Lainnya", "roles": []},
+}
+LINK_TYPES = {"drawing", "other"}  # drawing = memengaruhi KPI Engineering; other = teks bebas
 
 _ROMAN = {1: "I", 2: "II", 3: "III", 4: "IV", 5: "V", 6: "VI",
           7: "VII", 8: "VIII", 9: "IX", 10: "X", 11: "XI", 12: "XII"}
+
+
+def _role_to_dept(role: str) -> str:
+    for key, meta in DEPARTMENTS.items():
+        if role in meta["roles"]:
+            return key
+    return "other"
 
 
 # ── GridFS untuk lampiran bukti NC ────────────────────────────────────────────
@@ -87,13 +109,22 @@ def _actor(user: dict) -> dict:
 
 
 def _issuer_dept_of(user: dict) -> str:
-    if is_qc(user):
-        return "qc"
-    if is_production(user):
-        return "produksi"
-    if is_sales(user):
-        return "sales"
-    return "qc"  # admin-like default; boleh dioverride via payload
+    return _role_to_dept((user or {}).get("role", ""))
+
+
+def _is_initiator(user: dict, doc: dict) -> bool:
+    return (doc.get("issued_by") or {}).get("id") == user.get("id")
+
+
+def _is_target(user: dict, doc: dict) -> bool:
+    """User termasuk dept tujuan / assignee / issued_to_user dari CAR."""
+    if _role_to_dept((user or {}).get("role", "")) == doc.get("issued_to_dept"):
+        return True
+    if (doc.get("assigned_to") or {}).get("id") == user.get("id"):
+        return True
+    if (doc.get("issued_to_user") or {}).get("id") == user.get("id"):
+        return True
+    return False
 
 
 async def _next_nc_no() -> str:
@@ -118,8 +149,8 @@ async def _get_nc_or_404(nc_id: str) -> dict:
 
 
 def _can_view(user: dict) -> bool:
-    """QC/Produksi/Sales/Engineering/Admin boleh melihat masterlist CAR."""
-    return is_nc_issuer(user) or is_engineering(user) or is_admin_like(user)
+    """CAR berlaku untuk SEMUA dept → semua user terautentikasi boleh melihat."""
+    return bool(user)
 
 
 # ── Payloads ─────────────────────────────────────────────────────────────────
@@ -129,19 +160,23 @@ class DrawingRef(BaseModel):
 
 
 class NonconformanceCreate(BaseModel):
-    # ── Header (Completed by CAR Initiator) ──
-    drawings: List[DrawingRef] = Field(default_factory=list)  # bisa >1 drawing
-    issued_to: str = ""                   # Issued to (dept/orang penanggung jawab)
-    expected_reply_date: Optional[str] = ""  # Expected reply date (YYYY-MM-DD)
-    # ── Section 1: NONCONFORMANCE INFORMATION ──
-    description: str = ""                 # Description of Nonconformance
-    source: str = "in_house"             # in_house | external
-    title: str = ""                       # ringkasan singkat (untuk masterlist)
-    severity: str = "major"              # minor | major | critical
-    issuer_dept: Optional[str] = None    # override (admin) — default dari role
+    # ── Header (Completed by CAR Initiator) — bisa dibuat SEMUA user ──
+    issued_to_dept: str = ""              # dept tujuan (wajib): engineering/qc/produksi/...
+    issued_to_user_id: Optional[str] = "" # user tujuan spesifik (opsional)
+    issued_to_user_name: Optional[str] = ""
+    issued_to: Optional[str] = ""         # legacy free-text (fallback tampilan)
+    expected_reply_date: Optional[str] = ""
+    # ── Objek yang kena NC (fleksibel) ──
+    link_type: str = "other"             # "drawing" (memengaruhi KPI Eng) | "other"
+    drawings: List[DrawingRef] = Field(default_factory=list)  # dipakai bila link_type=drawing
+    object_ref: str = ""                  # teks bebas objek yang kena NC (bila 'other')
     so_no: Optional[str] = ""
     customer_name: Optional[str] = ""
-    submit: bool = True                   # True = langsung terbit (Open); False = simpan draft
+    # ── Section 1: NONCONFORMANCE INFORMATION ──
+    description: str = ""
+    source: str = "in_house"
+    title: str = ""
+    severity: str = "major"
     extra: dict = Field(default_factory=dict)
 
 
@@ -191,71 +226,94 @@ class NoteIn(BaseModel):
 # ── CREATE ───────────────────────────────────────────────────────────────────
 @router.post("/nonconformance")
 async def create_nc(payload: NonconformanceCreate, current: dict = Depends(get_current_user)):
-    if not is_nc_issuer(current):
-        raise HTTPException(status_code=403, detail="Hanya QC / Produksi / Sales yang boleh menerbitkan NC")
+    # CAR berlaku untuk SEMUA departemen → semua user terautentikasi boleh menerbitkan.
+    link_type = payload.link_type if payload.link_type in LINK_TYPES else "other"
 
-    drawings = [d for d in (payload.drawings or []) if (d.drawing_id or d.drawing_no)]
-    if not drawings:
-        raise HTTPException(status_code=400, detail="Minimal satu Drawing harus dipilih")
+    # Departemen tujuan (Issued To) wajib.
+    to_dept = (payload.issued_to_dept or "").strip().lower()
+    if to_dept not in DEPARTMENTS:
+        raise HTTPException(status_code=400, detail="Departemen tujuan (Issued To) wajib dipilih")
+
     if not (payload.description or "").strip() and not (payload.title or "").strip():
         raise HTTPException(status_code=400, detail="Deskripsi ketidaksesuaian wajib diisi")
 
-    # Validasi & lengkapi info drawing dari DB (denormalisasi untuk filter/laporan cepat).
     resolved: List[dict] = []
     so_no = (payload.so_no or "").strip()
     customer_name = (payload.customer_name or "").strip()
-    for d in drawings:
-        q = {"deleted_at": {"$exists": False}}
-        if d.drawing_id:
-            q["id"] = d.drawing_id
-        else:
-            q["drawing_no"] = d.drawing_no
-        dwg = await db.drawings.find_one(q, {"_id": 0})
-        if dwg:
-            resolved.append({"drawing_id": dwg.get("id"), "drawing_no": dwg.get("drawing_no"),
-                             "so_no": dwg.get("so_no"), "customer_name": dwg.get("customer_name"),
-                             "project_name": dwg.get("project_name")})
-            so_no = so_no or (dwg.get("so_no") or "")
-            customer_name = customer_name or (dwg.get("customer_name") or "")
-        else:
-            # Izinkan drawing manual (mis. drawing legacy) — simpan apa adanya.
-            resolved.append({"drawing_id": d.drawing_id, "drawing_no": d.drawing_no,
-                             "so_no": "", "customer_name": "", "project_name": ""})
+
+    if link_type == "drawing":
+        drawings = [d for d in (payload.drawings or []) if (d.drawing_id or d.drawing_no)]
+        if not drawings:
+            raise HTTPException(status_code=400, detail="Pilih minimal satu Drawing untuk NC bertipe Drawing")
+        for d in drawings:
+            q = {"deleted_at": {"$exists": False}}
+            if d.drawing_id:
+                q["id"] = d.drawing_id
+            else:
+                q["drawing_no"] = d.drawing_no
+            dwg = await db.drawings.find_one(q, {"_id": 0})
+            if dwg:
+                resolved.append({"drawing_id": dwg.get("id"), "drawing_no": dwg.get("drawing_no"),
+                                 "so_no": dwg.get("so_no"), "customer_name": dwg.get("customer_name"),
+                                 "project_name": dwg.get("project_name")})
+                so_no = so_no or (dwg.get("so_no") or "")
+                customer_name = customer_name or (dwg.get("customer_name") or "")
+            else:
+                resolved.append({"drawing_id": d.drawing_id, "drawing_no": d.drawing_no,
+                                 "so_no": "", "customer_name": "", "project_name": ""})
+    else:
+        # Objek bebas (mis. barang salah terima, hasil kerja produksi, dll).
+        if not (payload.object_ref or "").strip():
+            raise HTTPException(status_code=400, detail="Isi objek yang kena NC (mis. barang/part/proses)")
 
     sev = payload.severity if payload.severity in SEVERITY_LEVELS else "major"
-    dept = (payload.issuer_dept or "").strip().lower()
-    if dept not in ISSUER_DEPTS:
-        dept = _issuer_dept_of(current)
+    dept = _issuer_dept_of(current)   # dept penerbit otomatis dari role
     source = payload.source if payload.source in NC_SOURCES else "in_house"
+
+    # Bila user tujuan spesifik dipilih → langsung Assigned.
+    assigned_to = None
+    status = STATUS_OPEN
+    if (payload.issued_to_user_id or "").strip():
+        assigned_to = {"id": payload.issued_to_user_id.strip(),
+                       "name": (payload.issued_to_user_name or "").strip(),
+                       "role": ""}
+        status = STATUS_ASSIGNED
+
+    to_label = DEPARTMENTS.get(to_dept, {}).get("label", to_dept)
+    issued_to_display = (payload.issued_to or "").strip() or (
+        f"{to_label}" + (f" · {assigned_to['name']}" if assigned_to and assigned_to.get('name') else ""))
 
     now = _now_iso()
     doc = {
         "id": str(uuid.uuid4()),
-        "nc_no": await _next_nc_no(),   # nomor CAR resmi (MKS-QA-CAR-...)
-        "status": STATUS_OPEN,
+        "nc_no": await _next_nc_no(),
+        "status": status,
         # ── Header ──
         "issuer_dept": dept,
         "issued_by": _actor(current),
-        "issued_at": now,               # ← Date of Issue + basis bulan KPI #1
-        "issued_to": (payload.issued_to or "").strip(),
+        "issued_at": now,               # Date of Issue + basis bulan KPI #1
+        "issued_to_dept": to_dept,
+        "issued_to_user": assigned_to.copy() if assigned_to else None,
+        "issued_to": issued_to_display,
         "expected_reply_date": (payload.expected_reply_date or "").strip(),
-        # ── Drawings ──
+        # ── Objek NC ──
+        "link_type": link_type,
+        "object_ref": (payload.object_ref or "").strip(),
         "drawings": resolved,
         "drawing_ids": [r["drawing_id"] for r in resolved if r.get("drawing_id")],
         "drawing_nos": [r["drawing_no"] for r in resolved if r.get("drawing_no")],
         "so_no": so_no,
         "customer_name": customer_name,
-        # ── Section 1: Nonconformance Information ──
+        # ── Section 1 ──
         "title": (payload.title or "").strip(),
         "description": (payload.description or "").strip(),
-        "source": source,               # in_house | external
+        "source": source,
         "severity": sev,
-        # ── Section 2: Investigation & Action Plans (kosong dulu) ──
+        # ── Section 2 & 3 ──
         "investigation": None,
-        # ── Section 3: Closeout Information (kosong dulu) ──
         "closeout": None,
         # ── Follow-up ──
-        "assigned_to": None,
+        "assigned_to": assigned_to,
         "ecn_id": "",
         "ecn_no": "",
         "closed_at": None,
@@ -263,7 +321,8 @@ async def create_nc(payload: NonconformanceCreate, current: dict = Depends(get_c
         "extra": payload.extra or {},
         "timeline": [{
             "at": now, "action": "created", "by": _actor(current),
-            "notes": f"CAR diterbitkan oleh {dept.upper()} ({'IN-HOUSE' if source == 'in_house' else 'EXTERNAL'})",
+            "notes": f"CAR diterbitkan oleh {DEPARTMENTS.get(dept, {}).get('label', dept)} → ditujukan ke {to_label}"
+                     + (f" ({assigned_to['name']})" if assigned_to and assigned_to.get('name') else ""),
         }],
         "created_at": now,
         "updated_at": now,
@@ -279,6 +338,8 @@ async def create_nc(payload: NonconformanceCreate, current: dict = Depends(get_c
 async def list_nc(
     status: Optional[str] = None,
     issuer_dept: Optional[str] = None,
+    issued_to_dept: Optional[str] = None,
+    link_type: Optional[str] = None,
     drawing_no: Optional[str] = None,
     assignee_id: Optional[str] = None,
     mine: bool = False,
@@ -293,6 +354,10 @@ async def list_nc(
         filt["status"] = status
     if issuer_dept:
         filt["issuer_dept"] = issuer_dept
+    if issued_to_dept:
+        filt["issued_to_dept"] = issued_to_dept
+    if link_type:
+        filt["link_type"] = link_type
     if drawing_no:
         filt["drawing_nos"] = {"$regex": drawing_no.strip(), "$options": "i"}
     if assignee_id:
@@ -303,10 +368,30 @@ async def list_nc(
         filt["issued_at"] = {"$regex": f"^{month}"}
     if q and q.strip():
         rx = {"$regex": q.strip(), "$options": "i"}
-        filt["$or"] = [{"nc_no": rx}, {"title": rx}, {"description": rx},
-                       {"so_no": rx}, {"customer_name": rx}, {"drawing_nos": rx}]
+        filt["$or"] = [{"nc_no": rx}, {"title": rx}, {"description": rx}, {"object_ref": rx},
+                       {"so_no": rx}, {"customer_name": rx}, {"drawing_nos": rx}, {"issued_to": rx}]
     docs = await db.nonconformances.find(filt, {"_id": 0}).sort("created_at", -1).limit(500).to_list(length=500)
     return {"items": docs, "total": len(docs)}
+
+
+# ── DEPARTMENTS + USER TUJUAN (untuk dropdown Issued To / assign) ─────────────
+@router.get("/nonconformance/departments")
+async def list_departments(current: dict = Depends(get_current_user)):
+    return {"departments": [{"key": k, "label": v["label"]} for k, v in DEPARTMENTS.items()]}
+
+
+@router.get("/nonconformance/assignable-users")
+async def assignable_users(dept: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Daftar user (id,name,role) untuk 'Issued To user' / assign. Filter per dept."""
+    roles = None
+    if dept and dept in DEPARTMENTS:
+        roles = DEPARTMENTS[dept]["roles"]
+    q = {"active": {"$ne": False}, "deleted_at": {"$exists": False}}
+    if roles:
+        q["role"] = {"$in": roles}
+    users = await db.users.find(q, {"_id": 0, "id": 1, "name": 1, "username": 1, "role": 1}).to_list(length=300)
+    users.sort(key=lambda u: (u.get("name") or u.get("username") or "").lower())
+    return {"users": [{"id": u["id"], "name": u.get("name") or u.get("username"), "role": u.get("role")} for u in users]}
 
 
 # ── STATS (untuk badge/queue) ─────────────────────────────────────────────────
@@ -361,20 +446,18 @@ async def get_nc(nc_id: str, current: dict = Depends(get_current_user)):
     return _clean(await _get_nc_or_404(nc_id))
 
 
-# ── ASSIGN (Eng Leader) ───────────────────────────────────────────────────────
+# ── ASSIGN (Dept tujuan / Admin) ──────────────────────────────────────────────
 @router.post("/nonconformance/{nc_id}/assign")
 async def assign_nc(nc_id: str, payload: AssignIn, current: dict = Depends(get_current_user)):
-    if not (is_eng_head(current) or is_admin_like(current)):
-        raise HTTPException(status_code=403, detail="Hanya Engineering Leader/Admin yang bisa assign NC")
     doc = await _get_nc_or_404(nc_id)
     if doc["status"] == STATUS_CLOSED:
         raise HTTPException(status_code=400, detail="NC sudah Closed")
+    if not (is_admin_like(current) or _is_target(current, doc) or _is_initiator(current, doc)):
+        raise HTTPException(status_code=403, detail="Hanya Admin, dept tujuan, atau penerbit yang bisa assign NC")
 
     assignee = await db.users.find_one({"id": payload.assignee_id}, {"_id": 0, "password_hash": 0})
     if not assignee:
         raise HTTPException(status_code=404, detail="User assignee tidak ditemukan")
-    if not is_engineering(assignee):
-        raise HTTPException(status_code=400, detail="Assignee harus staff Engineering")
 
     now = _now_iso()
     assigned = {"id": assignee["id"], "name": assignee.get("name") or assignee.get("username"),
@@ -397,15 +480,15 @@ async def update_status(nc_id: str, payload: StatusIn, current: dict = Depends(g
         raise HTTPException(status_code=400, detail=f"Status tidak valid. Pilih: {sorted(VALID_STATUSES)}")
     doc = await _get_nc_or_404(nc_id)
 
-    # RBAC: Eng staff (assignee) boleh in_progress; Eng Leader/Admin boleh semua transisi.
-    is_leader = is_eng_head(current) or is_admin_like(current)
-    is_assignee = (doc.get("assigned_to") or {}).get("id") == current.get("id")
-    if new_status == STATUS_CLOSED and not is_leader:
-        raise HTTPException(status_code=403, detail="Hanya Engineering Leader/Admin yang bisa menutup (Closed) NC")
-    if new_status == STATUS_IN_PROGRESS and not (is_leader or is_assignee):
-        raise HTTPException(status_code=403, detail="Hanya assignee atau Eng Leader yang bisa set In Progress")
-    if new_status in (STATUS_OPEN, STATUS_ASSIGNED) and not is_leader:
-        raise HTTPException(status_code=403, detail="Hanya Engineering Leader/Admin yang bisa mengubah status ini")
+    is_priv = is_admin_like(current)
+    is_init = _is_initiator(current, doc)
+    is_tgt = _is_target(current, doc)
+    if new_status == STATUS_CLOSED and not (is_priv or is_init or is_qc(current) or is_eng_head(current)):
+        raise HTTPException(status_code=403, detail="Hanya penerbit / QA / Admin yang bisa menutup (Closed) NC")
+    if new_status == STATUS_IN_PROGRESS and not (is_priv or is_tgt):
+        raise HTTPException(status_code=403, detail="Hanya dept tujuan/assignee/Admin yang bisa set In Progress")
+    if new_status in (STATUS_OPEN, STATUS_ASSIGNED) and not (is_priv or is_tgt or is_init):
+        raise HTTPException(status_code=403, detail="Anda tidak berwenang mengubah status ini")
 
     now = _now_iso()
     updates = {"status": new_status, "updated_at": now}
@@ -454,10 +537,8 @@ async def save_investigation(nc_id: str, payload: InvestigationIn, current: dict
     doc = await _get_nc_or_404(nc_id)
     if doc["status"] == STATUS_CLOSED:
         raise HTTPException(status_code=400, detail="NC sudah Closed, tidak bisa diubah")
-    is_leader = is_eng_head(current) or is_admin_like(current)
-    is_assignee = (doc.get("assigned_to") or {}).get("id") == current.get("id")
-    if not (is_leader or is_assignee or is_engineering(current)):
-        raise HTTPException(status_code=403, detail="Hanya assignee/Engineering yang bisa mengisi investigasi")
+    if not (is_admin_like(current) or _is_target(current, doc)):
+        raise HTTPException(status_code=403, detail="Hanya dept tujuan/assignee/Admin yang bisa mengisi investigasi")
 
     now = _now_iso()
     investigation = {
@@ -490,11 +571,11 @@ async def save_investigation(nc_id: str, payload: InvestigationIn, current: dict
 @router.post("/nonconformance/{nc_id}/closeout")
 async def save_closeout(nc_id: str, payload: CloseoutIn, current: dict = Depends(get_current_user)):
     doc = await _get_nc_or_404(nc_id)
-    # Closeout diisi Initiator / MR / QA / Eng Leader / Admin
-    is_leader = is_eng_head(current) or is_admin_like(current)
-    is_initiator = (doc.get("issued_by") or {}).get("id") == current.get("id")
-    if not (is_leader or is_initiator or is_qc(current)):
-        raise HTTPException(status_code=403, detail="Hanya Initiator/QA/MR/Eng Leader yang bisa mengisi closeout")
+    # Closeout diisi Initiator / QA / Admin (atau dept tujuan)
+    is_priv = is_admin_like(current)
+    is_initiator = _is_initiator(current, doc)
+    if not (is_priv or is_initiator or is_qc(current) or _is_target(current, doc)):
+        raise HTTPException(status_code=403, detail="Hanya Penerbit/QA/Admin/dept tujuan yang bisa mengisi closeout")
 
     now = _now_iso()
     closeout = {
@@ -511,8 +592,8 @@ async def save_closeout(nc_id: str, payload: CloseoutIn, current: dict = Depends
     updates = {"closeout": closeout, "updated_at": now}
     action = "closeout"
     if payload.close:
-        if not is_leader and not is_qc(current):
-            raise HTTPException(status_code=403, detail="Hanya QA/Eng Leader/Admin yang bisa menutup (Closed) NC")
+        if not (is_priv or is_initiator or is_qc(current)):
+            raise HTTPException(status_code=403, detail="Hanya Penerbit/QA/Admin yang bisa menutup (Closed) NC")
         updates["status"] = STATUS_CLOSED
         updates["closed_at"] = now
         updates["closed_by"] = _actor(current)
