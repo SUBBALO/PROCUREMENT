@@ -16,7 +16,7 @@ import {
 } from "../lib/carConstants";
 import {
   WarningCircle, UserGear, ClockCounterClockwise, Paperclip, Eye, Trash,
-  UploadSimple, CircleNotch, CheckCircle, ArrowClockwise, FileText,
+  UploadSimple, CircleNotch, CheckCircle, ArrowClockwise, FileText, Printer,
 } from "@phosphor-icons/react";
 
 const apiUrl = process.env.REACT_APP_BACKEND_URL;
@@ -163,6 +163,7 @@ export default function CarDetailModal({ open, ncId, user, onClose, onChanged })
                   {CAR_STATUS_LABEL[nc.status]}
                 </span>
               )}
+              <Button variant="ghost" size="sm" onClick={() => window.open(`${apiUrl}/api/nonconformance/${ncId}/pdf`, "_blank")} className="rounded-none h-8 gap-1 text-rose-700 hover:text-rose-800" title="Cetak PDF (MKS-F-QAD-004)" data-testid="car-print-pdf"><Printer size={15} weight="bold" /> <span className="text-[11px] font-bold hidden sm:inline">Cetak PDF</span></Button>
               <Button variant="ghost" size="sm" onClick={refresh} className="rounded-none h-8" title="Muat ulang"><ArrowClockwise size={14} weight="bold" /></Button>
             </div>
           </div>

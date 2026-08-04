@@ -135,17 +135,17 @@ def _is_target(user: dict, doc: dict) -> bool:
 
 
 async def _next_nc_no() -> str:
-    """Nomor CAR resmi: MKS-QA-CAR-{ROMAN_BULAN}-{YY}-{NNN}.
-    Contoh: MKS-QA-CAR-VI-26-001. Sequence berjalan kontinu per TAHUN (3 digit)."""
+    """Nomor CAR resmi: MKS-QA-CAR-{ROMAN_BULAN}-{YY}-{N}.
+    Contoh: MKS-QA-CAR-VII-26-34. Running number RESET setiap bulan (mulai dari 1)."""
     now = datetime.now(timezone.utc)
     yy = f"{now.year % 100:02d}"
     roman = _ROMAN.get(now.month, str(now.month))
-    key = f"car_{now.year}"   # counter per tahun (kontinu)
+    key = f"car_{now.year}_{now.month:02d}"   # counter per BULAN (reset tiap bulan)
     counter = await db.counters.find_one_and_update(
         {"_id": key}, {"$inc": {"value": 1}}, upsert=True, return_document=True,
     )
     seq = (counter or {}).get("value", 1)
-    return f"MKS-QA-CAR-{roman}-{yy}-{seq:03d}"
+    return f"MKS-QA-CAR-{roman}-{yy}-{seq:02d}"
 
 
 async def _get_nc_or_404(nc_id: str) -> dict:
@@ -489,6 +489,21 @@ async def eng006_nc_log(month: Optional[str] = None, current: dict = Depends(get
 
 
 # ── DETAIL ───────────────────────────────────────────────────────────────────
+@router.get("/nonconformance/{nc_id}/pdf")
+async def car_pdf(nc_id: str, current: dict = Depends(get_current_user)):
+    """Cetak CAR ke PDF sesuai format resmi ISO MKS-F-QAD-004 Rev.02."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    doc = await _get_nc_or_404(nc_id)
+    from utils.car_pdf import build_car_pdf
+    pdf = build_car_pdf(doc)
+    safe = str(doc.get("nc_no") or nc_id).replace("/", "-")
+    return StreamingResponse(
+        io.BytesIO(pdf), media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="CAR_{safe}.pdf"'},
+    )
+
+
 @router.get("/nonconformance/{nc_id}")
 async def get_nc(nc_id: str, current: dict = Depends(get_current_user)):
     if not _can_view(current):
