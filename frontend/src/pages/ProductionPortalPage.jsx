@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
 import api from "../lib/api";
-import { Signature, FileText, Factory } from "@phosphor-icons/react";
+import { Signature, FileText, Factory, WarningCircle } from "@phosphor-icons/react";
 
 export default function ProductionPortalPage() {
   const [pendingTtd, setPendingTtd] = useState(0);
@@ -35,6 +35,17 @@ export default function ProductionPortalPage() {
       href: "/drawings/controlled",
       accent: "from-sky-500 via-blue-500 to-indigo-500",
       accentText: "text-sky-400",
+    },
+    {
+      key: "nonconformance",
+      label: "Nonconformance (CAR)",
+      stats: "MKS-F-QAD-004 · Terbitkan NC",
+      description:
+        "Terbitkan Corrective Action Report atas Drawing yang bermasalah saat produksi. Engineering menindaklanjuti (assign → revisi → ECN). Pantau status hingga Closed.",
+      icon: WarningCircle,
+      href: "/nonconformance",
+      accent: "from-rose-500 via-red-500 to-orange-500",
+      accentText: "text-rose-400",
     },
   ];
 

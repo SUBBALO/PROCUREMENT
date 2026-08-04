@@ -63,7 +63,8 @@ def test_full_flow():
     assert nc["status"] == "open"
     assert nc["issuer_dept"] == "qc"
     assert len(nc["drawing_nos"]) == len(dwgs)
-    assert nc["nc_no"].startswith("NC-")
+    assert nc["nc_no"].startswith("MKS-QA-CAR-")
+    assert nc["source"] == "in_house"
     print("OK create QC:", nc["nc_no"], nc["drawing_nos"])
 
     # 2. Sales + Produksi can create too
@@ -88,20 +89,25 @@ def test_full_flow():
     assert rr.json()["status"] == "assigned"
     print("OK assigned")
 
-    # 5. eng_staff (assignee) set in_progress
-    rr = requests.post(f"{BASE}/nonconformance/{nc_id}/status",
-                       json={"status": "in_progress", "notes": "mulai revisi"},
+    # 5. eng_staff (assignee) set in_progress via Investigation (Section 2)
+    rr = requests.post(f"{BASE}/nonconformance/{nc_id}/investigation",
+                       json={"root_cause": "Setting mesin kurang tepat",
+                             "immediate_action": "Stop produksi part terkait",
+                             "corrective_action": "Update WI + kalibrasi",
+                             "completed_by": "Adit", "completed_date": "2026-08-10",
+                             "set_in_progress": True},
                        headers=hdr("staff"), timeout=30)
     assert rr.status_code == 200, rr.text
-    print("OK in_progress by assignee")
+    assert rr.json()["status"] == "in_progress"
+    print("OK investigation saved + in_progress by assignee")
 
-    # 6a. eng_staff cannot close
-    rr = requests.post(f"{BASE}/nonconformance/{nc_id}/status",
-                       json={"status": "closed"}, headers=hdr("staff"), timeout=30)
+    # 6a. eng_staff cannot close via closeout
+    rr = requests.post(f"{BASE}/nonconformance/{nc_id}/closeout",
+                       json={"initiator_remarks": "x", "close": True}, headers=hdr("staff"), timeout=30)
     assert rr.status_code == 403, rr.text
     print("OK eng_staff blocked from close")
 
-    # 6b. Eng Leader close + ECN
+    # 6b. Eng Leader close via status + ECN
     rr = requests.post(f"{BASE}/nonconformance/{nc_id}/status",
                        json={"status": "closed", "ecn_no": "ECN-26-08-99", "notes": "revisi selesai"},
                        headers=hdr("leader"), timeout=30)
@@ -114,6 +120,7 @@ def test_full_flow():
     assert doc["status"] == "closed"
     assert doc["ecn_no"] == "ECN-26-08-99"
     assert doc["closed_at"]
+    assert doc["investigation"] and doc["investigation"]["root_cause"]
     assert len(doc["timeline"]) >= 4
     print("OK detail + timeline:", [t["action"] for t in doc["timeline"]])
 

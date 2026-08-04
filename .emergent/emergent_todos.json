@@ -1,26 +1,22 @@
 [
   {
-    "content": "Add role helpers (is_production, is_sales) + NC roles to deps.py",
+    "content": "Backend: official CAR form schema + 3 sections + endpoints + ENG-006 NC log + preventive_action",
     "status": "completed"
   },
   {
-    "content": "Create /app/backend/routers/nonconformance.py with CRUD + assign/status/note + attachments",
+    "content": "Frontend: NonconformanceMasterlistPage + CarCreateModal + CarDetailModal",
     "status": "completed"
   },
   {
-    "content": "Register nonconformance router in server.py + add startup indexes",
+    "content": "Wire route + portal cards (QC/Produksi/Sales/Engineering) + RBAC whitelist",
     "status": "completed"
   },
   {
-    "content": "Wire KPI #1 (drawing_customer_nc) to nonconformances collection with auditability",
+    "content": "Manual test (backend script + UI screenshots): create/assign/investigation/closeout/KPI",
     "status": "completed"
   },
   {
-    "content": "Backend test: create(multi-drawing)→assign→in_progress→close + RBAC + KPI",
-    "status": "completed"
-  },
-  {
-    "content": "Wait for user NCR template before finalizing frontend form UI",
+    "content": "Comprehensive testing via testing_agent (backend + frontend RBAC across roles)",
     "status": "in_progress"
   }
 ]

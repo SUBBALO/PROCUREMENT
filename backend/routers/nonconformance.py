@@ -50,6 +50,10 @@ STATUS_LABELS = {
 
 SEVERITY_LEVELS = {"minor", "major", "critical"}
 ISSUER_DEPTS = {"qc", "produksi", "sales"}
+NC_SOURCES = {"in_house", "external"}  # Sesuai form: IN-HOUSE / EXTERNAL
+
+_ROMAN = {1: "I", 2: "II", 3: "III", 4: "IV", 5: "V", 6: "VI",
+          7: "VII", 8: "VIII", 9: "IX", 10: "X", 11: "XI", 12: "XII"}
 
 
 # ── GridFS untuk lampiran bukti NC ────────────────────────────────────────────
@@ -93,16 +97,17 @@ def _issuer_dept_of(user: dict) -> str:
 
 
 async def _next_nc_no() -> str:
-    """Format: NC-YY-MM-NN (NN urut per bulan)."""
+    """Nomor CAR resmi: MKS-QA-CAR-{ROMAN_BULAN}-{YY}-{NNN}.
+    Contoh: MKS-QA-CAR-VI-26-001. Sequence berjalan kontinu per TAHUN (3 digit)."""
     now = datetime.now(timezone.utc)
     yy = f"{now.year % 100:02d}"
-    mm = f"{now.month:02d}"
-    key = f"nc_{now.year}_{now.month}"
+    roman = _ROMAN.get(now.month, str(now.month))
+    key = f"car_{now.year}"   # counter per tahun (kontinu)
     counter = await db.counters.find_one_and_update(
         {"_id": key}, {"$inc": {"value": 1}}, upsert=True, return_document=True,
     )
     seq = (counter or {}).get("value", 1)
-    return f"NC-{yy}-{mm}-{seq:02d}"
+    return f"MKS-QA-CAR-{roman}-{yy}-{seq:03d}"
 
 
 async def _get_nc_or_404(nc_id: str) -> dict:
@@ -124,16 +129,46 @@ class DrawingRef(BaseModel):
 
 
 class NonconformanceCreate(BaseModel):
-    # Baseline fields (akan di-extend setelah template NCR resmi diterima).
+    # ── Header (Completed by CAR Initiator) ──
     drawings: List[DrawingRef] = Field(default_factory=list)  # bisa >1 drawing
-    title: str = ""                       # ringkasan masalah
-    description: str = ""                 # detail temuan/ketidaksesuaian
+    issued_to: str = ""                   # Issued to (dept/orang penanggung jawab)
+    expected_reply_date: Optional[str] = ""  # Expected reply date (YYYY-MM-DD)
+    # ── Section 1: NONCONFORMANCE INFORMATION ──
+    description: str = ""                 # Description of Nonconformance
+    source: str = "in_house"             # in_house | external
+    title: str = ""                       # ringkasan singkat (untuk masterlist)
     severity: str = "major"              # minor | major | critical
     issuer_dept: Optional[str] = None    # override (admin) — default dari role
     so_no: Optional[str] = ""
     customer_name: Optional[str] = ""
-    # kolom bebas tambahan untuk menampung field template NCR nanti
+    submit: bool = True                   # True = langsung terbit (Open); False = simpan draft
     extra: dict = Field(default_factory=dict)
+
+
+class InvestigationIn(BaseModel):
+    """Section 2 — INVESTIGATION & ACTION PLANS (oleh Responsible Dept./Assignee)."""
+    root_cause: str = ""
+    immediate_action: str = ""
+    corrective_action: str = ""
+    preventive_action: str = ""            # untuk log Internal Eng Process (MKS-F-ENG-006 tab NC)
+    completed_by: str = ""                # Actions Completed By (Name)
+    completed_date: Optional[str] = ""    # Date
+    dept_head_name: str = ""             # Approved by Dept. Head
+    dept_head_date: Optional[str] = ""
+    ecn_no: str = ""                       # ECN yang diterbitkan (MKS-F-ENG-004)
+    set_in_progress: bool = True          # otomatis pindah ke In Progress
+
+
+class CloseoutIn(BaseModel):
+    """Section 3 — CAR CLOSEOUT INFORMATION (oleh Initiator/MR)."""
+    initiator_remarks: str = ""
+    risk_review: bool = False             # Review of risks & opportunities: Yes/No
+    risk_attached: bool = False           # (if yes please attached)
+    effectiveness_reviewed_by: str = ""
+    effectiveness_date: Optional[str] = ""
+    qa_approved_by: str = ""
+    qa_date: Optional[str] = ""
+    close: bool = False                   # True = sekaligus tutup NC (Closed)
 
 
 class AssignIn(BaseModel):
@@ -191,23 +226,35 @@ async def create_nc(payload: NonconformanceCreate, current: dict = Depends(get_c
     dept = (payload.issuer_dept or "").strip().lower()
     if dept not in ISSUER_DEPTS:
         dept = _issuer_dept_of(current)
+    source = payload.source if payload.source in NC_SOURCES else "in_house"
 
     now = _now_iso()
     doc = {
         "id": str(uuid.uuid4()),
-        "nc_no": await _next_nc_no(),
+        "nc_no": await _next_nc_no(),   # nomor CAR resmi (MKS-QA-CAR-...)
         "status": STATUS_OPEN,
+        # ── Header ──
         "issuer_dept": dept,
         "issued_by": _actor(current),
-        "issued_at": now,               # ← basis bulan untuk KPI #1
+        "issued_at": now,               # ← Date of Issue + basis bulan KPI #1
+        "issued_to": (payload.issued_to or "").strip(),
+        "expected_reply_date": (payload.expected_reply_date or "").strip(),
+        # ── Drawings ──
         "drawings": resolved,
         "drawing_ids": [r["drawing_id"] for r in resolved if r.get("drawing_id")],
         "drawing_nos": [r["drawing_no"] for r in resolved if r.get("drawing_no")],
         "so_no": so_no,
         "customer_name": customer_name,
+        # ── Section 1: Nonconformance Information ──
         "title": (payload.title or "").strip(),
         "description": (payload.description or "").strip(),
+        "source": source,               # in_house | external
         "severity": sev,
+        # ── Section 2: Investigation & Action Plans (kosong dulu) ──
+        "investigation": None,
+        # ── Section 3: Closeout Information (kosong dulu) ──
+        "closeout": None,
+        # ── Follow-up ──
         "assigned_to": None,
         "ecn_id": "",
         "ecn_no": "",
@@ -216,7 +263,7 @@ async def create_nc(payload: NonconformanceCreate, current: dict = Depends(get_c
         "extra": payload.extra or {},
         "timeline": [{
             "at": now, "action": "created", "by": _actor(current),
-            "notes": f"NC diterbitkan oleh {dept.upper()}",
+            "notes": f"CAR diterbitkan oleh {dept.upper()} ({'IN-HOUSE' if source == 'in_house' else 'EXTERNAL'})",
         }],
         "created_at": now,
         "updated_at": now,
@@ -275,6 +322,35 @@ async def nc_stats(current: dict = Depends(get_current_user)):
     out["open_or_active"] = await db.nonconformances.count_documents(
         {**base, "status": {"$in": [STATUS_OPEN, STATUS_ASSIGNED, STATUS_IN_PROGRESS]}})
     return out
+
+
+# ── ENG-006 NC LOG (Internal Engineering Process — tab NC) ────────────────────
+@router.get("/nonconformance/eng006-nc-log")
+async def eng006_nc_log(month: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Sajikan data NC untuk dicatat ke Form MKS-F-ENG-006 (Internal Engineering Process),
+    tab 'NC': SO No | Date | Root Cause | Status | Preventive Action | Corrective Action.
+    Alur: NC drawing → Engineer terbit ECN (MKS-F-ENG-004) → input ke ENG-006."""
+    if not (is_engineering(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering/Admin")
+    filt: dict = {"deleted_at": {"$exists": False}}
+    if month and len(month) == 7:
+        filt["issued_at"] = {"$regex": f"^{month}"}
+    docs = await db.nonconformances.find(filt, {"_id": 0}).sort("issued_at", -1).to_list(length=1000)
+    rows = []
+    for d in docs:
+        inv = d.get("investigation") or {}
+        rows.append({
+            "nc_no": d.get("nc_no"),
+            "so_no": d.get("so_no") or "",
+            "date": (d.get("issued_at") or "")[:10],
+            "drawing_nos": d.get("drawing_nos") or [],
+            "root_cause": inv.get("root_cause") or "",
+            "status": d.get("status"),
+            "preventive_action": inv.get("preventive_action") or "",
+            "corrective_action": inv.get("corrective_action") or "",
+            "ecn_no": d.get("ecn_no") or "",
+        })
+    return {"rows": rows, "total": len(rows)}
 
 
 # ── DETAIL ───────────────────────────────────────────────────────────────────
@@ -370,6 +446,85 @@ async def add_note(nc_id: str, payload: NoteIn, current: dict = Depends(get_curr
                                "notes": payload.notes.strip()}},
     })
     return {"success": True}
+
+
+# ── SECTION 2: INVESTIGATION & ACTION PLANS (Responsible Dept./Assignee) ──────
+@router.post("/nonconformance/{nc_id}/investigation")
+async def save_investigation(nc_id: str, payload: InvestigationIn, current: dict = Depends(get_current_user)):
+    doc = await _get_nc_or_404(nc_id)
+    if doc["status"] == STATUS_CLOSED:
+        raise HTTPException(status_code=400, detail="NC sudah Closed, tidak bisa diubah")
+    is_leader = is_eng_head(current) or is_admin_like(current)
+    is_assignee = (doc.get("assigned_to") or {}).get("id") == current.get("id")
+    if not (is_leader or is_assignee or is_engineering(current)):
+        raise HTTPException(status_code=403, detail="Hanya assignee/Engineering yang bisa mengisi investigasi")
+
+    now = _now_iso()
+    investigation = {
+        "root_cause": (payload.root_cause or "").strip(),
+        "immediate_action": (payload.immediate_action or "").strip(),
+        "corrective_action": (payload.corrective_action or "").strip(),
+        "preventive_action": (payload.preventive_action or "").strip(),
+        "completed_by": (payload.completed_by or "").strip(),
+        "completed_date": (payload.completed_date or "").strip(),
+        "dept_head_name": (payload.dept_head_name or "").strip(),
+        "dept_head_date": (payload.dept_head_date or "").strip(),
+        "saved_by": _actor(current),
+        "saved_at": now,
+    }
+    updates = {"investigation": investigation, "updated_at": now}
+    if (payload.ecn_no or "").strip():
+        updates["ecn_no"] = payload.ecn_no.strip()
+    if payload.set_in_progress and doc["status"] in (STATUS_OPEN, STATUS_ASSIGNED):
+        updates["status"] = STATUS_IN_PROGRESS
+    await db.nonconformances.update_one({"id": nc_id}, {
+        "$set": updates,
+        "$push": {"timeline": {"at": now, "action": "investigation", "by": _actor(current),
+                               "notes": "Investigasi & rencana tindakan disimpan"}},
+    })
+    await log_action(current, "nc_investigation", "nonconformances", nc_id, {"nc_no": doc.get("nc_no")})
+    return {"success": True, "status": updates.get("status", doc["status"])}
+
+
+# ── SECTION 3: CAR CLOSEOUT (Initiator / MR / QA) ─────────────────────────────
+@router.post("/nonconformance/{nc_id}/closeout")
+async def save_closeout(nc_id: str, payload: CloseoutIn, current: dict = Depends(get_current_user)):
+    doc = await _get_nc_or_404(nc_id)
+    # Closeout diisi Initiator / MR / QA / Eng Leader / Admin
+    is_leader = is_eng_head(current) or is_admin_like(current)
+    is_initiator = (doc.get("issued_by") or {}).get("id") == current.get("id")
+    if not (is_leader or is_initiator or is_qc(current)):
+        raise HTTPException(status_code=403, detail="Hanya Initiator/QA/MR/Eng Leader yang bisa mengisi closeout")
+
+    now = _now_iso()
+    closeout = {
+        "initiator_remarks": (payload.initiator_remarks or "").strip(),
+        "risk_review": bool(payload.risk_review),
+        "risk_attached": bool(payload.risk_attached),
+        "effectiveness_reviewed_by": (payload.effectiveness_reviewed_by or "").strip(),
+        "effectiveness_date": (payload.effectiveness_date or "").strip(),
+        "qa_approved_by": (payload.qa_approved_by or "").strip(),
+        "qa_date": (payload.qa_date or "").strip(),
+        "saved_by": _actor(current),
+        "saved_at": now,
+    }
+    updates = {"closeout": closeout, "updated_at": now}
+    action = "closeout"
+    if payload.close:
+        if not is_leader and not is_qc(current):
+            raise HTTPException(status_code=403, detail="Hanya QA/Eng Leader/Admin yang bisa menutup (Closed) NC")
+        updates["status"] = STATUS_CLOSED
+        updates["closed_at"] = now
+        updates["closed_by"] = _actor(current)
+        action = "status_closed"
+    await db.nonconformances.update_one({"id": nc_id}, {
+        "$set": updates,
+        "$push": {"timeline": {"at": now, "action": action, "by": _actor(current),
+                               "notes": "Closeout disimpan" + (" & NC ditutup (Closed)" if payload.close else "")}},
+    })
+    await log_action(current, "nc_closeout", "nonconformances", nc_id,
+                     {"nc_no": doc.get("nc_no"), "closed": payload.close})
+    return {"success": True, "status": updates.get("status", doc["status"])}
 
 
 # ── DELETE (soft) ─────────────────────────────────────────────────────────────

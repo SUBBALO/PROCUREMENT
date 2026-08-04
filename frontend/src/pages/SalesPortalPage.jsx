@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
 import api from "../lib/api";
-import { Storefront, FileText, Users, ClipboardText, PenNib } from "@phosphor-icons/react";
+import { Storefront, FileText, Users, ClipboardText, PenNib, WarningCircle } from "@phosphor-icons/react";
 import { useNotifCount } from "../lib/useNotifCount";
 
 export default function SalesPortalPage() {
@@ -66,6 +66,12 @@ export default function SalesPortalPage() {
       description: "Lihat BOM yang sudah di-approve Engineering — sebagai referensi untuk quotation & follow-up produksi. Sales HANYA VIEW, tidak bisa edit isi BOM.",
       icon: ClipboardText, href: "/bom",
       accent: "from-emerald-500 via-teal-500 to-cyan-500", accentText: "text-emerald-400",
+    },
+    {
+      key: "nonconformance", label: "Nonconformance (CAR)", stats: "MKS-F-QAD-004 · Terbitkan NC",
+      description: "Terbitkan Corrective Action Report atas Drawing (mis. komplain customer). Engineering menindaklanjuti (assign → revisi → ECN). Pantau status hingga Closed.",
+      icon: WarningCircle, href: "/nonconformance",
+      accent: "from-rose-500 via-red-500 to-orange-500", accentText: "text-rose-400",
     },
   ];
 

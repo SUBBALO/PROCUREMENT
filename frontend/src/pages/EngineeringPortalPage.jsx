@@ -5,7 +5,7 @@ import MyJobQueuePanel from "../components/MyJobQueuePanel";
 import api from "../lib/api";
 import {
   Wrench, Package, CurrencyCircleDollar, FileText, Kanban, ClipboardText as ClipboardIcon,
-  Tray, PencilSimpleLine, Gauge, ChartLineUp,
+  Tray, PencilSimpleLine, Gauge, ChartLineUp, WarningCircle,
 } from "@phosphor-icons/react";
 import { useAuth } from "../lib/auth";
 
@@ -19,10 +19,16 @@ export default function EngineeringPortalPage() {
   const [jobPending, setJobPending] = useState(0);   // job menunggu diterima (my-queue)
   const [drfPending, setDrfPending] = useState(0);    // DRF menunggu ditangani (Eng Leader)
   const [overloadCount, setOverloadCount] = useState(0); // engineer overload (monitor beban)
+  const [ncActive, setNcActive] = useState(0);            // NC/CAR belum tuntas
   useEffect(() => {
     api.get("/ecn-register?kind=ecn")
       .then(({ data }) => setEcnTotal((data.items || []).length))
       .catch(() => setEcnTotal(0));
+    if (isEngUser) {
+      api.get("/nonconformance/stats")
+        .then(({ data }) => setNcActive(data?.open_or_active || 0))
+        .catch(() => setNcActive(0));
+    }
     if (isEngUser) {
       api.get("/drawing-requests/my-queue")
         .then(({ data }) => setJobPending(data.pending_count || 0))
@@ -69,6 +75,13 @@ export default function EngineeringPortalPage() {
       badgeCount: ecnTotal,
       accent: "from-indigo-500 via-violet-500 to-fuchsia-500", accentText: "text-indigo-400",
     },
+    ...(isEngUser ? [{
+      key: "nonconformance", label: "Nonconformance (CAR)", stats: "MKS-F-QAD-004 · Tindak Lanjut NC",
+      description: "NC/CAR atas Drawing dari QC/Produksi/Sales. Eng Leader assign ke staff, isi Root Cause & Corrective/Preventive Action, terbitkan ECN, lalu tutup (Closed). Memengaruhi KPI #1.",
+      icon: WarningCircle, href: "/nonconformance",
+      badgeCount: ncActive,
+      accent: "from-rose-500 via-red-500 to-orange-500", accentText: "text-rose-400",
+    }] : []),
     ...(isHead ? [{
       key: "kpi", label: "KPI Engineering", stats: "Laporan Bulanan · Auditable",
       description: "Skor KPI bulanan (drawing/BOM compliance, on-time, validasi MKS) dihitung otomatis dari data ERP. Klik tiap indikator untuk telusur audit record aslinya.",

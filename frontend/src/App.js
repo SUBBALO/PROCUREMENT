@@ -66,6 +66,7 @@ import ECNPage from "./pages/ECNPage";
 import WorkOrderEngineeringPage from "./pages/WorkOrderEngineeringPage";
 import SOStampPage from "./pages/SOStampPage";
 import DocumentControlPortalPage from "./pages/DocumentControlPortalPage";
+import NonconformanceMasterlistPage from "./pages/NonconformanceMasterlistPage";
 import "./App.css";
 
 function LoadingScreen() {
@@ -114,6 +115,7 @@ function ProtectedRoute({ children, storeRoleTo = "/store/stock", blockStore = f
     location.pathname.startsWith("/change-password") ||
     location.pathname.startsWith("/drawings/pending-my-approval") ||
     location.pathname.startsWith("/drawings/controlled") ||
+    location.pathname.startsWith("/nonconformance") ||
     location.pathname.startsWith("/ecn-ttd") ||
     location.pathname.startsWith("/documents/register") ||
     location.pathname.startsWith("/document-control");
@@ -231,6 +233,7 @@ function AppRoutes() {
       <Route path="/my/signature-history" element={<ProtectedRoute><MySignatureHistoryPage /></ProtectedRoute>} />
       <Route path="/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
       <Route path="/engineering/master-list" element={<ProtectedRoute><EngineeringMasterListPage /></ProtectedRoute>} />
+      <Route path="/nonconformance" element={<ProtectedRoute><NonconformanceMasterlistPage /></ProtectedRoute>} />
       <Route path="/engineering/bom-entry/:bomId" element={<ProtectedRoute><BomEntryGridPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
