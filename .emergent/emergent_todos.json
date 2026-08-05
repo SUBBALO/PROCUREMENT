@@ -29,6 +29,6 @@
   },
   {
     "content": "Test backend (lock/unlock, review endpoint) + frontend build & screenshot",
-    "status": "in_progress"
+    "status": "completed"
   }
 ]
