@@ -1,115 +1,113 @@
-# plan.md — Modul NONCONFORMANCE (CAR)
+# Rencana Pengembangan — Redesign Engineering Work Order (Partial Submit, BOM Per-SO, Review Popup, TTD)
 
 ## 1) Objectives
-- Menyediakan modul **NONCONFORMANCE (CAR)** yang berlaku untuk **semua departemen** (universal) berbasis form resmi **MKS-F-QAD-004 Rev.02**.
-- Semua user (authenticated) dapat membuat CAR dan menentukan **Ditujukan Ke**:
-  - **Departemen (wajib)**
-  - **User spesifik (opsional)**
-- Mendukung objek NC yang fleksibel (link sesuai apa yang kena NC):
-  - **Drawing**, **SO**, **Produk/Part**, **Supplier/Vendor**, **Proses/Umum**.
-- Menyediakan alur status: **Open → Assigned → In Progress → Closed**.
-  - **Investigation (Section 2)** diisi oleh **dept/user tujuan**.
-  - **Closed** dilakukan oleh **penerbit / QA / Admin**.
-  - **Assign step terpisah ditiadakan** (cukup “Issued To”/dept-user pada saat penerbitan).
-- Mengubah **KPI #1** agar menghitung “Drawing tanpa NC” berdasarkan **record CAR bertipe Drawing** (bulan CAR diterbitkan) dengan auditability (numerator/denominator + daftar record + `nc_nos`).
-- Menyediakan **masterlist CAR universal** (1 menu khusus CAR) + akses dari LandingPage dan portal terkait.
-- Mendukung lampiran bukti + **preview image-based** (konsisten dengan viewer PDF/Office yang sudah ada).
-- Menyediakan endpoint ringkas untuk pencatatan **Internal Engineering Process (MKS-F-ENG-006)** khusus tab NC.
-
-> Status saat ini: **SELESAI & TERUJI** (backend + frontend). Data testing sudah dibersihkan.
-
----
+- Memperbaiki masalah **TTD tidak terbaca** (RISKI/approver) dan memastikan TTD tampil konsisten di aplikasi & PDF.
+- Mengubah model **BOM menjadi 1 per SO/Work Group** (diisi sekali), sehingga **partial submit drawing tidak mengunci BOM**.
+- Menambahkan **Reminder Popup** saat submit drawing (terutama “drawing terakhir”) untuk mengingatkan BOM & dokumen SO (Nesting/AutoCAD/Costing) sudah diisi/diupload.
+- Setelah submit final, **dokumen SO tidak bisa diupload lagi** (read-only).
+- Menyediakan **Popup Review Eng Leader** yang menampilkan daftar dokumen (drawing + non-drawing) untuk approve/OK atau minta revisi.
+- Merapikan UX menu Work Order: hilangkan BOM dobel, menu lebih jelas bagi Engineering.
 
 ## 2) Implementation Steps
 
-### Phase 1 — Core Flow POC (Backend saja, minimal tapi end-to-end)
-**User stories (POC)**
-1. Sebagai user (semua dept), saya bisa membuat CAR dan menautkan objek NC (Drawing/SO/Produk/Supplier/Proses).
-2. Sebagai user, saya bisa melihat daftar CAR dan statusnya.
-3. Sebagai dept/user tujuan, saya bisa mengisi investigasi (Root Cause, Corrective/Preventive Action).
-4. Sebagai penerbit/QA/Admin, saya bisa menutup CAR (Closed) dan menyimpan referensi ECN bila terkait drawing.
+### Phase 1 — POC Core Flow (Isolasi) — “TTD terbaca end-to-end”
+**Core paling riskan:** rekam/visualisasi TTD dari `approvals[]` tanpa bergantung pada placement manual + memastikan stamped PDF & UI menampilkan.
+- **Websearch (best practice):** riset cepat “PDF signature block rendering without coordinates / default placement patterns” untuk PDF stamping (PyMuPDF/Reportlab).  
+- Buat script uji Python: ambil 1 drawing pending (SO 003354), validasi:
+  1) `approvals[]` ada untuk stage submit/eng_head,
+  2) `user.signature_gridfs_id` ada,
+  3) generate `/pdf-stamped` menampilkan TTD (atau minimal embed image/date) dan UI badge menampilkan “ditandatangani oleh”.
+- Implement backend: 
+  - Perbaiki `_sig_stamp()` agar menyimpan `signature_gridfs_id`, `has_signature`, dan `date` (fallback dari `at`).
+  - Perbaiki stamper: saat `approvals` tidak kosong, stamp TTD **di signature block standar** (bukan harus placement) untuk stage yang relevan.
+  - Pastikan endpoint preview/download yang mem-stamp **mengirim approvals yang benar** (jangan `approvals=[]`).
+- Implement frontend: tampilkan “TTD/Disetujui oleh” berdasarkan `approvals[]` (bukan `signatures` kosong).
 
-**Langkah implementasi** *(COMPLETED)*
-- DB + Model
-  - Tambah koleksi `nonconformances`.
-  - Nomor CAR resmi: `MKS-QA-CAR-{ROMAN_BULAN}-{YY}-{NNN}` (counter per tahun).
-  - Field utama (diringkas):
-    - Header: `issued_by`, `issued_at`, `issuer_dept` (otomatis dari role), `issued_to_dept` (wajib), `issued_to_user` (opsional), `expected_reply_date`.
-    - Link objek: `link_type` ∈ {`drawing`,`so`,`product_part`,`supplier`,`process_general`}
-      - `drawings[]/drawing_nos[]` jika `link_type=drawing`
-      - `so_no` untuk tipe `so` (atau opsional untuk tipe lain)
-      - `object_ref` untuk tipe non-drawing
-    - Section 1: `title`, `description`, `source` (in_house/external), `severity`.
-    - Section 2: `investigation` (root_cause, immediate_action, corrective_action, **preventive_action**, completed_by/date, dept_head_name/date, ecn_no).
-    - Section 3: `closeout` (initiator_remarks, risk_review, risk_attached, effectiveness_reviewed_by/date, qa_approved_by/date).
-    - Status: `open/assigned/in_progress/closed` + `timeline[]`.
-- Router
-  - Buat `/app/backend/routers/nonconformance.py`:
-    - `POST /api/nonconformance` (semua user)
-    - `GET /api/nonconformance` (filter: status, issuer_dept, issued_to_dept, link_type, q, month)
-    - `GET /api/nonconformance/{id}`
-    - `POST /api/nonconformance/{id}/status`
-    - `POST /api/nonconformance/{id}/investigation`
-    - `POST /api/nonconformance/{id}/closeout`
-    - Lampiran: `GET/POST/DELETE /api/nonconformance/{id}/attachments` + preview page-meta/page-image
-    - Utility: `GET /api/nonconformance/departments`, `GET /api/nonconformance/assignable-users?dept=...`
-    - ENG-006: `GET /api/nonconformance/eng006-nc-log`
-  - Router sudah di-include di `server.py`.
-- Indexes
-  - Index dibuat untuk `issued_at`, `status`, `issuer_dept`, `issued_to_dept`, `drawing_nos`, `assigned_to.id`, `issued_by.id`, `nc_attachments.nc_id`.
-- Testing (backend)
-  - Test otomatis sudah ada dan lolos (script/pytest).
+**User stories (Phase 1)**
+1. Sebagai Eng Leader, saya ingin melihat nama  tanggal TTD saya tampil di drawing sehingga tidak ada kebingungan apakah sudah tanda tangan.
+2. Sebagai QC, saya ingin melihat siapa saja yang sudah menandatangani tanpa harus membuka log.
+3. Sebagai Engineer, saya ingin status approval jelas (submit/eng_head/qc/sales) dengan bukti TTD yang terbaca.
+4. Sebagai Admin, saya ingin stamp PDF tetap konsisten walau user tidak klik posisi TTD.
+5. Sebagai Eng Leader, saya ingin drawing SO 003354 yang sudah saya approve menampilkan TTD saya.
 
-### Phase 2 — V1 App Development (MVP UI + KPI wiring)
-**User stories (V1)**
-1. Sebagai user, saya bisa akses **Masterlist CAR** dan menerbitkan CAR sesuai form resmi.
-2. Sebagai dept/user tujuan, saya bisa mengisi Section 2 (Investigation) dan mengubah status.
-3. Sebagai penerbit/QA/Admin, saya bisa menutup (Closed) dan mengisi closeout.
-4. Engineering KPI #1 otomatis berubah hanya berdasar CAR bertipe drawing yang diterbitkan bulan itu.
+### Phase 2 — V1 App Development (BOM per SO + Partial Submit + Reminder)
+- **Model data:** perkenalkan entitas “SO Package / Work Group” (atau gunakan dokumen existing DRF/SO) sebagai container:
+  - BOM_link: 1 per SO (bom_id/bom_no)
+  - SO Docs: nesting/autocad/costing (attachment per SO)
+  - Status paket: draft → in_progress → submitted (final)
+- **UI Work Order:**
+  - Pindahkan BOM Linking/ISI BOM ke panel **SO-level** (di luar per-drawing).
+  - Hapus “ISI BOM” per drawing.
+  - Drawing tetap bisa partial submit per item.
+- **Reminder Popup saat submit:**
+  - Saat user klik “TTD & Submit” pada drawing: tampilkan checklist:
+    - BOM sudah di-link? (Ya/Tidak)
+    - Dokumen SO (Nesting/AutoCAD/Costing) sudah diupload? (Ya/Tidak, opsional)
+  - Bahasa: “Jika tidak diperlukan, Anda boleh lanjut.”
+  - Logic “drawing terakhir”: bila semua drawing di SO sudah status submitted/pending, popup menandai “ini submit terakhir” dan mengingatkan BOM.
+- **Locking:**
+  - Setelah paket SO “submitted final” → semua upload dokumen SO terkunci.
+  - Partial submit drawing tidak mengunci BOM.
 
-**Langkah implementasi** *(COMPLETED)*
-- KPI #1 (backend)
-  - Update `/app/backend/routers/kpi.py`:
-    - KPI `drawing_customer_nc`: drawing ber-NC jika ada record **nonconformance link_type=drawing** di bulan yang sama (`issued_at` YYYY-MM).
-    - Records tetap auditable: `ref`, `ok`, `note`, `date`, `nc_ids`, `nc_nos`.
-- Frontend
-  - `NonconformanceMasterlistPage.jsx`: tabel, filter, status pills, kolom Ditujukan Ke + Objek NC.
-  - `CarCreateModal.jsx`: create sesuai form (Issued To dept+user, kategori objek, drawing multi-select bila perlu).
-  - `CarDetailModal.jsx`: tampilan 3 section (S1/S2/S3), lampiran + preview image-based, timeline, update status.
-- Navigasi
-  - Route `/nonconformance` sudah terdaftar dan di-whitelist (universal page).
-  - Menu universal ditambahkan ke **LandingPage**.
-  - Kartu portal: QC/Produksi/Sales/Engineering sudah mengarah ke masterlist.
+**User stories (Phase 2)**
+1. Sebagai Engineer, saya ingin submit 1 drawing tanpa mengunci BOM karena masih ada drawing lain.
+2. Sebagai Engineer, saya ingin BOM cukup diisi sekali per SO, tidak berulang per drawing.
+3. Sebagai Engineer, saya ingin saat submit terakhir ada pengingat BOM/dokumen SO agar tidak lupa.
+4. Sebagai Engineer, saya ingin bisa lanjut submit meski dokumen SO tidak diperlukan.
+5. Sebagai Eng Leader, saya ingin melihat status BOM  dokumen SO langsung dari Work Order.
 
-### Phase 3 — Form NCR sesuai template + Attachments + Hardening
+> Tutup Phase 2 dengan 1 kali testing agent (backend+frontend) untuk: partial submit, reminder popup, lock upload setelah final submit.
+
+### Phase 3 — Review Popup Eng Leader (Blueprint → Implement)
+- Jalankan **design_agent** untuk blueprint:
+  - Popup “Review Dokumen SO” mirip Masterlist: list item (Drawing, Nesting, Customer Ref, AutoCAD, Costing, BOM).
+  - Per item: 
+    - Drawing: tombol **Approve+TTD** / **Minta Revisi**.
+    - Non-drawing: tombol **Tandai OK** / **Minta Revisi** (engineer re-upload).
+- Backend:
+  - Tambah state review untuk non-drawing docs (ok/revise + notes).
+  - Tambah endpoint aksi: mark_ok, request_revision (dengan notes) + notifikasi.
+- Frontend:
+  - Tampilkan popup dari Work Group/WO page.
+  - Tampilkan catatan revisi & riwayat.
+
 **User stories (Phase 3)**
-1. Field CAR mengikuti urutan/label form resmi MKS-F-QAD-004 Rev.02.
-2. Lampiran bukti bisa diupload dan dipreview tanpa download (viewer image-based).
-3. Audit trail jelas (timeline + activity log).
+1. Sebagai Eng Leader, saya ingin melihat semua dokumen terkait SO dalam satu popup agar review cepat.
+2. Sebagai Eng Leader, saya ingin approve drawing dengan TTD langsung dari daftar.
+3. Sebagai Eng Leader, saya ingin minta revisi nesting/costing tanpa harus upload sendiri.
+4. Sebagai Engineer, saya ingin menerima notifikasi revisi dan upload ulang dokumen yang diminta.
+5. Sebagai Admin, saya ingin jejak audit keputusan review tersimpan.
 
-**Langkah implementasi** *(COMPLETED)*
-- Template form resmi sudah diterima dan diimplementasikan ke schema + UI.
-- Attachments sudah memakai GridFS bucket `nc_attachments` + page-meta/page-image untuk preview.
-- Observability: `log_action` dipakai di create/assign(status lama)/status/investigation/closeout.
+> Tutup Phase 3 dengan testing agent: review popup flows, mark ok/revise, notifikasi, RBAC.
 
----
+### Phase 4 — Rapikan UX Menu Work Order (Blueprint → Implement)
+- Implement perubahan UI sesuai blueprint:
+  - Menu per SO: BOM  Dokumen SO (attachments)  Daftar drawing.
+  - Per drawing: fokus upload PDF + submit/approval status; hilangkan BOM forms di dalam.
+  - Konsistensi label Indonesia + status badges.
+- Pastikan backward-compat untuk data lama (BOM per drawing) dengan migrasi ringan:
+  - Jika ada bom_id di drawing lama → angkat menjadi bom_id SO-level (first non-null), tandai “migrated”.
+
+**User stories (Phase 4)**
+1. Sebagai Engineer, saya ingin halaman Work Order tidak membingungkan dan tidak ada menu dobel BOM.
+2. Sebagai Engineer, saya ingin cepat menemukan upload drawing vs upload dokumen SO.
+3. Sebagai Eng Leader, saya ingin review tidak perlu buka banyak halaman.
+4. Sebagai QC, saya ingin mode view-only tetap bisa lihat dokumen tanpa bisa ubah.
+5. Sebagai Sales, saya ingin status dokumen SO jelas tanpa melihat detail teknis.
+
+> Tutup Phase 4 dengan testing agent regresi penuh (drawing approvals, CAR, ENG-006, viewer).
 
 ## 3) Next Actions
-> Modul CAR sudah selesai. Berikut kandidat pengembangan lanjutan (opsional/next iteration):
-1. **Masterlist link dari semua portal yang tersisa** (Purchasing/Store/Document Control bila diperlukan) untuk konsistensi navigasi.
-2. **Export/Print CAR ke PDF** dengan layout resmi MKS-F-QAD-004 (kop surat, sign/date blocks, page break, lampiran opsional).
-3. Buat halaman UI untuk **ENG-006 (Internal Engineering Process) tab NC**:
-   - Tabel log dari endpoint `/api/nonconformance/eng006-nc-log` + filter bulan + export Excel/PDF.
-4. Penambahan fitur notifikasi (opsional):
-   - Notifikasi ke dept/user tujuan saat CAR diterbitkan.
-   - Notifikasi ke penerbit saat status berubah/closed.
-
----
+1. Jalankan **design_agent** untuk blueprint Phase 3/4 (popup review + layout menu WO).
+2. Kerjakan Phase 1 POC: perbaiki `_sig_stamp`  stamper approvals, pastikan RISKI TTD tampil.
+3. Implement Phase 2 (BOM per SO + reminder + locking) minimal viable.
+4. Implement Phase 3 (review popup + endpoints + notifikasi).
+5. Implement Phase 4 (UX polish + migrasi data lama).
 
 ## 4) Success Criteria
-*(Sudah terpenuhi)*
-- Backend: CAR bisa dibuat oleh semua user, bisa link sesuai kategori objek, status flow berjalan, aturan close sesuai (penerbit/QA/Admin).
-- KPI #1: numerator/denominator + records audit konsisten; hanya CAR bertipe Drawing memengaruhi KPI.
-- Frontend: masterlist + create + detail (3 section) + lampiran preview + timeline berjalan.
-- Testing: backend automated tests **PASS**; testing agent **100% (33/33)**; tidak ada bug terbuka; data testing dibersihkan.
-- Tidak ada regresi di modul Engineering KPI Dashboard, Excel preview (LibreOffice prewarm), dan portal yang sudah ada.
+- TTD RISKI dan approver lain **terlihat** di UI dan di PDF stamped tanpa perlu placement manual.
+- Partial submit drawing **tidak mengunci BOM**; BOM 1 per SO, tidak ada input BOM di tiap drawing.
+- Saat submit terakhir: popup pengingat BOM  dokumen SO muncul, user bisa lanjut bila tidak perlu.
+- Setelah final submit: upload dokumen SO terkunci; audit trail jelas.
+- Popup review Eng Leader berfungsi: approve drawing + minta revisi non-drawing (engineer upload ulang).
+- Tidak ada regresi pada modul CAR, ENG-006, viewer, dan approval flow existing.
