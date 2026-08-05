@@ -12,8 +12,8 @@ from datetime import datetime, timezone
 from typing import Optional, List
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Request
+from fastapi.responses import StreamingResponse, Response
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 from pydantic import BaseModel
 
@@ -3402,36 +3402,50 @@ async def drawing_page_meta(drawing_id: str, target: str = "mks", extra_id: str 
 
 
 @router.get("/drawings/{drawing_id}/page-image")
-async def drawing_page_image(drawing_id: str, page: int = 0, target: str = "mks",
+async def drawing_page_image(drawing_id: str, request: Request, page: int = 0, target: str = "mks",
                              extra_id: str = "", scale: float = 2.0, stamped: bool = False,
                              hide_so: bool = False,
                              current: dict = Depends(get_current_user)):
     """Render satu halaman PDF menjadi gambar PNG (untuk preview stamp picker & viewer baca-saja).
     stamped=1 → tampilkan versi ber-stamp (approval/DC/SO + watermark) sesuai role.
-    hide_so=1 → sembunyikan SO stamp pada target mks (dipakai Master Drawing List)."""
+    hide_so=1 → sembunyikan SO stamp pada target mks (dipakai Master Drawing List).
+
+    Dipercepat: hasil render & PDF ber-stamp di-cache (kunci mengikuti isi + peran),
+    plus ETag agar browser tidak mengunduh ulang gambar yang sama (304 Not Modified)."""
     if not _can_view(current):
         raise HTTPException(status_code=403, detail="Akses ditolak")
     drawing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
     if not drawing:
         raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    scale = max(1.0, min(3.0, float(scale or 2.0)))
+
+    from utils.render_cache import STAMP_CACHE, png_etag, render_png_cached, sha
+
     raw = await _target_raw_bytes(drawing, target, extra_id)
     if stamped:
-        raw = await _build_stamped_for_target(drawing, target, extra_id, raw, current, hide_so=hide_so)
-    import fitz  # PyMuPDF
+        # Build PDF ber-stamp SEKALI lalu cache (kunci ikut isi + peran + state drawing).
+        skey = ("stamp:" + sha(raw) + f":{target}:{extra_id}:{current.get('role','')}"
+                f":{int(bool(hide_so))}:{drawing.get('updated_at','')}")
+        src = STAMP_CACHE.get(skey)
+        if src is None:
+            src = await _build_stamped_for_target(drawing, target, extra_id, raw, current, hide_so=hide_so)
+            STAMP_CACHE.set(skey, src)
+    else:
+        src = raw
+
+    # Validasi cache browser: bila ETag cocok → 304 (tanpa render/kirim ulang).
+    etag = png_etag(src, page, scale)
+    cache_hdr = {"Cache-Control": "private, max-age=600", "ETag": etag}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=cache_hdr)
+
     try:
-        doc = fitz.open(stream=raw, filetype="pdf")
+        png = render_png_cached(src, page, scale)
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Halaman tidak ada")
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"File bukan PDF valid: {e}")
-    if page < 0 or page >= doc.page_count:
-        doc.close()
-        raise HTTPException(status_code=404, detail="Halaman tidak ada")
-    scale = max(1.0, min(3.0, float(scale or 2.0)))
-    pg = doc.load_page(page)
-    pix = pg.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
-    png = pix.tobytes("png")
-    doc.close()
-    return StreamingResponse(io.BytesIO(png), media_type="image/png",
-                             headers={"Cache-Control": "no-store"})
+    return StreamingResponse(io.BytesIO(png), media_type="image/png", headers=cache_hdr)
 
 
 async def _revision_snapshot_bytes(drawing_id: str, rev_id: str, which: str = "mks") -> bytes:
@@ -3472,28 +3486,26 @@ async def revision_snapshot_page_meta(drawing_id: str, rev_id: str, which: str =
 
 
 @router.get("/drawings/{drawing_id}/revisions/{rev_id}/page-image")
-async def revision_snapshot_page_image(drawing_id: str, rev_id: str, page: int = 0,
+async def revision_snapshot_page_image(drawing_id: str, rev_id: str, request: Request, page: int = 0,
                                        scale: float = 2.0, which: str = "mks",
                                        current: dict = Depends(get_current_user)):
-    """Render satu halaman PDF versi lama (history revisi) menjadi PNG."""
+    """Render satu halaman PDF versi lama (history revisi) menjadi PNG (cached + ETag)."""
     if not _can_view(current):
         raise HTTPException(status_code=403, detail="Akses ditolak")
     raw = await _revision_snapshot_bytes(drawing_id, rev_id, which)
-    import fitz  # PyMuPDF
+    scale = max(1.0, min(3.0, float(scale or 2.0)))
+    from utils.render_cache import png_etag, render_png_cached
+    etag = png_etag(raw, page, scale)
+    cache_hdr = {"Cache-Control": "private, max-age=600", "ETag": etag}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=cache_hdr)
     try:
-        doc = fitz.open(stream=raw, filetype="pdf")
+        png = render_png_cached(raw, page, scale)
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Halaman tidak ada")
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"File bukan PDF valid: {e}")
-    if page < 0 or page >= doc.page_count:
-        doc.close()
-        raise HTTPException(status_code=404, detail="Halaman tidak ada")
-    scale = max(1.0, min(3.0, float(scale or 2.0)))
-    pg = doc.load_page(page)
-    pix = pg.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
-    png = pix.tobytes("png")
-    doc.close()
-    return StreamingResponse(io.BytesIO(png), media_type="image/png",
-                             headers={"Cache-Control": "no-store"})
+    return StreamingResponse(io.BytesIO(png), media_type="image/png", headers=cache_hdr)
 
 
 @router.get("/drawings/{drawing_id}/revisions/{rev_id}/download")
@@ -3672,18 +3684,21 @@ async def ecn_sheet_page_meta(drawing_id: str, current: dict = Depends(get_curre
 
 
 @router.get("/drawings/{drawing_id}/ecn-sheet/page-image")
-async def ecn_sheet_page_image(drawing_id: str, page: int = 0, scale: float = 2.0,
+async def ecn_sheet_page_image(drawing_id: str, request: Request, page: int = 0, scale: float = 2.0,
                                current: dict = Depends(get_current_user)):
-    """Render 1 halaman Lembar ECN sebagai PNG (viewer image-based, konsisten lintas browser)."""
+    """Render 1 halaman Lembar ECN sebagai PNG (viewer image-based, cached + ETag)."""
     out, _ = await _build_ecn_sheet_bytes(drawing_id, current)
-    from utils.pdf_render import pdf_page_png
     scale = max(1.0, min(3.0, float(scale or 2.0)))
+    from utils.render_cache import png_etag, render_png_cached
+    etag = png_etag(out, page, scale)
+    cache_hdr = {"Cache-Control": "private, max-age=300", "ETag": etag}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=cache_hdr)
     try:
-        png = pdf_page_png(out, page=page, scale=scale)
+        png = render_png_cached(out, page=page, scale=scale)
     except IndexError:
         raise HTTPException(status_code=404, detail="Halaman tidak ada")
-    return StreamingResponse(io.BytesIO(png), media_type="image/png",
-                             headers={"Cache-Control": "no-store"})
+    return StreamingResponse(io.BytesIO(png), media_type="image/png", headers=cache_hdr)
 
 
 @router.get("/drawings/pending-dc-stamp")

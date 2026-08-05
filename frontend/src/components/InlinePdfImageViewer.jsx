@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import api from "../lib/api";
 import {
   MagnifyingGlassPlus,
@@ -120,28 +120,72 @@ export default function InlinePdfImageViewer({
             {Array.from({ length: pages }).map((_, n) => {
               const size = (meta.sizes && meta.sizes[n]) || { w: 595, h: 842 };
               return (
-                <div key={n} className="flex flex-col items-center w-full">
-                  <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">
-                    Halaman {n + 1} / {pages}
-                  </div>
-                  <div
-                    className="bg-white shadow-lg border border-slate-200"
-                    style={{
-                      width: `min(${820 * zoom}px, ${94 * zoom}%)`,
-                      aspectRatio: `${size.w} / ${size.h}`,
-                    }}
-                  >
-                    <img
-                      src={pageUrlBuilder(n)}
-                      alt={`Halaman ${n + 1}`}
-                      className="w-full h-full object-contain select-none"
-                      draggable={false}
-                      data-testid={`inline-pdf-page-${n}`}
-                    />
-                  </div>
-                </div>
+                <LazyPage
+                  key={n}
+                  index={n}
+                  pages={pages}
+                  size={size}
+                  zoom={zoom}
+                  src={pageUrlBuilder(n)}
+                />
               );
             })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * LazyPage — hanya memuat gambar halaman saat mendekati viewport (IntersectionObserver).
+ * Mengurangi beban render server dari "semua halaman sekaligus" → per-halaman saat terlihat.
+ */
+function LazyPage({ index, pages, size, zoom, src }) {
+  const ref = useRef(null);
+  const [visible, setVisible] = useState(index === 0); // halaman pertama langsung dimuat
+
+  useEffect(() => {
+    if (visible) return;
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") { setVisible(true); return; }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisible(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "400px 0px" } // pra-muat sedikit sebelum terlihat
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [visible]);
+
+  return (
+    <div ref={ref} className="flex flex-col items-center w-full">
+      <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">
+        Halaman {index + 1} / {pages}
+      </div>
+      <div
+        className="bg-white shadow-lg border border-slate-200 relative"
+        style={{
+          width: `min(${820 * zoom}px, ${94 * zoom}%)`,
+          aspectRatio: `${size.w} / ${size.h}`,
+        }}
+      >
+        {visible ? (
+          <img
+            src={src}
+            alt={`Halaman ${index + 1}`}
+            loading="lazy"
+            className="w-full h-full object-contain select-none"
+            draggable={false}
+            data-testid={`inline-pdf-page-${index}`}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-slate-300" data-testid={`inline-pdf-page-${index}-placeholder`}>
+            <CircleNotch size={22} className="animate-spin" weight="bold" />
           </div>
         )}
       </div>

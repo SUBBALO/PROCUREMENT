@@ -246,6 +246,22 @@ async def startup():
         await db.nc_attachments.create_index("nc_id")
     except Exception as e:
         logger.warning(f"nonconformance index skip: {e}")
+    # Drawings & performa viewer/list (koleksi paling sering dibuka)
+    try:
+        await db.drawings.create_index("id")
+        await db.drawings.create_index("so_no")
+        await db.drawings.create_index("drawing_no")
+        await db.drawings.create_index("created_at")
+        await db.drawings.create_index("approval_status")
+        await db.drawings.create_index("approved_at")
+        await db.drawings.create_index("deleted_at")
+        await db.car_templates.create_index("active")
+        await db.drawing_requests.create_index("status")
+        await db.drawing_requests.create_index("created_at")
+        await db.ecns.create_index("kind")
+        await db.ecns.create_index("created_at")
+    except Exception as e:
+        logger.warning(f"drawings/perf index skip: {e}")
     await seed_admin()
     await seed_form_templates()
     # Pre-warm LibreOffice (background) agar preview Excel siap sebelum request pertama.

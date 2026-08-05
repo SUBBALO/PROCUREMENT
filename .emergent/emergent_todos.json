@@ -1,26 +1,22 @@
 [
   {
-    "content": "Install python-docx + freeze requirements",
+    "content": "Backend: utils/render_cache.py (LRU cache PNG + stamped PDF, content-hash keys)",
     "status": "completed"
   },
   {
-    "content": "Backend: utils/car_word.py (starter docx, data mapping, substitute, render→pdf)",
+    "content": "Backend: cache + ETag/304 + Cache-Control di drawing page-image endpoints (stamped built once)",
     "status": "completed"
   },
   {
-    "content": "Backend: CAR Word template endpoints (meta/starter/upload/preview/delete) — Admin/Management only",
+    "content": "Frontend: lazy-load halaman di InlinePdfImageViewer + PdfPreviewModal (IntersectionObserver)",
     "status": "completed"
   },
   {
-    "content": "Backend: CAR print route uses active Word template (fallback reportlab) + append attachments",
+    "content": "Backend: tambah index MongoDB drawings + koleksi hot lain (server.py startup)",
     "status": "completed"
   },
   {
-    "content": "Frontend: 'Template CAR (Word)' section in FormTemplatesPage (upload/preview/download/delete)",
-    "status": "completed"
-  },
-  {
-    "content": "Test end-to-end (upload starter, cetak PDF via template + lampiran)",
-    "status": "completed"
+    "content": "Test: viewer cepat (cache/304), list drawings, CAR word template, no regressions",
+    "status": "in_progress"
   }
 ]

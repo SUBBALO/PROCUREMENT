@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import api from "../lib/api";
 import { X, MagnifyingGlassPlus, MagnifyingGlassMinus, DownloadSimple, Printer, ArrowClockwise } from "@phosphor-icons/react";
 
@@ -172,7 +172,7 @@ export default function PdfPreviewModal({
                 <div key={`${active.key}-${n}`} className="flex flex-col items-center">
                   <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Halaman {n + 1} / {meta.pages}</div>
                   <div className="bg-white shadow-2xl" style={{ width: `min(${1000 * zoom}px, ${95 * zoom}vw)`, aspectRatio: `${size.w} / ${size.h}` }}>
-                    <img src={imgUrl(n)} alt={`Halaman ${n + 1}`} className="w-full h-full object-contain select-none" draggable={false} data-testid={`pdf-preview-page-${n}`} />
+                    <LazyPreviewImg src={imgUrl(n)} index={n} testId={`pdf-preview-page-${n}`} />
                   </div>
                 </div>
               );
@@ -188,6 +188,31 @@ export default function PdfPreviewModal({
             <img key={`print-${n}`} src={imgUrl(n)} alt={`Halaman ${n + 1}`} />
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** LazyPreviewImg — muat gambar halaman hanya saat mendekati viewport (hemat render server). */
+function LazyPreviewImg({ src, index, testId }) {
+  const ref = useRef(null);
+  const [visible, setVisible] = useState(index === 0);
+  useEffect(() => {
+    if (visible) return;
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") { setVisible(true); return; }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { setVisible(true); io.disconnect(); }
+    }, { rootMargin: "500px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [visible]);
+  return (
+    <div ref={ref} className="w-full h-full flex items-center justify-center">
+      {visible ? (
+        <img src={src} alt={`Halaman ${index + 1}`} loading="lazy" className="w-full h-full object-contain select-none" draggable={false} data-testid={testId} />
+      ) : (
+        <div className="text-slate-300 text-xs animate-pulse" data-testid={`${testId}-placeholder`}>Memuat…</div>
       )}
     </div>
   );
