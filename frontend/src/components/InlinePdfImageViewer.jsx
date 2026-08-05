@@ -8,6 +8,17 @@ import {
   CircleNotch,
 } from "@phosphor-icons/react";
 
+/** Ganti/atur parameter `scale` pada URL page-image (untuk resolusi progresif). */
+function withScale(url, scale) {
+  try {
+    const u = new URL(url, window.location.origin);
+    u.searchParams.set("scale", String(scale));
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 /**
  * InlinePdfImageViewer — pratinjau dokumen PDF berbasis GAMBAR (render server-side per halaman)
  * yang tampil INLINE (bukan iframe). Konsisten di semua browser & aman untuk peran view-only
@@ -55,6 +66,8 @@ export default function InlinePdfImageViewer({
   const pages = meta?.pages || 0;
   const loading = !meta && !err;
   const isEmpty = meta && pages === 0;
+  // Resolusi progresif: skala rendah dulu (cepat), pertajam saat di-zoom.
+  const serverScale = zoom <= 1.05 ? 1.25 : zoom <= 1.7 ? 2 : 3;
 
   return (
     <div className={`relative flex flex-col bg-slate-100 ${className}`} data-testid="inline-pdf-viewer">
@@ -126,7 +139,7 @@ export default function InlinePdfImageViewer({
                   pages={pages}
                   size={size}
                   zoom={zoom}
-                  src={pageUrlBuilder(n)}
+                  src={withScale(pageUrlBuilder(n), serverScale)}
                 />
               );
             })}

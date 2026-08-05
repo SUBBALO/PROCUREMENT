@@ -2,6 +2,17 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import api from "../lib/api";
 import { X, MagnifyingGlassPlus, MagnifyingGlassMinus, DownloadSimple, Printer, ArrowClockwise } from "@phosphor-icons/react";
 
+/** Ganti/atur parameter `scale` pada URL page-image (untuk resolusi progresif). */
+function withScale(url, scale) {
+  try {
+    const u = new URL(url, window.location.origin);
+    u.searchParams.set("scale", String(scale));
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 /**
  * PdfPreviewModal — viewer PDF baca berbasis GAMBAR (render server-side page-image).
  * Menggantikan "buka tab baru" yang sering kena blokir popup / dicegat IDM.
@@ -92,14 +103,16 @@ export default function PdfPreviewModal({
     }
   }, [autoPrint, meta]);
 
-  const imgUrl = (n) => {
-    if (generic && pageUrlBuilder) return pageUrlBuilder(n);
-    const p = new URLSearchParams({ target: active.key, page: String(n), scale: "2" });
+  const imgUrl = (n, scale = 2) => {
+    if (generic && pageUrlBuilder) return withScale(pageUrlBuilder(n), scale);
+    const p = new URLSearchParams({ target: active.key, page: String(n), scale: String(scale) });
     if (active.extraId) p.set("extra_id", active.extraId);
     if (stamped) p.set("stamped", "1");
     if (hideSo) p.set("hide_so", "1");
     return `${apiUrl}/api/drawings/${drawingId}/page-image?${p.toString()}`;
   };
+  // Resolusi progresif: muat skala rendah dulu (cepat), pertajam saat di-zoom.
+  const serverScale = zoom <= 1.05 ? 1.25 : zoom <= 1.7 ? 2 : 3;
 
   const doPrint = () => {
     setPrinting(true);
@@ -172,7 +185,7 @@ export default function PdfPreviewModal({
                 <div key={`${active.key}-${n}`} className="flex flex-col items-center">
                   <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Halaman {n + 1} / {meta.pages}</div>
                   <div className="bg-white shadow-2xl" style={{ width: `min(${1000 * zoom}px, ${95 * zoom}vw)`, aspectRatio: `${size.w} / ${size.h}` }}>
-                    <LazyPreviewImg src={imgUrl(n)} index={n} testId={`pdf-preview-page-${n}`} />
+                    <LazyPreviewImg src={imgUrl(n, serverScale)} index={n} testId={`pdf-preview-page-${n}`} />
                   </div>
                 </div>
               );
