@@ -217,10 +217,12 @@ def _draw_placed_signature(
 
 
 
-def _draw_approval_sig(page: fitz.Page, approval: dict, x0: float, y0: float) -> None:
-    """Satu kotak digital signature approval — text APPROVED + nama + role + tanggal.
+def _draw_approval_sig(page: fitz.Page, approval: dict, x0: float, y0: float,
+                       sig_bytes: Optional[bytes] = None) -> None:
+    """Satu kotak digital signature approval — stage + GAMBAR TTD (bila ada) + nama + tanggal.
     Digunakan sebagai FALLBACK STRIP di bagian bawah halaman untuk approval yang
-    TIDAK memiliki posisi x/y custom (mis. approval lama sebelum Iter 18)."""
+    TIDAK memiliki posisi x/y custom. Bila user punya gambar TTD → dirender agar
+    tanda tangan benar-benar TERBACA (bukan sekadar teks APPROVED)."""
     box_w, box_h = 110, 55
     rect = fitz.Rect(x0, y0, x0 + box_w, y0 + box_h)
     is_reject = (approval.get("stage") or "").startswith("reject_")
@@ -236,24 +238,34 @@ def _draw_approval_sig(page: fitz.Page, approval: dict, x0: float, y0: float) ->
         stage_label = "REJECTED"
 
     # Header stage
-    page.insert_text((x0 + 4, y0 + 11), stage_label,
+    page.insert_text((x0 + 4, y0 + 10), stage_label,
                      fontsize=7, fontname="hebo", color=color)
-    # APPROVED / REJECTED besar
-    page.insert_text((x0 + 4, y0 + 26),
-                     "APPROVED" if not is_reject else "REJECTED",
-                     fontsize=11, fontname="hebo", color=color)
+    # Area tengah: GAMBAR TTD bila tersedia, jika tidak → teks APPROVED/REJECTED
+    if sig_bytes and not is_reject:
+        try:
+            sig_rect = fitz.Rect(x0 + 4, y0 + 12, x0 + box_w - 4, y0 + 33)
+            page.insert_image(sig_rect, stream=sig_bytes, keep_proportion=True, overlay=True)
+        except Exception:
+            page.insert_text((x0 + 4, y0 + 26), "APPROVED",
+                             fontsize=11, fontname="hebo", color=color)
+    else:
+        page.insert_text((x0 + 4, y0 + 26),
+                         "APPROVED" if not is_reject else "REJECTED",
+                         fontsize=11, fontname="hebo", color=color)
     # Nama
     name = (approval.get("name") or "")[:18]
-    page.insert_text((x0 + 4, y0 + 38), name,
+    page.insert_text((x0 + 4, y0 + 43), name,
                      fontsize=8, fontname="helv", color=(0.1, 0.1, 0.1))
     # Tanggal
-    page.insert_text((x0 + 4, y0 + 50),
+    page.insert_text((x0 + 4, y0 + 52),
                      _fmt_datetime(approval.get("at", "")),
                      fontsize=6.5, fontname="helv", color=(0.35, 0.35, 0.35))
 
 
-def _draw_approval_strip(page: fitz.Page, approvals: List[dict]) -> None:
+def _draw_approval_strip(page: fitz.Page, approvals: List[dict],
+                         signature_bytes_map: Optional[dict] = None) -> None:
     """Strip approval di bawah halaman — max 4 kotak (submit / eng_head / qc / sales)."""
+    signature_bytes_map = signature_bytes_map or {}
     # Filter hanya yang bukan reject, ambil unique stage terakhir
     latest_per_stage = {}
     for a in approvals:
@@ -277,7 +289,8 @@ def _draw_approval_strip(page: fitz.Page, approvals: List[dict]) -> None:
                      "DIGITAL APPROVAL SIGNATURES",
                      fontsize=6.5, fontname="hebo", color=(0.4, 0.4, 0.4))
     for i, a in enumerate(stamps):
-        _draw_approval_sig(page, a, x_start + i * (box_w + gap), y0)
+        _draw_approval_sig(page, a, x_start + i * (box_w + gap), y0,
+                           sig_bytes=signature_bytes_map.get(a.get("user_id")))
 
 
 def _draw_watermark(page: fitz.Page, text: str = "UNCONTROLLED COPY WHEN PRINTED") -> None:
@@ -425,7 +438,8 @@ def apply_stamps(
                         _draw_so_stamp(page, {k: v for k, v in so_stamp.items() if k not in ("x", "y")})
         # 3. Fallback strip di halaman 1 untuk approval tanpa posisi custom
         if pnum == 0 and fallback:
-            _draw_approval_strip(page, [a for a in fallback if not (a.get("stage") or "").startswith("reject_")])
+            _draw_approval_strip(page, [a for a in fallback if not (a.get("stage") or "").startswith("reject_")],
+                                 signature_bytes_map=signature_bytes_map)
 
         # 4. Watermark di semua halaman (kalau uncontrolled)
         if watermark_uncontrolled:
