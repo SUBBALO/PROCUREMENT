@@ -40,6 +40,7 @@ export default function PdfPreviewModal({
   extraId = "",
   metaUrl = "",
   pageUrlBuilder = null,
+  pdfUrl = "",
   stamped = true,
   hideSo = false,
   title = "Preview Dokumen",
@@ -76,13 +77,13 @@ export default function PdfPreviewModal({
   // View-only (noDownload) → toolbar unduh/print browser disembunyikan (#toolbar=0).
   // autoPrint tetap mode gambar (butuh print-root untuk cetak halaman gambar).
   const pdfPath = generic
-    ? ""
+    ? (pdfUrl || "")
     : active.key === "customer_ref"
       ? `/drawings/${drawingId}/customer-ref/preview`
       : (active.key === "extra" && active.extraId)
         ? `/drawings/${drawingId}/extra-file/${active.extraId}/preview`
         : `/drawings/${drawingId}/pdf-stamped`;
-  const useFastPdf = !generic && !autoPrint && !!drawingId && !!pdfPath;
+  const useFastPdf = !autoPrint && !!pdfPath;
 
   const [pdfBlobUrl, setPdfBlobUrl] = useState("");
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -95,7 +96,7 @@ export default function PdfPreviewModal({
     api.get(pdfPath, { responseType: "blob" })
       .then((res) => {
         if (revoked) return;
-        objUrl = URL.createObjectURL(res.data);
+        objUrl = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
         setPdfBlobUrl(objUrl);
       })
       .catch((e) => { if (!revoked) setPdfErr(e.response?.data?.detail || "Dokumen tidak tersedia."); })

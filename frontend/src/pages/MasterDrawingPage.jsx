@@ -333,7 +333,15 @@ export default function MasterDrawingPage() {
         <PdfPreviewModal
           {...(viewer.mode === "drawing"
             ? { drawingId: viewer.drawingId, target: viewer.target, stamped: viewer.stamped, hideSo: viewer.hideSo }
-            : { metaUrl: viewer.metaUrl, pageUrlBuilder: (n) => `${viewer.pageBase}?page=${n}&scale=2` })}
+            : {
+                metaUrl: viewer.metaUrl,
+                pageUrlBuilder: (n) => `${viewer.pageBase}?page=${n}&scale=2`,
+                // Lampiran BOM ber-PDF → tampilkan PDF asli (cepat) via blob iframe.
+                pdfUrl: (viewer.metaUrl && viewer.metaUrl.endsWith("/page-meta")
+                          && viewer.metaUrl.includes("/attachments/")
+                          && /\.pdf$/i.test(viewer.subtitle || ""))
+                  ? viewer.metaUrl.replace("/page-meta", "/preview") : "",
+              })}
           title={viewer.title}
           subtitle={viewer.subtitle}
           downloadUrl={viewer.downloadUrl || ""}
@@ -2299,6 +2307,7 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated, editable = 
             <PdfPreviewModal
               metaUrl={v.metaUrl}
               pageUrlBuilder={(n) => `${v.pageBase}?page=${n}&scale=2`}
+              pdfUrl={isPdf && v.metaUrl.includes("/attachments/") ? v.metaUrl.replace("/page-meta", "/preview") : ""}
               title={previewFile.name}
               subtitle={isExcel ? "Excel (preview gambar) · Download = file asli" : ""}
               downloadUrl={v.downloadUrl || previewFile.downloadUrl || ""}

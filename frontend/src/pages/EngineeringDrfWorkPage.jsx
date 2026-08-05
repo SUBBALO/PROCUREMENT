@@ -821,7 +821,14 @@ function RepeatPullPanel({ drf, onDone }) {
         <PdfPreviewModal
           {...(viewer.mode === "drawing"
             ? { drawingId: viewer.drawingId, target: viewer.target, stamped: false }
-            : { metaUrl: viewer.metaUrl, pageUrlBuilder: (n) => `${viewer.pageBase}?page=${n}&scale=2` })}
+            : {
+                metaUrl: viewer.metaUrl,
+                pageUrlBuilder: (n) => `${viewer.pageBase}?page=${n}&scale=2`,
+                pdfUrl: (viewer.metaUrl && viewer.metaUrl.endsWith("/page-meta")
+                          && viewer.metaUrl.includes("/attachments/")
+                          && /\.pdf$/i.test(viewer.subtitle || ""))
+                  ? viewer.metaUrl.replace("/page-meta", "/preview") : "",
+              })}
           title={viewer.title}
           subtitle={viewer.subtitle}
           onClose={() => setViewer(null)}
