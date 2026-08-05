@@ -21,8 +21,10 @@ from deps import (
     require_bom_upload,
     require_bom_edit,
     can_view_costing,
+    is_admin_like,
 )
 from services.soft_delete import NOT_DELETED_FILTER, merged, soft_delete_one
+from utils.workgroup import so_locked_by_bom
 
 
 router = APIRouter(prefix="/bom", tags=["bom"])
@@ -562,6 +564,13 @@ async def replace_bom_items(bom_id: str, payload: BOMItemsBulkIn, current: dict 
     bom = await db.boms.find_one({"id": bom_id, "deleted_at": {"$exists": False}})
     if not bom:
         raise HTTPException(status_code=404, detail="BOM tidak ditemukan")
+
+    # Fase 2 — LOCK: BOM ikut terkunci setelah semua drawing SO di-submit final.
+    if not is_admin_like(current) and await so_locked_by_bom(bom_id):
+        raise HTTPException(
+            status_code=409,
+            detail="BOM terkunci — semua drawing SO sudah di-submit final. Edit item tidak diizinkan.",
+        )
 
     status_now = bom.get("engineering_status", "approved")
     has_items = bool(bom.get("items") or [])

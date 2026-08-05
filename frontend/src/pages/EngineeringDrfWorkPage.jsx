@@ -17,9 +17,10 @@ import {
 import BackLink from "../components/BackLink";
 import PdfPreviewModal from "../components/PdfPreviewModal";
 import SoDocsPanel from "../components/SoDocsPanel";
+import EngLeaderReviewDialog from "../components/EngLeaderReviewDialog";
 import {
   Wrench, ArrowClockwise, Plus, Trash, FileText, Package,
-  CheckCircle, PaperPlaneRight, PencilSimple, Lock, ArrowRight, Eye,
+  CheckCircle, PaperPlaneRight, PencilSimple, Lock, ArrowRight, Eye, ClipboardText,
 } from "@phosphor-icons/react";
 
 /**
@@ -47,6 +48,7 @@ export default function EngineeringDrfWorkPage() {
   const [delDwg, setDelDwg] = useState(null); // drawing yang akan dihapus (konfirmasi)
   const [delBusy, setDelBusy] = useState(false);
   const [accepting, setAccepting] = useState(false);
+  const [showReview, setShowReview] = useState(false);
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
 
   const openEdit = (d) => {
@@ -99,6 +101,14 @@ export default function EngineeringDrfWorkPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Deep-link dari checklist submit final: scroll ke panel Dokumen SO
+  useEffect(() => {
+    if (!loading && drawings.length > 0 && window.location.hash === "#so-docs") {
+      const el = document.getElementById("so-docs");
+      if (el) setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 250);
+    }
+  }, [loading, drawings.length]);
+
   if (loading || !drf) {
     return (
       <div className="p-12 text-center text-slate-400">
@@ -109,6 +119,7 @@ export default function EngineeringDrfWorkPage() {
   }
 
   const isTrueAdmin = ["admin", "super_admin", "supervisor"].includes(user?.role);
+  const isLeaderRole = ["eng_leader", "eng_head", "admin", "super_admin", "supervisor"].includes(user?.role);
   const isAssignee = drf.assigned_engineer_id && drf.assigned_engineer_id === user?.id;
   // Hanya engineer yang DITUGASKAN yang bisa generate/upload. Eng Leader (Riski) yang bukan
   // pengerja = view-only (Riski hanya menunjuk siapa yang kerja). Admin = override.
@@ -133,6 +144,9 @@ export default function EngineeringDrfWorkPage() {
     }
   };
   const sharedBomNo = drawings[0]?.bom_no || "";
+
+  // Fase 2 — LOCK dinamis: SO terkunci bila semua drawing sudah keluar dari 'draft' (submit final).
+  const soLocked = drawings.length > 0 && drawings.every((d) => (d.approval_status || "draft") !== "draft");
 
   // Gate "Terima Job": assignee harus klik TERIMA dulu (catat tanggal start kerja)
   const needAccept = isAssignee && !drf.work_started_at;
@@ -170,10 +184,21 @@ export default function EngineeringDrfWorkPage() {
             SO: <b className="font-mono">{drf.so_no}</b> · {drf.project_name || "-"} · Customer: <b>{drf.customer_name || "-"}</b>
           </div>
         </div>
-        <div className="text-right">
-          <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Ditugaskan ke</div>
-          <div className="text-sm font-semibold text-slate-800">{drf.assigned_engineer_name || <span className="italic text-slate-400">Belum di-assign</span>}</div>
-          <div className="text-[10px] text-slate-500">oleh {drf.assigned_by || "-"}</div>
+        <div className="text-right flex flex-col items-end gap-2">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Ditugaskan ke</div>
+            <div className="text-sm font-semibold text-slate-800">{drf.assigned_engineer_name || <span className="italic text-slate-400">Belum di-assign</span>}</div>
+            <div className="text-[10px] text-slate-500">oleh {drf.assigned_by || "-"}</div>
+          </div>
+          {isLeaderRole && drawings.length > 0 && (
+            <button
+              onClick={() => setShowReview(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold uppercase tracking-widest transition-colors duration-150 active:translate-y-[1px]"
+              data-testid="open-eng-leader-review-dialog-button"
+            >
+              <ClipboardText size={14} weight="fill" /> Review Dokumen SO
+            </button>
+          )}
         </div>
       </div>
 
@@ -230,21 +255,47 @@ export default function EngineeringDrfWorkPage() {
         <GenerateDrawingsPanel drf={drf} existingCount={drawings.length} onDone={load} />
       )}
 
+      {/* Fase 2 — Banner LOCK setelah submit final */}
+      {soLocked && (
+        <div className="border-2 border-slate-700 bg-slate-100 p-3 flex items-center gap-2 text-sm text-slate-700" data-testid="drf-so-locked-banner">
+          <Lock size={18} weight="fill" className="text-slate-700" />
+          <span>
+            <b>Dokumen SO terkunci.</b> Semua drawing sudah di-submit final ke Eng Leader — BOM &amp; Dokumen SO
+            (Nesting/AutoCAD/Costing) tidak bisa diubah lagi. Jika ada drawing dikembalikan (revisi), kunci otomatis terbuka.
+          </span>
+        </div>
+      )}
+
       {/* Shared BOM */}
       {sharedBomId && (
-        <div className="border-2 border-amber-500">
-          <div className="px-3 py-2 bg-amber-600 text-white flex items-center gap-2">
+        <div className={`border-2 ${soLocked ? "border-slate-400" : "border-amber-500"}`}>
+          <div className={`px-3 py-2 ${soLocked ? "bg-slate-600" : "bg-amber-600"} text-white flex items-center gap-2`}>
             <Package size={16} weight="fill" />
             <div className="text-[11px] uppercase tracking-widest font-bold flex-1">
               BOM Bersama — <span className="font-mono normal-case">{sharedBomNo}</span> (1 BOM untuk semua {drawings.length} drawing)
             </div>
-            <button
-              onClick={() => navigate(`/engineering/bom-entry/${sharedBomId}`)}
-              className="text-[10px] font-bold uppercase tracking-widest bg-amber-800 hover:bg-amber-900 px-2 py-1"
-              data-testid="drf-open-bom"
-            >
-              Isi / Edit BOM →
-            </button>
+            {soLocked ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest bg-slate-800 px-2 py-1">
+                <Lock size={11} weight="fill" /> Terkunci
+              </span>
+            ) : (
+              <button
+                onClick={() => navigate(`/engineering/bom-entry/${sharedBomId}`)}
+                className="text-[10px] font-bold uppercase tracking-widest bg-amber-800 hover:bg-amber-900 px-2 py-1"
+                data-testid="drf-open-bom"
+              >
+                Isi / Edit BOM →
+              </button>
+            )}
+            {soLocked && (
+              <button
+                onClick={() => navigate(`/engineering/bom-entry/${sharedBomId}`)}
+                className="text-[10px] font-bold uppercase tracking-widest bg-slate-800 hover:bg-slate-900 px-2 py-1"
+                data-testid="drf-view-bom"
+              >
+                Lihat BOM →
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -331,7 +382,9 @@ export default function EngineeringDrfWorkPage() {
 
       {/* ---------- Dokumen SO (level SO/BOM): Nesting · AutoCAD · Costing ---------- */}
       {drawings.length > 0 && (
-        <SoDocsPanel bomId={sharedBomId} bomNo={sharedBomNo} canEdit={canWork} />
+        <div id="so-docs" className="scroll-mt-4">
+          <SoDocsPanel bomId={sharedBomId} bomNo={sharedBomNo} canEdit={canWork && !soLocked} />
+        </div>
       )}
 
 
@@ -352,6 +405,16 @@ export default function EngineeringDrfWorkPage() {
           onClose={() => setViewer(null)}
         />
       )}
+
+      <EngLeaderReviewDialog
+        open={showReview}
+        onClose={() => setShowReview(false)}
+        drfId={drfId}
+        bomId={sharedBomId}
+        bomNo={sharedBomNo}
+        soNo={drf.so_no}
+        onReload={load}
+      />
 
       {/* ---------- Edit Drawing Modal (draft/revisi saja) ---------- */}
       <Dialog open={!!editDwg} onOpenChange={(o) => { if (!o) setEditDwg(null); }}>

@@ -591,6 +591,14 @@ async def get_drawing_request(drf_id: str, current: dict = Depends(get_current_u
     return doc
 
 
+@router.get("/drawing-requests/{drf_id}/workgroup-status")
+async def get_workgroup_status(drf_id: str, current: dict = Depends(get_current_user)):
+    """Status SO-level: jumlah drawing, draft_count, lock, & kelengkapan dokumen.
+    Dipakai untuk menentukan lock BOM/Dokumen SO dan checklist submit final."""
+    from utils.workgroup import workgroup_status
+    return await workgroup_status(drf_id)
+
+
 @router.put("/drawing-requests/{drf_id}")
 async def update_drawing_request(
     drf_id: str,

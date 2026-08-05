@@ -1,113 +1,142 @@
-# Rencana Pengembangan — Redesign Engineering Work Order (Partial Submit, BOM Per-SO, Review Popup, TTD)
+# Plan — Redesign Engineering Work Order (Fase 2, 3, 4)
 
 ## 1) Objectives
-- Memperbaiki masalah **TTD tidak terbaca** (RISKI/approver) dan memastikan TTD tampil konsisten di aplikasi & PDF.
-- Mengubah model **BOM menjadi 1 per SO/Work Group** (diisi sekali), sehingga **partial submit drawing tidak mengunci BOM**.
-- Menambahkan **Reminder Popup** saat submit drawing (terutama “drawing terakhir”) untuk mengingatkan BOM & dokumen SO (Nesting/AutoCAD/Costing) sudah diisi/diupload.
-- Setelah submit final, **dokumen SO tidak bisa diupload lagi** (read-only).
-- Menyediakan **Popup Review Eng Leader** yang menampilkan daftar dokumen (drawing + non-drawing) untuk approve/OK atau minta revisi.
-- Merapikan UX menu Work Order: hilangkan BOM dobel, menu lebih jelas bagi Engineering.
+- Menyelaraskan alur Engineering dengan realita: **1 BOM per SO/DRF**, drawing bisa **submit bertahap** tanpa mengunci BOM/dokumen SO.
+- Menambahkan **popup submit final** (drawing terakhir) dengan **checklist wajib** + item yang bisa diklik untuk diarahkan ke lokasi upload/isi.
+- Menerapkan **lock dinamis** setelah **submit final**: **BOM + Dokumen SO** terkunci; **auto-unlock** jika ada drawing kembali ke `draft` (reject).
+- Membuat **Eng Leader Review Popup (Fase 3)**: masterlist semua dokumen 1 SO (drawing + nesting/cad/costing + BOM), aksi per item (Approve/TTD atau Revisi) dengan catatan revisi wajib.
+- Merapikan UX Fase 4: halaman per-drawing (`EngineeringWorkOrderPage.jsx`) fokus ke upload/submit drawing dan hilangkan BOM linking redundan.
 
 ## 2) Implementation Steps
 
-### Phase 1 — POC Core Flow (Isolasi) — “TTD terbaca end-to-end”
-**Core paling riskan:** rekam/visualisasi TTD dari `approvals[]` tanpa bergantung pada placement manual + memastikan stamped PDF & UI menampilkan.
-- **Websearch (best practice):** riset cepat “PDF signature block rendering without coordinates / default placement patterns” untuk PDF stamping (PyMuPDF/Reportlab).  
-- Buat script uji Python: ambil 1 drawing pending (SO 003354), validasi:
-  1) `approvals[]` ada untuk stage submit/eng_head,
-  2) `user.signature_gridfs_id` ada,
-  3) generate `/pdf-stamped` menampilkan TTD (atau minimal embed image/date) dan UI badge menampilkan “ditandatangani oleh”.
-- Implement backend: 
-  - Perbaiki `_sig_stamp()` agar menyimpan `signature_gridfs_id`, `has_signature`, dan `date` (fallback dari `at`).
-  - Perbaiki stamper: saat `approvals` tidak kosong, stamp TTD **di signature block standar** (bukan harus placement) untuk stage yang relevan.
-  - Pastikan endpoint preview/download yang mem-stamp **mengirim approvals yang benar** (jangan `approvals=[]`).
-- Implement frontend: tampilkan “TTD/Disetujui oleh” berdasarkan `approvals[]` (bukan `signatures` kosong).
+### Phase 1 — Core POC (alir paling riskan: Final Submit + Lock/Unlock + Deep-link checklist)
+> Fokus: buktikan end-to-end “submit bertahap → submit final → lock → reject → unlock” berjalan stabil.
 
-**User stories (Phase 1)**
-1. Sebagai Eng Leader, saya ingin melihat nama  tanggal TTD saya tampil di drawing sehingga tidak ada kebingungan apakah sudah tanda tangan.
-2. Sebagai QC, saya ingin melihat siapa saja yang sudah menandatangani tanpa harus membuka log.
-3. Sebagai Engineer, saya ingin status approval jelas (submit/eng_head/qc/sales) dengan bukti TTD yang terbaca.
-4. Sebagai Admin, saya ingin stamp PDF tetap konsisten walau user tidak klik posisi TTD.
-5. Sebagai Eng Leader, saya ingin drawing SO 003354 yang sudah saya approve menampilkan TTD saya.
+**User stories (POC)**
+1. Sebagai engineer, saya bisa submit drawing pertama tanpa BOM/SO docs ikut terkunci.
+2. Sebagai engineer, saat submit drawing terakhir saya wajib checklist dokumen yang diperlukan.
+3. Sebagai engineer, saya bisa klik item checklist yang “belum lengkap” dan langsung diarahkan ke panel upload yang benar.
+4. Sebagai sistem, setelah semua drawing non-draft, BOM & dokumen SO menjadi read-only.
+5. Sebagai engineer, jika Eng Leader reject 1 drawing sehingga kembali `draft`, lock SO otomatis terbuka lagi.
 
-### Phase 2 — V1 App Development (BOM per SO + Partial Submit + Reminder)
-- **Model data:** perkenalkan entitas “SO Package / Work Group” (atau gunakan dokumen existing DRF/SO) sebagai container:
-  - BOM_link: 1 per SO (bom_id/bom_no)
-  - SO Docs: nesting/autocad/costing (attachment per SO)
-  - Status paket: draft → in_progress → submitted (final)
-- **UI Work Order:**
-  - Pindahkan BOM Linking/ISI BOM ke panel **SO-level** (di luar per-drawing).
-  - Hapus “ISI BOM” per drawing.
-  - Drawing tetap bisa partial submit per item.
-- **Reminder Popup saat submit:**
-  - Saat user klik “TTD & Submit” pada drawing: tampilkan checklist:
-    - BOM sudah di-link? (Ya/Tidak)
-    - Dokumen SO (Nesting/AutoCAD/Costing) sudah diupload? (Ya/Tidak, opsional)
-  - Bahasa: “Jika tidak diperlukan, Anda boleh lanjut.”
-  - Logic “drawing terakhir”: bila semua drawing di SO sudah status submitted/pending, popup menandai “ini submit terakhir” dan mengingatkan BOM.
-- **Locking:**
-  - Setelah paket SO “submitted final” → semua upload dokumen SO terkunci.
-  - Partial submit drawing tidak mengunci BOM.
+**Langkah POC**
+- Backend
+  - Tambah endpoint ringan untuk menghitung status SO-level dari DRF:
+    - `GET /drawing-requests/{drfId}/workgroup-status` → { total_drawings, draft_count, locked, missing: { bomItems, nesting, cad, costing } }
+  - Pastikan **tidak ada** logic yang mengubah `engineering_status` BOM saat submit drawing parsial.
+  - Tambah guard upload BOM attachments: jika `locked=true` → `409`.
+- Frontend
+  - Di `EngineeringDrfWorkPage.jsx`:
+    - Hitung `locked = drawings.length>0 && drawings.every(d => (d.approval_status||'draft') !== 'draft')`.
+    - Render state lock di panel BOM + `SoDocsPanel` (`canEdit={!locked && canWork}`)
+  - Buat `FinalSubmitChecklistDialog` (shadcn AlertDialog/Dialog):
+    - Terbuka ketika user klik “TTD & Submit” pada drawing yang **membuat seluruh SO menjadi locked**.
+    - Checklist wajib: BOM terisi + (Nesting/CAD/Costing) sesuai rule minimal (MVP: tampilkan semua 3 kategori + BOM items).
+    - Item checklist yang belum lengkap bisa di-klik → set focus/scroll ke panel yang relevan (BOM link / SoDocsPanel kategori).
 
-**User stories (Phase 2)**
-1. Sebagai Engineer, saya ingin submit 1 drawing tanpa mengunci BOM karena masih ada drawing lain.
-2. Sebagai Engineer, saya ingin BOM cukup diisi sekali per SO, tidak berulang per drawing.
-3. Sebagai Engineer, saya ingin saat submit terakhir ada pengingat BOM/dokumen SO agar tidak lupa.
-4. Sebagai Engineer, saya ingin bisa lanjut submit meski dokumen SO tidak diperlukan.
-5. Sebagai Eng Leader, saya ingin melihat status BOM  dokumen SO langsung dari Work Order.
+**Websearch (best practice singkat)**
+- Cari praktik terbaik UX untuk “pre-submit checklist” dan “deep-link ke section” pada aplikasi ERP (kata kunci: *pre-submit checklist dialog UX*, *scroll to section react*, *Radix Dialog checklist*).
 
-> Tutup Phase 2 dengan 1 kali testing agent (backend+frontend) untuk: partial submit, reminder popup, lock upload setelah final submit.
+**Exit POC**
+- 1 DRF dengan 2 drawing: submit 1st drawing → tetap bisa edit BOM/SO docs; submit last drawing → dialog checklist muncul; jika lanjut → lock aktif; reject dari leader → lock terbuka.
 
-### Phase 3 — Review Popup Eng Leader (Blueprint → Implement)
-- Jalankan **design_agent** untuk blueprint:
-  - Popup “Review Dokumen SO” mirip Masterlist: list item (Drawing, Nesting, Customer Ref, AutoCAD, Costing, BOM).
-  - Per item: 
-    - Drawing: tombol **Approve+TTD** / **Minta Revisi**.
-    - Non-drawing: tombol **Tandai OK** / **Minta Revisi** (engineer re-upload).
-- Backend:
-  - Tambah state review untuk non-drawing docs (ok/revise + notes).
-  - Tambah endpoint aksi: mark_ok, request_revision (dengan notes) + notifikasi.
-- Frontend:
-  - Tampilkan popup dari Work Group/WO page.
-  - Tampilkan catatan revisi & riwayat.
+---
 
-**User stories (Phase 3)**
-1. Sebagai Eng Leader, saya ingin melihat semua dokumen terkait SO dalam satu popup agar review cepat.
-2. Sebagai Eng Leader, saya ingin approve drawing dengan TTD langsung dari daftar.
-3. Sebagai Eng Leader, saya ingin minta revisi nesting/costing tanpa harus upload sendiri.
-4. Sebagai Engineer, saya ingin menerima notifikasi revisi dan upload ulang dokumen yang diminta.
-5. Sebagai Admin, saya ingin jejak audit keputusan review tersimpan.
+### Phase 2 — V1 App Development (Fase 2 + Fase 4 core)
 
-> Tutup Phase 3 dengan testing agent: review popup flows, mark ok/revise, notifikasi, RBAC.
+**User stories (V1)**
+1. Sebagai engineer, saya melihat halaman Work Group yang jelas: BOM bersama, Dokumen SO, daftar drawing.
+2. Sebagai engineer, saya tidak melihat BOM linking per-drawing lagi (menghindari duplikasi).
+3. Sebagai engineer, saya bisa bekerja bertahap: upload & submit drawing satu per satu.
+4. Sebagai engineer, saya mendapat pengingat wajib saat submit final dengan checklist yang bisa mengarahkan saya.
+5. Sebagai engineer, setelah submit final saya tidak bisa mengubah BOM/dokumen SO (tampilan terkunci + ikon lock).
 
-### Phase 4 — Rapikan UX Menu Work Order (Blueprint → Implement)
-- Implement perubahan UI sesuai blueprint:
-  - Menu per SO: BOM  Dokumen SO (attachments)  Daftar drawing.
-  - Per drawing: fokus upload PDF + submit/approval status; hilangkan BOM forms di dalam.
-  - Konsistensi label Indonesia + status badges.
-- Pastikan backward-compat untuk data lama (BOM per drawing) dengan migrasi ringan:
-  - Jika ada bom_id di drawing lama → angkat menjadi bom_id SO-level (first non-null), tandai “migrated”.
+**Frontend**
+- `EngineeringWorkOrderPage.jsx`
+  - Hapus/disable `BomLinkingSection` dari UI (atau pindahkan menjadi read-only info BOM bersama).
+  - Pastikan copy UI Indonesia sesuai guideline (rounded-none, badge semantic).
+  - Integrasikan trigger submit final:
+    - Sebelum membuka `SignaturePlacementModal stage="submit"`, cek apakah drawing ini adalah “terakhir draft” untuk DRF yang sama.
+    - Jika ya → tampilkan `FinalSubmitChecklistDialog`.
+- `EngineeringDrfWorkPage.jsx`
+  - Jadikan panel BOM dan SoDocsPanel sebagai “SO-level source of truth”.
+  - Tambah indikator “TERKUNCI” saat locked.
+- `SoDocsPanel.jsx`
+  - Tampilkan mode terkunci (helper text + disable upload/delete) jika `canEdit=false` karena lock.
 
-**User stories (Phase 4)**
-1. Sebagai Engineer, saya ingin halaman Work Order tidak membingungkan dan tidak ada menu dobel BOM.
-2. Sebagai Engineer, saya ingin cepat menemukan upload drawing vs upload dokumen SO.
-3. Sebagai Eng Leader, saya ingin review tidak perlu buka banyak halaman.
-4. Sebagai QC, saya ingin mode view-only tetap bisa lihat dokumen tanpa bisa ubah.
-5. Sebagai Sales, saya ingin status dokumen SO jelas tanpa melihat detail teknis.
+**Backend**
+- `routers/drawing_register.py`
+  - Biarkan `submit-for-approval` hanya mengubah status drawing, **tanpa mengunci BOM**.
+- `routers/bom_attachments.py`
+  - Tambah validasi lock berbasis DRF/SO:
+    - Cari DRF/bom_id terkait → hitung apakah semua drawings non-draft.
+    - Jika locked → tolak upload/delete attachments.
+- `routers/bom.py`
+  - Pastikan endpoint edit items (bulk replace) menolak jika locked.
+  - Jika sebelumnya lock disamakan dengan `engineering_status=approved`, tetap pertahankan workflow BOM, tapi tambahkan gate “SO locked” sebagai guard tambahan.
 
-> Tutup Phase 4 dengan testing agent regresi penuh (drawing approvals, CAR, ENG-006, viewer).
+**Testing (end-to-end minimal)**
+- Jalankan `yarn build`.
+- Gunakan frontend testing/screenshot tool:
+  - Screenshot Work Group + Work Order page.
+  - Uji: submit parsial, submit final, lock aktif, reject → unlock.
 
-## 3) Next Actions
-1. Jalankan **design_agent** untuk blueprint Phase 3/4 (popup review + layout menu WO).
-2. Kerjakan Phase 1 POC: perbaiki `_sig_stamp`  stamper approvals, pastikan RISKI TTD tampil.
-3. Implement Phase 2 (BOM per SO + reminder + locking) minimal viable.
-4. Implement Phase 3 (review popup + endpoints + notifikasi).
-5. Implement Phase 4 (UX polish + migrasi data lama).
+---
+
+### Phase 3 — Eng Leader Review Popup (Fase 3)
+
+**User stories (Review Popup)**
+1. Sebagai Eng Leader, saya membuka popup review untuk 1 SO dan melihat semua dokumen (drawing + nesting/cad/costing + BOM).
+2. Sebagai Eng Leader, saya bisa preview PDF dengan viewer existing tanpa lambat.
+3. Sebagai Eng Leader, saya bisa Approve & TTD untuk item drawing dari popup.
+4. Sebagai Eng Leader, saya bisa tandai OK untuk non-drawing (nesting/costing/cad) atau minta revisi.
+5. Sebagai Eng Leader, saat minta revisi saya wajib mengisi catatan, dan status + riwayat tercatat.
+
+**Frontend**
+- Buat komponen `EngLeaderReviewDialog.jsx` sesuai `/app/design_guidelines.md`:
+  - Kiri: tabel dense semua dokumen (status badge, search/filter).
+  - Kanan: preview + aksi (Approve & TTD / Tandai OK / Minta Revisi + catatan wajib) + riwayat.
+  - Semua dokumen tetap tampil walau drawing partial/TTD sudah done.
+- Entry point:
+  - Tombol “Review Dokumen SO” di `EngineeringDrfWorkPage.jsx` (hanya role Eng Leader).
+
+**Backend**
+- Tambah API agregasi dokumen SO:
+  - `GET /drawing-requests/{drfId}/review-pack` → daftar item (drawings + bom + bom_attachments) dengan status per item.
+- Tambah API aksi review non-drawing:
+  - `POST /bom/{bomId}/attachments/{attachId}/review` (OK / REVISI + notes) simpan audit trail.
+- Untuk drawing: gunakan endpoint existing `/drawings/{id}/approve/eng_head` dan `/drawings/{id}/reject/eng_head` dari popup.
+
+**Testing**
+- Login `riski`:
+  - Buka DRF → buka popup review → approve 1 drawing + revisi 1 dokumen SO.
+- Verifikasi badge/status ter-update tanpa reload penuh.
+
+---
+
+### Phase 4 — Hardening + Refactor + Regression
+
+**User stories (hardening)**
+1. Sebagai engineer, UI tidak membingungkan: tidak ada duplikasi BOM per drawing.
+2. Sebagai QC/view-only, saya tetap bisa preview dokumen tanpa bisa edit/download (sesuai RBAC).
+3. Sebagai sistem, lock/unlock konsisten walau refresh halaman.
+4. Sebagai admin, saya bisa override bila diperlukan tanpa merusak audit trail.
+5. Sebagai user, build produksi lokal tetap aman (tidak error saat `yarn build`).
+
+**Langkah**
+- Rapikan state derivation (single function util) untuk `locked` dan `isFinalSubmitCandidate`.
+- Tambah index Mongo bila perlu (drawings by from_drf_id + approval_status) untuk hitung lock cepat.
+- Tambah test backend minimal (extend `tests/backend_test_phase2.py`) untuk lock/unlock.
+
+## 3) Next Actions (urut eksekusi)
+1. Implement Phase 1 POC: endpoint status + dialog checklist + lock/unlock guard attachments.
+2. Integrasikan ke V1 (Phase 2): hapus BOM per-drawing di WorkOrderPage, final submit dialog + deep-link.
+3. Bangun Review Popup (Phase 3) + API review-pack.
+4. Hardening + regression: `yarn build`, screenshot verification, jalankan test backend.
 
 ## 4) Success Criteria
-- TTD RISKI dan approver lain **terlihat** di UI dan di PDF stamped tanpa perlu placement manual.
-- Partial submit drawing **tidak mengunci BOM**; BOM 1 per SO, tidak ada input BOM di tiap drawing.
-- Saat submit terakhir: popup pengingat BOM  dokumen SO muncul, user bisa lanjut bila tidak perlu.
-- Setelah final submit: upload dokumen SO terkunci; audit trail jelas.
-- Popup review Eng Leader berfungsi: approve drawing + minta revisi non-drawing (engineer upload ulang).
-- Tidak ada regresi pada modul CAR, ENG-006, viewer, dan approval flow existing.
+- Engineer bisa submit drawing bertahap tanpa BOM/SO docs terkunci prematur.
+- Submit drawing terakhir memunculkan dialog checklist wajib; item “belum lengkap” bisa diklik dan mengarahkan user ke tempat upload/isi.
+- Setelah final submit (semua drawings non-draft): BOM & SO docs terkunci (frontend disable + backend guard).
+- Jika ada reject → drawing kembali `draft` → lock otomatis terbuka.
+- Eng Leader bisa review semua dokumen 1 SO dalam 1 popup, termasuk yang sudah TTD, dengan aksi approve/revisi tercatat.

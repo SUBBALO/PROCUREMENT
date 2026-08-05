@@ -5,12 +5,12 @@ import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
 import { DrawingAttachmentsPanel } from "./MasterDrawingPage";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
 import PdfPreviewModal from "../components/PdfPreviewModal";
-import { Wrench, ClipboardText, FloppyDisk, ArrowClockwise, PaperPlaneRight, CheckCircle, Warning, Eye, DownloadSimple, Paperclip, PencilSimpleLine, Clock, XCircle, PlayCircle, Factory, ShieldCheck, Archive, Signature } from "@phosphor-icons/react";
+import FinalSubmitChecklistDialog from "../components/FinalSubmitChecklistDialog";
+import { Wrench, ClipboardText, ArrowClockwise, PaperPlaneRight, CheckCircle, Warning, Eye, DownloadSimple, Paperclip, PencilSimpleLine, Clock, XCircle, PlayCircle, Factory, ShieldCheck, Archive, Signature, Package, Lock } from "@phosphor-icons/react";
 
 /**
  * EngineeringWorkOrderPage — halaman kerja engineer setelah Eng Head assign drawing.
@@ -28,6 +28,9 @@ export default function EngineeringWorkOrderPage() {
   const [drawing, setDrawing] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showSubmitSig, setShowSubmitSig] = useState(false);
+  const [showChecklist, setShowChecklist] = useState(false);
+  const [wgStatus, setWgStatus] = useState(null);
+  const [checkingFinal, setCheckingFinal] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,6 +65,36 @@ export default function EngineeringWorkOrderPage() {
   const canSubmit = isDraft && drawing.file_id && hasWorkCat;
   const isEngUser = ["eng_staff", "eng_leader", "admin", "super_admin"].includes(user?.role);
   const rr = drawing.revision_request || null;
+
+  // Fase 2 — deteksi "submit final" (drawing draft terakhir di 1 SO).
+  // Jika final → tampilkan checklist wajib dulu sebelum buka modal TTD.
+  const handleSubmitClick = async () => {
+    if (!drawing.from_drf_id) { setShowSubmitSig(true); return; }
+    setCheckingFinal(true);
+    try {
+      const { data } = await api.get(`/drawing-requests/${drawing.from_drf_id}/workgroup-status`);
+      if (isDraft && (data.draft_count || 0) <= 1) {
+        setWgStatus(data);
+        setShowChecklist(true);
+      } else {
+        setShowSubmitSig(true);
+      }
+    } catch {
+      setShowSubmitSig(true);
+    } finally {
+      setCheckingFinal(false);
+    }
+  };
+
+  const gotoDoc = (target) => {
+    setShowChecklist(false);
+    if (target === "bom" && drawing.bom_id) {
+      navigate(`/engineering/bom-entry/${drawing.bom_id}`);
+    } else if (drawing.from_drf_id) {
+      // Nesting / CAD / Costing di-upload di halaman Work Group (SoDocsPanel)
+      navigate(`/engineering/drf/${drawing.from_drf_id}#so-docs`);
+    }
+  };
 
   return (
     <div className="p-4 max-w-[1400px] mx-auto space-y-4">
@@ -108,46 +141,48 @@ export default function EngineeringWorkOrderPage() {
         </div>
       </Card>
 
-      {/* Step 1: BOM Linking */}
-      <BomLinkingSection drawing={drawing} onUpdated={load} editable={isDraft} />
+      {/* Section A: BOM Reference (1 BOM per Sales Order — read-only di halaman drawing) */}
+      <BomReferenceSection drawing={drawing} navigate={navigate} />
 
-      {/* Step 2: Attachments (Upload PDF Drawing, Customer Ref, Extras) */}
+      {/* Section B: Attachments (Upload PDF Drawing, Customer Ref, Extras) */}
       <div className="border-2 border-emerald-500">
-        <div className="px-3 py-2 bg-emerald-600 text-white flex items-center gap-2">
-          <span className="w-6 h-6 rounded-full bg-white text-emerald-700 flex items-center justify-center text-xs font-bold">2</span>
-          <div className="text-[11px] uppercase tracking-widest font-bold">Upload Dokumen Drawing</div>
+        <div className="px-4 py-3 bg-emerald-600 text-white flex items-center gap-3">
+          <span className="w-8 h-8 rounded-full bg-white text-emerald-700 flex items-center justify-center text-base font-extrabold">B</span>
+          <div className="text-[13px] uppercase tracking-widest font-bold">Upload Dokumen Drawing</div>
         </div>
         <div className="p-3">
           <DrawingAttachmentsPanel drawing={drawing} onDrawingUpdated={() => load()} editable={isDraft} />
         </div>
       </div>
 
-      {/* Step 3: Submit for approval */}
+      {/* Section C: Submit for approval */}
       {isDraft && (
         <div className="border-2 border-sky-500">
-          <div className="px-3 py-2 bg-sky-600 text-white flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-white text-sky-700 flex items-center justify-center text-xs font-bold">3</span>
-            <div className="text-[11px] uppercase tracking-widest font-bold">TTD Prepared By & Submit ke Eng Head</div>
+          <div className="px-4 py-3 bg-sky-600 text-white flex items-center gap-3">
+            <span className="w-8 h-8 rounded-full bg-white text-sky-700 flex items-center justify-center text-base font-extrabold">C</span>
+            <div className="text-[13px] uppercase tracking-widest font-bold">TTD Prepared By &amp; Submit ke Eng Head</div>
           </div>
           <div className="p-4 bg-sky-50 flex items-center justify-between gap-4">
             <div className="text-sm text-slate-700 flex-1">
-              Setelah PDF drawing di-upload & BOM di-link, klik tombol di kanan untuk TTD
+              Setelah PDF drawing di-upload &amp; kategori kerja dipilih, klik tombol di kanan untuk TTD
               posisi <b>Prepared By</b> pada PDF, lalu drawing otomatis dikirim ke Eng Head untuk approval.
               {!drawing.file_id && (
-                <div className="mt-1 text-rose-700 font-bold">⚠ Upload PDF Drawing dulu di Step 2 sebelum submit.</div>
+                <div className="mt-1 text-rose-700 font-bold">⚠ Upload PDF Drawing dulu di bagian B sebelum submit.</div>
               )}
               {drawing.file_id && !hasWorkCat && (
-                <div className="mt-1 text-rose-700 font-bold">⚠ Pilih Kategori Pekerjaan (SIMPLE / MODERATE / COMPLEX) dulu di Step 2 sebelum submit.</div>
+                <div className="mt-1 text-rose-700 font-bold">⚠ Pilih Kategori Pekerjaan (SIMPLE / MODERATE / COMPLEX) dulu di bagian B sebelum submit.</div>
               )}
             </div>
             <Button
-              onClick={() => setShowSubmitSig(true)}
-              disabled={!canSubmit}
-              className="rounded-none bg-sky-700 hover:bg-sky-800 text-white h-11 px-6 disabled:opacity-40"
+              onClick={handleSubmitClick}
+              disabled={!canSubmit || checkingFinal}
+              className="rounded-none bg-sky-700 hover:bg-sky-800 text-white h-12 px-7 text-base disabled:opacity-40 transition-colors duration-150 active:translate-y-[1px]"
               data-testid="wo-ttd-submit-btn"
             >
-              <PaperPlaneRight size={16} weight="bold" className="mr-2" />
-              TTD & Submit
+              {checkingFinal
+                ? <ArrowClockwise size={18} className="animate-spin mr-2" />
+                : <PaperPlaneRight size={18} weight="bold" className="mr-2" />}
+              TTD &amp; Submit
             </Button>
           </div>
         </div>
@@ -177,6 +212,14 @@ export default function EngineeringWorkOrderPage() {
           onClose={() => setShowSubmitSig(false)}
         />
       )}
+
+      <FinalSubmitChecklistDialog
+        open={showChecklist}
+        status={wgStatus}
+        onClose={() => setShowChecklist(false)}
+        onProceed={() => { setShowChecklist(false); setShowSubmitSig(true); }}
+        onGoto={gotoDoc}
+      />
     </div>
   );
 }
@@ -619,236 +662,37 @@ function StatusBadge({ status }) {
   );
 }
 
-/* ---------------- BOM Linking Section ---------------- */
-function BomLinkingSection({ drawing, onUpdated, editable = true }) {
-  const [mode, setMode] = useState(drawing.bom_id ? "existing_locked" : "none");
-  const [bomList, setBomList] = useState([]);
-  const [bomQ, setBomQ] = useState("");
-  const [nextBomNo, setNextBomNo] = useState("");
-  const [newBomNo, setNewBomNo] = useState("");
-  const [selectedBomId, setSelectedBomId] = useState(drawing.bom_id || "");
-  const [saving, setSaving] = useState(false);
-  const [linkedBom, setLinkedBom] = useState(null); // detail BOM yg sedang di-link
-
-  // Load detail BOM yg sedang di-link (untuk cek engineering_status)
-  useEffect(() => {
-    if (!drawing.bom_id) { setLinkedBom(null); return; }
-    api.get(`/bom/${drawing.bom_id}`)
-      .then(({ data }) => setLinkedBom(data))
-      .catch(() => setLinkedBom(null));
-  }, [drawing.bom_id]);
-
-  // Load next BOM No suggestion
-  useEffect(() => {
-    if (mode !== "create_new") return;
-    api.get("/bom/next-number").then(({ data }) => setNextBomNo(data.bom_no || "")).catch(() => {});
-  }, [mode]);
-
-  // Load existing BOMs for search
-  useEffect(() => {
-    if (mode !== "existing") return;
-    const t = setTimeout(async () => {
-      try {
-        const { data } = await api.get(`/bom?q=${encodeURIComponent(bomQ)}&limit=20`);
-        setBomList(data.items || []);
-      } catch { /* noop */ }
-    }, 300);
-    return () => clearTimeout(t);
-  }, [bomQ, mode]);
-
-  const alreadyLinked = drawing.bom_id;
-  const linkedBomApproved = linkedBom && linkedBom.engineering_status === "approved";
-  const drawingIsDraft = (drawing.approval_status || "draft") === "draft";
-
-  const saveLink = async (overrideMode) => {
-    const useMode = overrideMode || mode;
-    setSaving(true);
-    try {
-      const payload = { bom_link_mode: useMode };
-      if (useMode === "existing") payload.bom_id = selectedBomId;
-      if (useMode === "create_new") payload.bom_no = newBomNo.trim();
-      const { data } = await api.post(`/drawings/${drawing.id}/link-bom`, payload);
-      toast.success(useMode === "none" ? "BOM unlinked" : `BOM ter-link: ${data.bom_no || "-"}`);
-      onUpdated?.();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Gagal link BOM");
-    } finally { setSaving(false); }
-  };
-
-  const quickCreateNew = async () => {
-    if (!window.confirm("Buat BOM BARU untuk drawing ini? BOM lama tetap tersimpan, hanya drawing ini yang di-relink ke BOM baru (kosong).")) return;
-    setMode("create_new");
-    setNewBomNo("");
-    // Langsung save mode create_new (auto-generate no)
-    await saveLink("create_new");
-  };
-
+/* ---------------- BOM Reference Section (read-only, 1 BOM per SO) ---------------- */
+function BomReferenceSection({ drawing, navigate }) {
+  const linked = !!drawing.bom_id;
   return (
-    <div className="border-2 border-amber-500">
-      <div className="px-3 py-2 bg-amber-600 text-white flex items-center gap-2">
-        <span className="w-6 h-6 rounded-full bg-white text-amber-700 flex items-center justify-center text-xs font-bold">1</span>
-        <div className="text-[11px] uppercase tracking-widest font-bold flex-1">
-          BOM Linking
-          {alreadyLinked && <span className="ml-2 text-[10px] normal-case tracking-normal">— sudah terhubung ke <b className="font-mono">{drawing.bom_no}</b></span>}
+    <div className="border-2 border-amber-500" data-testid="wo-bom-reference">
+      <div className="px-4 py-3 bg-amber-600 text-white flex items-center gap-3">
+        <span className="w-8 h-8 rounded-full bg-white text-amber-700 flex items-center justify-center text-base font-extrabold">A</span>
+        <div className="text-[13px] uppercase tracking-widest font-bold flex-1 flex items-center gap-2">
+          <Package size={16} weight="fill" /> Bill of Material
+          <span className="text-[11px] normal-case tracking-normal opacity-90">— 1 BOM bersama per Sales Order</span>
         </div>
-        {alreadyLinked && (
-          <a
-            href={`/engineering/bom-entry/${drawing.bom_id}`}
-            className="text-[10px] font-bold uppercase tracking-widest text-white bg-amber-800 hover:bg-amber-900 px-2 py-1"
+        {linked && (
+          <button
+            onClick={() => navigate(`/engineering/bom-entry/${drawing.bom_id}`)}
+            className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-amber-800 bg-white hover:bg-amber-50 px-4 h-9 rounded-none border border-amber-200 shadow-sm transition-colors duration-150"
             data-testid="wo-open-bom"
           >
-            Buka BOM →
-          </a>
+            Isi / Buka BOM →
+          </button>
         )}
       </div>
-      <div className="p-4 bg-amber-50 space-y-3">
-        {/* Read-only summary saat terkunci (sudah submit) */}
-        {!editable && (
-          <div className="flex items-center gap-2 text-sm text-slate-700" data-testid="wo-bom-locked">
-            {alreadyLinked ? (
-              <span>
-                Drawing ter-link ke BOM <b className="font-mono">{drawing.bom_no}</b>
-                {linkedBom && (
-                  <span className={`ml-2 px-1.5 py-0.5 text-[10px] font-bold uppercase ${
-                    linkedBom.engineering_status === "approved"
-                      ? "bg-emerald-100 text-emerald-800 border border-emerald-400"
-                      : "bg-slate-100 text-slate-700 border border-slate-400"
-                  }`}>
-                    {linkedBom.engineering_status || "draft"}
-                  </span>
-                )}
-              </span>
-            ) : (
-              <span className="italic text-slate-500">Tanpa BOM.</span>
-            )}
-            <span className="text-[11px] text-slate-500 ml-1">🔒 Terkunci — link BOM tidak bisa diubah setelah drawing di-submit.</span>
-          </div>
-        )}
-
-        {/* Warning: BOM terkunci karena sudah approved */}
-        {editable && linkedBomApproved && drawingIsDraft && (
-          <div className="border-2 border-rose-500 bg-rose-50 p-3" data-testid="wo-bom-approved-warn">
-            <div className="text-[11px] uppercase tracking-widest font-bold text-rose-800 mb-1">⚠ BOM Terkunci — Approved</div>
-            <div className="text-xs text-slate-700 mb-2">
-              BOM <b className="font-mono">{drawing.bom_no}</b> sudah <b>approved</b> di workflow BOM (biasanya untuk drawing sebelumnya yg 1 SO).
-              Isi BOM tidak bisa diedit lagi. Kalau drawing baru ini butuh BOM dengan item beda, klik <b>"Buat BOM Baru"</b> di bawah — BOM lama tetap tersimpan untuk drawing sebelumnya.
-            </div>
-            <Button
-              onClick={quickCreateNew}
-              disabled={saving}
-              className="rounded-none bg-rose-700 hover:bg-rose-800 text-white text-xs h-8"
-              data-testid="wo-bom-quick-create"
-            >
-              🆕 Buat BOM Baru untuk Drawing Ini
-            </Button>
-          </div>
-        )}
-
-        {editable && alreadyLinked && mode === "existing_locked" && (
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm text-slate-700">
-              Drawing ini sudah ter-link ke BOM <b className="font-mono">{drawing.bom_no}</b>
-              {linkedBom && (
-                <span className={`ml-2 px-1.5 py-0.5 text-[10px] font-bold uppercase ${
-                  linkedBom.engineering_status === "approved"
-                    ? "bg-emerald-100 text-emerald-800 border border-emerald-400"
-                    : "bg-slate-100 text-slate-700 border border-slate-400"
-                }`}>
-                  {linkedBom.engineering_status || "draft"}
-                </span>
-              )}
-              . Klik <b>Ubah Link</b> jika ingin ganti / lepaskan.
-            </div>
-            <Button variant="outline" onClick={() => setMode("none")}
-                    className="rounded-none" data-testid="wo-bom-change">
-              Ubah Link
-            </Button>
-          </div>
-        )}
-
-        {editable && mode !== "existing_locked" && (
-          <>
-            <div className="flex gap-4 text-sm">
-              <label className="flex items-center gap-1 cursor-pointer" data-testid="wo-bom-none">
-                <input type="radio" name="wo_bom" checked={mode === "none"} onChange={() => setMode("none")} />
-                <span>Tanpa BOM</span>
-              </label>
-              <label className="flex items-center gap-1 cursor-pointer" data-testid="wo-bom-new">
-                <input type="radio" name="wo_bom" checked={mode === "create_new"} onChange={() => setMode("create_new")} />
-                <span>Buat BOM Baru</span>
-              </label>
-              <label className="flex items-center gap-1 cursor-pointer" data-testid="wo-bom-existing">
-                <input type="radio" name="wo_bom" checked={mode === "existing"} onChange={() => setMode("existing")} />
-                <span>Link ke BOM Existing</span>
-              </label>
-            </div>
-
-            {mode === "create_new" && (
-              <div className="bg-white border border-amber-300 p-3 space-y-2">
-                <div className="text-[10px] uppercase tracking-widest font-bold text-amber-800">Nomor BOM Baru</div>
-                <Input
-                  className="rounded-none border-amber-300 font-mono"
-                  value={newBomNo}
-                  onChange={(e) => setNewBomNo(e.target.value)}
-                  placeholder={nextBomNo ? `Kosongkan → pakai ${nextBomNo}` : "Auto..."}
-                  data-testid="wo-bom-newno"
-                />
-                <div className="text-[11px] text-slate-500">
-                  BOM baru dibuat kosong — tambah items lewat halaman BOM setelah link tersimpan.
-                </div>
-              </div>
-            )}
-
-            {mode === "existing" && (
-              <div className="bg-white border border-amber-300 p-3 space-y-2">
-                <Input
-                  className="rounded-none border-amber-300"
-                  value={bomQ}
-                  onChange={(e) => setBomQ(e.target.value)}
-                  placeholder="Cari bom_no / SO / project..."
-                  data-testid="wo-bom-search"
-                />
-                <div className="max-h-48 overflow-y-auto border border-slate-200 divide-y">
-                  {bomList.length === 0 && (
-                    <div className="p-3 text-xs text-slate-400 italic">Ketik untuk mencari BOM...</div>
-                  )}
-                  {bomList.map((b) => (
-                    <button
-                      key={b.id}
-                      type="button"
-                      onClick={() => setSelectedBomId(b.id)}
-                      className={`w-full text-left p-2 text-xs hover:bg-amber-50 ${selectedBomId === b.id ? "bg-amber-100 font-bold" : ""}`}
-                      data-testid={`wo-bom-opt-${b.id}`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-slate-800">{b.bom_no}</span>
-                        {b.engineering_status === "approved" && (
-                          <span className="text-[9px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-400 px-1">approved · locked</span>
-                        )}
-                      </div>
-                      <div className="text-slate-500">SO: {b.so_no || "-"} · {b.project_name || "-"} · {b.customer || "-"}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2">
-              {alreadyLinked && (
-                <Button variant="outline" onClick={() => setMode("existing_locked")}
-                        className="rounded-none">Batal</Button>
-              )}
-              <Button
-                onClick={() => saveLink()}
-                disabled={saving || (mode === "existing" && !selectedBomId)}
-                className="rounded-none bg-amber-700 hover:bg-amber-800 text-white disabled:opacity-40"
-                data-testid="wo-bom-save"
-              >
-                <FloppyDisk size={14} weight="bold" className="mr-1" />
-                {saving ? "Menyimpan..." : "Simpan Link BOM"}
-              </Button>
-            </div>
-          </>
+      <div className="p-4 bg-amber-50 text-sm text-slate-700">
+        {linked ? (
+          <span>
+            Drawing ini memakai BOM bersama <b className="font-mono">{drawing.bom_no}</b>.
+            Isi/edit item BOM dilakukan sekali untuk seluruh SO — klik <b>Isi / Buka BOM</b> di kanan atas.
+          </span>
+        ) : (
+          <span className="italic text-slate-500">
+            BOM bersama diatur otomatis di halaman <b>Work Group</b> saat generate drawing. Belum ada BOM ter-link untuk drawing ini.
+          </span>
         )}
       </div>
     </div>

@@ -16,13 +16,16 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+from pydantic import BaseModel
 
 from db import db
 from deps import (
     get_current_user, log_action, can_view_costing, is_drawing_preview_only,
+    is_admin_like,
     PRICE_ATTACHMENT_CATEGORIES, DRAWING_ATTACHMENT_CATEGORIES,
 )
 from routers.drawing_register import _normalize_dno
+from utils.workgroup import so_locked_by_bom
 
 router = APIRouter(tags=["bom-attachments"])
 
@@ -192,6 +195,14 @@ async def upload_attachment(
     if not bom:
         raise HTTPException(status_code=404, detail="BOM tidak ditemukan")
 
+    # Fase 2 — LOCK: setelah semua drawing SO di-submit (final), dokumen SO terkunci.
+    # Admin boleh override untuk koreksi darurat.
+    if not is_admin_like(current) and await so_locked_by_bom(bom_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Dokumen SO terkunci — semua drawing sudah di-submit final. Upload tidak diizinkan lagi.",
+        )
+
     ext = _ext(file.filename)
     allowed = CATEGORY_ALLOWED_EXT.get(category, set())
     if allowed and ext not in allowed:
@@ -277,6 +288,12 @@ async def delete_attachment(bom_id: str, attach_id: str, current: dict = Depends
     doc = await db.bom_attachments.find_one({"id": attach_id, "bom_id": bom_id, "deleted_at": {"$exists": False}})
     if not doc:
         raise HTTPException(status_code=404, detail="Attachment tidak ditemukan")
+    # Fase 2 — LOCK: dokumen SO terkunci setelah submit final (kecuali admin override)
+    if not is_admin_like(current) and await so_locked_by_bom(bom_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Dokumen SO terkunci — semua drawing sudah di-submit final. Hapus tidak diizinkan.",
+        )
     # Delete GridFS file
     try:
         await _fs().delete(ObjectId(doc["file_id"]))
@@ -288,6 +305,59 @@ async def delete_attachment(bom_id: str, attach_id: str, current: dict = Depends
     )
     await log_action(current, "bom_attachment_delete", "bom", bom_id, {"attach_id": attach_id})
     return {"success": True}
+
+
+REVIEW_ROLES = {"eng_leader", "eng_head", "admin", "super_admin", "supervisor"}
+
+
+class AttachmentReviewIn(BaseModel):
+    action: str            # "ok" | "revise"
+    notes: str = ""
+
+
+@router.post("/bom/{bom_id}/attachments/{attach_id}/review")
+async def review_attachment(
+    bom_id: str, attach_id: str,
+    payload: AttachmentReviewIn,
+    current: dict = Depends(get_current_user),
+):
+    """Eng Leader tandai OK / minta revisi untuk dokumen SO non-drawing
+    (Nesting / AutoCAD / Costing). Catatan wajib saat minta revisi.
+    Menyimpan audit trail di review_history."""
+    role = current.get("role")
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Hanya Engineering Leader / Admin yang boleh mereview dokumen SO.")
+
+    doc = await _get_attachment_or_404(bom_id, attach_id)
+    action = (payload.action or "").strip().lower()
+    if action not in ("ok", "revise"):
+        raise HTTPException(status_code=400, detail="action harus 'ok' atau 'revise'")
+    notes = (payload.notes or "").strip()
+    if action == "revise" and len(notes) < 3:
+        raise HTTPException(status_code=400, detail="Minta revisi wajib menyertakan catatan (min 3 karakter).")
+
+    status = "ok" if action == "ok" else "revise"
+    entry = {
+        "id": str(uuid.uuid4()),
+        "status": status,
+        "notes": notes,
+        "reviewed_by": current.get("name") or current.get("username"),
+        "reviewer_id": current.get("id"),
+        "reviewed_at": _now_iso(),
+    }
+    await db.bom_attachments.update_one(
+        {"id": attach_id, "bom_id": bom_id},
+        {"$set": {
+            "review_status": status,
+            "review_notes": notes,
+            "reviewed_by": entry["reviewed_by"],
+            "reviewed_at": entry["reviewed_at"],
+        },
+         "$push": {"review_history": entry}},
+    )
+    await log_action(current, "bom_attachment_review", "bom", bom_id,
+                     {"attach_id": attach_id, "status": status})
+    return {"success": True, "review_status": status, "entry": entry}
 
 
 async def _stream_from_gridfs(file_id_str: str):
