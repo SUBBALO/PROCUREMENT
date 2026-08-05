@@ -70,6 +70,41 @@ export default function PdfPreviewModal({
         : `${apiUrl}/api/drawings/${drawingId}/pdf-stamped`)
     : ""));
 
+  // ── FAST PDF: tampilkan PDF ASLI (render di browser, cepat) untuk SEMUA preview drawing.
+  // PDF diambil via axios (blob) → blob URL same-origin (tak terblokir X-Frame-Options
+  // walau frontend & backend beda port; auth cookie/header tetap terkirim).
+  // View-only (noDownload) → toolbar unduh/print browser disembunyikan (#toolbar=0).
+  // autoPrint tetap mode gambar (butuh print-root untuk cetak halaman gambar).
+  const pdfPath = generic
+    ? ""
+    : active.key === "customer_ref"
+      ? `/drawings/${drawingId}/customer-ref/preview`
+      : (active.key === "extra" && active.extraId)
+        ? `/drawings/${drawingId}/extra-file/${active.extraId}/preview`
+        : `/drawings/${drawingId}/pdf-stamped`;
+  const useFastPdf = !generic && !autoPrint && !!drawingId && !!pdfPath;
+
+  const [pdfBlobUrl, setPdfBlobUrl] = useState("");
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfErr, setPdfErr] = useState("");
+  useEffect(() => {
+    if (!useFastPdf) return;
+    let revoked = false;
+    let objUrl = "";
+    setPdfLoading(true); setPdfErr(""); setPdfBlobUrl("");
+    api.get(pdfPath, { responseType: "blob" })
+      .then((res) => {
+        if (revoked) return;
+        objUrl = URL.createObjectURL(res.data);
+        setPdfBlobUrl(objUrl);
+      })
+      .catch((e) => { if (!revoked) setPdfErr(e.response?.data?.detail || "Dokumen tidak tersedia."); })
+      .finally(() => { if (!revoked) setPdfLoading(false); });
+    return () => { revoked = true; if (objUrl) URL.revokeObjectURL(objUrl); };
+  }, [useFastPdf, pdfPath]);
+  // View-only → sembunyikan toolbar (download/print) & panel navigasi PDF bawaan browser.
+  const iframeSrc = pdfBlobUrl ? (noDownload ? `${pdfBlobUrl}#toolbar=0&navpanes=0` : pdfBlobUrl) : "";
+
   const load = useCallback(async () => {
     setMeta(null); setErr("");
     try {
@@ -87,7 +122,7 @@ export default function PdfPreviewModal({
     }
   }, [drawingId, active.key, active.extraId, generic, metaUrl]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (!useFastPdf) load(); }, [load, useFastPdf]);
 
   // autoPrint — begitu metadata siap, langsung picu dialog cetak (dipakai tombol Print di Master List).
   const _printedOnce = React.useRef(false);
@@ -133,10 +168,14 @@ export default function PdfPreviewModal({
           {subtitle && <div className="text-[11px] text-slate-300 truncate">{subtitle}</div>}
         </div>
         <div className="flex items-center gap-1.5">
-          <button onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.15).toFixed(2)))} className="p-2 bg-slate-700 hover:bg-slate-600 rounded" title="Perkecil" data-testid="pdf-zoom-out"><MagnifyingGlassMinus size={16} weight="bold" /></button>
-          <span className="text-xs w-12 text-center tabular-nums" data-testid="pdf-zoom-level">{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.15).toFixed(2)))} className="p-2 bg-slate-700 hover:bg-slate-600 rounded" title="Perbesar" data-testid="pdf-zoom-in"><MagnifyingGlassPlus size={16} weight="bold" /></button>
-          {!noPrint && (
+          {!useFastPdf && (
+            <>
+              <button onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.15).toFixed(2)))} className="p-2 bg-slate-700 hover:bg-slate-600 rounded" title="Perkecil" data-testid="pdf-zoom-out"><MagnifyingGlassMinus size={16} weight="bold" /></button>
+              <span className="text-xs w-12 text-center tabular-nums" data-testid="pdf-zoom-level">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.15).toFixed(2)))} className="p-2 bg-slate-700 hover:bg-slate-600 rounded" title="Perbesar" data-testid="pdf-zoom-in"><MagnifyingGlassPlus size={16} weight="bold" /></button>
+            </>
+          )}
+          {!noPrint && !useFastPdf && (
             <button onClick={doPrint} disabled={!meta} className="ml-2 inline-flex items-center gap-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs font-bold uppercase tracking-widest disabled:opacity-40" title="Cetak" data-testid="pdf-print">
               <Printer size={15} weight="bold" /> Print
             </button>
@@ -167,6 +206,27 @@ export default function PdfPreviewModal({
       )}
 
       {/* Body */}
+      {useFastPdf ? (
+        <div className="flex-1 bg-slate-800 min-h-0 relative" data-testid="pdf-preview-fast">
+          {pdfLoading && (
+            <div className="absolute inset-0 flex items-center justify-center text-slate-200 text-sm animate-pulse" data-testid="pdf-preview-loading">Memuat dokumen…</div>
+          )}
+          {pdfErr && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-6">
+              <div className="text-rose-300 text-sm bg-rose-900/50 p-4 rounded" data-testid="pdf-preview-error">{pdfErr}</div>
+            </div>
+          )}
+          {pdfBlobUrl && (
+            <iframe
+              key={iframeSrc}
+              src={iframeSrc}
+              title={title}
+              className="w-full h-full border-0"
+              data-testid="pdf-preview-iframe"
+            />
+          )}
+        </div>
+      ) : (
       <div className="flex-1 overflow-auto p-4 bg-slate-950">
         {err && (
           <div className="max-w-md mx-auto mt-10 text-center">
@@ -193,6 +253,7 @@ export default function PdfPreviewModal({
           </div>
         )}
       </div>
+      )}
 
       {/* Print area (tersembunyi di layar; muncul saat window.print) */}
       {printing && meta && (
