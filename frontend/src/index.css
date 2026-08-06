@@ -102,3 +102,23 @@ code {
         print-color-adjust: exact !important;
     }
 }
+
+/* ==========================================================================
+   MODE CEPAT (Reduce Motion) — matikan animasi/transisi agar akses terasa
+   instan. Diaktifkan lewat class .reduce-motion pada <html> (toggle di header).
+   ========================================================================== */
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+}
+/* Spinner loading tetap berputar (fungsional, bukan dekoratif) */
+html.reduce-motion .animate-spin {
+    animation-duration: 0.7s !important;
+    animation-iteration-count: infinite !important;
+}

@@ -11,7 +11,38 @@ import GlobalSearch from "./GlobalSearch";
 import {
   ChartBar, Plus, MagnifyingGlass, SignOut, Package, ChartLineUp, ShieldStar, Warehouse, ArrowDown, ArrowUp,
   ClipboardText, CaretDown, ShoppingCart, Storefront, Truck, ClockCounterClockwise, Bell, HardDrives, UploadSimple,
+  Lightning, LightningSlash,
 } from "@phosphor-icons/react";
+
+/* Mode Cepat — matikan animasi/transisi (reduce-motion) agar akses terasa instan.
+   Tersimpan di localStorage 'mks_reduce_motion' (default: aktif). */
+function FastModeToggle() {
+  const [fast, setFast] = useState(() => {
+    try {
+      const v = localStorage.getItem("mks_reduce_motion");
+      return v === null ? true : v === "1";
+    } catch { return true; }
+  });
+  useEffect(() => {
+    try {
+      document.documentElement.classList.toggle("reduce-motion", fast);
+      localStorage.setItem("mks_reduce_motion", fast ? "1" : "0");
+    } catch { /* noop */ }
+  }, [fast]);
+  return (
+    <button
+      onClick={() => { const n = !fast; setFast(n); toast.success(n ? "Mode Cepat aktif — animasi dimatikan" : "Animasi diaktifkan kembali"); }}
+      title={fast ? "Mode Cepat AKTIF — klik untuk hidupkan animasi" : "Animasi AKTIF — klik untuk Mode Cepat (tanpa animasi)"}
+      className={`flex items-center gap-1 px-2 h-8 text-[10px] uppercase tracking-[0.1em] font-bold border transition-colors ${
+        fast ? "border-amber-500 text-amber-700 bg-amber-50 hover:bg-amber-100" : "border-slate-300 text-slate-600 hover:bg-slate-50"
+      }`}
+      data-testid="fast-mode-toggle"
+    >
+      {fast ? <Lightning size={14} weight="fill" /> : <LightningSlash size={14} weight="bold" />}
+      {fast ? "Cepat" : "Animasi"}
+    </button>
+  );
+}
 
 // ─── PURCHASING ─────────────────────────────────────────
 const PURCHASE_ITEMS = [
@@ -461,6 +492,7 @@ export default function AppShell({ children }) {
               </div>
               <div className="text-[10px] uppercase tracking-[0.15em] text-slate-400">{user?.role}</div>
             </div>
+            <FastModeToggle />
             <NavLink
               to="/profile/signature"
               data-testid="nav-my-signature"
