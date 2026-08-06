@@ -47,8 +47,8 @@ export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky"
       <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-rose-200/30 blur-3xl rounded-full pointer-events-none" />
 
       <div className="relative max-w-[1400px] mx-auto px-6 py-5">
-        <Link to="/" className="inline-flex items-center gap-1 text-xs uppercase tracking-[0.15em] text-slate-500 hover:text-slate-900 transition-colors mb-4">
-          <ArrowLeft size={12} weight="bold" /> Kembali ke Portal Utama
+        <Link to="/" className="inline-flex items-center gap-2 px-3 h-9 text-xs uppercase tracking-[0.1em] font-bold text-slate-800 bg-white border-2 border-slate-400 shadow-sm hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors duration-150 active:translate-y-[1px] mb-4">
+          <ArrowLeft size={16} weight="bold" /> Kembali ke Portal Utama
         </Link>
 
         <div className="mb-5">

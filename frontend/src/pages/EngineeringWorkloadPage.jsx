@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import api from "../lib/api";
 import { Link } from "react-router-dom";
+import BackLink from "../components/BackLink";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
   ResponsiveContainer, Cell, LabelList,
@@ -158,6 +159,7 @@ export default function EngineeringWorkloadPage() {
 
   return (
     <div className="space-y-4" data-testid="workload-page">
+      <BackLink />
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>

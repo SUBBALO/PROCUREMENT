@@ -699,8 +699,8 @@ function NewOrderForm() {
   return (
     <div className="max-w-4xl mx-auto p-4 lg:p-6 space-y-4">
       <div>
-        <button type="button" onClick={() => nav(-1)} className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900">
-          <ArrowLeft size={14} weight="bold" /> Kembali ke Halaman Sebelumnya
+        <button type="button" onClick={() => nav(-1)} className="inline-flex items-center gap-2 px-3 h-9 mb-1 text-xs uppercase tracking-[0.1em] font-bold text-slate-800 bg-white border-2 border-slate-400 shadow-sm hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors duration-150 active:translate-y-[1px]">
+          <ArrowLeft size={16} weight="bold" /> Kembali ke Halaman Sebelumnya
         </button>
         <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight mt-1">
           <ClipboardText className="inline-block mr-2 mb-1" size={26} weight="bold" />
@@ -1199,8 +1199,8 @@ function WorkOrderView() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <button type="button" onClick={() => nav(-1)} className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900">
-            <ArrowLeft size={14} weight="bold" /> Kembali ke Halaman Sebelumnya
+          <button type="button" onClick={() => nav(-1)} className="inline-flex items-center gap-2 px-3 h-9 text-xs uppercase tracking-[0.1em] font-bold text-slate-800 bg-white border-2 border-slate-400 shadow-sm hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors duration-150 active:translate-y-[1px]">
+            <ArrowLeft size={16} weight="bold" /> Kembali ke Halaman Sebelumnya
           </button>
           <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
             <ClipboardText className="inline-block mr-2 mb-1" size={26} weight="bold" />

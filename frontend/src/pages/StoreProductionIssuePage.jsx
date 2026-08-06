@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import api, { formatDateID } from "../lib/api";
+import BackLink from "../components/BackLink";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -85,6 +86,7 @@ export default function StoreProductionIssuePage() {
 
   return (
     <div className="space-y-6">
+      <BackLink />
       <div>
         <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 flex items-center gap-2" style={{ fontFamily: "Chivo, sans-serif" }}>
           <Factory size={28} weight="duotone" className="text-purple-600" /> Pengeluaran ke Produksi

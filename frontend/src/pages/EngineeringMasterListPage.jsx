@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import BackLink from "../components/BackLink";
 import api, { formatDateID } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Input } from "../components/ui/input";
@@ -87,6 +88,7 @@ export default function EngineeringMasterListPage() {
 
   return (
     <div className="max-w-[1600px] mx-auto p-4 lg:p-6 space-y-4">
+      <BackLink />
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">

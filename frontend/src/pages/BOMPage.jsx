@@ -168,10 +168,10 @@ export default function BOMPage() {
       {/* Back link */}
       <Link
         to={user?.role === "sales" ? "/sales" : (["engineering", "eng_leader", "eng_head", "eng_staff"].includes(user?.role) ? "/engineering" : "/")}
-        className="inline-flex items-center gap-1 text-xs uppercase tracking-[0.1em] text-slate-600 hover:text-slate-900"
+        className="inline-flex items-center gap-2 px-3 h-9 text-xs uppercase tracking-[0.1em] font-bold text-slate-800 bg-white border-2 border-slate-400 shadow-sm hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors duration-150 active:translate-y-[1px]"
         data-testid="bom-back-to-portal"
       >
-        <ArrowLeft size={12} weight="bold" /> Kembali ke {["engineering", "eng_leader", "eng_head", "eng_staff"].includes(user?.role) ? "Engineering Portal" : "Portal Utama"}
+        <ArrowLeft size={16} weight="bold" /> Kembali ke {["engineering", "eng_leader", "eng_head", "eng_staff"].includes(user?.role) ? "Engineering Portal" : "Portal Utama"}
       </Link>
       {/* Header */}
       <div className="flex items-start justify-between gap-4">

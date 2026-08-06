@@ -133,6 +133,7 @@ async def login(payload: LoginRequest, response: Response):
         "perms": user.get("perms", []),
         "is_super_admin": (user.get("username") or "").lower().strip() == SUPER_ADMIN_USERNAME,
         "must_change_password": must_change,
+        "ui_prefs": user.get("ui_prefs") or {"reduce_motion": True},
     }
 
 
@@ -175,7 +176,22 @@ async def me(current: dict = Depends(get_current_user)):
         "perms": current.get("perms", []),
         "is_super_admin": (current.get("username") or "").lower().strip() == SUPER_ADMIN_USERNAME,
         "must_change_password": bool(current.get("must_change_password")),
+        "ui_prefs": current.get("ui_prefs") or {"reduce_motion": True},
     }
+
+
+class UiPrefsIn(BaseModel):
+    reduce_motion: bool
+
+
+@router.put("/auth/ui-preferences")
+async def update_ui_preferences(payload: UiPrefsIn, current: dict = Depends(get_current_user)):
+    """Simpan preferensi UI per-user di server (ikut lintas perangkat/browser).
+    Saat ini: reduce_motion (Mode Cepat — matikan animasi)."""
+    prefs = dict(current.get("ui_prefs") or {})
+    prefs["reduce_motion"] = bool(payload.reduce_motion)
+    await db.users.update_one({"id": current["id"]}, {"$set": {"ui_prefs": prefs}})
+    return {"ok": True, "ui_prefs": prefs}
 
 
 # Iter 22 — Endpoint ganti password sendiri (untuk force change flow)
