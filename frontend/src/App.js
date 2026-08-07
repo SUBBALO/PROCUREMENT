@@ -7,6 +7,7 @@ import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import InputTransactionPage from "./pages/InputTransactionPage";
 import MasterListPage from "./pages/MasterListPage";
+import SalesOrderPage from "./pages/SalesOrderPage";
 import MasterItemsPage from "./pages/MasterItemsPage";
 import KPIReportPage from "./pages/KPIReportPage";
 import AdminPage from "./pages/AdminPage";
@@ -199,7 +200,8 @@ function AppRoutes() {
       <Route path="/deliveries" element={<ProtectedRoute><DeliveryPage /></ProtectedRoute>} />
       <Route path="/timeline/:so_no" element={<ProtectedRoute><SOTimelinePage /></ProtectedRoute>} />
       <Route path="/store/consumable-requests" element={<ProtectedRoute><ConsumableRequestPage /></ProtectedRoute>} />
-      <Route path="/so-master" element={<ProtectedRoute><SOMasterPage /></ProtectedRoute>} />
+      <Route path="/so-master" element={<ProtectedRoute><SalesOrderPage /></ProtectedRoute>} />
+      <Route path="/sales/sales-orders" element={<ProtectedRoute><SalesOrderPage /></ProtectedRoute>} />
       <Route path="/bom" element={<ProtectedRoute><BOMPage /></ProtectedRoute>} />
       <Route path="/admin/form-templates" element={<ProtectedRoute><FormTemplatesPage /></ProtectedRoute>} />
       <Route path="/admin/form-templates/:id" element={<ProtectedRoute><FormTemplateEditorPage /></ProtectedRoute>} />

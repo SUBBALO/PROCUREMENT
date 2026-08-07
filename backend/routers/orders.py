@@ -1,4 +1,5 @@
 """Deliveries + Sales Orders routes."""
+import re
 import uuid
 from typing import List, Optional
 
@@ -6,12 +7,84 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from db import db
-from deps import _now_iso, get_current_user, log_action, require_store_write, require_write
+from deps import _now_iso, get_current_user, log_action, require_store_write, require_write, is_admin_like
 from models import DeliveryCreate, SOCreate
 from routers.bom import normalize_so_no
 from services.soft_delete import NOT_DELETED_FILTER, merged, soft_delete_one
 
 router = APIRouter(tags=["orders"])
+
+# ---- Sales Order (rich) helpers ----
+PRICE_ROLES = {"super_admin", "admin", "finance"}
+SO_CREATE_ROLES = {"sales", "admin", "super_admin", "finance", "supervisor"}
+# Peta status DRF -> status proses SO Engineering
+_DRF_TO_SO_STATUS = {
+    "submitted": "submitted_eng",
+    "accepted": "eng_terima",
+    "in_progress": "eng_kerjakan",
+    "completed": "selesai_eng",
+}
+_SO_STATUS_RANK = {
+    "belum_drawing_request": 0, "submitted_eng": 1, "eng_terima": 2,
+    "eng_kerjakan": 3, "selesai_eng": 4,
+}
+
+
+def _can_see_price(current: dict) -> bool:
+    return current.get("role") in PRICE_ROLES
+
+
+def _strip_price_if_needed(doc: dict, current: dict) -> dict:
+    """Sembunyikan harga untuk role selain super_admin/admin/finance."""
+    if _can_see_price(current):
+        return doc
+    doc.pop("total_amount", None)
+    doc.pop("currency", None)
+    for it in (doc.get("items") or []):
+        it.pop("price", None)
+        it.pop("line_total", None)
+    doc["_price_hidden"] = True
+    return doc
+
+
+async def _so_status_map() -> dict:
+    """Map so_no -> status proses eng terbaik (dari drawing_requests)."""
+    drfs = await db.drawing_requests.find(
+        {"deleted_at": {"$exists": False}},
+        {"_id": 0, "so_no": 1, "status": 1},
+    ).to_list(length=5000)
+    m: dict = {}
+    for d in drfs:
+        so = d.get("so_no")
+        if not so:
+            continue
+        st = _DRF_TO_SO_STATUS.get(d.get("status"), None)
+        if not st:
+            continue
+        if _SO_STATUS_RANK.get(st, 0) > _SO_STATUS_RANK.get(m.get(so, "belum_drawing_request"), 0):
+            m[so] = st
+    return m
+
+
+class SOItemIn(BaseModel):
+    name: str = ""
+    qty: float = 1
+    unit: str = "pcs"
+    price: float = 0
+
+
+class SOFullCreate(BaseModel):
+    so_no: str
+    so_date: str
+    customer: str
+    customer_address: Optional[str] = ""
+    po_customer_no: Optional[str] = ""
+    description: Optional[str] = ""
+    currency: Optional[str] = "IDR"
+    source_quotation_id: Optional[str] = ""
+    source_quotation_no: Optional[str] = ""
+    items: List[SOItemIn] = []
+
 
 
 # ---------------- Deliveries (Pengiriman Barang - log only) ----------------
@@ -152,7 +225,97 @@ async def list_sales_orders(current: dict = Depends(get_current_user), q: Option
             {"description": {"$regex": q, "$options": "i"}},
         ]
     docs = await db.sales_orders.find(merged(filt, NOT_DELETED_FILTER), {"_id": 0}).sort("so_no", 1).to_list(length=5000)
+    status_map = await _so_status_map()
+    for d in docs:
+        d["drawing_request_status"] = status_map.get(d.get("so_no"), "belum_drawing_request")
+        _strip_price_if_needed(d, current)
     return docs
+
+
+def _compute_items(items: List[SOItemIn]) -> tuple:
+    out = []
+    total = 0.0
+    for it in items:
+        qty = float(it.qty or 0)
+        price = float(it.price or 0)
+        line = qty * price
+        total += line
+        out.append({"name": (it.name or "").strip(), "qty": qty, "unit": it.unit or "pcs", "price": price, "line_total": line})
+    return out, total
+
+
+@router.post("/sales-orders/full")
+async def create_so_full(payload: SOFullCreate, current: dict = Depends(get_current_user)):
+    """Buat Sales Order lengkap (dari quotation / manual) dengan item + harga + PO customer.
+    Boleh: Sales, Admin, Super Admin, Finance, Supervisor."""
+    if current.get("role") not in SO_CREATE_ROLES and not is_admin_like(current):
+        raise HTTPException(status_code=403, detail="Anda tidak berwenang membuat Sales Order")
+    raw = (payload.so_no or "").strip()
+    if not re.fullmatch(r"00\d{4}", raw):
+        raise HTTPException(status_code=400, detail="Nomor SO wajib 6 digit dan diawali '00' (mis. 005251)")
+    so_no = normalize_so_no(raw)
+    if await db.sales_orders.find_one({"so_no": so_no, "deleted_at": {"$exists": False}}):
+        raise HTTPException(status_code=400, detail=f"Nomor SO {so_no} sudah ada")
+    items, total = _compute_items(payload.items)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "so_no": so_no,
+        "so_date": payload.so_date or _now_iso()[:10],
+        "customer": (payload.customer or "").strip(),
+        "customer_address": (payload.customer_address or "").strip(),
+        "po_customer_no": (payload.po_customer_no or "").strip(),
+        "description": payload.description or "",
+        "currency": payload.currency or "IDR",
+        "source_quotation_id": payload.source_quotation_id or "",
+        "source_quotation_no": payload.source_quotation_no or "",
+        "items": items,
+        "total_amount": total,
+        "created_by": current["id"],
+        "created_by_username": current.get("username", ""),
+        "created_by_name": current.get("name") or current.get("username", ""),
+        "created_at": _now_iso(),
+    }
+    await db.sales_orders.insert_one(doc.copy())
+    await log_action(current, "create_so_full", "sales_order", doc["id"], {"so_no": so_no, "customer": doc["customer"], "items": len(items)})
+    doc.pop("_id", None)
+    doc["drawing_request_status"] = "belum_drawing_request"
+    return _strip_price_if_needed(doc, current)
+
+
+@router.put("/sales-orders/{sid}/full")
+async def update_so_full(sid: str, payload: SOFullCreate, current: dict = Depends(get_current_user)):
+    if current.get("role") not in SO_CREATE_ROLES and not is_admin_like(current):
+        raise HTTPException(status_code=403, detail="Anda tidak berwenang mengubah Sales Order")
+    so = await db.sales_orders.find_one({"id": sid, "deleted_at": {"$exists": False}})
+    if not so:
+        raise HTTPException(status_code=404, detail="SO tidak ditemukan")
+    raw = (payload.so_no or "").strip()
+    if not re.fullmatch(r"00\d{4}", raw):
+        raise HTTPException(status_code=400, detail="Nomor SO wajib 6 digit dan diawali '00' (mis. 005251)")
+    so_no = normalize_so_no(raw)
+    dup = await db.sales_orders.find_one({"so_no": so_no, "id": {"$ne": sid}, "deleted_at": {"$exists": False}})
+    if dup:
+        raise HTTPException(status_code=400, detail=f"Nomor SO {so_no} sudah dipakai SO lain")
+    items, total = _compute_items(payload.items)
+    upd = {
+        "so_no": so_no,
+        "so_date": payload.so_date,
+        "customer": (payload.customer or "").strip(),
+        "customer_address": (payload.customer_address or "").strip(),
+        "po_customer_no": (payload.po_customer_no or "").strip(),
+        "description": payload.description or "",
+        "currency": payload.currency or "IDR",
+        "items": items,
+        "total_amount": total,
+        "updated_at": _now_iso(),
+        "updated_by_name": current.get("name") or current.get("username", ""),
+    }
+    await db.sales_orders.update_one({"id": sid}, {"$set": upd})
+    await log_action(current, "update_so_full", "sales_order", sid, {"so_no": so_no, "items": len(items)})
+    updated = await db.sales_orders.find_one({"id": sid}, {"_id": 0})
+    status_map = await _so_status_map()
+    updated["drawing_request_status"] = status_map.get(updated.get("so_no"), "belum_drawing_request")
+    return _strip_price_if_needed(updated, current)
 
 
 @router.post("/sales-orders")

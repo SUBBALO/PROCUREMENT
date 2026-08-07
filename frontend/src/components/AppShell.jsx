@@ -395,7 +395,7 @@ export default function AppShell({ children }) {
               isActive ? "border-sky-600 text-sky-700 bg-sky-50" : "border-slate-300 text-slate-600 hover:bg-slate-50"
             }`}
           >
-            <ClipboardText size={14} weight="duotone" /> Master SO
+            <ClipboardText size={14} weight="duotone" /> Sales Order
           </NavLink>
           )}
           {(!isLanding || isFullAdmin) && (
