@@ -348,6 +348,85 @@ async def pending_count_for_eng(current: dict = Depends(get_current_user)):
     return {"count": n}
 
 
+@router.get("/engineering/pending-leader-verification")
+async def pending_leader_verification(current: dict = Depends(get_current_user)):
+    """Antrian 'Menunggu Verifikasi Leader': DRF/SO yang punya drawing
+    berstatus pending_eng_head (menunggu review & TTD Eng Leader).
+    Dikelompokkan per DRF agar klik item langsung membuka Review Dokumen SO."""
+    if not (is_eng_head(current) or is_admin_like(current)):
+        return {"items": [], "count": 0}
+
+    drawings = await db.drawings.find(
+        {"approval_status": "pending_eng_head", "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "from_drf_id": 1, "bom_id": 1, "bom_no": 1,
+         "so_no": 1, "drawing_no": 1, "submitted_at": 1, "updated_at": 1,
+         "customer_name": 1, "project_name": 1},
+    ).sort("submitted_at", 1).to_list(length=1000)
+
+    groups: dict = {}
+    for d in drawings:
+        key = d.get("from_drf_id") or f"__no_drf__{d.get('id')}"
+        g = groups.get(key)
+        if not g:
+            g = {
+                "drf_id": d.get("from_drf_id") or "",
+                "bom_id": d.get("bom_id") or "",
+                "bom_no": d.get("bom_no") or "",
+                "so_no": d.get("so_no") or "",
+                "customer_name": d.get("customer_name") or "",
+                "project_name": d.get("project_name") or "",
+                "pending_count": 0,
+                "oldest_submitted_at": "",
+                "drawing_nos": [],
+            }
+            groups[key] = g
+        g["pending_count"] += 1
+        if not g["bom_id"] and d.get("bom_id"):
+            g["bom_id"] = d["bom_id"]
+            g["bom_no"] = d.get("bom_no") or g["bom_no"]
+        if d.get("drawing_no"):
+            g["drawing_nos"].append(d["drawing_no"])
+        sub = d.get("submitted_at") or d.get("updated_at") or ""
+        if sub and (not g["oldest_submitted_at"] or sub < g["oldest_submitted_at"]):
+            g["oldest_submitted_at"] = sub
+
+    drf_ids = [g["drf_id"] for g in groups.values() if g["drf_id"]]
+    drf_map: dict = {}
+    if drf_ids:
+        drfs = await db.drawing_requests.find(
+            {"id": {"$in": drf_ids}},
+            {"_id": 0, "id": 1, "form_no": 1, "so_no": 1, "customer_name": 1,
+             "project_name": 1, "expected_due_date": 1},
+        ).to_list(length=len(drf_ids))
+        drf_map = {r["id"]: r for r in drfs}
+
+    items = []
+    for g in groups.values():
+        info = drf_map.get(g["drf_id"], {})
+        total = 0
+        if g["drf_id"]:
+            total = await db.drawings.count_documents(
+                {"from_drf_id": g["drf_id"], "deleted_at": {"$exists": False}})
+        items.append({
+            "drf_id": g["drf_id"],
+            "form_no": info.get("form_no") or "",
+            "so_no": g["so_no"] or info.get("so_no") or "-",
+            "customer_name": g["customer_name"] or info.get("customer_name") or "",
+            "project_name": g["project_name"] or info.get("project_name") or "",
+            "bom_id": g["bom_id"],
+            "bom_no": g["bom_no"],
+            "pending_count": g["pending_count"],
+            "total_drawings": total,
+            "drawing_nos": g["drawing_nos"][:6],
+            "due_date": info.get("expected_due_date") or "",
+            "oldest_submitted_at": g["oldest_submitted_at"],
+        })
+    items.sort(key=lambda x: (x["oldest_submitted_at"] or "9999"))
+    return {"items": items, "count": len(items)}
+
+
+
+
 @router.get("/drawing-requests/engineering-users")
 async def drf_engineering_users(current: dict = Depends(get_current_user)):
     """Daftar user Engineering untuk dropdown assign (dipakai Eng Leader saat accept DRF).

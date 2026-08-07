@@ -592,6 +592,45 @@ async def _gather_notifications(user: dict) -> dict:
                     "severity": "critical" if role in DOC_CONTROL_ROLES else "warn",
                     "items": items,
                 })
+
+        # ------------- (Sales) Drawing SIAP DILIHAT (preview sebelum tahap TTD Sales) -------------
+        if role in SALES_ROLES and not is_super_admin_user(user):
+            my_drfs = await db.drawing_requests.find(
+                {"$or": [{"requested_by.user_id": user_id}, {"created_by": user_id}],
+                 "deleted_at": {"$exists": False}},
+                {"_id": 0, "id": 1},
+            ).to_list(length=500)
+            my_drf_ids = [r["id"] for r in my_drfs]
+            if my_drf_ids:
+                viewable = await db.drawings.find(
+                    {"from_drf_id": {"$in": my_drf_ids},
+                     "approval_status": {"$in": ["pending_eng_head", "pending_qc"]},
+                     "file_id": {"$nin": [None, ""]},
+                     "deleted_at": {"$exists": False}},
+                    {"_id": 0, "id": 1, "drawing_no": 1, "title": 1, "project_name": 1,
+                     "customer_name": 1, "customer_code": 1, "so_no": 1, "approval_status": 1,
+                     "updated_at": 1, "submitted_at": 1},
+                ).sort("updated_at", -1).limit(30).to_list(length=30)
+                if viewable:
+                    _stage_lbl = {"pending_eng_head": "menunggu TTD Engineering", "pending_qc": "menunggu TTD QC"}
+                    _items = []
+                    for d in viewable:
+                        _items.append({
+                            "id": d.get("id"),
+                            "title": f"{d.get('drawing_no')} — siap dilihat",
+                            "detail": f"{d.get('title') or d.get('project_name') or ''} · {d.get('customer_name') or d.get('customer_code') or '-'}",
+                            "sub": f"SO: {d.get('so_no', '-')} · {_stage_lbl.get(d.get('approval_status'), '')}",
+                            "link": "/sales/drawing-requests",
+                            "kind": "drawing_ready_view",
+                            "created_at": d.get("updated_at") or d.get("submitted_at"),
+                        })
+                    categories.append({
+                        "key": "drawing_ready_view",
+                        "label": "Drawing Siap Dilihat (Preview)",
+                        "count": len(_items),
+                        "severity": "info",
+                        "items": _items,
+                    })
     except Exception:
         pass
 

@@ -10,9 +10,11 @@ import PaginationBar, { usePagination } from "../components/PaginationBar";
 import DrawingRequestFormDialog from "../components/DrawingRequestFormDialog";
 import DrfDetailModal from "../components/DrfDetailModal";
 import PdfPreviewModal from "../components/PdfPreviewModal";
+import SignaturePlacementModal from "../components/SignaturePlacementModal";
 import {
   Plus, ArrowClockwise, FileText, Eye, Trash, PaperPlaneTilt,
-  MagnifyingGlass, CheckCircle, Clock, Warning, PencilSimple
+  MagnifyingGlass, CheckCircle, Clock, Warning, PencilSimple,
+  CaretRight, CaretDown, Cube, Ruler, Stamp, Signature,
 } from "@phosphor-icons/react";
 
 const STATUS_BADGE = {
@@ -22,6 +24,17 @@ const STATUS_BADGE = {
   in_progress: { label: "Drawing In Progress", cls: "bg-violet-100 text-violet-800 border-violet-500" },
   completed: { label: "Selesai · Butuh TTD Sales", cls: "bg-emerald-100 text-emerald-800 border-emerald-500 font-bold" },
   cancelled: { label: "Cancelled", cls: "bg-rose-100 text-rose-800 border-rose-500" },
+};
+
+// Status drawing (Bahasa Indonesia) untuk tabel drawing per-DRF
+const DWG_STATUS = {
+  draft: { label: "Draft / Revisi", cls: "bg-slate-100 text-slate-700 border-slate-300" },
+  pending_eng_head: { label: "Menunggu TTD Eng", cls: "bg-amber-100 text-amber-800 border-amber-300" },
+  pending_qc: { label: "Menunggu TTD QC", cls: "bg-orange-100 text-orange-800 border-orange-300" },
+  pending_sales: { label: "Menunggu TTD Sales", cls: "bg-blue-100 text-blue-800 border-blue-300" },
+  approved: { label: "Approved", cls: "bg-emerald-100 text-emerald-800 border-emerald-300" },
+  controlled: { label: "Controlled (DC)", cls: "bg-teal-100 text-teal-800 border-teal-300" },
+  released: { label: "Released", cls: "bg-green-100 text-green-800 border-green-300" },
 };
 
 export default function DrawingRequestFormPage() {
@@ -34,7 +47,21 @@ export default function DrawingRequestFormPage() {
   const [editDrf, setEditDrf] = useState(null);
   const [preview, setPreview] = useState(null);
   const [detailId, setDetailId] = useState(null);
+  const [expanded, setExpanded] = useState(() => new Set());
+  const [drawingsMap, setDrawingsMap] = useState({}); // { [drfId]: [drawings] }
+  const [drawingsLoading, setDrawingsLoading] = useState(() => new Set());
+  const [salesTtd, setSalesTtd] = useState([]); // drawing pending_sales milik Sales
+  const [sigDrawing, setSigDrawing] = useState(null); // drawing yang sedang di-TTD Sales
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
+
+  const loadSalesTtd = useCallback(async () => {
+    try {
+      const { data } = await api.get("/drawings/pending-my-approval");
+      setSalesTtd(data.items || []);
+    } catch (e) {
+      setSalesTtd([]);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,7 +73,31 @@ export default function DrawingRequestFormPage() {
     } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); loadSalesTtd(); }, [load, loadSalesTtd]);
+
+  const fetchDrawingsForDrf = useCallback(async (drfId) => {
+    setDrawingsLoading((prev) => new Set(prev).add(drfId));
+    try {
+      const { data } = await api.get(`/drawings`, { params: { from_drf_id: drfId } });
+      const list = data.items || data || [];
+      setDrawingsMap((prev) => ({ ...prev, [drfId]: list }));
+    } catch (e) {
+      setDrawingsMap((prev) => ({ ...prev, [drfId]: [] }));
+    } finally {
+      setDrawingsLoading((prev) => { const n = new Set(prev); n.delete(drfId); return n; });
+    }
+  }, []);
+
+  const toggleExpand = useCallback((drf) => {
+    setExpanded((prev) => {
+      const n = new Set(prev);
+      if (n.has(drf.id)) { n.delete(drf.id); return n; }
+      n.add(drf.id);
+      const hasDrawings = ["accepted", "in_progress", "completed"].includes(drf.status);
+      if (hasDrawings && !(drf.id in drawingsMap)) fetchDrawingsForDrf(drf.id);
+      return n;
+    });
+  }, [drawingsMap, fetchDrawingsForDrf]);
 
   const filtered = items.filter((d) => {
     if (statusFilter !== "all" && d.status !== statusFilter) return false;
@@ -136,6 +187,72 @@ export default function DrawingRequestFormPage() {
         ))}
       </div>
 
+      {/* ── Bagian: Perlu TTD Sales (Fase M) ── */}
+      {salesTtd.length > 0 && (
+        <Card className="rounded-none border-2 border-emerald-500 overflow-hidden" data-testid="sales-ttd-section">
+          <div className="px-4 py-2.5 bg-emerald-600 text-white flex items-center gap-2">
+            <Signature size={16} weight="fill" />
+            <span className="text-sm font-bold uppercase tracking-[0.12em]" style={{ fontFamily: "Chivo, sans-serif" }}>
+              Perlu TTD Sales
+            </span>
+            <span className="min-w-[22px] h-5 px-1.5 flex items-center justify-center text-[11px] font-bold rounded-full bg-white text-emerald-700">
+              {salesTtd.length}
+            </span>
+            <span className="text-[11px] opacity-90 ml-2 normal-case tracking-normal hidden sm:inline">
+              Drawing siap ditandatangani — cek data SO stamp lalu pilih lokasi TTD
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" data-testid="sales-ttd-list">
+              <thead className="bg-white border-b border-slate-200">
+                <tr className="text-[10px] uppercase tracking-[0.08em] font-bold text-slate-500">
+                  <th className="text-left p-3">No. Drawing</th>
+                  <th className="text-left p-3">Item / Project</th>
+                  <th className="text-left p-3">SO</th>
+                  <th className="text-left p-3">Customer</th>
+                  <th className="text-right p-3">Qty</th>
+                  <th className="text-center p-3">Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {salesTtd.map((dw) => (
+                  <tr key={dw.id} className="border-b border-slate-100 hover:bg-emerald-50/40" data-testid={`sales-ttd-row-${dw.drawing_no}`}>
+                    <td className="p-3 font-mono font-semibold text-slate-900 text-xs">{dw.drawing_no}</td>
+                    <td className="p-3 text-xs">
+                      <div className="font-medium text-slate-800">{dw.item_name || dw.title || "-"}</div>
+                      {dw.project_name && <div className="text-slate-500">{dw.project_name}</div>}
+                    </td>
+                    <td className="p-3 font-mono text-xs">{dw.so_no || "-"}</td>
+                    <td className="p-3 text-xs">{dw.customer_name || dw.customer_code || "-"}</td>
+                    <td className="p-3 text-right text-xs tabular-nums">{dw.item_qty ?? dw.qty_order ?? "-"}</td>
+                    <td className="p-3">
+                      <div className="flex gap-1 justify-center">
+                        <button
+                          onClick={() => setPreview({ id: dw.id, drawing_no: dw.drawing_no, project_name: dw.project_name, customer_name: dw.customer_name, viewOnly: true })}
+                          className="inline-flex items-center px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-bold uppercase gap-0.5"
+                          data-testid={`sales-ttd-preview-${dw.drawing_no}`}
+                          title="Lihat dokumen drawing (view-only)"
+                        >
+                          <Eye size={11} weight="bold" /> Lihat
+                        </button>
+                        <button
+                          onClick={() => setSigDrawing(dw)}
+                          className="inline-flex items-center px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase gap-0.5"
+                          data-testid={`sales-ttd-sign-${dw.drawing_no}`}
+                          title="Review data SO stamp lalu letakkan TTD"
+                        >
+                          <Stamp size={11} weight="bold" /> TTD Sekarang
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
       <Card className="rounded-none border-slate-200 overflow-hidden">
         <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2 flex-wrap">
           <MagnifyingGlass size={14} className="text-slate-500" />
@@ -159,6 +276,7 @@ export default function DrawingRequestFormPage() {
           <table className="w-full text-sm">
             <thead className="bg-white border-b border-slate-200">
               <tr className="text-[10px] uppercase tracking-[0.08em] font-bold text-slate-500">
+                <th className="w-8 p-3"></th>
                 <th className="text-left p-3">Form No</th>
                 <th className="text-left p-3">Type</th>
                 <th className="text-left p-3">SO</th>
@@ -167,7 +285,6 @@ export default function DrawingRequestFormPage() {
                 <th className="text-right p-3">Qty</th>
                 <th className="text-left p-3">Due</th>
                 <th className="text-center p-3">Status</th>
-                <th className="text-center p-3">Aksi</th>
               </tr>
             </thead>
             <tbody data-testid="drf-list">
@@ -181,81 +298,198 @@ export default function DrawingRequestFormPage() {
                 const badge = STATUS_BADGE[d.status] || STATUS_BADGE.draft;
                 const canEdit = d.status === "draft" && d.created_by === user?.id;
                 const canSubmit = d.status === "draft" && d.created_by === user?.id;
+                const isOpen = expanded.has(d.id);
+                const itemRows = Array.isArray(d.items) ? d.items : [];
+                const dwgList = drawingsMap[d.id] || [];
+                const dwgLoading = drawingsLoading.has(d.id);
+                const showDrawings = ["accepted", "in_progress", "completed"].includes(d.status);
                 return (
-                  <tr key={d.id} className="border-b border-slate-100 hover:bg-rose-50/30" data-testid={`drf-row-${d.form_no}`}>
-                    <td className="p-3 font-mono font-semibold text-slate-900 text-xs">{d.form_no}</td>
-                    <td className="p-3">
-                      <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase ${d.request_type === "new_order" ? "bg-emerald-100 text-emerald-800 border border-emerald-400" : "bg-blue-100 text-blue-800 border border-blue-400"}`}>
-                        {d.request_type === "new_order" ? "New Order" : "Repeat"}
-                      </span>
-                      {d.ref_so_manual && (
-                        <span className="ml-1 px-1.5 py-0.5 text-[9px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-400" title={`SO lama diinput manual: ${d.ref_so_no || "-"} — mohon Engineering verifikasi`} data-testid={`drf-so-manual-${d.form_no}`}>
-                          SO Manual
+                  <React.Fragment key={d.id}>
+                    <tr
+                      className={`border-b border-slate-100 cursor-pointer ${isOpen ? "bg-rose-50/50" : "hover:bg-rose-50/30"}`}
+                      onClick={() => toggleExpand(d)}
+                      data-testid={`drf-row-${d.form_no}`}
+                      aria-expanded={isOpen}
+                    >
+                      <td className="p-3 text-slate-400">
+                        {isOpen ? <CaretDown size={14} weight="bold" /> : <CaretRight size={14} weight="bold" />}
+                      </td>
+                      <td className="p-3 font-mono font-semibold text-slate-900 text-xs">{d.form_no}</td>
+                      <td className="p-3">
+                        <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase ${d.request_type === "new_order" ? "bg-emerald-100 text-emerald-800 border border-emerald-400" : "bg-blue-100 text-blue-800 border border-blue-400"}`}>
+                          {d.request_type === "new_order" ? "New Order" : "Repeat"}
                         </span>
-                      )}
-                    </td>
-                    <td className="p-3 font-mono text-xs">{d.so_no || "-"}</td>
-                    <td className="p-3 text-xs">{d.project_name || "-"}</td>
-                    <td className="p-3 text-xs">{d.customer_name || d.customer_code || "-"}</td>
-                    <td className="p-3 text-right text-xs">{d.qty_order} <span className="text-slate-500">{d.unit}</span></td>
-                    <td className="p-3 text-xs">{d.expected_due_date || "-"}</td>
-                    <td className="p-3 text-center">
-                      <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${badge.cls}`}>
-                        {badge.label}
-                      </span>
-                    </td>
-                    <td className="p-3 text-center">
-                      <div className="flex gap-1 justify-center flex-wrap">
-                        <button
-                          onClick={() => setDetailId(d.id)}
-                          className="inline-flex items-center px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-bold uppercase gap-0.5"
-                          data-testid={`drf-view-${d.form_no}`}
-                          title="Lihat detail & preview lampiran (view-only)"
-                        >
-                          <Eye size={11} weight="bold" /> Detail
-                        </button>
-                        {canEdit && (
-                          <button
-                            onClick={() => setEditDrf(d)}
-                            className="inline-flex items-center px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold uppercase gap-0.5"
-                            data-testid={`drf-edit-${d.form_no}`}
-                            title="Edit DRF (draft)"
-                          >
-                            <PencilSimple size={11} weight="bold" /> Edit
-                          </button>
+                        {d.ref_so_manual && (
+                          <span className="ml-1 px-1.5 py-0.5 text-[9px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-400" title={`SO lama diinput manual: ${d.ref_so_no || "-"} — mohon Engineering verifikasi`} data-testid={`drf-so-manual-${d.form_no}`}>
+                            SO Manual
+                          </span>
                         )}
-                        {canSubmit && (
-                          <button
-                            onClick={() => doSubmit(d)}
-                            className="inline-flex items-center px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase gap-0.5"
-                            data-testid={`drf-submit-${d.form_no}`}
-                            title="Submit ke Engineering (auto-TTD Sales)"
-                          >
-                            <PaperPlaneTilt size={11} weight="bold" /> Submit
-                          </button>
-                        )}
-                        {canEdit && (
-                          <button
-                            onClick={() => doCancel(d)}
-                            className="inline-flex items-center px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold uppercase"
-                            data-testid={`drf-cancel-${d.form_no}`}
-                          >
-                            <Trash size={11} weight="bold" />
-                          </button>
-                        )}
-                        {d.linked_drawing_id && d.status === "completed" && (
-                          <button
-                            onClick={() => setPreview({ id: d.linked_drawing_id, drawing_no: d.so_no || d.form_no, project_name: d.project_name, customer_name: d.customer_name })}
-                            className="inline-flex items-center px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold uppercase gap-0.5"
-                            data-testid={`drf-view-drawing-${d.form_no}`}
-                            title="Lihat Drawing MKS yang sudah selesai"
-                          >
-                            <Eye size={11} weight="bold" /> Drawing
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="p-3 font-mono text-xs">{d.so_no || "-"}</td>
+                      <td className="p-3 text-xs">{d.project_name || "-"}</td>
+                      <td className="p-3 text-xs">{d.customer_name || d.customer_code || "-"}</td>
+                      <td className="p-3 text-right text-xs">{d.qty_order} <span className="text-slate-500">{d.unit}</span></td>
+                      <td className="p-3 text-xs">{d.expected_due_date || "-"}</td>
+                      <td className="p-3 text-center">
+                        <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${badge.cls}`}>
+                          {badge.label}
+                        </span>
+                      </td>
+                    </tr>
+
+                    {isOpen && (
+                      <tr className="border-b border-slate-200 bg-slate-50/70" data-testid={`drf-expand-${d.form_no}`}>
+                        <td colSpan={9} className="p-4">
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            {/* Tabel Item DRF */}
+                            <div className="bg-white border border-slate-200">
+                              <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200 bg-slate-50">
+                                <Cube size={14} weight="duotone" className="text-rose-600" />
+                                <span className="text-[10px] uppercase tracking-[0.12em] font-bold text-slate-600">Daftar Item</span>
+                                <span className="text-[10px] text-slate-400">({itemRows.length})</span>
+                              </div>
+                              {itemRows.length === 0 ? (
+                                <div className="p-3 text-xs text-slate-400 italic">
+                                  {d.qty_order ? `${d.qty_order} ${d.unit || ""} · ${d.material || "TBA"} (data lama)` : "Tidak ada item."}
+                                </div>
+                              ) : (
+                                <table className="w-full text-xs" data-testid={`drf-items-${d.form_no}`}>
+                                  <thead>
+                                    <tr className="text-[9px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                                      <th className="text-left p-2 w-8">No</th>
+                                      <th className="text-left p-2">Nama Item</th>
+                                      <th className="text-right p-2">Qty</th>
+                                      <th className="text-left p-2">Unit</th>
+                                      <th className="text-left p-2">Material</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {itemRows.map((it, i) => (
+                                      <tr key={i} className="border-b border-slate-50">
+                                        <td className="p-2 text-slate-400">{i + 1}</td>
+                                        <td className="p-2 font-medium text-slate-800">{it.name || "-"}</td>
+                                        <td className="p-2 text-right tabular-nums">{it.qty ?? "-"}</td>
+                                        <td className="p-2 text-slate-600">{it.unit || "-"}</td>
+                                        <td className="p-2 text-slate-600">{it.material || "-"}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+
+                            {/* Tabel Drawing */}
+                            <div className="bg-white border border-slate-200">
+                              <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200 bg-slate-50">
+                                <Ruler size={14} weight="duotone" className="text-violet-600" />
+                                <span className="text-[10px] uppercase tracking-[0.12em] font-bold text-slate-600">Drawing</span>
+                                <span className="text-[10px] text-slate-400">({dwgList.length})</span>
+                              </div>
+                              {!showDrawings ? (
+                                <div className="p-3 text-xs text-slate-400 italic">Engineering belum mulai membuat drawing.</div>
+                              ) : dwgLoading ? (
+                                <div className="p-3 text-xs text-slate-400 flex items-center gap-1.5"><ArrowClockwise size={12} className="animate-spin" /> Memuat drawing…</div>
+                              ) : dwgList.length === 0 ? (
+                                <div className="p-3 text-xs text-slate-400 italic">Belum ada nomor drawing.</div>
+                              ) : (
+                                <table className="w-full text-xs" data-testid={`drf-drawings-${d.form_no}`}>
+                                  <thead>
+                                    <tr className="text-[9px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                                      <th className="text-left p-2">No. Drawing</th>
+                                      <th className="text-left p-2">Item</th>
+                                      <th className="text-right p-2">Qty</th>
+                                      <th className="text-left p-2">Status</th>
+                                      <th className="p-2 w-10"></th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {dwgList.map((dw) => {
+                                      const dst = DWG_STATUS[dw.approval_status] || { label: dw.approval_status || "-", cls: "bg-slate-100 text-slate-700 border-slate-300" };
+                                      const canPreview = !!dw.file_id;
+                                      return (
+                                        <tr key={dw.id} className="border-b border-slate-50">
+                                          <td className="p-2 font-mono font-semibold text-slate-800">{dw.drawing_no || "-"}</td>
+                                          <td className="p-2 text-slate-700 max-w-[160px] truncate" title={dw.item_name || dw.title || ""}>{dw.item_name || dw.title || "-"}</td>
+                                          <td className="p-2 text-right tabular-nums">{dw.item_qty ?? "-"}</td>
+                                          <td className="p-2">
+                                            <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${dst.cls}`}>{dst.label}</span>
+                                          </td>
+                                          <td className="p-2 text-right">
+                                            <div className="flex gap-1 justify-end">
+                                              <button
+                                                onClick={(e) => { e.stopPropagation(); if (canPreview) setPreview({ id: dw.id, drawing_no: dw.drawing_no, project_name: d.project_name, customer_name: d.customer_name, viewOnly: true }); }}
+                                                disabled={!canPreview}
+                                                className="inline-flex items-center gap-0.5 px-1.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-bold uppercase disabled:opacity-40 disabled:cursor-not-allowed"
+                                                data-testid={`drf-dwg-preview-${dw.id}`}
+                                                title={canPreview ? "Lihat drawing (view-only)" : "Belum ada file drawing"}
+                                              >
+                                                <Eye size={10} weight="bold" /> Lihat
+                                              </button>
+                                              {dw.approval_status === "pending_sales" && (
+                                                <button
+                                                  onClick={(e) => { e.stopPropagation(); setSigDrawing(dw); }}
+                                                  className="inline-flex items-center gap-0.5 px-1.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold uppercase"
+                                                  data-testid={`drf-dwg-ttd-${dw.id}`}
+                                                  title="TTD Sales — review SO stamp lalu letakkan TTD"
+                                                >
+                                                  <Stamp size={10} weight="bold" /> TTD
+                                                </button>
+                                              )}
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Aksi ringkas (pindah dari kolom Aksi) */}
+                          <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-slate-200">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setDetailId(d.id); }}
+                              className="inline-flex items-center px-2.5 py-1.5 bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-bold uppercase gap-1"
+                              data-testid={`drf-view-${d.form_no}`}
+                              title="Lihat detail lengkap & preview lampiran (view-only)"
+                            >
+                              <Eye size={12} weight="bold" /> Detail & Preview
+                            </button>
+                            {canEdit && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setEditDrf(d); }}
+                                className="inline-flex items-center px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold uppercase gap-1"
+                                data-testid={`drf-edit-${d.form_no}`}
+                                title="Edit DRF (draft)"
+                              >
+                                <PencilSimple size={12} weight="bold" /> Edit
+                              </button>
+                            )}
+                            {canSubmit && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); doSubmit(d); }}
+                                className="inline-flex items-center px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase gap-1"
+                                data-testid={`drf-submit-${d.form_no}`}
+                                title="Submit ke Engineering (auto-TTD Sales)"
+                              >
+                                <PaperPlaneTilt size={12} weight="bold" /> Submit ke Engineering
+                              </button>
+                            )}
+                            {canEdit && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); doCancel(d); }}
+                                className="inline-flex items-center px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold uppercase gap-1"
+                                data-testid={`drf-cancel-${d.form_no}`}
+                              >
+                                <Trash size={12} weight="bold" /> Batalkan
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -276,7 +510,9 @@ export default function DrawingRequestFormPage() {
         <PdfPreviewModal
           drawingId={preview.id}
           target="mks"
-          stamped
+          stamped={!preview.viewOnly}
+          noDownload={!!preview.viewOnly}
+          noPrint={!!preview.viewOnly}
           title={preview.drawing_no}
           subtitle={`${preview.project_name || ""}${preview.customer_name ? " · " + preview.customer_name : ""}`}
           onClose={() => setPreview(null)}
@@ -285,6 +521,21 @@ export default function DrawingRequestFormPage() {
 
       {detailId && (
         <DrfDetailModal drf={{ id: detailId }} isHead={false} onClose={() => setDetailId(null)} onChanged={load} />
+      )}
+
+      {sigDrawing && (
+        <SignaturePlacementModal
+          drawing={sigDrawing}
+          stage="sales"
+          onDone={() => {
+            setSigDrawing(null);
+            loadSalesTtd();
+            load();
+            // refresh drawing tabel yang sedang terbuka bila ada
+            if (sigDrawing.from_drf_id) fetchDrawingsForDrf(sigDrawing.from_drf_id);
+          }}
+          onClose={() => setSigDrawing(null)}
+        />
       )}
     </div>
   );

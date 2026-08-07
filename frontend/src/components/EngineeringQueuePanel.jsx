@@ -2,9 +2,11 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../lib/api";
 import DrfDetailModal from "./DrfDetailModal";
+import EngLeaderReviewDialog from "./EngLeaderReviewDialog";
 import {
-  PaperPlaneTilt, Stamp, Kanban, ArrowRight, ArrowClockwise,
+  PaperPlaneTilt, ArrowRight, ArrowClockwise,
   CheckCircle, Gear, Tray, Tray as TrayIcon, ListChecks, Eye, MagnifyingGlass,
+  SealCheck, Signature,
 } from "@phosphor-icons/react";
 
 const TYPE_LABEL = { new_order: "New", repeat_order: "Repeat" };
@@ -36,22 +38,27 @@ const STATUS_META = {
 };
 
 /**
- * EngineeringQueuePanel — antrian Drawing Request (DRF) untuk portal Engineering.
- * Tile status = FILTER inline daftar DRF di bawahnya (tidak pindah menu).
- * Tombol "Buka" pada tiap baris membuka POPUP detail DRF (info + preview lampiran view-only,
- * aksi Terima & Assign untuk submitted, atau dokumen drawing + progres untuk in_progress).
- * Quick-link terpisah untuk "Menunggu TTD Saya" & "Tugas Saya" (domain approval drawing).
+ * EngineeringQueuePanel — pusat antrian portal Engineering.
+ * Untuk Leader (isHead) tampil sebagai 2 tab antrian:
+ *   1. "Antrian Drawing Request & Inquiry" — DRF + Inquiry dari Sales (filter + list).
+ *   2. "Menunggu Verifikasi Leader" — DRF/SO yang punya drawing pending_eng_head.
+ *      Klik item langsung membuka EngLeaderReviewDialog (Review Dokumen SO).
+ * Untuk eng staff non-leader: tetap fokus tile "Tugas Saya".
  */
 export default function EngineeringQueuePanel({ isHead, isEngUser }) {
   const navigate = useNavigate();
+  const [tab, setTab] = useState("incoming"); // "incoming" | "leader"
   const [drfs, setDrfs] = useState([]);
   const [inquiries, setInquiries] = useState([]);
-  const [pendingApproval, setPendingApproval] = useState(0);
-  const [myTasks, setMyTasks] = useState(0);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [detailDrf, setDetailDrf] = useState(null);
+
+  // Antrian "Menunggu Verifikasi Leader"
+  const [leaderRows, setLeaderRows] = useState([]);
+  const [leaderLoading, setLeaderLoading] = useState(true);
+  const [reviewTarget, setReviewTarget] = useState(null); // {drf_id, bom_id, bom_no, so_no}
 
   const fetchAll = useCallback(async () => {
     try {
@@ -60,30 +67,34 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
         jobs.push(
           api.get("/drawing-requests", { params: { scope: "for_engineering" } })
             .then(({ data }) => setDrfs(data?.items || [])).catch(() => {}),
-          api.get("/drawings/pending-my-approval")
-            .then(({ data }) => setPendingApproval(data?.total || 0)).catch(() => {}),
           api.get("/inquiries")
             .then(({ data }) => setInquiries(data?.items || [])).catch(() => {}),
-        );
-      }
-      if (isEngUser) {
-        jobs.push(
-          api.get("/drawings/my-assignments")
-            .then(({ data }) => setMyTasks((data?.items || []).filter((d) => !["controlled", "released"].includes(d.approval_status)).length))
-            .catch(() => {}),
         );
       }
       await Promise.all(jobs);
     } finally {
       setLoading(false);
     }
-  }, [isHead, isEngUser]);
+  }, [isHead]);
+
+  const fetchLeaderQueue = useCallback(async () => {
+    if (!isHead) { setLeaderLoading(false); return; }
+    try {
+      const { data } = await api.get("/engineering/pending-leader-verification");
+      setLeaderRows(data?.items || []);
+    } catch (e) {
+      // panel opsional
+    } finally {
+      setLeaderLoading(false);
+    }
+  }, [isHead]);
 
   useEffect(() => {
     fetchAll();
-    const t = setInterval(fetchAll, 45000);
+    fetchLeaderQueue();
+    const t = setInterval(() => { fetchAll(); fetchLeaderQueue(); }, 45000);
     return () => clearInterval(t);
-  }, [fetchAll]);
+  }, [fetchAll, fetchLeaderQueue]);
 
   // Normalisasi DRF + Inquiry → satu daftar antrian ("rows"), dibedakan via _kind
   const drfRows = drfs.map((d) => ({
@@ -146,32 +157,80 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
       .some((x) => (x || "").toLowerCase().includes(qLower));
   });
 
-  return (
-    <div className="bg-white border border-slate-200 shadow-sm" data-testid="eng-queue-panel">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50">
-        <div className="flex items-center gap-2">
-          <Tray size={16} weight="fill" className="text-amber-600" />
-          <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-slate-800" style={{ fontFamily: "Chivo, sans-serif" }}>
-            Antrian Drawing Request &amp; Inquiry
-          </h2>
-          {loading && <span className="text-[10px] text-slate-400 animate-pulse">memuat…</span>}
+  const leaderCount = leaderRows.reduce((s, r) => s + (r.pending_count || 0), 0);
+
+  const refreshEverything = () => { fetchAll(); fetchLeaderQueue(); };
+
+  // ── Non-head (eng staff): fokus Tugas Saya (tanpa tab) ──
+  if (!isHead) {
+    return (
+      <div className="bg-white border border-slate-200 shadow-sm" data-testid="eng-queue-panel">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50">
+          <div className="flex items-center gap-2">
+            <Tray size={16} weight="fill" className="text-amber-600" />
+            <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-slate-800" style={{ fontFamily: "Chivo, sans-serif" }}>
+              Antrian Engineering
+            </h2>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {isHead && (
-            <QuickLink icon={Stamp} label="Menunggu TTD Saya" count={pendingApproval} onClick={() => navigate("/drawings/pending-my-approval")} testid="eng-queue-ttd-link" />
-          )}
-          {isEngUser && (
-            <QuickLink icon={Kanban} label="Tugas Saya" count={myTasks} onClick={() => navigate("/engineering/work-orders")} testid="eng-queue-mytasks-link" />
-          )}
-          <button onClick={fetchAll} className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded" title="Segarkan" data-testid="eng-queue-refresh">
-            <ArrowClockwise size={14} weight="bold" />
+        <div className="p-4">
+          <button
+            onClick={() => navigate("/engineering/work-orders")}
+            className="w-full flex items-center justify-between p-4 border-l-4 border-l-teal-500 bg-white hover:bg-slate-50 transition-colors"
+            data-testid="eng-queue-mytasks-tile"
+          >
+            <div className="flex items-center gap-3">
+              <ListChecks size={22} weight="duotone" className="text-teal-600" />
+              <div className="text-left">
+                <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-slate-500">Tugas Saya</div>
+                <div className="text-sm text-slate-700">DRF yang ditugaskan ke Anda — klik untuk mengerjakan</div>
+              </div>
+            </div>
+            <ArrowRight size={16} weight="bold" className="text-slate-400" />
           </button>
         </div>
       </div>
+    );
+  }
 
-      {isHead ? (
-        <>
+  // ── Leader / Admin: 2 tab antrian ──
+  return (
+    <div className="bg-white border border-slate-200 shadow-sm" data-testid="eng-queue-panel">
+      {/* Tab header */}
+      <div className="flex items-stretch border-b border-slate-200 bg-slate-50" role="tablist" data-testid="eng-queue-tabs">
+        <TabButton
+          active={tab === "incoming"}
+          onClick={() => setTab("incoming")}
+          icon={Tray}
+          label="Antrian Drawing Request & Inquiry"
+          count={counts.all}
+          activeCls="border-amber-500 text-amber-700"
+          badgeCls="bg-amber-600"
+          testid="eng-queue-tab-incoming"
+        />
+        <TabButton
+          active={tab === "leader"}
+          onClick={() => setTab("leader")}
+          icon={SealCheck}
+          label="Menunggu Verifikasi Leader"
+          count={leaderCount}
+          activeCls="border-emerald-500 text-emerald-700"
+          badgeCls="bg-emerald-600"
+          testid="eng-queue-tab-leader"
+        />
+        <button
+          onClick={refreshEverything}
+          className="px-3 text-slate-500 hover:text-slate-800 hover:bg-slate-200 border-b-2 border-transparent"
+          title="Segarkan"
+          data-testid="eng-queue-refresh"
+        >
+          <ArrowClockwise size={14} weight="bold" />
+        </button>
+      </div>
+
+      {/* ── TAB 1: Antrian Drawing Request & Inquiry ── */}
+      {tab === "incoming" && (
+        <div data-testid="eng-queue-incoming">
           {/* Filter tiles */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-200" data-testid="eng-queue-filters">
             {FILTERS.map((f) => {
@@ -201,6 +260,7 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
               <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-slate-400">
                 {filter === "all" ? "Semua antrian (Drawing & Inquiry)" : `Filter: ${STATUS_META[filter]?.label || filter}`} · {filtered.length}
                 <span className="ml-2 normal-case tracking-normal text-slate-400 font-normal">(urut: due date terdekat)</span>
+                {loading && <span className="ml-2 text-slate-400 animate-pulse normal-case">memuat…</span>}
               </div>
               <div className="flex items-center gap-2">
                 <div className="relative">
@@ -292,27 +352,73 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
               </div>
             )}
           </div>
-        </>
-      ) : (
-        /* Non-head (eng staff): fokus Tugas Saya */
-        <div className="p-4">
-          <button
-            onClick={() => navigate("/engineering/work-orders")}
-            className="w-full flex items-center justify-between p-4 border-l-4 border-l-teal-500 bg-white hover:bg-slate-50 transition-colors"
-            data-testid="eng-queue-mytasks-tile"
-          >
-            <div className="flex items-center gap-3">
-              <ListChecks size={22} weight="duotone" className="text-teal-600" />
-              <div className="text-left">
-                <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-slate-500">Tugas Saya</div>
-                <div className="text-sm text-slate-700">DRF yang ditugaskan ke Anda — klik untuk mengerjakan</div>
-              </div>
+        </div>
+      )}
+
+      {/* ── TAB 2: Menunggu Verifikasi Leader ── */}
+      {tab === "leader" && (
+        <div className="p-3" data-testid="eng-queue-leader">
+          <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-slate-400 mb-2">
+            SO/DRF dengan drawing menunggu review &amp; TTD Anda · {leaderRows.length} SO
+            <span className="ml-2 normal-case tracking-normal text-slate-400 font-normal">(urut: paling lama menunggu)</span>
+            {leaderLoading && <span className="ml-2 text-slate-400 animate-pulse normal-case">memuat…</span>}
+          </div>
+          {leaderRows.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-400" data-testid="eng-queue-leader-empty">
+              <CheckCircle size={16} weight="fill" className="text-emerald-500" />
+              Tidak ada dokumen yang menunggu verifikasi Anda.
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-bold tabular-nums text-slate-900">{myTasks}</span>
-              <ArrowRight size={16} weight="bold" className="text-slate-400" />
+          ) : (
+            <div className="overflow-x-auto max-h-[340px] overflow-y-auto border border-slate-100">
+              <table className="w-full text-sm" data-testid="eng-queue-leader-list">
+                <thead className="sticky top-0 bg-white z-[1]">
+                  <tr className="text-[9px] uppercase tracking-[0.1em] font-bold text-slate-400 border-b border-slate-100">
+                    <th className="text-left py-1.5 px-2">SO</th>
+                    <th className="text-left py-1.5 px-2">Form DRF</th>
+                    <th className="text-left py-1.5 px-2">Customer / Project</th>
+                    <th className="text-left py-1.5 px-2">BOM</th>
+                    <th className="text-center py-1.5 px-2">Perlu TTD</th>
+                    <th className="py-1.5 px-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaderRows.map((r) => {
+                    const openReview = () => setReviewTarget(r);
+                    return (
+                      <tr
+                        key={r.drf_id || r.so_no}
+                        className="border-b border-slate-50 hover:bg-emerald-50/50 cursor-pointer"
+                        onClick={openReview}
+                        data-testid={`eng-leader-row-${r.so_no}`}
+                      >
+                        <td className="py-1.5 px-2 font-mono text-xs font-semibold text-slate-800 whitespace-nowrap">{r.so_no || "-"}</td>
+                        <td className="py-1.5 px-2 font-mono text-[11px] text-slate-600 whitespace-nowrap">{r.form_no || "—"}</td>
+                        <td className="py-1.5 px-2 text-xs text-slate-700 max-w-[240px] truncate" title={`${r.customer_name || ""} ${r.project_name || ""}`}>
+                          <span className="font-medium">{r.customer_name || "-"}</span>
+                          {r.project_name ? <span className="text-slate-400"> · {r.project_name}</span> : null}
+                        </td>
+                        <td className="py-1.5 px-2 font-mono text-[11px] text-slate-600 whitespace-nowrap">{r.bom_no || "—"}</td>
+                        <td className="py-1.5 px-2 text-center">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold border bg-emerald-50 text-emerald-700 border-emerald-300">
+                            {r.pending_count} / {r.total_drawings}
+                          </span>
+                        </td>
+                        <td className="py-1.5 px-2 text-right">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openReview(); }}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-wider"
+                            data-testid={`eng-leader-review-${r.so_no}`}
+                          >
+                            <Signature size={11} weight="bold" /> Review &amp; TTD
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          </button>
+          )}
         </div>
       )}
 
@@ -321,25 +427,39 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
           drf={detailDrf}
           isHead={isHead}
           onClose={() => setDetailDrf(null)}
-          onChanged={fetchAll}
+          onChanged={refreshEverything}
+        />
+      )}
+
+      {reviewTarget && (
+        <EngLeaderReviewDialog
+          open={!!reviewTarget}
+          onClose={() => setReviewTarget(null)}
+          drfId={reviewTarget.drf_id}
+          bomId={reviewTarget.bom_id}
+          bomNo={reviewTarget.bom_no}
+          soNo={reviewTarget.so_no}
+          onReload={fetchLeaderQueue}
         />
       )}
     </div>
   );
 }
 
-function QuickLink({ icon: Icon, label, count, onClick, testid }) {
+function TabButton({ active, onClick, icon: Icon, label, count, activeCls, badgeCls, testid }) {
   return (
     <button
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 transition-colors group"
+      className={`flex-1 flex items-center justify-center gap-2 px-3 py-3 border-b-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500 ${active ? `bg-white ${activeCls}` : "border-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700"}`}
       data-testid={testid}
-      title={label}
     >
-      <Icon size={14} weight="duotone" className="text-slate-500" />
-      <span className="text-[10px] uppercase tracking-wider font-bold text-slate-600 hidden md:inline">{label}</span>
-      <span className={`min-w-[20px] h-5 px-1 flex items-center justify-center text-[11px] font-bold rounded-full ${count > 0 ? "bg-amber-600 text-white" : "bg-slate-200 text-slate-500"}`}>{count}</span>
-      <ArrowRight size={11} weight="bold" className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+      <Icon size={16} weight={active ? "fill" : "duotone"} />
+      <span className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.08em]" style={{ fontFamily: "Chivo, sans-serif" }}>{label}</span>
+      {count > 0 && (
+        <span className={`min-w-[20px] h-5 px-1 flex items-center justify-center text-[11px] font-bold rounded-full text-white ${active ? badgeCls : "bg-slate-400"}`}>{count}</span>
+      )}
     </button>
   );
 }

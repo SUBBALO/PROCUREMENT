@@ -1,30 +1,26 @@
 [
   {
-    "content": "Feature F: po_customer_no in DRF + auto-fill SO stamp po_no at Sales TTD",
+    "content": "Phase N: Dashboard SO Progress + sidebar (backend 11/11 tested)",
     "status": "completed"
   },
   {
-    "content": "Feature G: customer_code as customer in SO stamp auto-fill",
+    "content": "Phase O: 2 antrian leader + klik buka EngLeaderReviewDialog",
     "status": "completed"
   },
   {
-    "content": "Feature F/UI: Sales DRF form input for No. PO Customer",
+    "content": "Phase L: DRF list redesign - expandable rows, hapus Aksi, tabel item + tabel drawing + preview",
     "status": "completed"
   },
   {
-    "content": "Feature E: DRF detail view+preview modal wired into DRF list",
+    "content": "Phase M: Perlu TTD Sales section + TTD dari DRF list (SignaturePlacementModal stage=sales, prefill PO dari DRF)",
     "status": "completed"
   },
   {
-    "content": "Feature B: Work Order per-drawing page - split into Tabs (Drawing+Upload | BOM)",
+    "content": "Phase I: Notifikasi Sales 'Drawing Siap Dilihat' (kategori baru di notifications)",
     "status": "completed"
   },
   {
-    "content": "Feature C: superadmin/admin/sales view drawing preview before full TTD (via DrfDetailModal, view-only)",
-    "status": "completed"
-  },
-  {
-    "content": "Test all features (backend + frontend) via testing agent",
+    "content": "Comprehensive testing (backend+frontend) O/L/M/I + cleanup akun/kredensial QA",
     "status": "in_progress"
   }
 ]

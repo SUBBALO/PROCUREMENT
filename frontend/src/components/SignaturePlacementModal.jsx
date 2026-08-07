@@ -41,8 +41,8 @@ export default function SignaturePlacementModal({ drawing, stage, onDone, onClos
   const isSalesStage = stage === "sales";
   const [soData, setSoData] = useState({
     so_no: drawing.so_no || "",
-    po_no: "",
-    qty: drawing.qty_order ? `${drawing.qty_order} ${drawing.unit_order || "pcs"}` : "",
+    po_no: drawing.po_customer_no || drawing.po_no || "",
+    qty: drawing.item_qty ? `${drawing.item_qty}` : (drawing.qty_order ? `${drawing.qty_order} ${drawing.unit_order || "pcs"}` : ""),
     customer: drawing.customer_name || drawing.customer_code || "",
     received_date: new Date().toISOString().slice(0, 10),
     due_date: drawing.expected_due_date || "",
