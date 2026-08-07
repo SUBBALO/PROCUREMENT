@@ -118,6 +118,7 @@ class DrawingRequestCreate(BaseModel):
     project_name: str = ""
     customer_code: str = ""
     customer_name: str = ""
+    po_customer_no: str = ""   # No. PO dari Customer (Sales isi di DRF) → auto-isi stamping
     qty_order: float = 1
     unit: str = "pcs"
     material: str = "TBA"
@@ -149,6 +150,7 @@ async def create_drawing_request(
         "project_name": payload.project_name.strip(),
         "customer_code": payload.customer_code.strip(),
         "customer_name": payload.customer_name.strip(),
+        "po_customer_no": (payload.po_customer_no or "").strip(),
         "qty_order": payload.qty_order,
         "unit": payload.unit,
         "material": payload.material or "TBA",
@@ -804,6 +806,7 @@ async def generate_drawings_for_drf(
         din = DrawingIn(
             customer_code=customer_code,
             customer_name=doc.get("customer_name") or "",
+            po_customer_no=doc.get("po_customer_no") or "",
             project_initial=(d.project_initial or "").strip(),
             drawing_type=d.drawing_type or "Assembly",
             title=d.title or "",

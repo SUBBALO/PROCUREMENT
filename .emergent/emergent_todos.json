@@ -1,34 +1,30 @@
 [
   {
-    "content": "Backend: add workgroup-status endpoint + SO lock helper (drawing_register.py)",
+    "content": "Feature F: po_customer_no in DRF + auto-fill SO stamp po_no at Sales TTD",
     "status": "completed"
   },
   {
-    "content": "Backend: bom_attachments review endpoint + lock guard on upload/delete",
+    "content": "Feature G: customer_code as customer in SO stamp auto-fill",
     "status": "completed"
   },
   {
-    "content": "Backend: BOM items bulk-replace lock guard when SO locked (bom.py)",
+    "content": "Feature F/UI: Sales DRF form input for No. PO Customer",
     "status": "completed"
   },
   {
-    "content": "Frontend: EngineeringWorkOrderPage - remove per-drawing BOM linking, read-only BOM ref",
+    "content": "Feature E: DRF detail view+preview modal wired into DRF list",
     "status": "completed"
   },
   {
-    "content": "Frontend: FinalSubmitChecklistDialog with required checklist + deep-links",
+    "content": "Feature B: Work Order per-drawing page - split into Tabs (Drawing+Upload | BOM)",
     "status": "completed"
   },
   {
-    "content": "Frontend: EngineeringDrfWorkPage - lock BOM/SO docs banner when all submitted",
+    "content": "Feature C: superadmin/admin/sales view drawing preview before full TTD (via DrfDetailModal, view-only)",
     "status": "completed"
   },
   {
-    "content": "Frontend: EngLeaderReviewDialog component (Phase 3) + entry button",
-    "status": "completed"
-  },
-  {
-    "content": "Test backend (lock/unlock, review endpoint) + frontend build & screenshot",
-    "status": "completed"
+    "content": "Test all features (backend + frontend) via testing agent",
+    "status": "in_progress"
   }
 ]

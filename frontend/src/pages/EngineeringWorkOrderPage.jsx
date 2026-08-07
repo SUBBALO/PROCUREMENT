@@ -5,6 +5,7 @@ import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import BackLink from "../components/BackLink";
 import { DrawingAttachmentsPanel } from "./MasterDrawingPage";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
@@ -141,52 +142,69 @@ export default function EngineeringWorkOrderPage() {
         </div>
       </Card>
 
-      {/* Section A: BOM Reference (1 BOM per Sales Order — read-only di halaman drawing) */}
-      <BomReferenceSection drawing={drawing} navigate={navigate} />
+      {/* Feature B — 2 Tab: (1) Drawing & Upload  (2) BOM (tetap 1 SO) */}
+      <Tabs defaultValue="drawing" className="w-full">
+        <TabsList className="rounded-none bg-slate-100 border border-slate-200 p-0 h-auto">
+          <TabsTrigger value="drawing" className="rounded-none data-[state=active]:bg-emerald-600 data-[state=active]:text-white px-5 py-2.5 text-sm font-bold uppercase tracking-wider" data-testid="wo-tab-drawing">
+            1 · Drawing &amp; Upload
+          </TabsTrigger>
+          <TabsTrigger value="bom" className="rounded-none data-[state=active]:bg-amber-600 data-[state=active]:text-white px-5 py-2.5 text-sm font-bold uppercase tracking-wider" data-testid="wo-tab-bom">
+            2 · Bill of Material
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Section B: Attachments (Upload PDF Drawing, Customer Ref, Extras) */}
-      <div className="border-2 border-emerald-500">
-        <div className="px-4 py-3 bg-emerald-600 text-white flex items-center gap-3">
-          <span className="w-8 h-8 rounded-full bg-white text-emerald-700 flex items-center justify-center text-base font-extrabold">B</span>
-          <div className="text-[13px] uppercase tracking-widest font-bold">Upload Dokumen Drawing</div>
-        </div>
-        <div className="p-3">
-          <DrawingAttachmentsPanel drawing={drawing} onDrawingUpdated={() => load()} editable={isDraft} />
-        </div>
-      </div>
-
-      {/* Section C: Submit for approval */}
-      {isDraft && (
-        <div className="border-2 border-sky-500">
-          <div className="px-4 py-3 bg-sky-600 text-white flex items-center gap-3">
-            <span className="w-8 h-8 rounded-full bg-white text-sky-700 flex items-center justify-center text-base font-extrabold">C</span>
-            <div className="text-[13px] uppercase tracking-widest font-bold">TTD Prepared By &amp; Submit ke Eng Head</div>
-          </div>
-          <div className="p-4 bg-sky-50 flex items-center justify-between gap-4">
-            <div className="text-sm text-slate-700 flex-1">
-              Setelah PDF drawing di-upload &amp; kategori kerja dipilih, klik tombol di kanan untuk TTD
-              posisi <b>Prepared By</b> pada PDF, lalu drawing otomatis dikirim ke Eng Head untuk approval.
-              {!drawing.file_id && (
-                <div className="mt-1 text-rose-700 font-bold">⚠ Upload PDF Drawing dulu di bagian B sebelum submit.</div>
-              )}
-              {drawing.file_id && !hasWorkCat && (
-                <div className="mt-1 text-rose-700 font-bold">⚠ Pilih Kategori Pekerjaan (SIMPLE / MODERATE / COMPLEX) dulu di bagian B sebelum submit.</div>
-              )}
+        {/* TAB 1 — Drawing & Upload + Submit */}
+        <TabsContent value="drawing" className="mt-3 space-y-4">
+          {/* Section B: Attachments (Upload PDF Drawing, Customer Ref, Extras) */}
+          <div className="border-2 border-emerald-500">
+            <div className="px-4 py-3 bg-emerald-600 text-white flex items-center gap-3">
+              <span className="w-8 h-8 rounded-full bg-white text-emerald-700 flex items-center justify-center text-base font-extrabold">A</span>
+              <div className="text-[13px] uppercase tracking-widest font-bold">Upload Dokumen Drawing</div>
             </div>
-            <Button
-              onClick={handleSubmitClick}
-              disabled={!canSubmit || checkingFinal}
-              className="rounded-none bg-sky-700 hover:bg-sky-800 text-white h-12 px-7 text-base disabled:opacity-40 transition-colors duration-150 active:translate-y-[1px]"
-              data-testid="wo-ttd-submit-btn"
-            >
-              {checkingFinal
-                ? <ArrowClockwise size={18} className="animate-spin mr-2" />
-                : <PaperPlaneRight size={18} weight="bold" className="mr-2" />}
-              TTD &amp; Submit
-            </Button>
+            <div className="p-3">
+              <DrawingAttachmentsPanel drawing={drawing} onDrawingUpdated={() => load()} editable={isDraft} />
+            </div>
           </div>
-        </div>
-      )}
+
+          {/* Section C: Submit for approval */}
+          {isDraft && (
+            <div className="border-2 border-sky-500">
+              <div className="px-4 py-3 bg-sky-600 text-white flex items-center gap-3">
+                <span className="w-8 h-8 rounded-full bg-white text-sky-700 flex items-center justify-center text-base font-extrabold">B</span>
+                <div className="text-[13px] uppercase tracking-widest font-bold">TTD Prepared By &amp; Submit ke Eng Head</div>
+              </div>
+              <div className="p-4 bg-sky-50 flex items-center justify-between gap-4">
+                <div className="text-sm text-slate-700 flex-1">
+                  Setelah PDF drawing di-upload &amp; kategori kerja dipilih, klik tombol di kanan untuk TTD
+                  posisi <b>Prepared By</b> pada PDF, lalu drawing otomatis dikirim ke Eng Head untuk approval.
+                  {!drawing.file_id && (
+                    <div className="mt-1 text-rose-700 font-bold">⚠ Upload PDF Drawing dulu di atas sebelum submit.</div>
+                  )}
+                  {drawing.file_id && !hasWorkCat && (
+                    <div className="mt-1 text-rose-700 font-bold">⚠ Pilih Kategori Pekerjaan (SIMPLE / MODERATE / COMPLEX) dulu sebelum submit.</div>
+                  )}
+                </div>
+                <Button
+                  onClick={handleSubmitClick}
+                  disabled={!canSubmit || checkingFinal}
+                  className="rounded-none bg-sky-700 hover:bg-sky-800 text-white h-12 px-7 text-base disabled:opacity-40 transition-colors duration-150 active:translate-y-[1px]"
+                  data-testid="wo-ttd-submit-btn"
+                >
+                  {checkingFinal
+                    ? <ArrowClockwise size={18} className="animate-spin mr-2" />
+                    : <PaperPlaneRight size={18} weight="bold" className="mr-2" />}
+                  TTD &amp; Submit
+                </Button>
+              </div>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* TAB 2 — BOM (1 BOM per SO) */}
+        <TabsContent value="bom" className="mt-3">
+          <BomReferenceSection drawing={drawing} navigate={navigate} />
+        </TabsContent>
+      </Tabs>
 
       {isPending && (
         <Card className="rounded-none border-amber-500 border-2 p-4 bg-amber-50">

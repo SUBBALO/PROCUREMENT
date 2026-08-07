@@ -133,6 +133,8 @@ export default function DrfDetailModal({ drf, isHead, onClose, onChanged }) {
             <InfoCell label="No. SO" value={detail?.so_no} mono />
             {detail?.request_type === "repeat_order" && <InfoCell label="SO Referensi (Lama)" value={detail?.ref_so_no} mono />}
             <InfoCell label="Customer" value={detail?.customer_name} />
+            <InfoCell label="Kode Customer" value={detail?.customer_code} mono />
+            <InfoCell label="No. PO Customer" value={detail?.po_customer_no} mono />
             <InfoCell label="Project" value={detail?.project_name} />
             <InfoCell label="Qty Order" value={`${detail?.qty_order ?? "-"} ${detail?.unit || ""}`} />
             <InfoCell label="Material" value={detail?.material} />

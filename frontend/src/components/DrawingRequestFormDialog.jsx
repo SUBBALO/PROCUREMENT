@@ -38,6 +38,7 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
     project_name: initial?.project_name || "",
     customer_code: initial?.customer_code || "",
     customer_name: initial?.customer_name || "",
+    po_customer_no: initial?.po_customer_no || "",
     qty_order: initial?.qty_order ?? 1,
     unit: initial?.unit || "pcs",
     material: initial?.material || "TBA",
@@ -372,6 +373,11 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
             <div>
               <Label className="text-xs">Customer</Label>
               <Input value={form.customer_name} onChange={(e) => setForm((f) => ({ ...f, customer_name: e.target.value }))} disabled={isLocked} className="rounded-none border-slate-300" data-testid="drf-customer" />
+            </div>
+            <div>
+              <Label className="text-xs">No. PO Customer</Label>
+              <Input value={form.po_customer_no} onChange={(e) => setForm((f) => ({ ...f, po_customer_no: e.target.value }))} disabled={isLocked} placeholder="Nomor PO dari customer (utk stamping SO)" className="rounded-none border-slate-300" data-testid="drf-po-customer" />
+              <div className="text-[10px] text-slate-500 mt-0.5">Otomatis mengisi kolom P/O No. pada stamping SO saat Sales TTD.</div>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div className="col-span-2">

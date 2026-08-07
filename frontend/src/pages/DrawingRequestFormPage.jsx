@@ -8,10 +8,11 @@ import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import DrawingRequestFormDialog from "../components/DrawingRequestFormDialog";
+import DrfDetailModal from "../components/DrfDetailModal";
 import PdfPreviewModal from "../components/PdfPreviewModal";
 import {
   Plus, ArrowClockwise, FileText, Eye, Trash, PaperPlaneTilt,
-  MagnifyingGlass, CheckCircle, Clock, Warning
+  MagnifyingGlass, CheckCircle, Clock, Warning, PencilSimple
 } from "@phosphor-icons/react";
 
 const STATUS_BADGE = {
@@ -32,6 +33,7 @@ export default function DrawingRequestFormPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editDrf, setEditDrf] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [detailId, setDetailId] = useState(null);
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
 
   const load = useCallback(async () => {
@@ -205,13 +207,23 @@ export default function DrawingRequestFormPage() {
                     <td className="p-3 text-center">
                       <div className="flex gap-1 justify-center flex-wrap">
                         <button
-                          onClick={() => setEditDrf(d)}
+                          onClick={() => setDetailId(d.id)}
                           className="inline-flex items-center px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-bold uppercase gap-0.5"
                           data-testid={`drf-view-${d.form_no}`}
-                          title="Lihat / edit detail"
+                          title="Lihat detail & preview lampiran (view-only)"
                         >
                           <Eye size={11} weight="bold" /> Detail
                         </button>
+                        {canEdit && (
+                          <button
+                            onClick={() => setEditDrf(d)}
+                            className="inline-flex items-center px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold uppercase gap-0.5"
+                            data-testid={`drf-edit-${d.form_no}`}
+                            title="Edit DRF (draft)"
+                          >
+                            <PencilSimple size={11} weight="bold" /> Edit
+                          </button>
+                        )}
                         {canSubmit && (
                           <button
                             onClick={() => doSubmit(d)}
@@ -269,6 +281,10 @@ export default function DrawingRequestFormPage() {
           subtitle={`${preview.project_name || ""}${preview.customer_name ? " · " + preview.customer_name : ""}`}
           onClose={() => setPreview(null)}
         />
+      )}
+
+      {detailId && (
+        <DrfDetailModal drf={{ id: detailId }} isHead={false} onClose={() => setDetailId(null)} onChanged={load} />
       )}
     </div>
   );

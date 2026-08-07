@@ -199,6 +199,7 @@ class DrawingIn(BaseModel):
     # Iter 20 — Assign engineer yang mengerjakan drawing
     assigned_to_user_id: str = ""
     assigned_to_name: str = ""
+    po_customer_no: str = ""      # No. PO Customer (dari DRF) — auto-isi stamping SO
 
 
 class ConfigIn(BaseModel):
@@ -933,6 +934,7 @@ async def create_drawing(payload: DrawingIn, current: dict = Depends(get_current
     doc["drawing_no"] = drawing_no
     doc["customer_code"] = (payload.customer_code or "MKS").upper().strip()
     doc["customer_name"] = (payload.customer_name or "").strip()
+    doc["po_customer_no"] = (payload.po_customer_no or "").strip()
     doc["request_by_sales"] = (payload.request_by_sales or "").strip()
     doc["project_initial"] = (payload.project_initial or "").upper().strip()
     doc["auto_generated"] = auto_generated
@@ -2217,16 +2219,27 @@ async def drawing_approve_stage(
     # Dianggap SELESAI walaupun QC/Sales belum TTD.
     if stage == "eng_head":
         update["work_completed_at"] = _now_iso()
-    # Iter 20d — Sales stage: simpan so_stamp_draft untuk auto-fill di Salma SO Stamp form
-    if stage == "sales" and payload and payload.so_stamp_data:
-        _sd = payload.so_stamp_data or {}
+    # Sales stage: AUTO-ISI so_stamp_draft dari data DRF/drawing (Sales tak perlu ketik ulang).
+    # Feature F: po_no diambil dari No. PO Customer (DRF). Feature G: customer = KODE customer (Customer Code Master).
+    if stage == "sales":
+        _sd = (payload.so_stamp_data if (payload and payload.so_stamp_data) else {}) or {}
+        # Ambil qty & tanggal dari Sales Order bila ada
+        so_ref = {}
+        try:
+            if drawing.get("so_no"):
+                so_ref = await db.sales_orders.find_one({"so_no": drawing.get("so_no")}, {"_id": 0}) or {}
+        except Exception:
+            so_ref = {}
+        cust_code = (drawing.get("customer_code") or "").strip()
+        po_cust = (drawing.get("po_customer_no") or "").strip()
         update["so_stamp_draft"] = {
-            "so_no": (_sd.get("so_no") or "").strip(),
-            "po_no": (_sd.get("po_no") or "").strip(),
-            "qty": (_sd.get("qty") or "").strip(),
-            "customer": (_sd.get("customer") or "").strip(),
-            "received_date": (_sd.get("received_date") or "").strip(),
-            "due_date": (_sd.get("due_date") or "").strip(),
+            "so_no": (_sd.get("so_no") or drawing.get("so_no") or "").strip(),
+            "po_no": (_sd.get("po_no") or po_cust or "").strip(),
+            "qty": (_sd.get("qty") or str(so_ref.get("qty") or so_ref.get("qty_order") or "")).strip(),
+            # Feature G — pakai KODE customer (bukan nama lengkap) untuk kerahasiaan
+            "customer": (_sd.get("customer") or cust_code or "").strip(),
+            "received_date": (_sd.get("received_date") or (so_ref.get("so_date") or "")).strip(),
+            "due_date": (_sd.get("due_date") or (so_ref.get("due_date") or "")).strip(),
             "filled_by": current.get("name") or current.get("username"),
             "filled_at": _now_iso(),
         }
