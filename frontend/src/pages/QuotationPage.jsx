@@ -579,8 +579,17 @@ function CreateQuotationDialog({ onClose, onCreated, prefill = null }) {
             </div>
           </div>
           <div>
-            <Label className="text-xs font-semibold text-slate-600 mb-1 block">Customer *</Label>
-            <Input data-testid="quo-customer" className={inputCls} value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="PT. SPM Oil & Gas" />
+            <Label className="text-xs font-semibold text-slate-600 mb-1 block">Customer * <span className="normal-case font-normal text-slate-400">(dari Master Customer)</span></Label>
+            <CustomerAutocompleteInput
+              value={customerName}
+              onType={(v) => setCustomerName(v)}
+              onPick={(c) => {
+                setCustomerName(c.name || "");
+                if (c.address) setCustomerAddress(c.address);
+                if (c.pic) setAttention(c.pic);
+                toast.success(`Customer "${c.name}" terhubung ke Master Customer`);
+              }}
+            />
           </div>
           <div><Label className="text-xs font-semibold text-slate-600 mb-1 block">Alamat Customer</Label><Input className={inputCls} value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} placeholder="Batam, Kepulauan Riau" /></div>
           {/* Attention & CC — stacked (satu tempat), Attention di atas CC */}
@@ -874,6 +883,67 @@ function QuotationDetailDialog({ id, onClose, onChanged }) {
         </Dialog>
       )}
     </>
+  );
+}
+
+
+function CustomerAutocompleteInput({ value, onType, onPick, placeholder = "Ketik nama customer (mis. PT. SPM Oil & Gas)" }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await api.get("/customers", { params: { q: value || "", limit: 12 } });
+        setSuggestions(data.items || []);
+      } catch { setSuggestions([]); }
+      finally { setLoading(false); }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [value, open]);
+
+  return (
+    <div className="relative">
+      <Input
+        data-testid="quo-customer"
+        className={inputCls}
+        value={value}
+        autoComplete="off"
+        onChange={(e) => { onType(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
+        placeholder={placeholder}
+      />
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-0.5 bg-white border border-slate-300 shadow-md max-h-56 overflow-y-auto z-30" data-testid="quo-customer-suggestions">
+          <div className="px-2 py-1 bg-slate-50 text-[10px] uppercase tracking-[0.1em] font-bold text-slate-500 border-b border-slate-200 flex items-center justify-between">
+            <span>Master Customer{suggestions.length ? ` (${suggestions.length})` : ""}</span>
+            {loading && <CircleNotch size={11} className="animate-spin" />}
+          </div>
+          {!loading && suggestions.length === 0 ? (
+            <div className="px-2 py-2 text-xs text-slate-400 italic">
+              Tidak ada customer cocok. Ketik nama lalu lanjut — customer baru akan otomatis tersimpan saat quotation dibuat.
+            </div>
+          ) : (
+            suggestions.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onPick(c)}
+                data-testid={`quo-customer-opt-${c.id}`}
+                className="w-full text-left px-2 py-1.5 hover:bg-amber-50 border-b border-slate-100 text-xs"
+              >
+                <div className="font-semibold text-slate-900">{c.name}{c.customer_code ? <span className="ml-1 font-mono text-[10px] text-amber-700">[{c.customer_code}]</span> : null}</div>
+                <div className="text-slate-500 text-[11px]">{c.address || "(alamat kosong)"}{c.pic ? ` · PIC: ${c.pic}` : ""}</div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
