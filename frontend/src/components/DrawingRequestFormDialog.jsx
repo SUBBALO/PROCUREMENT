@@ -15,7 +15,9 @@ import { X, FileText, UploadSimple, MagnifyingGlass, Paperclip, Trash, Eye, Plus
  * Repeat Order → pilih SO referensi lama + SO baru + reference drawing lama
  */
 export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) {
-  const isEdit = !!initial;
+  // isEdit hanya bila membuka DRF yang SUDAH ADA (punya id). Bila `initial` hanya
+  // berisi data prefill untuk DRF BARU (tanpa id, mis. dari Sales Order), ini CREATE mode.
+  const isEdit = !!initial?.id;
   const [type, setType] = useState(initial?.request_type || "new_order");
   const [soList, setSoList] = useState([]);
   const [soQ, setSoQ] = useState("");
@@ -48,6 +50,7 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
       ? initial.items.map((it) => ({ name: it.name || "", qty: it.qty ?? 1, unit: it.unit || "pcs", material: it.material || "TBA" }))
       : (initial?.qty_order ? [{ name: initial?.project_name || "Item 1", qty: initial.qty_order, unit: initial?.unit || "pcs", material: initial?.material || "TBA" }] : []),
     expected_due_date: initial?.expected_due_date || "",
+    po_received_date: initial?.po_received_date || "",
     notes: initial?.notes || "",
     referenced_drawings: initial?.referenced_drawings || [],
     ref_so_manual: initial?.ref_so_manual || false,

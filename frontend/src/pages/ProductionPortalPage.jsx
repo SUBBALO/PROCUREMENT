@@ -36,17 +36,6 @@ export default function ProductionPortalPage() {
       accent: "from-sky-500 via-blue-500 to-indigo-500",
       accentText: "text-sky-400",
     },
-    {
-      key: "nonconformance",
-      label: "Nonconformance (CAR)",
-      stats: "MKS-F-QAD-004 · Terbitkan NC",
-      description:
-        "Terbitkan Corrective Action Report atas Drawing yang bermasalah saat produksi. Engineering menindaklanjuti (assign → revisi → ECN). Pantau status hingga Closed.",
-      icon: WarningCircle,
-      href: "/nonconformance",
-      accent: "from-rose-500 via-red-500 to-orange-500",
-      accentText: "text-rose-400",
-    },
   ];
 
   return (

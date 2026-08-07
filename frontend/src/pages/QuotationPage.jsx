@@ -677,6 +677,7 @@ function CreateQuotationDialog({ onClose, onCreated, prefill = null }) {
 
 
 function QuotationDetailDialog({ id, onClose, onChanged }) {
+  const navigate = useNavigate();
   const [d, setD] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -694,7 +695,11 @@ function QuotationDetailDialog({ id, onClose, onChanged }) {
   };
 
   const setStatus = async (status) => {
-    if (status === "confirm_order") { setSoDialog({ soNo: "", conflict: null, force: false }); return; }
+    if (status === "confirm_order") {
+      if (!window.confirm("Order akan dikonfirmasi.\n\nAnda akan diarahkan ke halaman Buat Sales Order untuk membuat SO (data quotation ini otomatis ter-isi). Lanjutkan?")) return;
+      navigate("/sales/sales-orders", { state: { fromQuotation: d } });
+      return;
+    }
     setSaving(true);
     try {
       await api.patch(`/quotations/${id}/status`, { status });
@@ -725,7 +730,27 @@ function QuotationDetailDialog({ id, onClose, onChanged }) {
     } finally { setSaving(false); }
   };
 
+  const isConfirmed = d?.status === "confirm_order";
+  const isAdmin = ["admin", "super_admin"].includes(user?.role);
+
   const doDelete = async () => {
+    // Setelah Confirm Order, hapus terkunci — hanya admin & wajib alasan (terotorisasi).
+    if (isConfirmed) {
+      if (!isAdmin) {
+        toast.error("Quotation sudah Confirm Order. Hapus harus diotorisasi Admin.");
+        return;
+      }
+      const reason = window.prompt(`OTORISASI ADMIN — Hapus Quotation ${d?.quotation_no} yang sudah Confirm Order.\n\nTulis ALASAN penghapusan (wajib):`);
+      if (reason === null) return;
+      if (!reason.trim()) { toast.error("Alasan wajib diisi"); return; }
+      setSaving(true);
+      try {
+        await api.delete(`/quotations/${id}`, { params: { reason: reason.trim() } });
+        toast.success("Quotation dihapus (terotorisasi Admin)");
+        onChanged(); onClose();
+      } catch (e) { toast.error(e.response?.data?.detail || "Gagal hapus"); } finally { setSaving(false); }
+      return;
+    }
     if (!window.confirm(`Hapus Quotation ${d?.quotation_no}? Aksi ini tidak bisa dibatalkan.`)) return;
     setSaving(true);
     try {
@@ -820,19 +845,28 @@ function QuotationDetailDialog({ id, onClose, onChanged }) {
                   <Button data-testid="btn-download-quotation-pdf" onClick={downloadPdf} className="rounded-none bg-slate-900 hover:bg-slate-800 text-white text-xs">
                     <FileText size={13} weight="bold" className="mr-1.5" /> Download PDF
                   </Button>
-                  <Button data-testid="btn-edit-quotation" onClick={() => setShowEdit(true)} variant="outline" className="rounded-none text-xs border-purple-400 text-purple-700 hover:bg-purple-50" disabled={d.status === "cancel"}>
+                  <Button data-testid="btn-edit-quotation" onClick={() => setShowEdit(true)} variant="outline" className="rounded-none text-xs border-purple-400 text-purple-700 hover:bg-purple-50" disabled={d.status === "cancel" || isConfirmed} title={isConfirmed ? "Terkunci: sudah Confirm Order" : "Edit / Revisi (hanya sebelum Confirm Order)"}>
                     <PencilSimple size={13} weight="bold" className="mr-1" /> Edit / Revisi
                   </Button>
-                  <Button data-testid="btn-delete-quotation" onClick={doDelete} variant="outline" className="rounded-none text-xs border-red-400 text-red-700 hover:bg-red-50" disabled={saving}>
-                    <Trash size={13} weight="bold" className="mr-1" /> Hapus
+                  <Button data-testid="btn-delete-quotation" onClick={doDelete} variant="outline" className="rounded-none text-xs border-red-400 text-red-700 hover:bg-red-50 disabled:opacity-40" disabled={saving || (isConfirmed && !isAdmin)} title={isConfirmed ? (isAdmin ? "Hapus perlu alasan (otorisasi admin)" : "Terkunci: perlu otorisasi admin untuk hapus") : "Hapus"}>
+                    <Trash size={13} weight="bold" className="mr-1" /> Hapus {isConfirmed && <Lock size={11} weight="bold" className="ml-1" />}
                   </Button>
                 </div>
-                <div className="text-[10px] uppercase tracking-[0.1em] font-bold text-slate-500">Update Status</div>
-                <div className="flex gap-2 flex-wrap">
-                  <Button data-testid="status-on-bidding" onClick={() => setStatus("on_bidding")} disabled={saving || d.status === "on_bidding"} variant="outline" className="rounded-none text-xs">On Bidding</Button>
-                  <Button data-testid="status-confirm" onClick={() => setStatus("confirm_order")} disabled={saving || d.status === "confirm_order"} className="rounded-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs">Confirm Order (input SO)</Button>
-                  <Button data-testid="status-cancel" onClick={() => setStatus("cancel")} disabled={saving || d.status === "cancel"} className="rounded-none bg-red-600 hover:bg-red-700 text-white text-xs">Cancel</Button>
-                </div>
+                {isConfirmed ? (
+                  <div className="flex items-center gap-2 p-2.5 bg-emerald-50 border border-emerald-300 text-[11px] text-emerald-800" data-testid="quo-locked-note">
+                    <Lock size={14} weight="bold" />
+                    <span>Quotation sudah <b>Confirm Order</b>{d.so_no ? <> (SO <b>{d.so_no}</b>)</> : null}. Ganti status & edit terkunci. Hapus hanya oleh Admin dengan alasan.</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-[10px] uppercase tracking-[0.1em] font-bold text-slate-500">Update Status</div>
+                    <div className="flex gap-2 flex-wrap">
+                      <Button data-testid="status-on-bidding" onClick={() => setStatus("on_bidding")} disabled={saving || d.status === "on_bidding"} variant="outline" className="rounded-none text-xs">On Bidding</Button>
+                      <Button data-testid="status-confirm" onClick={() => setStatus("confirm_order")} disabled={saving} className="rounded-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs">Confirm Order (Buat SO)</Button>
+                      <Button data-testid="status-cancel" onClick={() => setStatus("cancel")} disabled={saving || d.status === "cancel"} className="rounded-none bg-red-600 hover:bg-red-700 text-white text-xs">Cancel</Button>
+                    </div>
+                  </>
+                )}
               </div>
             </>
           )}

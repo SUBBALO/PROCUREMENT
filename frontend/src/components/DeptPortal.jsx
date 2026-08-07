@@ -9,7 +9,7 @@ export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky"
   const navigate = useNavigate();
 
   const gridCls = compactCards
-    ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2"
+    ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 auto-rows-fr"
     : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3";
 
   const renderCards = (list) => (
@@ -111,22 +111,19 @@ function Card({ card, onEnter, delay, compact = false }) {
         data-testid={`subcard-${card.key}`}
         onClick={onEnter}
         disabled={card.comingSoon || (!card.href && typeof card.onClick !== "function") || card.href === "#"}
-        className="group relative text-left bg-white border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all duration-300 overflow-hidden disabled:cursor-not-allowed hover:-translate-y-0.5"
-        style={{ animationDelay: `${delay}ms`, animationName: "fadeSlideIn", animationDuration: "400ms", animationFillMode: "backwards" }}
+        className="group relative flex items-center gap-2.5 text-left bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-colors duration-200 overflow-hidden disabled:cursor-not-allowed px-3 py-2.5 min-h-[56px]"
         title={card.description}
       >
-        <div className={`absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${card.accent} opacity-70 group-hover:opacity-100 transition-opacity`} />
+        <div className={`absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b ${card.accent}`} />
+        <div className="w-8 h-8 shrink-0 flex items-center justify-center bg-slate-50 border border-slate-200 group-hover:bg-white transition-colors">
+          <Icon size={16} weight="duotone" className={accentText} />
+        </div>
+        <h3 className="text-[12px] font-bold tracking-tight text-slate-900 leading-tight flex-1 pr-5" style={{ fontFamily: "Chivo, sans-serif" }}>{card.label}</h3>
         {!card.comingSoon && card.badgeCount > 0 && (
-          <div className="absolute top-1.5 right-1.5 min-w-[20px] h-5 px-1 flex items-center justify-center bg-red-600 text-white text-[10px] font-bold rounded-full" data-testid={`subcard-badge-${card.key}`}>
+          <div className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-red-600 text-white text-[10px] font-bold rounded-full" data-testid={`subcard-badge-${card.key}`}>
             {card.badgeCount > 99 ? "99+" : card.badgeCount}
           </div>
         )}
-        <div className="p-2.5 flex flex-col items-start gap-1.5">
-          <div className="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-200 group-hover:bg-slate-100 transition-colors">
-            <Icon size={16} weight="duotone" className={accentText} />
-          </div>
-          <h3 className="text-[12px] font-bold tracking-tight text-slate-900 leading-tight" style={{ fontFamily: "Chivo, sans-serif" }}>{card.label}</h3>
-        </div>
       </button>
     );
   }

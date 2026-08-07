@@ -66,6 +66,29 @@ async def _so_status_map() -> dict:
     return m
 
 
+_DWG_DONE_STATES = {"approved", "controlled", "released"}
+
+
+async def _so_drawings_map() -> dict:
+    """Map so_no -> {list ringkas drawing, count, done} untuk ditampilkan di baris SO."""
+    dws = await db.drawings.find(
+        {"deleted_at": {"$exists": False}, "so_no": {"$nin": [None, ""]}},
+        {"_id": 0, "so_no": 1, "drawing_no": 1, "approval_status": 1},
+    ).sort("drawing_no", 1).to_list(length=5000)
+    m: dict = {}
+    for d in dws:
+        so = d.get("so_no")
+        if not so:
+            continue
+        e = m.setdefault(so, {"drawings": [], "count": 0, "done": 0})
+        e["count"] += 1
+        if d.get("approval_status") in _DWG_DONE_STATES:
+            e["done"] += 1
+        if len(e["drawings"]) < 8:
+            e["drawings"].append({"drawing_no": d.get("drawing_no"), "status": d.get("approval_status")})
+    return m
+
+
 class SOItemIn(BaseModel):
     name: str = ""
     qty: float = 1
@@ -80,10 +103,23 @@ class SOFullCreate(BaseModel):
     customer_address: Optional[str] = ""
     po_customer_no: Optional[str] = ""
     description: Optional[str] = ""
+    sales_name: Optional[str] = ""
     currency: Optional[str] = "IDR"
     source_quotation_id: Optional[str] = ""
     source_quotation_no: Optional[str] = ""
     items: List[SOItemIn] = []
+
+
+@router.get("/sales-users")
+async def list_sales_users(current: dict = Depends(get_current_user)):
+    """Daftar ringkas user untuk pemilihan 'Nama Sales' (Sales/Admin/Super Admin/Supervisor/Finance)."""
+    users = await db.users.find(
+        {"role": {"$in": ["sales", "admin", "super_admin", "supervisor", "finance"]},
+         "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "name": 1, "username": 1, "role": 1},
+    ).sort("name", 1).to_list(length=500)
+    items = [{"id": u["id"], "name": u.get("name") or u.get("username"), "username": u.get("username"), "role": u.get("role")} for u in users]
+    return {"items": items}
 
 
 
@@ -226,8 +262,13 @@ async def list_sales_orders(current: dict = Depends(get_current_user), q: Option
         ]
     docs = await db.sales_orders.find(merged(filt, NOT_DELETED_FILTER), {"_id": 0}).sort("so_no", 1).to_list(length=5000)
     status_map = await _so_status_map()
+    dwg_map = await _so_drawings_map()
     for d in docs:
         d["drawing_request_status"] = status_map.get(d.get("so_no"), "belum_drawing_request")
+        dw = dwg_map.get(d.get("so_no"))
+        d["drawings"] = dw["drawings"] if dw else []
+        d["drawing_count"] = dw["count"] if dw else 0
+        d["drawing_done"] = dw["done"] if dw else 0
         _strip_price_if_needed(d, current)
     return docs
 
@@ -265,8 +306,8 @@ async def create_so_full(payload: SOFullCreate, current: dict = Depends(get_curr
         "customer_address": (payload.customer_address or "").strip(),
         "po_customer_no": (payload.po_customer_no or "").strip(),
         "description": payload.description or "",
+        "sales_name": (payload.sales_name or current.get("name") or current.get("username", "")).strip(),
         "currency": payload.currency or "IDR",
-        "source_quotation_id": payload.source_quotation_id or "",
         "source_quotation_no": payload.source_quotation_no or "",
         "items": items,
         "total_amount": total,
@@ -304,6 +345,7 @@ async def update_so_full(sid: str, payload: SOFullCreate, current: dict = Depend
         "customer_address": (payload.customer_address or "").strip(),
         "po_customer_no": (payload.po_customer_no or "").strip(),
         "description": payload.description or "",
+        "sales_name": (payload.sales_name or "").strip(),
         "currency": payload.currency or "IDR",
         "items": items,
         "total_amount": total,

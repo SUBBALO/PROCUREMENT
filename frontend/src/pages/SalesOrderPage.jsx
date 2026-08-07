@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import api, { formatDateID } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
@@ -68,6 +69,17 @@ export default function SalesOrderPage() {
     catch { toast.error("Gagal muat SO"); } finally { setLoading(false); }
   }, [q]);
   useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [load]);
+
+  // Diarahkan dari Quotation "Confirm Order" -> auto buka form Create SO ter-prefill
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const fq = location.state?.fromQuotation;
+    if (fq) {
+      setDlg({ mode: "create", fromQuotation: fq });
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location, navigate]);
 
   const doDelete = async () => {
     try { await api.delete(`/sales-orders/${del.id}`); toast.success("SO dihapus"); setDel(null); load(); }
@@ -161,6 +173,14 @@ export default function SalesOrderPage() {
                       <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${st.cls}`} data-testid={`so-status-${s.so_no}`}>
                         <StIcon size={11} weight="bold" /> {st.label}
                       </span>
+                      {s.drawing_count > 0 && (
+                        <div className="mt-1 text-[10px] text-slate-500" data-testid={`so-dwg-summary-${s.so_no}`} title={(s.drawings || []).map((x) => `${x.drawing_no} (${x.status || "-"})`).join("\n")}>
+                          <span className="font-semibold text-slate-700">{s.drawing_count} drawing</span> · {s.drawing_done}/{s.drawing_count} selesai
+                          <div className="font-mono text-[9px] text-slate-400 truncate max-w-[200px]">
+                            {(s.drawings || []).map((x) => x.drawing_no).filter(Boolean).slice(0, 3).join(", ")}{s.drawing_count > 3 ? "…" : ""}
+                          </div>
+                        </div>
+                      )}
                     </td>
                     <td className="p-3">
                       <div className="flex justify-center gap-1 flex-wrap">
@@ -191,7 +211,9 @@ export default function SalesOrderPage() {
         <SalesOrderFormDialog
           mode={dlg.mode}
           so={dlg.so}
+          fromQuotation={dlg.fromQuotation}
           canSeePrice={canSeePrice}
+          currentUserName={user?.name || user?.username || ""}
           onClose={() => setDlg(null)}
           onSaved={() => { setDlg(null); load(); }}
         />

@@ -19,17 +19,11 @@ export default function EngineeringPortalPage() {
   const [jobPending, setJobPending] = useState(0);   // job menunggu diterima (my-queue)
   const [drfPending, setDrfPending] = useState(0);    // DRF menunggu ditangani (Eng Leader)
   const [overloadCount, setOverloadCount] = useState(0); // engineer overload (monitor beban)
-  const [ncActive, setNcActive] = useState(0);            // NC/CAR belum tuntas
   const [leaderPending, setLeaderPending] = useState(0);  // SO menunggu verifikasi leader (Phase O)
   useEffect(() => {
     api.get("/ecn-register?kind=ecn")
       .then(({ data }) => setEcnTotal((data.items || []).length))
       .catch(() => setEcnTotal(0));
-    if (isEngUser) {
-      api.get("/nonconformance/stats")
-        .then(({ data }) => setNcActive(data?.open_or_active || 0))
-        .catch(() => setNcActive(0));
-    }
     if (isEngUser) {
       api.get("/drawing-requests/my-queue")
         .then(({ data }) => setJobPending(data.pending_count || 0))
@@ -99,13 +93,6 @@ export default function EngineeringPortalPage() {
       accent: "from-indigo-500 via-violet-500 to-fuchsia-500", accentText: "text-indigo-400",
     },
     ...(isEngUser ? [{
-      key: "nonconformance", label: "Nonconformance (CAR)", stats: "MKS-F-QAD-004 · Tindak Lanjut NC",
-      description: "NC/CAR atas Drawing dari QC/Produksi/Sales. Eng Leader assign ke staff, isi Root Cause & Corrective/Preventive Action, terbitkan ECN, lalu tutup (Closed). Memengaruhi KPI #1.",
-      icon: WarningCircle, href: "/nonconformance",
-      badgeCount: ncActive,
-      accent: "from-rose-500 via-red-500 to-orange-500", accentText: "text-rose-400",
-    }] : []),
-    ...(isEngUser ? [{
       key: "eng-process", label: "Internal Engineering Process", stats: "MKS-F-ENG-006 · Log NC + Export Excel",
       description: "Log proses internal Engineering (tab NC) dari data CAR: Root Cause, Corrective & Preventive Action, No ECN, status. Filter per bulan dan export ke Excel untuk arsip/audit.",
       icon: ClipboardIcon, href: "/engineering/process",
@@ -156,7 +143,6 @@ export default function EngineeringPortalPage() {
     "inquiry-masterlist": "masuk",
     "leader-verify": "approval",
     "ecn": "approval",
-    "nonconformance": "approval",
     "bom": "approval",
     "drawings": "data",
     "material-costing": "data",

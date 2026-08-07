@@ -36,17 +36,6 @@ export default function QCPortalPage() {
       accent: "from-violet-500 via-purple-500 to-fuchsia-500",
       accentText: "text-violet-400",
     },
-    {
-      key: "nonconformance",
-      label: "Nonconformance (CAR)",
-      stats: "MKS-F-QAD-004 · Terbitkan NC",
-      description:
-        "Terbitkan Corrective Action Report atas Drawing yang tidak sesuai (LOF, dimensi, dll.). Engineering akan menindaklanjuti (assign → revisi → ECN). Pantau status Open → Assigned → In Progress → Closed.",
-      icon: WarningCircle,
-      href: "/nonconformance",
-      accent: "from-rose-500 via-red-500 to-orange-500",
-      accentText: "text-rose-400",
-    },
   ];
 
   return (
