@@ -9,7 +9,7 @@ export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky"
   const navigate = useNavigate();
 
   const gridCls = compactCards
-    ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 auto-rows-fr"
+    ? "grid grid-cols-2 lg:grid-cols-3 gap-2.5"
     : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3";
 
   const renderCards = (list) => (
@@ -33,11 +33,11 @@ export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky"
   const cardsBlock = (
     <>
       {Array.isArray(groups) && groups.length > 0 ? (
-        <div className="space-y-4" data-testid="dept-portal-groups">
+        <div className="space-y-3" data-testid="dept-portal-groups">
           {groups.filter((g) => (g.cards || []).length > 0).map((g) => (
             <div key={g.key} data-testid={`dept-group-${g.key}`}>
-              <div className="flex items-center gap-2 mb-2">
-                <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-500">{g.label}</div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className={`text-[10px] uppercase tracking-[0.18em] font-bold text-${accentColor}-700`}>{g.label}</div>
                 <div className="flex-1 h-px bg-slate-200" />
               </div>
               {renderCards(g.cards)}
@@ -68,20 +68,20 @@ export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky"
       <div className={`absolute -top-40 -left-40 w-96 h-96 bg-${accentColor}-200/40 blur-3xl rounded-full pointer-events-none`} />
       <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-rose-200/30 blur-3xl rounded-full pointer-events-none" />
 
-      <div className="relative max-w-[1400px] mx-auto px-6 py-5">
-        <Link to="/" className="inline-flex items-center gap-2 px-3 h-9 text-xs uppercase tracking-[0.1em] font-bold text-slate-800 bg-white border-2 border-slate-400 shadow-sm hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors duration-150 active:translate-y-[1px] mb-4">
+      <div className="relative max-w-[1400px] mx-auto px-6 py-4">
+        <Link to="/" className="inline-flex items-center gap-2 px-3 h-9 text-xs uppercase tracking-[0.1em] font-bold text-slate-800 bg-white border-2 border-slate-400 shadow-sm hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors duration-150 active:translate-y-[1px] mb-3">
           <ArrowLeft size={16} weight="bold" /> Kembali ke Portal Utama
         </Link>
 
-        <div className="mb-5">
-          <div className="flex items-center gap-2 mb-1.5">
-            <Sparkle size={14} weight="fill" className="text-amber-500" />
+        <div className="mb-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkle size={13} weight="fill" className="text-amber-500" />
             <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-slate-500">{deptLabel} Sub-Portal</span>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
             {deptLabel}
           </h1>
-          {deptTagline && <p className="mt-1.5 text-xs text-slate-600">{deptTagline}</p>}
+          {deptTagline && <p className="mt-1 text-xs text-slate-500">{deptTagline}</p>}
         </div>
 
         {cardsFirst ? (
@@ -106,21 +106,28 @@ function Card({ card, onEnter, delay, compact = false }) {
   // Convert -400 text tokens to -600 for readability on white
   const accentText = (card.accentText || "").replace(/-4\d\d/, "-600");
   if (compact) {
+    const disabled = card.comingSoon || (!card.href && typeof card.onClick !== "function") || card.href === "#";
     return (
       <button
         data-testid={`subcard-${card.key}`}
         onClick={onEnter}
-        disabled={card.comingSoon || (!card.href && typeof card.onClick !== "function") || card.href === "#"}
-        className="group relative flex items-center gap-2.5 text-left bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-colors duration-200 overflow-hidden disabled:cursor-not-allowed px-3 py-2.5 min-h-[56px]"
+        disabled={disabled}
+        className="group relative flex items-center gap-3 text-left bg-white border border-slate-200 hover:border-slate-300 hover:shadow-sm transition-[box-shadow,border-color] duration-200 overflow-hidden disabled:cursor-not-allowed disabled:opacity-60 pl-3.5 pr-9 py-2.5"
         title={card.description}
       >
-        <div className={`absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b ${card.accent}`} />
-        <div className="w-8 h-8 shrink-0 flex items-center justify-center bg-slate-50 border border-slate-200 group-hover:bg-white transition-colors">
-          <Icon size={16} weight="duotone" className={accentText} />
+        <div className={`absolute left-0 top-0 bottom-0 w-[3px] bg-gradient-to-b ${card.accent}`} />
+        <div className="w-9 h-9 shrink-0 flex items-center justify-center bg-slate-50 border border-slate-200 group-hover:bg-white transition-colors">
+          <Icon size={17} weight="duotone" className={accentText} />
         </div>
-        <h3 className="text-[12px] font-bold tracking-tight text-slate-900 leading-tight flex-1 pr-5" style={{ fontFamily: "Chivo, sans-serif" }}>{card.label}</h3>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[12.5px] font-bold tracking-tight text-slate-900 leading-tight truncate" style={{ fontFamily: "Chivo, sans-serif" }}>{card.label}</h3>
+          {card.stats && <div className="text-[10px] text-slate-400 leading-tight truncate mt-0.5">{card.stats}</div>}
+        </div>
+        {!disabled && (
+          <ArrowRight size={14} weight="bold" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 group-hover:text-slate-600 group-hover:translate-x-0.5 transition-[color,transform] duration-200" />
+        )}
         {!card.comingSoon && card.badgeCount > 0 && (
-          <div className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-red-600 text-white text-[10px] font-bold rounded-full" data-testid={`subcard-badge-${card.key}`}>
+          <div className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-red-600 text-white text-[10px] font-bold rounded-full shadow-sm" data-testid={`subcard-badge-${card.key}`}>
             {card.badgeCount > 99 ? "99+" : card.badgeCount}
           </div>
         )}
