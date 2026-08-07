@@ -169,6 +169,7 @@ export default function EngineeringPortalPage() {
       accentColor="amber"
       groups={groups}
       compactCards
+      sidebarMenu
       cardsLabel="Menu Engineering"
     >
       <EngineeringQueuePanel isHead={isHead} isEngUser={isEngUser} />

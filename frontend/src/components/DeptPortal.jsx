@@ -9,7 +9,7 @@ import { ArrowRight, ArrowLeft, Sparkle } from "@phosphor-icons/react";
  * grid "tile mini" (bukan kartu besar per item). Accent hanya berupa rail 2px +
  * tint ikon; subtitle disembunyikan agar tidak ramai. API props tidak berubah.
  */
-export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky", cards, groups, children, compactCards = false, cardsFirst = false, cardsLabel = "Menu" }) {
+export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky", cards, groups, children, compactCards = false, cardsFirst = false, cardsLabel = "Menu", sidebarMenu = false }) {
   const navigate = useNavigate();
 
   const go = (c) => {
@@ -58,6 +58,28 @@ export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky"
 
   const childrenBlock = children && <div className={cardsFirst ? "mt-5" : "mb-5"} data-testid="dept-portal-children">{children}</div>;
 
+  // Sidebar menu (kompak, vertikal) — dipakai bila sidebarMenu=true & ada children.
+  const sidebarGroups = Array.isArray(groups) && groups.length > 0
+    ? groups.filter((g) => (g.cards || []).length > 0)
+    : (cards && cards.length > 0 ? [{ key: "_all", label: cardsLabel, cards }] : []);
+
+  const sidebarBlock = (
+    <aside className="order-2 lg:order-1 w-full lg:w-[288px] shrink-0 lg:sticky lg:top-4 self-start space-y-3" data-testid="dept-portal-groups">
+      {sidebarGroups.map((g) => (
+        <section key={g.key} data-testid={`dept-portal-group-${g.key}`} className="rounded-xl border border-slate-200 bg-white/80">
+          <div className="px-3 pt-2.5 pb-1.5 flex items-center gap-2">
+            <h2 className="text-[10px] font-bold tracking-[0.16em] uppercase text-slate-500">{g.label}</h2>
+            <span className="text-[10px] font-semibold text-slate-300 tabular-nums">{(g.cards || []).length}</span>
+            <div className="flex-1 h-px bg-slate-100" />
+          </div>
+          <div className="px-2 pb-2 space-y-1">
+            {g.cards.map((c) => <LauncherTile key={c.key} card={c} onEnter={() => go(c)} dense />)}
+          </div>
+        </section>
+      ))}
+    </aside>
+  );
+
   return (
     <div className="min-h-[calc(100vh-60px)] bg-slate-50 text-slate-900 relative overflow-hidden -mx-6 -my-6">
       <div
@@ -88,14 +110,21 @@ export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky"
           {deptTagline && <p className="mt-1 text-xs sm:text-sm text-slate-500 leading-snug">{deptTagline}</p>}
         </div>
 
-        {cardsFirst ? (<>{cardsBlock}{childrenBlock}</>) : (<>{childrenBlock}{cardsBlock}</>)}
+        {sidebarMenu && children ? (
+          <div className="flex flex-col lg:flex-row gap-4 items-start">
+            {sidebarBlock}
+            <main className="order-1 lg:order-2 flex-1 min-w-0 w-full" data-testid="dept-portal-children">{children}</main>
+          </div>
+        ) : (
+          cardsFirst ? (<>{cardsBlock}{childrenBlock}</>) : (<>{childrenBlock}{cardsBlock}</>)
+        )}
       </div>
     </div>
   );
 }
 
 
-function LauncherTile({ card, onEnter }) {
+function LauncherTile({ card, onEnter, dense = false }) {
   const Icon = card.icon;
   const accentText = (card.accentText || "text-slate-500").replace(/-4\d\d/, "-600");
   const disabled = card.comingSoon || (!card.href && typeof card.onClick !== "function") || card.href === "#";
@@ -108,14 +137,14 @@ function LauncherTile({ card, onEnter }) {
       onClick={onEnter}
       disabled={disabled}
       title={card.description || card.label}
-      className="group relative flex items-center gap-3 text-left rounded-lg border border-slate-200 bg-white pl-4 pr-3 h-[54px] hover:bg-slate-50 hover:border-slate-300 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+      className={`group relative flex items-center text-left rounded-lg border bg-white hover:bg-slate-50 hover:border-slate-300 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 disabled:opacity-50 disabled:cursor-not-allowed ${dense ? "gap-2.5 border-slate-200/80 pl-3 pr-2.5 min-h-[44px] py-1.5" : "gap-3 border-slate-200 pl-4 pr-3 h-[54px]"}`}
     >
       {/* rail accent 2px */}
       <span className={`absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-gradient-to-b ${card.accent || "from-slate-300 to-slate-400"} opacity-80`} />
-      <span className="grid place-items-center w-8 h-8 rounded-md bg-slate-50 border border-slate-200 shrink-0 group-hover:bg-white transition-colors duration-150">
-        <Icon size={18} weight="duotone" className={accentText} />
+      <span className={`grid place-items-center rounded-md bg-slate-50 border border-slate-200 shrink-0 group-hover:bg-white transition-colors duration-150 ${dense ? "w-7 h-7" : "w-8 h-8"}`}>
+        <Icon size={dense ? 16 : 18} weight="duotone" className={accentText} />
       </span>
-      <span className="min-w-0 flex-1 text-[13px] font-semibold text-slate-900 leading-tight line-clamp-1" style={{ fontFamily: "Chivo, sans-serif" }}>
+      <span className={`min-w-0 flex-1 font-semibold text-slate-900 leading-tight ${dense ? "text-[12.5px] line-clamp-2" : "text-[13px] line-clamp-1"}`} style={{ fontFamily: "Chivo, sans-serif" }}>
         {card.label}
       </span>
       {hasBadge && (
