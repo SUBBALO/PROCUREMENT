@@ -1,458 +1,436 @@
 """
-Backend API Test for Indonesian ERP - Dashboard SO Progress Tracker
-Tests GET /api/dashboard/so-progress endpoint
+Backend API Testing for Feature 1 (Sales Order) and Feature 3 (Quotation Lock)
+Tests:
+- FE1: Sales Order with Customer autocomplete, Sales Name picker, no Deskripsi Project
+- FE3: Quotation Confirm Order lock (edit, status change, delete restrictions)
 """
 import requests
 import sys
-import uuid
+import random
 from datetime import datetime
 
 BASE_URL = "https://error-fix-dev.preview.emergentagent.com/api"
 
-class ERPTester:
+class TestRunner:
     def __init__(self):
-        self.session = requests.Session()
         self.tests_run = 0
         self.tests_passed = 0
-        self.test_data = {}
-        
-    def log(self, msg, status="info"):
-        prefix = {"info": "ℹ️", "success": "✅", "error": "❌", "warn": "⚠️"}
-        print(f"{prefix.get(status, 'ℹ️')} {msg}")
-    
-    def test(self, name, method, endpoint, expected_status, data=None, json_data=None, files=None):
-        """Run a single API test"""
-        url = f"{BASE_URL}/{endpoint}"
+        self.tests_failed = 0
+        self.sales_session = requests.Session()
+        self.admin_session = requests.Session()
+        self.created_quotation_id = None
+        self.created_so_id = None
+
+    def log(self, msg, level="INFO"):
+        prefix = {
+            "INFO": "ℹ️",
+            "SUCCESS": "✅",
+            "FAIL": "❌",
+            "WARN": "⚠️"
+        }.get(level, "•")
+        print(f"{prefix} {msg}")
+
+    def test(self, name, method, endpoint, expected_status, data=None, headers=None, session=None):
+        """Run a single test"""
         self.tests_run += 1
-        self.log(f"Testing {name}...", "info")
+        url = f"{BASE_URL}{endpoint}"
+        
+        req_headers = {'Content-Type': 'application/json'}
+        if headers:
+            req_headers.update(headers)
+
+        # Use provided session or create a new one
+        if session is None:
+            session = requests.Session()
+
+        self.log(f"Test #{self.tests_run}: {name}", "INFO")
         
         try:
-            if method == "GET":
-                response = self.session.get(url)
-            elif method == "POST":
-                if files:
-                    response = self.session.post(url, data=data, files=files)
-                else:
-                    response = self.session.post(url, json=json_data or data)
-            elif method == "PUT":
-                response = self.session.put(url, json=json_data or data)
-            elif method == "DELETE":
-                response = self.session.delete(url)
+            if method == 'GET':
+                response = session.get(url, headers=req_headers, params=data)
+            elif method == 'POST':
+                response = session.post(url, json=data, headers=req_headers)
+            elif method == 'PATCH':
+                response = session.patch(url, json=data, headers=req_headers)
+            elif method == 'PUT':
+                response = session.put(url, json=data, headers=req_headers)
+            elif method == 'DELETE':
+                response = session.delete(url, headers=req_headers, params=data)
             else:
-                self.log(f"Unknown method {method}", "error")
+                self.log(f"Unknown method: {method}", "FAIL")
+                self.tests_failed += 1
                 return False, {}
-            
+
             success = response.status_code == expected_status
+            
             if success:
                 self.tests_passed += 1
-                self.log(f"PASSED - Status: {response.status_code}", "success")
-            else:
-                self.log(f"FAILED - Expected {expected_status}, got {response.status_code}", "error")
+                self.log(f"PASSED - Status: {response.status_code}", "SUCCESS")
                 try:
-                    self.log(f"Response: {response.json()}", "error")
+                    return True, response.json()
                 except Exception:
-                    self.log(f"Response text: {response.text[:200]}", "error")
-            
-            try:
-                return success, response.json() if response.text else {}
-            except Exception:
-                return success, {}
+                    return True, {}
+            else:
+                self.tests_failed += 1
+                self.log(f"FAILED - Expected {expected_status}, got {response.status_code}", "FAIL")
+                try:
+                    self.log(f"Response: {response.json()}", "FAIL")
+                except Exception:
+                    self.log(f"Response: {response.text[:200]}", "FAIL")
+                return False, {}
+
         except Exception as e:
-            self.log(f"FAILED - Error: {str(e)}", "error")
+            self.tests_failed += 1
+            self.log(f"EXCEPTION: {str(e)}", "FAIL")
             return False, {}
-    
-    def login(self, username, password):
-        """Login and establish session"""
-        self.log(f"Logging in as {username}...", "info")
-        success, response = self.test(
+
+    def login(self, username, password, session):
+        """Login and store cookies in session"""
+        self.log(f"Logging in as {username}...", "INFO")
+        success, resp = self.test(
             f"Login as {username}",
             "POST",
-            "auth/login",
+            "/auth/login",
             200,
-            json_data={"username": username, "password": password}
+            data={"username": username, "password": password},
+            session=session
         )
-        return success
-    
-    def test_auth_required(self):
-        """Test that endpoint requires authentication"""
-        self.log("\n=== TEST 1: Authentication Required ===", "info")
-        
-        # Create a new session without auth
-        unauth_session = requests.Session()
-        url = f"{BASE_URL}/dashboard/so-progress"
-        
-        try:
-            response = unauth_session.get(url)
-            if response.status_code in (401, 403):
-                self.tests_passed += 1
-                self.tests_run += 1
-                self.log(f"PASSED - Endpoint requires auth (status: {response.status_code})", "success")
-                return True
-            else:
-                self.tests_run += 1
-                self.log(f"FAILED - Expected 401/403, got {response.status_code}", "error")
-                return False
-        except Exception as e:
-            self.tests_run += 1
-            self.log(f"FAILED - Error: {str(e)}", "error")
-            return False
-    
-    def test_basic_structure(self):
-        """Test basic response structure {items:[...], count}"""
-        self.log("\n=== TEST 2: Basic Response Structure ===", "info")
-        
-        success, response = self.test(
-            "GET /api/dashboard/so-progress",
-            "GET",
-            "dashboard/so-progress",
-            200
-        )
-        
-        if not success:
-            return False
-        
-        # Verify structure
-        if "items" not in response:
-            self.log("FAILED - Missing 'items' field", "error")
-            return False
-        
-        if "count" not in response:
-            self.log("FAILED - Missing 'count' field", "error")
-            return False
-        
-        items = response.get("items", [])
-        count = response.get("count", 0)
-        
-        if not isinstance(items, list):
-            self.log("FAILED - 'items' is not a list", "error")
-            return False
-        
-        if len(items) != count:
-            self.log(f"FAILED - count mismatch: items length={len(items)}, count={count}", "error")
-            return False
-        
-        self.log(f"Response structure valid: {count} items returned", "success")
-        self.test_data["items"] = items
-        self.test_data["count"] = count
-        return True
-    
-    def test_item_structure(self):
-        """Test each item has required fields"""
-        self.log("\n=== TEST 3: Item Structure ===", "info")
-        
-        items = self.test_data.get("items", [])
-        if not items:
-            self.log("No items to test", "warn")
-            return True
-        
-        required_fields = [
-            "so_no", "customer", "current_stage", 
-            "drawings_total", "drawings_approved", "stages"
-        ]
-        
-        stage_required_fields = ["key", "label", "status", "date", "pic"]
-        expected_stage_keys = ["sales", "engineering", "purchasing", "store", "qc", "delivery"]
-        
-        for idx, item in enumerate(items[:3]):  # Test first 3 items
-            self.log(f"Testing item {idx + 1}: SO {item.get('so_no')}", "info")
-            
-            # Check required fields
-            for field in required_fields:
-                if field not in item:
-                    self.log(f"FAILED - Missing field '{field}' in item", "error")
-                    return False
-            
-            # Check stages array
-            stages = item.get("stages", [])
-            if not isinstance(stages, list):
-                self.log("FAILED - 'stages' is not a list", "error")
-                return False
-            
-            if len(stages) != 6:
-                self.log(f"FAILED - Expected 6 stages, got {len(stages)}", "error")
-                return False
-            
-            # Check each stage
-            for stage in stages:
-                for field in stage_required_fields:
-                    if field not in stage:
-                        self.log(f"FAILED - Missing field '{field}' in stage", "error")
-                        return False
-                
-                # Check status values
-                if stage.get("status") not in ["done", "in_progress", "pending"]:
-                    self.log(f"FAILED - Invalid status '{stage.get('status')}' in stage", "error")
-                    return False
-            
-            # Check stage keys
-            stage_keys = [s.get("key") for s in stages]
-            if stage_keys != expected_stage_keys:
-                self.log(f"FAILED - Stage keys mismatch: {stage_keys}", "error")
-                return False
-            
-            self.log(f"Item {idx + 1} structure valid", "success")
-        
-        self.tests_passed += 1
-        self.tests_run += 1
-        return True
-    
-    def test_engineering_logic(self):
-        """Test engineering stage status logic"""
-        self.log("\n=== TEST 4: Engineering Stage Logic ===", "info")
-        
-        items = self.test_data.get("items", [])
-        if not items:
-            self.log("No items to test", "warn")
-            return True
-        
-        # Known SOs from agent context
-        known_sos = {
-            "005251": {"expected_eng_status": "done", "expected_progress": "1/1"},
-            "005215": {"expected_eng_status": "in_progress", "expected_progress": "0/2"}
-        }
-        
-        for so_no, expected in known_sos.items():
-            item = next((i for i in items if i.get("so_no") == so_no), None)
-            if not item:
-                self.log(f"SO {so_no} not found in response", "warn")
-                continue
-            
-            stages = item.get("stages", [])
-            eng_stage = next((s for s in stages if s.get("key") == "engineering"), None)
-            
-            if not eng_stage:
-                self.log(f"FAILED - Engineering stage not found for SO {so_no}", "error")
-                return False
-            
-            # Check status
-            actual_status = eng_stage.get("status")
-            expected_status = expected.get("expected_eng_status")
-            
-            if actual_status != expected_status:
-                self.log(f"SO {so_no}: status={actual_status} (expected {expected_status})", "warn")
-            else:
-                self.log(f"SO {so_no}: status={actual_status} ✓", "success")
-            
-            # Check progress field
-            if "progress" in eng_stage:
-                actual_progress = eng_stage.get("progress")
-                expected_progress = expected.get("expected_progress")
-                if actual_progress == expected_progress:
-                    self.log(f"SO {so_no}: progress={actual_progress} ✓", "success")
-                else:
-                    self.log(f"SO {so_no}: progress={actual_progress} (expected {expected_progress})", "warn")
-        
-        # Test logic rules
-        for item in items[:5]:
-            so_no = item.get("so_no")
-            total = item.get("drawings_total", 0)
-            approved = item.get("drawings_approved", 0)
-            
-            stages = item.get("stages", [])
-            eng_stage = next((s for s in stages if s.get("key") == "engineering"), None)
-            
-            if not eng_stage:
-                continue
-            
-            status = eng_stage.get("status")
-            
-            # Logic validation
-            if total == 0:
-                if status != "pending":
-                    self.log(f"SO {so_no}: 0 drawings but status={status} (expected pending)", "warn")
-            elif approved >= total:
-                if status != "done":
-                    self.log(f"SO {so_no}: all approved but status={status} (expected done)", "warn")
-            else:
-                if status != "in_progress":
-                    self.log(f"SO {so_no}: partial approval but status={status} (expected in_progress)", "warn")
-        
-        self.tests_passed += 1
-        self.tests_run += 1
-        return True
-    
-    def test_sales_stage(self):
-        """Test sales stage is always 'done' with so_date"""
-        self.log("\n=== TEST 5: Sales Stage Always Done ===", "info")
-        
-        items = self.test_data.get("items", [])
-        if not items:
-            self.log("No items to test", "warn")
-            return True
-        
-        all_valid = True
-        for item in items[:5]:
-            so_no = item.get("so_no")
-            stages = item.get("stages", [])
-            sales_stage = next((s for s in stages if s.get("key") == "sales"), None)
-            
-            if not sales_stage:
-                self.log(f"FAILED - Sales stage not found for SO {so_no}", "error")
-                all_valid = False
-                continue
-            
-            # Check status is 'done'
-            if sales_stage.get("status") != "done":
-                self.log(f"FAILED - SO {so_no}: sales status={sales_stage.get('status')} (expected done)", "error")
-                all_valid = False
-            
-            # Check date is present (should be so_date)
-            if not sales_stage.get("date"):
-                self.log(f"FAILED - SO {so_no}: sales stage missing date", "error")
-                all_valid = False
-        
-        if all_valid:
-            self.log("All sales stages are 'done' with dates", "success")
-            self.tests_passed += 1
-        
-        self.tests_run += 1
-        return all_valid
-    
-    def test_current_stage(self):
-        """Test current_stage = first stage not 'done'"""
-        self.log("\n=== TEST 6: Current Stage Logic ===", "info")
-        
-        items = self.test_data.get("items", [])
-        if not items:
-            self.log("No items to test", "warn")
-            return True
-        
-        all_valid = True
-        for item in items[:5]:
-            so_no = item.get("so_no")
-            current_stage = item.get("current_stage")
-            stages = item.get("stages", [])
-            
-            # Find first stage not 'done'
-            first_not_done = None
-            for stage in stages:
-                if stage.get("status") != "done":
-                    first_not_done = stage.get("label")
-                    break
-            
-            # If all done, should be last stage (Delivery)
-            if first_not_done is None:
-                first_not_done = "Delivery"
-            
-            if current_stage != first_not_done:
-                self.log(f"SO {so_no}: current_stage={current_stage} (expected {first_not_done})", "warn")
-                all_valid = False
-            else:
-                self.log(f"SO {so_no}: current_stage={current_stage} ✓", "success")
-        
-        if all_valid:
-            self.tests_passed += 1
-        
-        self.tests_run += 1
-        return all_valid
-    
-    def test_search_functionality(self):
-        """Test search with ?q=<term>"""
-        self.log("\n=== TEST 7: Search Functionality ===", "info")
-        
-        # Test 1: Search by SO number
-        success, response = self.test(
-            "Search by SO number (q=005251)",
-            "GET",
-            "dashboard/so-progress?q=005251",
-            200
-        )
-        
-        if not success:
-            return False
-        
-        items = response.get("items", [])
-        if items:
-            found = any(i.get("so_no") == "005251" for i in items)
-            if found:
-                self.log("Search by SO number works", "success")
-            else:
-                self.log("Search returned items but SO 005251 not found", "warn")
-        else:
-            self.log("Search returned no items", "warn")
-        
-        # Test 2: Search by customer (partial match)
-        success, response = self.test(
-            "Search by customer (q=PT)",
-            "GET",
-            "dashboard/so-progress?q=PT",
-            200
-        )
-        
         if success:
-            items = response.get("items", [])
-            self.log(f"Customer search returned {len(items)} items", "info")
-        
-        # Test 3: Empty search should return all workflow SOs
-        success, response = self.test(
-            "Empty search (no q parameter)",
-            "GET",
-            "dashboard/so-progress",
-            200
-        )
-        
-        if success:
-            items = response.get("items", [])
-            self.log(f"Default query returned {len(items)} items", "info")
-        
-        return True
-    
-    def test_limit_parameter(self):
-        """Test limit parameter"""
-        self.log("\n=== TEST 8: Limit Parameter ===", "info")
-        
-        success, response = self.test(
-            "Test limit=3",
-            "GET",
-            "dashboard/so-progress?limit=3",
-            200
-        )
-        
-        if not success:
-            return False
-        
-        items = response.get("items", [])
-        if len(items) <= 3:
-            self.log(f"Limit parameter works: returned {len(items)} items", "success")
-        else:
-            self.log(f"Limit parameter may not work: returned {len(items)} items (expected ≤3)", "warn")
-        
-        return True
-    
+            self.log(f"Login successful for {username}", "SUCCESS")
+            return True
+        self.log(f"Login failed for {username}", "FAIL")
+        return False
+
     def run_all_tests(self):
-        """Run all tests"""
-        self.log("=" * 60, "info")
-        self.log("INDONESIAN ERP - DASHBOARD SO PROGRESS TESTS", "info")
-        self.log("=" * 60, "info")
-        
-        # Test 1: Auth required (before login)
-        self.test_auth_required()
-        
-        # Login as admin
-        if not self.login("admin", "admin123"):
-            self.log("Login failed, cannot continue", "error")
+        """Run all test scenarios"""
+        self.log("=" * 60, "INFO")
+        self.log("BACKEND API TESTING - FEATURE 1 & 3", "INFO")
+        self.log("=" * 60, "INFO")
+
+        # ===== LOGIN =====
+        self.log("\n[1] LOGIN TESTS", "INFO")
+        if not self.login("qa_sales_tmp", "QaTest12345", self.sales_session):
+            self.log("Cannot proceed without sales login", "FAIL")
             return 1
         
-        # Test 2-8: Authenticated tests
-        self.test_basic_structure()
-        self.test_item_structure()
-        self.test_engineering_logic()
-        self.test_sales_stage()
-        self.test_current_stage()
-        self.test_search_functionality()
-        self.test_limit_parameter()
+        if not self.login("qa_admin_tmp", "QaTest12345", self.admin_session):
+            self.log("Cannot proceed without admin login", "FAIL")
+            return 1
+
+        # ===== FEATURE 1 BACKEND TESTS =====
+        self.log("\n[2] FEATURE 1 - SALES ORDER BACKEND TESTS", "INFO")
         
-        # Print summary
-        self.log("\n" + "=" * 60, "info")
-        self.log(f"TESTS COMPLETED: {self.tests_passed}/{self.tests_run} passed", 
-                "success" if self.tests_passed == self.tests_run else "warn")
-        self.log("=" * 60, "info")
+        # FE1a: Test GET /api/customers (for autocomplete)
+        success, customers_resp = self.test(
+            "FE1a: GET /api/customers for autocomplete",
+            "GET",
+            "/customers",
+            200,
+            data={"q": "yok", "limit": 20},
+            session=self.sales_session
+        )
+        if success:
+            items = customers_resp.get('items', [])
+            self.log(f"Found {len(items)} customers", "SUCCESS")
+            if len(items) > 0:
+                self.log(f"Sample customer: {items[0].get('name', 'N/A')}", "INFO")
+
+        # FE1c: Test GET /api/sales-users (for sales name picker)
+        success, sales_users_resp = self.test(
+            "FE1c: GET /api/sales-users for sales name picker",
+            "GET",
+            "/sales-users",
+            200,
+            session=self.sales_session
+        )
+        if success:
+            items = sales_users_resp.get('items', [])
+            self.log(f"Found {len(items)} sales users", "SUCCESS")
+            if len(items) > 0:
+                self.log(f"Sample sales user: {items[0].get('name', 'N/A')} ({items[0].get('role', 'N/A')})", "INFO")
+
+        # FE1d: Test POST /api/sales-orders/full with sales_name
+        random_num = random.randint(1000, 9999)
+        so_no = f"00{random_num}"
         
-        return 0 if self.tests_passed == self.tests_run else 1
+        so_payload = {
+            "so_no": so_no,
+            "so_date": datetime.now().strftime("%Y-%m-%d"),
+            "customer": "Test Customer Auto",
+            "customer_address": "Test Address",
+            "po_customer_no": f"PO-{random_num}",
+            "sales_name": "Nicholas Test",
+            "currency": "IDR",
+            "items": [
+                {"name": "Test Item 1", "qty": 10, "unit": "pcs", "price": 100000},
+                {"name": "Test Item 2", "qty": 5, "unit": "pcs", "price": 50000}
+            ]
+        }
+        
+        success, so_resp = self.test(
+            "FE1d: POST /api/sales-orders/full with sales_name",
+            "POST",
+            "/sales-orders/full",
+            200,
+            data=so_payload,
+            session=self.sales_session
+        )
+        
+        if success:
+            self.created_so_id = so_resp.get('id')
+            self.log(f"Created SO: {so_resp.get('so_no')} with sales_name: {so_resp.get('sales_name')}", "SUCCESS")
+            
+            # Verify sales_name is saved
+            if so_resp.get('sales_name') == "Nicholas Test":
+                self.log("sales_name correctly saved", "SUCCESS")
+            else:
+                self.log(f"sales_name mismatch: expected 'Nicholas Test', got '{so_resp.get('sales_name')}'", "FAIL")
+
+        # FE1d: Test GET /api/sales-orders returns drawing summary fields
+        success, so_list_resp = self.test(
+            "FE1d: GET /api/sales-orders with drawing summary",
+            "GET",
+            "/sales-orders",
+            200,
+            data={"q": so_no},
+            session=self.sales_session
+        )
+        
+        if success and isinstance(so_list_resp, list) and len(so_list_resp) > 0:
+            so = so_list_resp[0]
+            has_drawing_status = 'drawing_request_status' in so
+            has_drawing_count = 'drawing_count' in so
+            has_drawings = 'drawings' in so
+            
+            if has_drawing_status and has_drawing_count and has_drawings:
+                self.log(f"SO has drawing summary fields: status={so.get('drawing_request_status')}, count={so.get('drawing_count')}", "SUCCESS")
+            else:
+                self.log(f"Missing drawing summary fields: status={has_drawing_status}, count={has_drawing_count}, drawings={has_drawings}", "FAIL")
+
+        # ===== FEATURE 3 BACKEND TESTS =====
+        self.log("\n[3] FEATURE 3 - QUOTATION CONFIRM ORDER LOCK TESTS", "INFO")
+        
+        # Create a quotation first
+        random_cust = random.randint(1000, 9999)
+        quo_payload = {
+            "customer_name": f"Test Customer {random_cust}",
+            "customer_address": "Test Address",
+            "attention": "Test PIC",
+            "items": [
+                {"no": 1, "description": "Test Item", "qty": 10, "unit": "EA", "unit_price": 100000}
+            ],
+            "total_amount": 1000000,
+            "currency": "IDR",
+            "payment_term": "30 days",
+            "delivery_time": "6-8 weeks",
+            "validity": "30 days"
+        }
+        
+        success, quo_resp = self.test(
+            "Create test quotation",
+            "POST",
+            "/quotations",
+            200,
+            data=quo_payload,
+            session=self.sales_session
+        )
+        
+        if not success:
+            self.log("Cannot proceed with FE3 tests without quotation", "FAIL")
+            return
+        
+        self.created_quotation_id = quo_resp.get('id')
+        quo_no = quo_resp.get('quotation_no')
+        self.log(f"Created quotation: {quo_no}", "SUCCESS")
+
+        # Set quotation to confirm_order status
+        random_so = random.randint(10000, 99999)
+        so_num_str = str(random_so)[:6]  # max 6 digits
+        
+        success, confirm_resp = self.test(
+            "Set quotation to confirm_order",
+            "PATCH",
+            f"/quotations/{self.created_quotation_id}/status",
+            200,
+            data={"status": "confirm_order", "so_no": so_num_str},
+            session=self.sales_session
+        )
+        
+        if not success:
+            self.log("Cannot proceed with lock tests without confirm_order status", "FAIL")
+            return
+        
+        self.log(f"Quotation {quo_no} set to confirm_order with SO {so_num_str}", "SUCCESS")
+
+        # FE3: Test EDIT lock - PATCH /api/quotations/{id} should fail 400
+        edit_payload = {
+            "customer_name": "Updated Customer Name",
+            "revision_reason": "Test edit after confirm"
+        }
+        
+        success, edit_resp = self.test(
+            "FE3: PATCH /api/quotations/{id} after confirm_order (should fail 400)",
+            "PATCH",
+            f"/quotations/{self.created_quotation_id}",
+            400,
+            data=edit_payload,
+            session=self.sales_session
+        )
+        
+        if success:
+            self.log("Edit correctly blocked after confirm_order", "SUCCESS")
+        else:
+            self.log("Edit should be blocked but wasn't", "FAIL")
+
+        # FE3: Test STATUS lock - Sales cannot change status from confirm_order
+        success, status_resp = self.test(
+            "FE3: PATCH /api/quotations/{id}/status by SALES to on_bidding (should fail 400)",
+            "PATCH",
+            f"/quotations/{self.created_quotation_id}/status",
+            400,
+            data={"status": "on_bidding"},
+            session=self.sales_session
+        )
+        
+        if success:
+            self.log("Status change correctly blocked for sales after confirm_order", "SUCCESS")
+        else:
+            self.log("Status change should be blocked for sales but wasn't", "FAIL")
+
+        # FE3: Test STATUS lock - Admin CAN change status from confirm_order
+        success, admin_status_resp = self.test(
+            "FE3: PATCH /api/quotations/{id}/status by ADMIN to on_bidding (should succeed 200)",
+            "PATCH",
+            f"/quotations/{self.created_quotation_id}/status",
+            200,
+            data={"status": "on_bidding"},
+            session=self.admin_session
+        )
+        
+        if success:
+            self.log("Admin can change status from confirm_order (correct)", "SUCCESS")
+            
+            # Set back to confirm_order for delete tests
+            self.test(
+                "Set back to confirm_order for delete tests",
+                "PATCH",
+                f"/quotations/{self.created_quotation_id}/status",
+                200,
+                data={"status": "confirm_order", "so_no": so_num_str},
+                session=self.admin_session
+            )
+
+        # FE3: Test DELETE lock - Sales cannot delete confirm_order quotation
+        success, delete_sales_resp = self.test(
+            "FE3: DELETE /api/quotations/{id} by SALES (should fail 403)",
+            "DELETE",
+            f"/quotations/{self.created_quotation_id}",
+            403,
+            session=self.sales_session
+        )
+        
+        if success:
+            self.log("Delete correctly blocked for sales after confirm_order", "SUCCESS")
+        else:
+            self.log("Delete should be blocked for sales but wasn't", "FAIL")
+
+        # FE3: Test DELETE lock - Admin without reason should fail 400
+        success, delete_admin_no_reason = self.test(
+            "FE3: DELETE /api/quotations/{id} by ADMIN without reason (should fail 400)",
+            "DELETE",
+            f"/quotations/{self.created_quotation_id}",
+            400,
+            session=self.admin_session
+        )
+        
+        if success:
+            self.log("Delete correctly requires reason for admin", "SUCCESS")
+        else:
+            self.log("Delete should require reason but didn't", "FAIL")
+
+        # FE3: Test DELETE lock - Admin with reason should succeed
+        success, delete_admin_with_reason = self.test(
+            "FE3: DELETE /api/quotations/{id} by ADMIN with reason (should succeed 200)",
+            "DELETE",
+            f"/quotations/{self.created_quotation_id}",
+            200,
+            data={"reason": "Testing delete with admin authorization"},
+            session=self.admin_session
+        )
+        
+        if success:
+            self.log("Admin can delete with reason (correct)", "SUCCESS")
+
+        # FE3 REGRESSION: Test quotation NOT in confirm_order can be edited/deleted by sales
+        self.log("\n[4] FEATURE 3 REGRESSION - Non-confirmed quotation", "INFO")
+        
+        # Create another quotation for regression test
+        quo_payload2 = {
+            "customer_name": f"Regression Test {random.randint(1000, 9999)}",
+            "customer_address": "Test Address",
+            "attention": "Test PIC",
+            "items": [
+                {"no": 1, "description": "Regression Item", "qty": 5, "unit": "EA", "unit_price": 50000}
+            ],
+            "total_amount": 250000,
+            "currency": "IDR",
+            "payment_term": "30 days",
+            "delivery_time": "4 weeks",
+            "validity": "30 days"
+        }
+        
+        success, quo_resp2 = self.test(
+            "Create quotation for regression test (on_bidding)",
+            "POST",
+            "/quotations",
+            200,
+            data=quo_payload2,
+            session=self.sales_session
+        )
+        
+        if success:
+            quo_id2 = quo_resp2.get('id')
+            quo_no2 = quo_resp2.get('quotation_no')
+            
+            # Test EDIT on non-confirmed quotation (should succeed)
+            success, edit_resp2 = self.test(
+                "FE3 Regression: PATCH /api/quotations/{id} on on_bidding (should succeed 200)",
+                "PATCH",
+                f"/quotations/{quo_id2}",
+                200,
+                data={"customer_name": "Updated Name", "revision_reason": "Test edit"},
+                session=self.sales_session
+            )
+            
+            if success:
+                self.log("Sales can edit on_bidding quotation (correct)", "SUCCESS")
+            
+            # Test DELETE on non-confirmed quotation (should succeed)
+            success, delete_resp2 = self.test(
+                "FE3 Regression: DELETE /api/quotations/{id} on on_bidding (should succeed 200)",
+                "DELETE",
+                f"/quotations/{quo_id2}",
+                200,
+                session=self.sales_session
+            )
+            
+            if success:
+                self.log("Sales can delete on_bidding quotation (correct)", "SUCCESS")
+
+        # ===== SUMMARY =====
+        self.log("\n" + "=" * 60, "INFO")
+        self.log("TEST SUMMARY", "INFO")
+        self.log("=" * 60, "INFO")
+        self.log(f"Total Tests: {self.tests_run}", "INFO")
+        self.log(f"Passed: {self.tests_passed}", "SUCCESS")
+        self.log(f"Failed: {self.tests_failed}", "FAIL")
+        self.log(f"Success Rate: {(self.tests_passed/self.tests_run*100):.1f}%", "INFO")
+        
+        return 0 if self.tests_failed == 0 else 1
 
 def main():
-    tester = ERPTester()
-    return tester.run_all_tests()
+    runner = TestRunner()
+    return runner.run_all_tests()
 
 if __name__ == "__main__":
     sys.exit(main())

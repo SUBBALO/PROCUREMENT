@@ -265,17 +265,19 @@ export default function SalesOrderPage() {
 }
 
 /* ---------------- Create / Edit Sales Order ---------------- */
-function SalesOrderFormDialog({ mode, so, canSeePrice, onClose, onSaved }) {
+function SalesOrderFormDialog({ mode, so, fromQuotation, canSeePrice, currentUserName, onClose, onSaved }) {
   const isEdit = mode === "edit";
   const [soNo, setSoNo] = useState(so?.so_no || "");
   const [soDate, setSoDate] = useState(so?.so_date || today());
   const [customer, setCustomer] = useState(so?.customer || "");
   const [customerAddress, setCustomerAddress] = useState(so?.customer_address || "");
   const [poNo, setPoNo] = useState(so?.po_customer_no || "");
-  const [description, setDescription] = useState(so?.description || "");
+  const [salesName, setSalesName] = useState(so?.sales_name || currentUserName || "");
   const [currency, setCurrency] = useState(so?.currency || "IDR");
   const [srcQuoId, setSrcQuoId] = useState(so?.source_quotation_id || "");
   const [srcQuoNo, setSrcQuoNo] = useState(so?.source_quotation_no || "");
+  const [customers, setCustomers] = useState([]);
+  const [salesUsers, setSalesUsers] = useState([]);
   const [items, setItems] = useState(
     (so?.items && so.items.length > 0)
       ? so.items.map((it) => ({ name: it.name || "", qty: it.qty ?? 1, unit: it.unit || "pcs", price: it.price ?? 0 }))
@@ -283,12 +285,22 @@ function SalesOrderFormDialog({ mode, so, canSeePrice, onClose, onSaved }) {
   );
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    api.get("/customers", { params: { limit: 1000 } }).then(({ data }) => setCustomers(data.items || data || [])).catch(() => {});
+    api.get("/sales-users").then(({ data }) => setSalesUsers(data.items || [])).catch(() => {});
+  }, []);
+
   const soNoValid = /^00\d{4}$/.test(soNo.trim());
   const grandTotal = items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.price) || 0), 0);
 
   const setItem = (i, patch) => setItems((p) => p.map((it, idx) => idx === i ? { ...it, ...patch } : it));
   const addItem = () => setItems((p) => [...p, { name: "", qty: 1, unit: "pcs", price: 0 }]);
   const removeItem = (i) => setItems((p) => p.length > 1 ? p.filter((_, idx) => idx !== i) : p);
+
+  const pickCustomer = (c) => {
+    setCustomer(c.name || c.customer_name || "");
+    if (c.address) setCustomerAddress(c.address);
+  };
 
   const pickQuotation = (quo) => {
     setSrcQuoId(quo.id || ""); setSrcQuoNo(quo.quotation_no || "");
@@ -302,6 +314,12 @@ function SalesOrderFormDialog({ mode, so, canSeePrice, onClose, onSaved }) {
     toast.success(`Data ditarik dari quotation ${quo.quotation_no || ""}`);
   };
 
+  // Prefill dari Quotation Confirm Order redirect
+  useEffect(() => {
+    if (fromQuotation) pickQuotation(fromQuotation);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const save = async () => {
     if (!soNoValid) return toast.error("Nomor SO wajib 6 digit diawali '00' (mis. 005251)");
     if (!customer.trim()) return toast.error("Customer wajib diisi");
@@ -311,7 +329,7 @@ function SalesOrderFormDialog({ mode, so, canSeePrice, onClose, onSaved }) {
     try {
       const payload = {
         so_no: soNo.trim(), so_date: soDate, customer: customer.trim(), customer_address: customerAddress,
-        po_customer_no: poNo.trim(), description, currency,
+        po_customer_no: poNo.trim(), sales_name: salesName.trim(), currency,
         source_quotation_id: srcQuoId, source_quotation_no: srcQuoNo,
         items: cleanItems.map((it) => ({ name: it.name.trim(), qty: Number(it.qty) || 0, unit: it.unit || "pcs", price: Number(it.price) || 0 })),
       };
@@ -360,8 +378,15 @@ function SalesOrderFormDialog({ mode, so, canSeePrice, onClose, onSaved }) {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div><Label className="text-xs font-semibold text-slate-600 mb-1 block">Customer *</Label><Input data-testid="so-input-customer" className={inputCls} value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="PT. ..." /></div>
-            <div><Label className="text-xs font-semibold text-slate-600 mb-1 block">Deskripsi Project</Label><Input className={inputCls} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="mis. Fabrikasi tangki" /></div>
+            <div>
+              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Customer * <span className="normal-case font-normal text-slate-400">(dari Master Customer)</span></Label>
+              <CustomerAutocomplete customers={customers} value={customer} onChangeText={setCustomer} onPick={pickCustomer} />
+              {customerAddress && <div className="text-[10px] text-slate-400 mt-0.5 line-clamp-1" title={customerAddress}>{customerAddress}</div>}
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nama Sales</Label>
+              <SalesNamePicker value={salesName} onChange={setSalesName} options={salesUsers} />
+            </div>
           </div>
 
           {/* Item table */}
@@ -466,6 +491,89 @@ function QuotationAutocomplete({ onPick }) {
   );
 }
 
+/* Master Customer autocomplete — pilih dari master (isi nama + alamat) atau ketik manual */
+function CustomerAutocomplete({ customers, value, onChangeText, onPick }) {
+  const [open, setOpen] = useState(false);
+  const matches = useMemo(() => {
+    const q = (value || "").trim().toLowerCase();
+    const list = customers || [];
+    if (!q) return list.slice(0, 20);
+    return list.filter((c) => (c.name || c.customer_name || "").toLowerCase().includes(q)).slice(0, 20);
+  }, [customers, value]);
+  return (
+    <div className="relative">
+      <Input
+        className={inputCls}
+        value={value}
+        onChange={(e) => { onChangeText(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
+        placeholder="Cari / pilih customer..."
+        data-testid="so-input-customer"
+        autoComplete="off"
+      />
+      {open && matches.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-0.5 bg-white border border-slate-300 shadow-md max-h-56 overflow-y-auto z-30" data-testid="so-customer-suggestions">
+          {matches.map((c) => (
+            <button
+              key={c.id || c.customer_code || c.name}
+              type="button"
+              onClick={() => { onPick(c); setOpen(false); }}
+              className="w-full text-left px-2 py-1.5 hover:bg-emerald-50 border-b border-slate-100 text-xs"
+              data-testid={`so-customer-opt-${c.customer_code || c.id || (c.name || "").slice(0, 6)}`}
+            >
+              <div className="font-semibold text-slate-900">{c.name || c.customer_name}{(c.customer_code) && <span className="ml-1 font-mono text-slate-400">· {c.customer_code}</span>}</div>
+              {c.address && <div className="text-slate-500 text-[11px] line-clamp-1">{c.address}</div>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Nama Sales — default user aktif, bisa diketik bebas atau dipilih dari daftar user Sales/Admin */
+function SalesNamePicker({ value, onChange, options }) {
+  const [open, setOpen] = useState(false);
+  const matches = useMemo(() => {
+    const q = (value || "").trim().toLowerCase();
+    const list = options || [];
+    if (!q) return list.slice(0, 20);
+    return list.filter((u) => (u.name || u.username || "").toLowerCase().includes(q)).slice(0, 20);
+  }, [options, value]);
+  return (
+    <div className="relative">
+      <Input
+        className={inputCls}
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
+        placeholder="Nama sales (otomatis, bisa diubah)"
+        data-testid="so-input-sales"
+        autoComplete="off"
+      />
+      {open && matches.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-0.5 bg-white border border-slate-300 shadow-md max-h-56 overflow-y-auto z-30" data-testid="so-sales-suggestions">
+          {matches.map((u) => (
+            <button
+              key={u.id || u.username}
+              type="button"
+              onClick={() => { onChange(u.name || u.username); setOpen(false); }}
+              className="w-full text-left px-2 py-1.5 hover:bg-emerald-50 border-b border-slate-100 text-xs flex items-center justify-between"
+              data-testid={`so-sales-opt-${u.username || u.id}`}
+            >
+              <span className="font-medium text-slate-800">{u.name || u.username}</span>
+              <span className="text-[10px] uppercase tracking-wider text-slate-400">{u.role}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 /* SO detail view (respects price visibility) */
 function SoDetailModal({ so, canSeePrice, onClose }) {
   const st = DR_STATUS[so.drawing_request_status] || DR_STATUS.belum_drawing_request;
@@ -482,7 +590,7 @@ function SoDetailModal({ so, canSeePrice, onClose }) {
             <Info label="No. PO Customer" value={so.po_customer_no} />
             <Info label="Tanggal SO" value={formatDateID(so.so_date)} />
             <Info label="Ref Quotation" value={so.source_quotation_no || "-"} />
-            <Info label="Deskripsi" value={so.description} full />
+            <Info label="Nama Sales" value={so.sales_name} />
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Status Proses Engineering</div>

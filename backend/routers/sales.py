@@ -1067,6 +1067,8 @@ async def update_quotation(qid: str, payload: QuotationUpdate, current: dict = D
         raise HTTPException(status_code=404, detail="Quotation tidak ditemukan")
     if d.get("status") == "cancel":
         raise HTTPException(status_code=400, detail="Quotation yang dibatalkan tidak bisa di-edit")
+    if d.get("status") == "confirm_order":
+        raise HTTPException(status_code=400, detail="Quotation sudah Confirm Order — terkunci, tidak bisa diedit/revisi.")
 
     # Handle quotation_no override
     updates = {}
@@ -1117,13 +1119,23 @@ async def update_quotation(qid: str, payload: QuotationUpdate, current: dict = D
 
 
 @router.delete("/quotations/{qid}")
-async def delete_quotation(qid: str, current: dict = Depends(get_current_user)):
-    """Sales & admin can delete quotation directly (soft delete). No approval workflow."""
-    if not (current.get("role") == "sales" or is_admin_like(current)):
-        raise HTTPException(status_code=403, detail="Hanya Sales & Admin yang bisa hapus Quotation")
+async def delete_quotation(qid: str, reason: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Hapus quotation (soft delete).
+    - Sebelum Confirm Order: Sales & Admin boleh hapus langsung.
+    - Setelah Confirm Order: TERKUNCI — hanya Admin/Super Admin dan WAJIB menyertakan alasan (terotorisasi & tercatat di audit)."""
     d = await db.quotations.find_one({"id": qid})
     if not d:
         raise HTTPException(status_code=404, detail="Quotation tidak ditemukan")
+
+    if d.get("status") == "confirm_order":
+        if not is_admin_like(current):
+            raise HTTPException(status_code=403, detail="Quotation sudah Confirm Order — penghapusan hanya oleh Admin (terotorisasi).")
+        if not (reason or "").strip():
+            raise HTTPException(status_code=400, detail="Alasan penghapusan wajib diisi untuk quotation yang sudah Confirm Order.")
+    else:
+        if not (current.get("role") == "sales" or is_admin_like(current)):
+            raise HTTPException(status_code=403, detail="Hanya Sales & Admin yang bisa hapus Quotation")
+
     # If linked to inquiry, remove from linked_quotations
     if d.get("inquiry_id"):
         await db.inquiries.update_one(
@@ -1132,11 +1144,14 @@ async def delete_quotation(qid: str, current: dict = Depends(get_current_user)):
              "$push": {"history": {
                  "at": datetime.utcnow().isoformat(),
                  "by": current.get("name") or current.get("username"),
-                 "action": f"quotation {d.get('quotation_no', '')} dihapus",
+                 "action": f"quotation {d.get('quotation_no', '')} dihapus"
+                           + (f" (alasan: {reason.strip()})" if (reason or '').strip() else ""),
              }}},
         )
     await soft_delete_one("quotations", {"id": qid}, current)
-    await log_action(current, "delete_quotation", "quotation", qid, {"quotation_no": d.get("quotation_no")})
+    await log_action(current, "delete_quotation", "quotation", qid,
+                     {"quotation_no": d.get("quotation_no"), "was_confirmed": d.get("status") == "confirm_order",
+                      "reason": (reason or "").strip()})
     return {"ok": True}
 
 
@@ -1368,6 +1383,10 @@ async def update_quotation_status(qid: str, payload: QuotationStatusUpdate, curr
     quo = await db.quotations.find_one({"id": qid})
     if not quo:
         raise HTTPException(status_code=404, detail="Quotation tidak ditemukan")
+
+    # Setelah Confirm Order → status terkunci. Hanya Admin/Super Admin yang boleh koreksi.
+    if quo.get("status") == "confirm_order" and payload.status != "confirm_order" and not is_admin_like(current):
+        raise HTTPException(status_code=400, detail="Quotation sudah Confirm Order — ganti status terkunci (hanya Admin yang dapat mengoreksi).")
 
     now = datetime.utcnow().isoformat()
     upd = {"status": payload.status, "status_updated_at": now, "updated_at": now}
