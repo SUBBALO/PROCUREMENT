@@ -1,0 +1,92 @@
+{
+  "summary": "Completed backend-only testing for BUG1 (engineers endpoint) and BUG2 (admin password persistence). Both bugs are fully fixed and verified.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "BUG1: GET /api/inquiries/engineers returns {items:[...]} with 7 engineering users for admin",
+    "BUG1: GET /api/inquiries/engineers returns {items:[...]} for eng_leader (riski)",
+    "BUG1: GET /api/inquiries/engineers correctly returns 403 for eng_staff",
+    "BUG1: GET /api/inquiries/engineers correctly returns 403 for sales user",
+    "BUG1: Engineering users list includes eng_leader role (was missing before fix)",
+    "BUG1 REGRESSION: GET /api/drawing-requests/engineering-users returns {items:[...]} for admin",
+    "BUG1 REGRESSION: GET /api/drawing-requests/engineering-users returns {items:[...]} for eng_leader",
+    "BUG1 REGRESSION: GET /api/drawing-requests/engineering-users correctly returns 403 for eng_staff",
+    "BUG2: Admin password_hash remains IDENTICAL after backend restart (verified with actual restart)",
+    "BUG2: Admin role='admin', active=True, and perm 'approve_store_requests' preserved correctly",
+    "BUG2: No password reset messages found in backend logs after restart",
+    "BUG2: seed_admin function no longer overwrites existing admin password_hash"
+  ],
+  "test_report_links": [
+    "/app/backend/test_bug_fixes.py"
+  ],
+  "action_item_for_main_agent": "",
+  "updated_files": [
+    "/app/backend/test_bug_fixes.py"
+  ],
+  "success_percentage": {
+    "backend": "100% (9/9 tests passed)",
+    "frontend": "N/A (backend-only testing)"
+  },
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false,
+  "detailed_findings": {
+    "bug1_fix_verification": {
+      "endpoint": "/api/inquiries/engineers",
+      "status": "FIXED",
+      "details": [
+        "Endpoint now returns {items: [...]} instead of null",
+        "Returns 7 engineering users: Adit, Andi Eng, Eka, Eti, Riski Leader, Trisna, Wendy",
+        "Includes eng_leader role (Riski Leader) which was excluded before",
+        "Correctly enforces authorization: accessible by eng_head/eng_leader/admin, 403 for eng_staff/sales",
+        "Return statement added at line 295 in /app/backend/routers/sales.py"
+      ]
+    },
+    "bug1_regression_verification": {
+      "endpoint": "/api/drawing-requests/engineering-users",
+      "status": "WORKING",
+      "details": [
+        "Endpoint still works correctly after BUG1 fix",
+        "Returns engineering users list for eng_leader/admin",
+        "Correctly returns 403 for eng_staff",
+        "No regression introduced by the fix"
+      ]
+    },
+    "bug2_fix_verification": {
+      "issue": "Admin password reset on backend restart",
+      "status": "FIXED",
+      "details": [
+        "Admin password_hash verified IDENTICAL before and after backend restart",
+        "Original hash: $2b$12$XxLcPnAvAaAHz...",
+        "Hash after restart: $2b$12$XxLcPnAvAaAHz... (SAME)",
+        "seed_admin function (lines 173-212 in server.py) no longer overwrites password_hash",
+        "Admin role, active status, and permissions still correctly maintained",
+        "No 'Updated admin' password reset messages in logs",
+        "Fix ensures existing admin password is preserved while still ensuring role/perms are correct"
+      ]
+    }
+  },
+  "test_methodology": {
+    "approach": "Direct API testing with JWT tokens + MongoDB verification + backend restart test",
+    "tools_used": [
+      "Python requests library for API calls",
+      "PyMongo for direct database access",
+      "JWT token generation for authentication",
+      "supervisorctl for backend restart",
+      "MongoDB queries to verify password_hash persistence"
+    ],
+    "test_coverage": [
+      "Authorization checks for different user roles (admin, eng_leader, eng_staff, sales)",
+      "Response format validation ({items: [...]})",
+      "Data correctness (engineering users list)",
+      "Password persistence across backend restart",
+      "Log verification for password reset behavior"
+    ]
+  }
+}

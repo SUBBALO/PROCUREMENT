@@ -196,16 +196,20 @@ async def seed_admin():
         })
         logger.info(f"Seeded admin: {admin_username}")
     else:
+        # PENTING: JANGAN pernah menimpa password admin yang sudah ada.
+        # (Dulu password di-reset ke ADMIN_PASSWORD tiap startup → menyebabkan
+        #  password yang sudah diganti user kembali ke default saat restart.)
+        # Cukup pastikan role/perms/active benar; password milik user dipertahankan.
         updates: dict = {}
-        if not verify_password(admin_password, existing["password_hash"]):
-            updates["password_hash"] = hash_password(admin_password)
         if "approve_store_requests" not in (existing.get("perms") or []):
             updates["perms"] = list(set((existing.get("perms") or []) + ["approve_store_requests"]))
-        updates.setdefault("role", "admin")
-        updates.setdefault("active", True)
+        if existing.get("role") != "admin":
+            updates["role"] = "admin"
+        if existing.get("active") is False:
+            updates["active"] = True
         if updates:
             await db.users.update_one({"username": admin_username}, {"$set": updates})
-            logger.info(f"Updated admin: {admin_username}")
+            logger.info(f"Ensured admin role/perms (password preserved): {admin_username}")
 
 
 @app.on_event("startup")

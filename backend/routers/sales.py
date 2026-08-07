@@ -287,11 +287,12 @@ async def list_engineers(current: dict = Depends(get_current_user)):
     if not (is_eng_head(current) or is_admin_like(current)):
         raise HTTPException(status_code=403, detail="Tidak berwenang")
     engineers = await db.users.find(
-        {"role": {"$in": ["engineering", "eng_head", "eng_staff"]},
+        {"role": {"$in": ["engineering", "eng_head", "eng_leader", "eng_staff"]},
          "active": {"$ne": False},
          "deleted_at": {"$exists": False}},
         {"id": 1, "username": 1, "name": 1, "role": 1, "_id": 0},
     ).sort("name", 1).to_list(length=None)
+    return {"items": engineers}
 
 
 @router.get("/inquiries/masterlist")
