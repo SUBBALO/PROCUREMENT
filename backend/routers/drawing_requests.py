@@ -119,6 +119,7 @@ class DrawingRequestCreate(BaseModel):
     customer_code: str = ""
     customer_name: str = ""
     po_customer_no: str = ""   # No. PO dari Customer (Sales isi di DRF) → auto-isi stamping
+    po_received_date: Optional[str] = ""  # Tanggal PO customer diterima (wajib di UI)
     qty_order: float = 1
     unit: str = "pcs"
     material: str = "TBA"
@@ -283,6 +284,7 @@ async def create_drawing_request(
         "customer_code": payload.customer_code.strip(),
         "customer_name": payload.customer_name.strip(),
         "po_customer_no": (payload.po_customer_no or "").strip(),
+        "po_received_date": payload.po_received_date or "",
         "qty_order": legacy_qty,
         "unit": payload.unit,
         "material": payload.material or "TBA",

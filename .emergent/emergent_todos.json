@@ -1,30 +1,26 @@
 [
   {
-    "content": "Hub 'Pekerjaan Masuk' (3 tab + gabung tab lama, assign preserved) - TESTED 100%",
+    "content": "DRF form: remove Project Name + reorder fields + required dates + backend po_received_date",
     "status": "completed"
   },
   {
-    "content": "Menu Engineering 4 grup - TESTED",
+    "content": "Repeat order: master customer autocomplete in manual SO box",
     "status": "completed"
   },
   {
-    "content": "Badge merah 'Menunggu Verifikasi Leader' - TESTED",
+    "content": "Repeat order: auto-load reference SO attachments (drawing/BOM/nesting/costing) with preview",
     "status": "completed"
   },
   {
-    "content": "Notifikasi 'Drawing Siap Dilihat' klik -> preview drawing - TESTED",
+    "content": "Build frontend (esbuild) - passed",
     "status": "completed"
   },
   {
-    "content": "Riwayat TTD Sales per drawing di DRF - TESTED",
-    "status": "completed"
+    "content": "Call testing_agent for readonly bug + required dates + repeat order enhancements",
+    "status": "in_progress"
   },
   {
-    "content": "BUGFIX: tombol 'Buat Quotation' hilang utk super_admin/supervisor (gate role diperbaiki) - VERIFIED via screenshot",
-    "status": "completed"
-  },
-  {
-    "content": "Approval BOM berjenjang digital (Leader -> Purchasing -> Erwin/admin) + audit trail - BELUM (butuh keputusan: siapa penandatangan 'Purchasing'; saat ini TTD Purchasing/Erwin manual di cetak)",
+    "content": "Read report, fix all bugs, rerun if needed",
     "status": "pending"
   }
 ]

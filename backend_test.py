@@ -342,9 +342,158 @@ def test_assign_engineer_endpoint(tester):
     tester.logout()
 
 
+def test_drf_form_changes(tester):
+    """Test DRF Form Changes: po_received_date, expected_due_date required, project_name removed"""
+    print("\n" + "="*60)
+    print("DRF FORM CHANGES: Testing po_received_date & expected_due_date")
+    print("="*60)
+    
+    # Login as Sales
+    if not tester.login("qa_sales_tmp", "QaTest12345"):
+        print("❌ Cannot proceed - Sales login failed")
+        return
+    
+    # Test 1: Create DRF with po_received_date and expected_due_date
+    test_drf_data = {
+        "request_type": "new_order",
+        "so_no": "005251",
+        "project_name": "Test Project Auto-derived",
+        "customer_name": "Test Customer",
+        "customer_code": "TST",
+        "po_customer_no": "PO-TEST-001",
+        "po_received_date": "2025-01-15",
+        "expected_due_date": "2025-02-15",
+        "items": [
+            {"name": "Test Item 1", "qty": 10, "unit": "pcs", "material": "SS304"}
+        ],
+        "notes": "Test DRF for po_received_date validation"
+    }
+    
+    def check_drf_creation(data):
+        drf_id = data.get("id")
+        form_no = data.get("form_no")
+        po_received = data.get("po_received_date")
+        due_date = data.get("expected_due_date")
+        
+        tester.log(f"Created DRF: {form_no} (ID: {drf_id})", "INFO")
+        
+        if not po_received:
+            tester.log("❌ po_received_date not stored!", "FAIL")
+            return False
+        if not due_date:
+            tester.log("❌ expected_due_date not stored!", "FAIL")
+            return False
+        
+        tester.log(f"✓ po_received_date: {po_received}", "INFO")
+        tester.log(f"✓ expected_due_date: {due_date}", "INFO")
+        
+        # Store for next test
+        tester.test_drf_id = drf_id
+        return True
+    
+    success, drf_response = tester.test(
+        "Create DRF with po_received_date & expected_due_date",
+        "POST",
+        "/drawing-requests",
+        200,
+        data=test_drf_data,
+        check_fn=check_drf_creation
+    )
+    
+    # Test 2: Retrieve DRF and verify fields are persisted
+    if success and hasattr(tester, 'test_drf_id'):
+        def check_drf_retrieval(data):
+            po_received = data.get("po_received_date")
+            due_date = data.get("expected_due_date")
+            
+            if po_received != "2025-01-15":
+                tester.log(f"❌ po_received_date mismatch: {po_received}", "FAIL")
+                return False
+            if due_date != "2025-02-15":
+                tester.log(f"❌ expected_due_date mismatch: {due_date}", "FAIL")
+                return False
+            
+            tester.log("✓ Both dates persisted correctly", "INFO")
+            return True
+        
+        tester.test(
+            f"GET DRF and verify po_received_date & expected_due_date",
+            "GET",
+            f"/drawing-requests/{tester.test_drf_id}",
+            200,
+            check_fn=check_drf_retrieval
+        )
+    
+    tester.logout()
+
+
+def test_repeat_order_attachments(tester):
+    """Test Repeat Order: BOM attachments loading with RBAC"""
+    print("\n" + "="*60)
+    print("REPEAT ORDER: Testing BOM Attachments & RBAC")
+    print("="*60)
+    
+    # Login as Sales
+    if not tester.login("qa_sales_tmp", "QaTest12345"):
+        print("❌ Cannot proceed - Sales login failed")
+        return
+    
+    # Test 1: Get BOM history for a reference SO
+    # Using a known SO from the system (there are 1728 SOs)
+    test_so_no = "005251"
+    
+    def check_bom_history(data):
+        revisions = data.get("revisions", [])
+        tester.log(f"Found {len(revisions)} BOM revision(s) for SO {test_so_no}", "INFO")
+        
+        if len(revisions) > 0:
+            first_bom = revisions[0]
+            bom_id = first_bom.get("id")
+            bom_no = first_bom.get("bom_no")
+            tester.log(f"  BOM: {bom_no} (ID: {bom_id})", "INFO")
+            tester.test_bom_id = bom_id
+            return True
+        else:
+            tester.log(f"⚠️  No BOM found for SO {test_so_no} - skipping attachment test", "WARN")
+            return True  # Not a failure
+    
+    success, bom_data = tester.test(
+        f"GET BOM history for SO {test_so_no}",
+        "GET",
+        f"/bom/history/{test_so_no}",
+        200,
+        check_fn=check_bom_history
+    )
+    
+    # Test 2: Get BOM attachments (if BOM exists)
+    if success and hasattr(tester, 'test_bom_id'):
+        def check_bom_attachments(data):
+            attachments = data.get("attachments", {})
+            can_view_costing = data.get("can_view_costing", False)
+            
+            tester.log(f"BOM Attachments categories: {list(attachments.keys())}", "INFO")
+            tester.log(f"Can view costing: {can_view_costing}", "INFO")
+            
+            # Sales should be able to view costing (privileged role)
+            if not can_view_costing:
+                tester.log("⚠️  Sales cannot view costing - RBAC may be incorrect", "WARN")
+            
+            return True
+        
+        tester.test(
+            f"GET BOM attachments with RBAC check",
+            "GET",
+            f"/bom/{tester.test_bom_id}/attachments",
+            200,
+            check_fn=check_bom_attachments
+        )
+    
+    tester.logout()
+
+
 def main():
     print("="*60)
-    print("ERP Backend API Testing - Phases O, L, M, I")
+    print("ERP Backend API Testing - DRF Form Changes")
     print("="*60)
     print(f"Base URL: {BASE_URL}")
     print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -359,6 +508,10 @@ def main():
         test_phase_m_sales_ttd(tester)
         test_phase_l_drf_endpoints(tester)
         test_assign_engineer_endpoint(tester)
+        
+        # NEW: Test DRF form changes
+        test_drf_form_changes(tester)
+        test_repeat_order_attachments(tester)
         
     except KeyboardInterrupt:
         print("\n\n⚠️  Testing interrupted by user")

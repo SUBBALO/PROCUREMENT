@@ -5,7 +5,8 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
-import { X, FileText, UploadSimple, MagnifyingGlass, Paperclip, Trash, Eye, Plus } from "@phosphor-icons/react";
+import { X, FileText, UploadSimple, MagnifyingGlass, Paperclip, Trash, Eye, Plus, Stack } from "@phosphor-icons/react";
+import BomAttachmentsReadOnly from "./BomAttachmentsReadOnly";
 
 /**
  * DrawingRequestFormDialog — form buat/edit DRF.
@@ -30,6 +31,9 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
   const [attachments, setAttachments] = useState(initial?.attached_files || []);
   const [queuedFiles, setQueuedFiles] = useState([]); // File objects untuk DRF baru (belum tersimpan)
   const [submitting, setSubmitting] = useState(false);
+  const [showCustDrop, setShowCustDrop] = useState(false);
+  const [refBoms, setRefBoms] = useState([]);
+  const [refBomsLoading, setRefBomsLoading] = useState(false);
   const fileRef = useRef();
   const poFileRef = useRef();
   const otherFileRef = useRef();
@@ -75,6 +79,34 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
     const hit = customers.find((c) => (c.name || c.customer_name || "").trim().toLowerCase() === n);
     return (hit && (hit.customer_code || hit.code)) ? (hit.customer_code || hit.code) : fallback;
   }, [customers]);
+
+  // Autocomplete customer master (dipakai di input manual repeat order)
+  const customerMatches = useMemo(() => {
+    const q = (form.customer_name || "").trim().toLowerCase();
+    if (!q) return customers.slice(0, 15);
+    return customers.filter((c) => (c.name || c.customer_name || "").toLowerCase().includes(q)).slice(0, 15);
+  }, [customers, form.customer_name]);
+
+  const pickCustomer = useCallback((c) => {
+    const nm = c.name || c.customer_name || "";
+    setForm((f) => ({ ...f, customer_name: nm, customer_code: c.customer_code || c.code || f.customer_code }));
+    setShowCustDrop(false);
+  }, []);
+
+  // Repeat order — bila referensi SO ada di sistem, tarik BOM + attachments (drawing/BOM/nesting/costing)
+  useEffect(() => {
+    if (type !== "repeat_order" || !form.ref_so_no || form.ref_so_manual) {
+      setRefBoms([]);
+      return;
+    }
+    let alive = true;
+    setRefBomsLoading(true);
+    api.get(`/bom/history/${encodeURIComponent(form.ref_so_no)}`)
+      .then(({ data }) => { if (alive) setRefBoms(data?.revisions || []); })
+      .catch(() => { if (alive) setRefBoms([]); })
+      .finally(() => { if (alive) setRefBomsLoading(false); });
+    return () => { alive = false; };
+  }, [type, form.ref_so_no, form.ref_so_manual]);
 
   // Load drawings for repeat order
   useEffect(() => {
@@ -134,6 +166,8 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
   const _validate = () => {
     if (!form.so_no) { toast.error("Pilih SO dulu"); return false; }
     if (type === "repeat_order" && !form.ref_so_no) { toast.error("Pilih SO referensi (lama) dulu"); return false; }
+    if (!form.po_received_date) { toast.error("Tanggal Terima PO wajib diisi"); return false; }
+    if (!form.expected_due_date) { toast.error("Due Date Target Drawing wajib diisi"); return false; }
     const validItems = (form.items || []).filter((it) => (it.name || "").trim());
     if (validItems.length === 0) { toast.error("Tambahkan minimal 1 item (isi Nama Item)"); return false; }
     return true;
@@ -145,7 +179,9 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
       name: (it.name || "").trim(), qty: Number(it.qty) || 0, unit: it.unit || "pcs", material: it.material || "TBA",
     }));
     const qty_total = items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
-    const payload = { ...form, request_type: type, items, qty_order: qty_total || 1 };
+    // project_name diturunkan otomatis dari item pertama / customer (field manual sudah dihapus)
+    const derivedProject = (form.project_name || "").trim() || items[0]?.name || form.customer_name || form.so_no || "";
+    const payload = { ...form, project_name: derivedProject, request_type: type, items, qty_order: qty_total || 1 };
     if (isEdit) {
       const resp = await api.put(`/drawing-requests/${initial.id}`, payload);
       return resp.data;
@@ -332,7 +368,32 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
                         </div>
                         <div>
                           <Label className="text-[10px]">Nama Customer <span className="text-red-500">*</span></Label>
-                          <Input value={form.customer_name} onChange={(e) => setForm((f) => ({ ...f, customer_name: e.target.value }))} placeholder="mis. THIES, PT" className="rounded-none border-slate-300" data-testid="drf-ref-manual-customer" />
+                          <div className="relative">
+                            <Input
+                              value={form.customer_name}
+                              onChange={(e) => { setForm((f) => ({ ...f, customer_name: e.target.value })); setShowCustDrop(true); }}
+                              onFocus={() => setShowCustDrop(true)}
+                              placeholder="Cari / pilih dari Master Customer..."
+                              className="rounded-none border-slate-300"
+                              data-testid="drf-ref-manual-customer"
+                            />
+                            {showCustDrop && customerMatches.length > 0 && (
+                              <div className="absolute z-20 left-0 right-0 border border-slate-300 max-h-40 overflow-auto bg-white shadow-lg" data-testid="drf-manual-customer-drop">
+                                {customerMatches.map((c) => (
+                                  <button
+                                    type="button"
+                                    key={c.id || c.customer_code || c.name}
+                                    onClick={() => pickCustomer(c)}
+                                    className="w-full text-left px-3 py-1.5 hover:bg-emerald-50 border-b border-slate-100 text-xs"
+                                    data-testid={`drf-manual-customer-opt-${c.customer_code || c.code || (c.name || "").slice(0,6)}`}
+                                  >
+                                    <b>{c.name || c.customer_name}</b>
+                                    {(c.customer_code || c.code) && <span className="ml-1 font-mono text-slate-500">· {c.customer_code || c.code}</span>}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div className="flex gap-2">
@@ -354,6 +415,31 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
                     </div>
                   )}
                 </>
+              )}
+            </div>
+          )}
+
+          {/* Repeat Order — Attachments referensi SO lama (drawing / BOM / nesting / costing) */}
+          {type === "repeat_order" && form.ref_so_no && !form.ref_so_manual && (
+            <div className="border-l-4 border-emerald-500 pl-3 space-y-2" data-testid="drf-ref-attachments">
+              <Label className="text-xs font-bold uppercase tracking-widest text-emerald-700 flex items-center gap-1.5">
+                <Stack size={13} weight="bold" /> Referensi dari SO {form.ref_so_no} (Drawing / BOM / Nesting / Costing)
+              </Label>
+              {refBomsLoading ? (
+                <div className="text-xs text-slate-400 italic">Memuat referensi attachment…</div>
+              ) : refBoms.length === 0 ? (
+                <div className="text-xs text-slate-400 italic">Tidak ada BOM/attachment tersimpan untuk SO ini.</div>
+              ) : (
+                <div className="space-y-3">
+                  {refBoms.map((b) => (
+                    <div key={b.id} className="space-y-1">
+                      <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
+                        BOM {b.bom_no || b.id?.slice(0, 8)}{b.rev_no != null ? ` · Rev ${b.rev_no}` : ""}
+                      </div>
+                      <BomAttachmentsReadOnly bom={b} />
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}
@@ -385,24 +471,12 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
             )}
           </div>
 
-          {/* Data grid */}
+          {/* Data grid — urutan: Customer → No. PO → Tanggal Terima PO → Due Date */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs">Date</Label>
-              <Input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} disabled={isLocked} className="rounded-none border-slate-300" data-testid="drf-date" />
-            </div>
-            <div>
-              <Label className="text-xs font-bold text-amber-700">Target Selesai (Due Date)</Label>
-              <Input type="date" value={form.expected_due_date} onChange={(e) => setForm((f) => ({ ...f, expected_due_date: e.target.value }))} disabled={isLocked} className="rounded-none border-amber-300 focus-visible:ring-amber-400" data-testid="drf-due-date" />
-              <div className="text-[10px] text-slate-500 mt-0.5">Dipakai untuk urutan prioritas antrian Engineering (paling dekat = didahulukan).</div>
-            </div>
-            <div>
-              <Label className="text-xs">Project Name</Label>
-              <Input value={form.project_name} onChange={(e) => setForm((f) => ({ ...f, project_name: e.target.value }))} disabled={isLocked} className="rounded-none border-slate-300" data-testid="drf-project" />
-            </div>
-            <div>
-              <Label className="text-xs">Customer</Label>
-              <Input value={form.customer_name} onChange={(e) => setForm((f) => ({ ...f, customer_name: e.target.value }))} disabled={isLocked} className="rounded-none border-slate-300" data-testid="drf-customer" />
+              <Label className="text-xs">Nama Customer</Label>
+              <Input value={form.customer_name} onChange={(e) => setForm((f) => ({ ...f, customer_name: e.target.value }))} disabled={isLocked} placeholder="Otomatis dari SO" className="rounded-none border-slate-300" data-testid="drf-customer" />
+              <div className="text-[10px] text-slate-500 mt-0.5">Terisi otomatis mengikuti SO yang dipilih.</div>
             </div>
             <div>
               <Label className="text-xs">No. PO Customer</Label>
@@ -410,6 +484,16 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
               <div className="text-[10px] text-slate-500 mt-0.5">Otomatis mengisi kolom P/O No. pada stamping SO saat Sales TTD.</div>
             </div>
             <div>
+              <Label className="text-xs font-bold text-sky-700">Tanggal Terima PO <span className="text-red-500">*</span></Label>
+              <Input type="date" value={form.po_received_date} onChange={(e) => setForm((f) => ({ ...f, po_received_date: e.target.value }))} disabled={isLocked} className="rounded-none border-sky-300 focus-visible:ring-sky-400" data-testid="drf-po-received-date" />
+              <div className="text-[10px] text-slate-500 mt-0.5">Tanggal PO customer diterima. Wajib diisi.</div>
+            </div>
+            <div>
+              <Label className="text-xs font-bold text-amber-700">Due Date Target Drawing <span className="text-red-500">*</span></Label>
+              <Input type="date" value={form.expected_due_date} onChange={(e) => setForm((f) => ({ ...f, expected_due_date: e.target.value }))} disabled={isLocked} className="rounded-none border-amber-300 focus-visible:ring-amber-400" data-testid="drf-due-date" />
+              <div className="text-[10px] text-slate-500 mt-0.5">Deadline target Engineering. Dipakai untuk urutan prioritas antrian (paling dekat = didahulukan). Wajib diisi.</div>
+            </div>
+            <div className="md:col-span-2">
               <div className="flex items-center justify-between mb-1">
                 <Label className="text-xs">Daftar Item <span className="text-red-500">*</span></Label>
                 {!isLocked && (
