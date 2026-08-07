@@ -1,30 +1,30 @@
 [
   {
-    "content": "Hub 'Pekerjaan Masuk': WorkOrderEngineeringPage 3 tab + gabung tab lama, assign preserved",
+    "content": "Hub 'Pekerjaan Masuk' (3 tab + gabung tab lama, assign preserved) - TESTED 100%",
     "status": "completed"
   },
   {
-    "content": "Menu Engineering 4 grup (DeptPortal groups)",
+    "content": "Menu Engineering 4 grup - TESTED",
     "status": "completed"
   },
   {
-    "content": "Badge merah 'Menunggu Verifikasi' Leader di menu Engineering (card + count)",
+    "content": "Badge merah 'Menunggu Verifikasi Leader' - TESTED",
     "status": "completed"
   },
   {
-    "content": "Notifikasi 'Drawing Siap Dilihat' klik -> buka preview drawing (AppShell modal)",
+    "content": "Notifikasi 'Drawing Siap Dilihat' klik -> preview drawing - TESTED",
     "status": "completed"
   },
   {
-    "content": "Riwayat TTD Sales per drawing di dalam DRF",
-    "status": "in_progress"
+    "content": "Riwayat TTD Sales per drawing di DRF - TESTED",
+    "status": "completed"
   },
   {
-    "content": "Approval BOM berjenjang (Leader -> Erwin/admin) + audit trail",
-    "status": "pending"
+    "content": "BUGFIX: tombol 'Buat Quotation' hilang utk super_admin/supervisor (gate role diperbaiki) - VERIFIED via screenshot",
+    "status": "completed"
   },
   {
-    "content": "Regresi menyeluruh (fokus assign engineer) + cleanup + build",
+    "content": "Approval BOM berjenjang digital (Leader -> Purchasing -> Erwin/admin) + audit trail - BELUM (butuh keputusan: siapa penandatangan 'Purchasing'; saat ini TTD Purchasing/Erwin manual di cetak)",
     "status": "pending"
   }
 ]

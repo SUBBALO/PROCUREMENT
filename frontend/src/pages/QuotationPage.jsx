@@ -47,7 +47,9 @@ function Badge({ status }) {
 
 export default function QuotationPage() {
   const { user } = useAuth();
-  const isSales = user?.role === "sales" || user?.role === "admin";
+  // Semua role yang wajar boleh buat quotation (backend tidak membatasi role).
+  // Sebelumnya hanya "sales"/"admin" -> super_admin & supervisor tidak melihat tombol "Buat Quotation".
+  const isSales = ["sales", "admin", "super_admin", "supervisor"].includes(user?.role);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
