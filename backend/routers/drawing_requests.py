@@ -128,6 +128,112 @@ class DrawingRequestCreate(BaseModel):
     referenced_drawings: List[str] = []  # array drawing_ids untuk repeat order
 
 
+def _stage(status, date="", pic="", extra=None):
+    s = {"status": status, "date": date or "", "pic": pic or ""}
+    if extra:
+        s.update(extra)
+    return s
+
+
+@router.get("/dashboard/so-progress")
+async def dashboard_so_progress(q: str = "", limit: int = 60, current: dict = Depends(get_current_user)):
+    """Progress tiap SO lintas departemen (Sales -> Eng -> Purchasing -> Store -> QC -> Delivery).
+    Fokus ke SO yang masuk workflow Engineering (punya drawing), plus pencarian so_no/customer."""
+    # SO yang punya drawing (workflow aktif)
+    dwg_so = [s for s in await db.drawings.distinct("so_no") if s]
+    so_filter = {"so_no": {"$in": dwg_so}} if dwg_so else {"id": "__none__"}
+    if q and q.strip():
+        rx = {"$regex": q.strip(), "$options": "i"}
+        so_filter = {"$or": [{"so_no": rx}, {"customer": rx}, {"description": rx}]}
+    sos = await db.sales_orders.find(so_filter, {"_id": 0}).sort("so_date", -1).to_list(length=max(1, min(limit, 200)))
+    so_nos = [s.get("so_no") for s in sos if s.get("so_no")]
+
+    # Batch data per so_no
+    drawings = await db.drawings.find(
+        {"so_no": {"$in": so_nos}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "so_no": 1, "approval_status": 1, "approvals": 1, "updated_at": 1, "drawing_no": 1, "item_name": 1, "item_qty": 1},
+    ).to_list(length=5000)
+    receipts = await db.store_receipts.find({"so_no": {"$in": so_nos}}, {"_id": 0, "so_no": 1, "receive_date": 1}).to_list(length=5000)
+    txns = await db.transactions.find({"project_no": {"$in": so_nos}}, {"_id": 0, "project_no": 1, "po_date": 1, "receive_date": 1}).to_list(length=5000)
+    deliveries = await db.deliveries.find({"so_no": {"$in": so_nos}}, {"_id": 0, "so_no": 1}).to_list(length=5000)
+
+    def group(rows, key):
+        g = {}
+        for r in rows:
+            g.setdefault(r.get(key), []).append(r)
+        return g
+
+    dwg_by = group(drawings, "so_no")
+    rec_by = group(receipts, "so_no")
+    txn_by = group(txns, "project_no")
+    del_by = group(deliveries, "so_no")
+
+    APPROVED = {"approved", "controlled", "released"}
+    out = []
+    for so in sos:
+        sono = so.get("so_no")
+        dws = dwg_by.get(sono, [])
+        total = len(dws)
+        approved = sum(1 for d in dws if (d.get("approval_status") or "") in APPROVED)
+        last_appr = ""
+        qc_done = 0
+        for d in dws:
+            for a in (d.get("approvals") or []):
+                if a.get("at", "") > last_appr:
+                    last_appr = a.get("at", "")
+                if a.get("stage") in ("qc",):
+                    qc_done += 1
+            if (d.get("approval_status") or "") in ("controlled", "released"):
+                qc_done += 0  # controlled implies passed qc; counted via approvals too
+
+        # Stages
+        st_sales = _stage("done", so.get("so_date", ""), so.get("created_by_username", ""))
+        if total == 0:
+            st_eng = _stage("pending")
+        elif approved >= total:
+            st_eng = _stage("done", last_appr, extra={"progress": f"{approved}/{total}"})
+        else:
+            st_eng = _stage("in_progress", last_appr, extra={"progress": f"{approved}/{total}"})
+
+        recs = rec_by.get(sono, [])
+        txs = txn_by.get(sono, [])
+        st_pur = _stage("done", (txs[0].get("po_date") if txs else "")) if txs else _stage("pending")
+        st_store = _stage("done", (recs[0].get("receive_date") if recs else "")) if recs else _stage("pending")
+
+        # QC: dianggap done bila semua drawing controlled/released
+        controlled = sum(1 for d in dws if (d.get("approval_status") or "") in ("controlled", "released"))
+        if total > 0 and controlled >= total:
+            st_qc = _stage("done", last_appr, extra={"progress": f"{controlled}/{total}"})
+        elif controlled > 0:
+            st_qc = _stage("in_progress", "", extra={"progress": f"{controlled}/{total}"})
+        else:
+            st_qc = _stage("pending")
+
+        st_del = _stage("done") if del_by.get(sono) else _stage("pending")
+
+        stages = [
+            {"key": "sales", "label": "Sales", **st_sales},
+            {"key": "engineering", "label": "Engineering", **st_eng},
+            {"key": "purchasing", "label": "Purchasing", **st_pur},
+            {"key": "store", "label": "Store", **st_store},
+            {"key": "qc", "label": "QC", **st_qc},
+            {"key": "delivery", "label": "Delivery", **st_del},
+        ]
+        # tahap aktif = stage pertama yang belum done
+        current_stage = next((s["label"] for s in stages if s["status"] != "done"), "Delivery")
+        out.append({
+            "so_no": sono,
+            "customer": so.get("customer", ""),
+            "description": so.get("description", ""),
+            "so_date": so.get("so_date", ""),
+            "drawings_total": total,
+            "drawings_approved": approved,
+            "current_stage": current_stage,
+            "stages": stages,
+        })
+    return {"items": out, "count": len(out)}
+
+
 def _clean_drf_items(raw) -> list:
     """Normalisasi tabel item DRF: [{name, qty, unit, material}]. Buang baris tanpa nama."""
     out = []

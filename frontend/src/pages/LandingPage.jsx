@@ -1,6 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
+import SoProgressTracker from "../components/SoProgressTracker";
 import {
   Storefront, Wrench, ShoppingBag, Package, ClipboardText, FileText, Factory, ArrowRight, Sparkle, Stamp, WarningCircle
 } from "@phosphor-icons/react";
@@ -162,24 +163,51 @@ export default function LandingPage() {
 
       <div className="relative max-w-[1400px] mx-auto px-6 py-5">
         {/* Header */}
-        <div className="mb-5">
+        <div className="mb-4">
           <div className="flex items-center gap-2 mb-1.5">
             <Sparkle size={14} weight="fill" className="text-amber-500" />
-            <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-slate-500">Department Portal</span>
+            <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-slate-500">Command Center</span>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
             {greeting}, <span className="italic text-amber-600 font-normal">{(user?.name || user?.username || "user").split(" ")[0]}</span>.
           </h1>
-          <p className="mt-1.5 text-xs text-slate-600 max-w-2xl">
-            Pilih menu untuk mulai. Anda punya akses ke <b className="text-slate-900">{visible.length} menu</b>.
-          </p>
         </div>
 
-        {/* Cards Grid — 4 across on lg (row 1 = 4 active, row 2 = 3 coming soon) */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {visible.map((d, idx) => (
-            <DeptCard key={d.key} dept={d} onEnter={() => !d.comingSoon && d.href !== "#" && navigate(d.href)} delay={idx * 60} />
-          ))}
+        {/* 2 kolom: sidebar departemen (kiri) + SO Progress Tracker (utama) */}
+        <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-4 items-start">
+          {/* Sidebar kiri — judul departemen */}
+          <aside className="bg-white border border-slate-200" data-testid="dept-sidebar">
+            <div className="px-3 py-2.5 border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-[0.2em] font-bold text-slate-500">
+              Departemen ({visible.length})
+            </div>
+            <nav className="p-1.5 space-y-0.5">
+              {visible.map((d) => {
+                const Icon = d.icon;
+                return (
+                  <button
+                    key={d.key}
+                    data-testid={`dept-card-${d.key}`}
+                    onClick={() => d.href !== "#" && navigate(d.href)}
+                    className="group w-full flex items-center gap-2.5 px-2.5 py-2 text-left hover:bg-slate-100 border-l-2 border-transparent hover:border-slate-900 transition-colors duration-150"
+                  >
+                    <span className={`w-8 h-8 flex items-center justify-center bg-slate-50 border ${d.accentBorder} shrink-0`}>
+                      <Icon size={16} weight="duotone" className={d.accentText} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-bold text-slate-800 truncate" style={{ fontFamily: "Chivo, sans-serif" }}>{d.label}</span>
+                      <span className="block text-[9px] uppercase tracking-wider text-slate-400 truncate">{d.tagline}</span>
+                    </span>
+                    <ArrowRight size={13} weight="bold" className="text-slate-300 group-hover:text-slate-700 group-hover:translate-x-0.5 transition-all shrink-0" />
+                  </button>
+                );
+              })}
+            </nav>
+          </aside>
+
+          {/* Area utama — SO Progress Tracker */}
+          <main>
+            <SoProgressTracker />
+          </main>
         </div>
 
         {/* Footer — MKS ERP branding */}

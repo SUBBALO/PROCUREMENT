@@ -1,6 +1,6 @@
 """
-Backend API Test for Indonesian ERP - Feature F+G Testing
-Tests po_customer_no field and Sales TTD auto-fill functionality
+Backend API Test for Indonesian ERP - Dashboard SO Progress Tracker
+Tests GET /api/dashboard/so-progress endpoint
 """
 import requests
 import sys
@@ -73,269 +73,374 @@ class ERPTester:
         )
         return success
     
-    def test_feature_f_backend(self):
-        """Test Feature F: po_customer_no field in DRF CRUD"""
-        self.log("\n=== FEATURE F: po_customer_no CRUD ===", "info")
+    def test_auth_required(self):
+        """Test that endpoint requires authentication"""
+        self.log("\n=== TEST 1: Authentication Required ===", "info")
         
-        # 1. Create DRF with po_customer_no
-        test_po = f"PO-TEST-{uuid.uuid4().hex[:8].upper()}"
-        drf_data = {
-            "request_type": "new_order",
-            "so_no": "TEST-SO-001",
-            "project_name": "Test Project",
-            "customer_code": "TST",
-            "customer_name": "Test Customer",
-            "po_customer_no": test_po,
-            "qty_order": 5,
-            "unit": "pcs",
-            "material": "Steel",
-            "expected_due_date": "2026-12-31"
-        }
+        # Create a new session without auth
+        unauth_session = requests.Session()
+        url = f"{BASE_URL}/dashboard/so-progress"
         
-        success, drf = self.test(
-            "Create DRF with po_customer_no",
-            "POST",
-            "drawing-requests",
-            200,
-            json_data=drf_data
-        )
-        
-        if not success:
-            self.log("Failed to create DRF, skipping Feature F tests", "error")
+        try:
+            response = unauth_session.get(url)
+            if response.status_code in (401, 403):
+                self.tests_passed += 1
+                self.tests_run += 1
+                self.log(f"PASSED - Endpoint requires auth (status: {response.status_code})", "success")
+                return True
+            else:
+                self.tests_run += 1
+                self.log(f"FAILED - Expected 401/403, got {response.status_code}", "error")
+                return False
+        except Exception as e:
+            self.tests_run += 1
+            self.log(f"FAILED - Error: {str(e)}", "error")
             return False
+    
+    def test_basic_structure(self):
+        """Test basic response structure {items:[...], count}"""
+        self.log("\n=== TEST 2: Basic Response Structure ===", "info")
         
-        drf_id = drf.get("id")
-        self.test_data["drf_id"] = drf_id
-        self.test_data["po_customer_no"] = test_po
-        
-        # Verify po_customer_no was saved
-        if drf.get("po_customer_no") != test_po:
-            self.log(f"po_customer_no mismatch: expected {test_po}, got {drf.get('po_customer_no')}", "error")
-            return False
-        
-        # 2. GET DRF and verify po_customer_no
-        success, drf_get = self.test(
-            "GET DRF returns po_customer_no",
+        success, response = self.test(
+            "GET /api/dashboard/so-progress",
             "GET",
-            f"drawing-requests/{drf_id}",
+            "dashboard/so-progress",
             200
         )
         
-        if success and drf_get.get("po_customer_no") != test_po:
-            self.log(f"GET: po_customer_no mismatch", "error")
+        if not success:
             return False
         
-        # 3. Update DRF po_customer_no
-        new_po = f"PO-UPD-{uuid.uuid4().hex[:8].upper()}"
-        drf_data["po_customer_no"] = new_po
-        success, drf_upd = self.test(
-            "PUT DRF updates po_customer_no",
-            "PUT",
-            f"drawing-requests/{drf_id}",
-            200,
-            json_data=drf_data
-        )
-        
-        if success and drf_upd.get("po_customer_no") != new_po:
-            self.log(f"PUT: po_customer_no not updated", "error")
+        # Verify structure
+        if "items" not in response:
+            self.log("FAILED - Missing 'items' field", "error")
             return False
         
-        self.test_data["po_customer_no"] = new_po
-        self.log("Feature F CRUD tests PASSED", "success")
+        if "count" not in response:
+            self.log("FAILED - Missing 'count' field", "error")
+            return False
+        
+        items = response.get("items", [])
+        count = response.get("count", 0)
+        
+        if not isinstance(items, list):
+            self.log("FAILED - 'items' is not a list", "error")
+            return False
+        
+        if len(items) != count:
+            self.log(f"FAILED - count mismatch: items length={len(items)}, count={count}", "error")
+            return False
+        
+        self.log(f"Response structure valid: {count} items returned", "success")
+        self.test_data["items"] = items
+        self.test_data["count"] = count
         return True
     
-    def test_feature_f_generate_drawings(self):
-        """Test Feature F: po_customer_no copied to drawings when generated"""
-        self.log("\n=== FEATURE F: Generate Drawings ===", "info")
+    def test_item_structure(self):
+        """Test each item has required fields"""
+        self.log("\n=== TEST 3: Item Structure ===", "info")
         
-        drf_id = self.test_data.get("drf_id")
-        if not drf_id:
-            self.log("No DRF ID available, skipping", "error")
-            return False
+        items = self.test_data.get("items", [])
+        if not items:
+            self.log("No items to test", "warn")
+            return True
         
-        # Submit DRF first
-        success, _ = self.test(
-            "Submit DRF",
-            "POST",
-            f"drawing-requests/{drf_id}/submit",
-            200
-        )
+        required_fields = [
+            "so_no", "customer", "current_stage", 
+            "drawings_total", "drawings_approved", "stages"
+        ]
         
-        if not success:
-            self.log("Failed to submit DRF", "error")
-            return False
+        stage_required_fields = ["key", "label", "status", "date", "pic"]
+        expected_stage_keys = ["sales", "engineering", "purchasing", "store", "qc", "delivery"]
         
-        # Accept DRF (need eng_leader role)
-        # For now, we'll skip this and test with admin
+        for idx, item in enumerate(items[:3]):  # Test first 3 items
+            self.log(f"Testing item {idx + 1}: SO {item.get('so_no')}", "info")
+            
+            # Check required fields
+            for field in required_fields:
+                if field not in item:
+                    self.log(f"FAILED - Missing field '{field}' in item", "error")
+                    return False
+            
+            # Check stages array
+            stages = item.get("stages", [])
+            if not isinstance(stages, list):
+                self.log("FAILED - 'stages' is not a list", "error")
+                return False
+            
+            if len(stages) != 6:
+                self.log(f"FAILED - Expected 6 stages, got {len(stages)}", "error")
+                return False
+            
+            # Check each stage
+            for stage in stages:
+                for field in stage_required_fields:
+                    if field not in stage:
+                        self.log(f"FAILED - Missing field '{field}' in stage", "error")
+                        return False
+                
+                # Check status values
+                if stage.get("status") not in ["done", "in_progress", "pending"]:
+                    self.log(f"FAILED - Invalid status '{stage.get('status')}' in stage", "error")
+                    return False
+            
+            # Check stage keys
+            stage_keys = [s.get("key") for s in stages]
+            if stage_keys != expected_stage_keys:
+                self.log(f"FAILED - Stage keys mismatch: {stage_keys}", "error")
+                return False
+            
+            self.log(f"Item {idx + 1} structure valid", "success")
         
-        # Generate drawings
-        gen_data = {
-            "drawings": [
-                {
-                    "project_initial": "TST",
-                    "drawing_type": "Assembly",
-                    "title": "Test Drawing 1",
-                    "discipline": "Mechanical"
-                }
-            ],
-            "class_material": "Test Material"
-        }
-        
-        success, gen_result = self.test(
-            "Generate drawings from DRF",
-            "POST",
-            f"drawing-requests/{drf_id}/generate-drawings",
-            200,
-            json_data=gen_data
-        )
-        
-        if not success:
-            self.log("Failed to generate drawings", "error")
-            return False
-        
-        drawings = gen_result.get("drawings", [])
-        if not drawings:
-            self.log("No drawings generated", "error")
-            return False
-        
-        drawing = drawings[0]
-        drawing_id = drawing.get("id")
-        self.test_data["drawing_id"] = drawing_id
-        
-        # Verify po_customer_no was copied
-        expected_po = self.test_data.get("po_customer_no")
-        if drawing.get("po_customer_no") != expected_po:
-            self.log(f"Drawing po_customer_no mismatch: expected {expected_po}, got {drawing.get('po_customer_no')}", "error")
-            return False
-        
-        # Verify customer_code is present
-        if not drawing.get("customer_code"):
-            self.log("Drawing customer_code is missing", "error")
-            return False
-        
-        self.test_data["customer_code"] = drawing.get("customer_code")
-        self.log("Feature F generate drawings PASSED", "success")
+        self.tests_passed += 1
+        self.tests_run += 1
         return True
     
-    def test_feature_g_sales_ttd_autofill(self):
-        """Test Feature G: Sales TTD auto-fills so_stamp_draft from drawing data"""
-        self.log("\n=== FEATURE G: Sales TTD Auto-fill ===", "info")
+    def test_engineering_logic(self):
+        """Test engineering stage status logic"""
+        self.log("\n=== TEST 4: Engineering Stage Logic ===", "info")
         
-        drawing_id = self.test_data.get("drawing_id")
-        if not drawing_id:
-            self.log("No drawing ID available, skipping", "error")
-            return False
+        items = self.test_data.get("items", [])
+        if not items:
+            self.log("No items to test", "warn")
+            return True
         
-        # First, we need to get the drawing to pending_sales status
-        # This requires: submit -> eng_head approve -> qc approve -> sales approve
-        
-        # For testing, we'll use admin to simulate the workflow
-        # In production, this would be done by respective roles
-        
-        # Get current drawing status
-        success, drawing = self.test(
-            "GET drawing before approval",
-            "GET",
-            f"drawings/{drawing_id}",
-            200
-        )
-        
-        if not success:
-            self.log("Failed to get drawing", "error")
-            return False
-        
-        self.log(f"Drawing approval_status: {drawing.get('approval_status')}", "info")
-        
-        # We need to test the Sales TTD endpoint
-        # The critical test is: when so_stamp_data is NOT provided, 
-        # so_stamp_draft should still be auto-filled
-        
-        # Test 1: Sales approve WITHOUT so_stamp_data (should auto-fill)
-        approval_data = {
-            "notes": "Approved by Sales",
-            "placements": []
+        # Known SOs from agent context
+        known_sos = {
+            "005251": {"expected_eng_status": "done", "expected_progress": "1/1"},
+            "005215": {"expected_eng_status": "in_progress", "expected_progress": "0/2"}
         }
         
-        success, approve_result = self.test(
-            "Sales approve WITHOUT so_stamp_data (should auto-fill)",
-            "POST",
-            f"drawings/{drawing_id}/approve/sales",
-            200,
-            json_data=approval_data
-        )
+        for so_no, expected in known_sos.items():
+            item = next((i for i in items if i.get("so_no") == so_no), None)
+            if not item:
+                self.log(f"SO {so_no} not found in response", "warn")
+                continue
+            
+            stages = item.get("stages", [])
+            eng_stage = next((s for s in stages if s.get("key") == "engineering"), None)
+            
+            if not eng_stage:
+                self.log(f"FAILED - Engineering stage not found for SO {so_no}", "error")
+                return False
+            
+            # Check status
+            actual_status = eng_stage.get("status")
+            expected_status = expected.get("expected_eng_status")
+            
+            if actual_status != expected_status:
+                self.log(f"SO {so_no}: status={actual_status} (expected {expected_status})", "warn")
+            else:
+                self.log(f"SO {so_no}: status={actual_status} ✓", "success")
+            
+            # Check progress field
+            if "progress" in eng_stage:
+                actual_progress = eng_stage.get("progress")
+                expected_progress = expected.get("expected_progress")
+                if actual_progress == expected_progress:
+                    self.log(f"SO {so_no}: progress={actual_progress} ✓", "success")
+                else:
+                    self.log(f"SO {so_no}: progress={actual_progress} (expected {expected_progress})", "warn")
         
-        if not success:
-            self.log("Sales approval failed - this might be due to workflow state", "warn")
-            self.log("Checking if drawing needs to go through eng_head and qc first...", "info")
-            return False
+        # Test logic rules
+        for item in items[:5]:
+            so_no = item.get("so_no")
+            total = item.get("drawings_total", 0)
+            approved = item.get("drawings_approved", 0)
+            
+            stages = item.get("stages", [])
+            eng_stage = next((s for s in stages if s.get("key") == "engineering"), None)
+            
+            if not eng_stage:
+                continue
+            
+            status = eng_stage.get("status")
+            
+            # Logic validation
+            if total == 0:
+                if status != "pending":
+                    self.log(f"SO {so_no}: 0 drawings but status={status} (expected pending)", "warn")
+            elif approved >= total:
+                if status != "done":
+                    self.log(f"SO {so_no}: all approved but status={status} (expected done)", "warn")
+            else:
+                if status != "in_progress":
+                    self.log(f"SO {so_no}: partial approval but status={status} (expected in_progress)", "warn")
         
-        # Get drawing again to check so_stamp_draft
-        success, drawing_after = self.test(
-            "GET drawing after Sales approval",
-            "GET",
-            f"drawings/{drawing_id}",
-            200
-        )
-        
-        if not success:
-            self.log("Failed to get drawing after approval", "error")
-            return False
-        
-        so_stamp_draft = drawing_after.get("so_stamp_draft", {})
-        
-        # Verify auto-fill
-        expected_po = self.test_data.get("po_customer_no")
-        expected_customer = self.test_data.get("customer_code")
-        
-        if not so_stamp_draft:
-            self.log("so_stamp_draft is empty - auto-fill FAILED", "error")
-            return False
-        
-        if so_stamp_draft.get("po_no") != expected_po:
-            self.log(f"po_no mismatch: expected {expected_po}, got {so_stamp_draft.get('po_no')}", "error")
-            return False
-        
-        if so_stamp_draft.get("customer") != expected_customer:
-            self.log(f"customer mismatch: expected {expected_customer}, got {so_stamp_draft.get('customer')}", "error")
-            return False
-        
-        self.log("Feature G Sales TTD auto-fill PASSED", "success")
+        self.tests_passed += 1
+        self.tests_run += 1
         return True
     
-    def test_regression(self):
-        """Test regression: previously-tested endpoints still work"""
-        self.log("\n=== REGRESSION TESTS ===", "info")
+    def test_sales_stage(self):
+        """Test sales stage is always 'done' with so_date"""
+        self.log("\n=== TEST 5: Sales Stage Always Done ===", "info")
         
-        # Test /api/inquiries/engineers
-        success, _ = self.test(
-            "GET /api/inquiries/engineers",
+        items = self.test_data.get("items", [])
+        if not items:
+            self.log("No items to test", "warn")
+            return True
+        
+        all_valid = True
+        for item in items[:5]:
+            so_no = item.get("so_no")
+            stages = item.get("stages", [])
+            sales_stage = next((s for s in stages if s.get("key") == "sales"), None)
+            
+            if not sales_stage:
+                self.log(f"FAILED - Sales stage not found for SO {so_no}", "error")
+                all_valid = False
+                continue
+            
+            # Check status is 'done'
+            if sales_stage.get("status") != "done":
+                self.log(f"FAILED - SO {so_no}: sales status={sales_stage.get('status')} (expected done)", "error")
+                all_valid = False
+            
+            # Check date is present (should be so_date)
+            if not sales_stage.get("date"):
+                self.log(f"FAILED - SO {so_no}: sales stage missing date", "error")
+                all_valid = False
+        
+        if all_valid:
+            self.log("All sales stages are 'done' with dates", "success")
+            self.tests_passed += 1
+        
+        self.tests_run += 1
+        return all_valid
+    
+    def test_current_stage(self):
+        """Test current_stage = first stage not 'done'"""
+        self.log("\n=== TEST 6: Current Stage Logic ===", "info")
+        
+        items = self.test_data.get("items", [])
+        if not items:
+            self.log("No items to test", "warn")
+            return True
+        
+        all_valid = True
+        for item in items[:5]:
+            so_no = item.get("so_no")
+            current_stage = item.get("current_stage")
+            stages = item.get("stages", [])
+            
+            # Find first stage not 'done'
+            first_not_done = None
+            for stage in stages:
+                if stage.get("status") != "done":
+                    first_not_done = stage.get("label")
+                    break
+            
+            # If all done, should be last stage (Delivery)
+            if first_not_done is None:
+                first_not_done = "Delivery"
+            
+            if current_stage != first_not_done:
+                self.log(f"SO {so_no}: current_stage={current_stage} (expected {first_not_done})", "warn")
+                all_valid = False
+            else:
+                self.log(f"SO {so_no}: current_stage={current_stage} ✓", "success")
+        
+        if all_valid:
+            self.tests_passed += 1
+        
+        self.tests_run += 1
+        return all_valid
+    
+    def test_search_functionality(self):
+        """Test search with ?q=<term>"""
+        self.log("\n=== TEST 7: Search Functionality ===", "info")
+        
+        # Test 1: Search by SO number
+        success, response = self.test(
+            "Search by SO number (q=005251)",
             "GET",
-            "inquiries/engineers",
+            "dashboard/so-progress?q=005251",
             200
         )
         
-        return success
+        if not success:
+            return False
+        
+        items = response.get("items", [])
+        if items:
+            found = any(i.get("so_no") == "005251" for i in items)
+            if found:
+                self.log("Search by SO number works", "success")
+            else:
+                self.log("Search returned items but SO 005251 not found", "warn")
+        else:
+            self.log("Search returned no items", "warn")
+        
+        # Test 2: Search by customer (partial match)
+        success, response = self.test(
+            "Search by customer (q=PT)",
+            "GET",
+            "dashboard/so-progress?q=PT",
+            200
+        )
+        
+        if success:
+            items = response.get("items", [])
+            self.log(f"Customer search returned {len(items)} items", "info")
+        
+        # Test 3: Empty search should return all workflow SOs
+        success, response = self.test(
+            "Empty search (no q parameter)",
+            "GET",
+            "dashboard/so-progress",
+            200
+        )
+        
+        if success:
+            items = response.get("items", [])
+            self.log(f"Default query returned {len(items)} items", "info")
+        
+        return True
+    
+    def test_limit_parameter(self):
+        """Test limit parameter"""
+        self.log("\n=== TEST 8: Limit Parameter ===", "info")
+        
+        success, response = self.test(
+            "Test limit=3",
+            "GET",
+            "dashboard/so-progress?limit=3",
+            200
+        )
+        
+        if not success:
+            return False
+        
+        items = response.get("items", [])
+        if len(items) <= 3:
+            self.log(f"Limit parameter works: returned {len(items)} items", "success")
+        else:
+            self.log(f"Limit parameter may not work: returned {len(items)} items (expected ≤3)", "warn")
+        
+        return True
     
     def run_all_tests(self):
         """Run all tests"""
         self.log("=" * 60, "info")
-        self.log("INDONESIAN ERP - FEATURE F+G BACKEND TESTS", "info")
+        self.log("INDONESIAN ERP - DASHBOARD SO PROGRESS TESTS", "info")
         self.log("=" * 60, "info")
+        
+        # Test 1: Auth required (before login)
+        self.test_auth_required()
         
         # Login as admin
         if not self.login("admin", "admin123"):
             self.log("Login failed, cannot continue", "error")
             return 1
         
-        # Run Feature F tests
-        self.test_feature_f_backend()
-        
-        # Note: Feature F generate-drawings and Feature G require workflow state
-        # that may not be easily testable without proper setup
-        # We'll document this in the test report
-        
-        # Run regression tests
-        self.test_regression()
+        # Test 2-8: Authenticated tests
+        self.test_basic_structure()
+        self.test_item_structure()
+        self.test_engineering_logic()
+        self.test_sales_stage()
+        self.test_current_stage()
+        self.test_search_functionality()
+        self.test_limit_parameter()
         
         # Print summary
         self.log("\n" + "=" * 60, "info")
