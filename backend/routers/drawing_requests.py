@@ -34,7 +34,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 from pydantic import BaseModel, Field
@@ -122,9 +122,32 @@ class DrawingRequestCreate(BaseModel):
     qty_order: float = 1
     unit: str = "pcs"
     material: str = "TBA"
+    items: List[dict] = []   # [{name, qty, unit, material}] — tabel item DRF (ganti qty/unit/material tunggal)
     expected_due_date: Optional[str] = ""
     notes: str = ""
     referenced_drawings: List[str] = []  # array drawing_ids untuk repeat order
+
+
+def _clean_drf_items(raw) -> list:
+    """Normalisasi tabel item DRF: [{name, qty, unit, material}]. Buang baris tanpa nama."""
+    out = []
+    for it in (raw or []):
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name") or "").strip()
+        if not name:
+            continue
+        try:
+            qty = float(it.get("qty") or 0)
+        except (TypeError, ValueError):
+            qty = 0
+        out.append({
+            "name": name,
+            "qty": qty,
+            "unit": str(it.get("unit") or "pcs").strip() or "pcs",
+            "material": str(it.get("material") or "TBA").strip() or "TBA",
+        })
+    return out
 
 
 @router.post("/drawing-requests")
@@ -139,6 +162,9 @@ async def create_drawing_request(
         raise HTTPException(status_code=400, detail="SO wajib dipilih")
 
     now = _now_iso()
+    clean_items = _clean_drf_items(payload.items)
+    # qty_order legacy diisi dari total qty item (bila ada) untuk kompatibilitas tampilan lama
+    legacy_qty = sum((float(it.get("qty") or 0) for it in clean_items)) if clean_items else payload.qty_order
     doc = {
         "id": str(uuid.uuid4()),
         "form_no": await _next_form_no(),
@@ -151,9 +177,10 @@ async def create_drawing_request(
         "customer_code": payload.customer_code.strip(),
         "customer_name": payload.customer_name.strip(),
         "po_customer_no": (payload.po_customer_no or "").strip(),
-        "qty_order": payload.qty_order,
+        "qty_order": legacy_qty,
         "unit": payload.unit,
         "material": payload.material or "TBA",
+        "items": clean_items,
         "expected_due_date": payload.expected_due_date or "",
         "notes": payload.notes,
         "referenced_drawings": payload.referenced_drawings or [],
@@ -616,6 +643,9 @@ async def update_drawing_request(
         raise HTTPException(status_code=403, detail="Bukan pemilik DRF")
 
     upd = payload.model_dump()
+    upd["items"] = _clean_drf_items(upd.get("items"))
+    if upd["items"]:
+        upd["qty_order"] = sum((float(it.get("qty") or 0) for it in upd["items"]))
     upd["updated_at"] = _now_iso()
     await db.drawing_requests.update_one({"id": drf_id}, {"$set": upd})
     out = await db.drawing_requests.find_one({"id": drf_id}, {"_id": 0})
@@ -1005,6 +1035,7 @@ async def cancel_drf(drf_id: str, current: dict = Depends(get_current_user)):
 async def upload_drf_attachment(
     drf_id: str,
     file: UploadFile = File(...),
+    category: str = Form("other"),
     current: dict = Depends(get_current_user),
 ):
     doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}})
@@ -1012,6 +1043,9 @@ async def upload_drf_attachment(
         raise HTTPException(status_code=404, detail="DRF tidak ditemukan")
     if doc["created_by"] != current["id"] and not is_admin_like(current):
         raise HTTPException(status_code=403, detail="Bukan pemilik")
+    cat = (category or "other").strip().lower()
+    if cat not in ("po_customer", "other"):
+        cat = "other"
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="File kosong")
@@ -1027,6 +1061,7 @@ async def upload_drf_attachment(
         "file_id": str(fid),
         "filename": file.filename,
         "content_type": file.content_type,
+        "category": cat,
         "size": len(content),
         "uploaded_at": _now_iso(),
         "uploaded_by": current.get("name") or current.get("username"),

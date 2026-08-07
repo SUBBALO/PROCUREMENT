@@ -200,6 +200,8 @@ class DrawingIn(BaseModel):
     assigned_to_user_id: str = ""
     assigned_to_name: str = ""
     po_customer_no: str = ""      # No. PO Customer (dari DRF) — auto-isi stamping SO
+    item_name: str = ""           # Nama item (dari daftar item DRF) untuk drawing ini
+    item_qty: float = 0           # Qty item untuk drawing ini (bisa beda/partial per drawing)
 
 
 class ConfigIn(BaseModel):
@@ -935,6 +937,8 @@ async def create_drawing(payload: DrawingIn, current: dict = Depends(get_current
     doc["customer_code"] = (payload.customer_code or "MKS").upper().strip()
     doc["customer_name"] = (payload.customer_name or "").strip()
     doc["po_customer_no"] = (payload.po_customer_no or "").strip()
+    doc["item_name"] = (payload.item_name or "").strip()
+    doc["item_qty"] = float(payload.item_qty or 0)
     doc["request_by_sales"] = (payload.request_by_sales or "").strip()
     doc["project_initial"] = (payload.project_initial or "").upper().strip()
     doc["auto_generated"] = auto_generated
@@ -1165,6 +1169,36 @@ async def set_work_category(drawing_id: str, payload: WorkCategoryIn, current: d
     )
     await log_action(current, "drawing_set_work_category", "drawings", drawing_id, {"work_category": cat})
     return {"success": True, "work_category": cat}
+
+
+class DrfItemIn(BaseModel):
+    item_name: str = ""
+    item_qty: float = 0
+
+
+@router.post("/drawings/{drawing_id}/drf-item")
+async def set_drawing_drf_item(drawing_id: str, payload: DrfItemIn, current: dict = Depends(get_current_user)):
+    """Engineer pilih Nama Item (dari daftar item DRF) & Qty untuk drawing ini.
+    Qty bisa beda/partial per drawing. Dipakai auto-isi qty stamping SO (Sales tetap bisa ubah)."""
+    existing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    if not (is_engineering(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Engineering/Admin only")
+    if not _can_modify_drawing(current, existing):
+        raise HTTPException(status_code=403, detail=f"Drawing di-assign ke {existing.get('assigned_to_name','-')}. Hanya orang tsb / Eng Head yang bisa ubah.")
+    item_name = (payload.item_name or "").strip()
+    try:
+        item_qty = float(payload.item_qty or 0)
+    except (TypeError, ValueError):
+        item_qty = 0
+    await db.drawings.update_one(
+        {"id": drawing_id},
+        {"$set": {"item_name": item_name, "item_qty": item_qty, "updated_at": _now_iso(),
+                  "updated_by": current.get("username") or current.get("name")}},
+    )
+    await log_action(current, "drawing_set_drf_item", "drawings", drawing_id, {"item_name": item_name, "item_qty": item_qty})
+    return {"success": True, "item_name": item_name, "item_qty": item_qty}
 
 
 
@@ -2235,7 +2269,7 @@ async def drawing_approve_stage(
         update["so_stamp_draft"] = {
             "so_no": (_sd.get("so_no") or drawing.get("so_no") or "").strip(),
             "po_no": (_sd.get("po_no") or po_cust or "").strip(),
-            "qty": (_sd.get("qty") or str(so_ref.get("qty") or so_ref.get("qty_order") or "")).strip(),
+            "qty": (_sd.get("qty") or (str(drawing.get("item_qty")).rstrip("0").rstrip(".") if drawing.get("item_qty") else "") or str(so_ref.get("qty") or so_ref.get("qty_order") or "")).strip(),
             # Feature G — pakai KODE customer (bukan nama lengkap) untuk kerahasiaan
             "customer": (_sd.get("customer") or cust_code or "").strip(),
             "received_date": (_sd.get("received_date") or (so_ref.get("so_date") or "")).strip(),

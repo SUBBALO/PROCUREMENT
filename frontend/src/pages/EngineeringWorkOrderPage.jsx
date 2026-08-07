@@ -97,6 +97,78 @@ export default function EngineeringWorkOrderPage() {
     }
   };
 
+function DrfItemPicker({ drawing, onSaved, editable }) {
+  const [items, setItems] = React.useState([]);
+  const [name, setName] = React.useState(drawing.item_name || "");
+  const [qty, setQty] = React.useState(drawing.item_qty || "");
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!drawing.from_drf_id) return;
+    api.get(`/drawing-requests/${drawing.from_drf_id}`)
+      .then(({ data }) => setItems(data?.items || []))
+      .catch(() => setItems([]));
+  }, [drawing.from_drf_id]);
+
+  const pickItem = (val) => {
+    setName(val);
+    const it = items.find((i) => i.name === val);
+    if (it && !qty) setQty(it.qty);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.post(`/drawings/${drawing.id}/drf-item`, { item_name: name, item_qty: Number(qty) || 0 });
+      toast.success("Item & qty drawing tersimpan");
+      onSaved?.();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal simpan item");
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="border-2 border-indigo-400" data-testid="wo-drf-item-picker">
+      <div className="px-4 py-2.5 bg-indigo-600 text-white flex items-center gap-2 text-[13px] uppercase tracking-widest font-bold">
+        <ClipboardText size={16} weight="fill" /> Item &amp; Qty Drawing
+        <span className="text-[10px] normal-case tracking-normal opacity-90">— dari daftar item DRF (qty bisa beda/partial, auto-isi qty stamp SO)</span>
+      </div>
+      <div className="p-3 bg-indigo-50 flex flex-wrap items-end gap-3">
+        <div className="flex-1 min-w-[220px]">
+          <label className="text-[10px] uppercase tracking-wider font-bold text-slate-600">Nama Item</label>
+          {items.length > 0 ? (
+            <select
+              value={name} onChange={(e) => pickItem(e.target.value)} disabled={!editable}
+              className="w-full h-9 rounded-none border border-slate-300 bg-white px-2 text-sm disabled:opacity-60"
+              data-testid="wo-item-select"
+            >
+              <option value="">— pilih item —</option>
+              {items.map((it, i) => <option key={i} value={it.name}>{it.name} (DRF: {it.qty} {it.unit})</option>)}
+            </select>
+          ) : (
+            <input value={name} onChange={(e) => setName(e.target.value)} disabled={!editable} placeholder="Nama item"
+              className="w-full h-9 rounded-none border border-slate-300 px-2 text-sm disabled:opacity-60" data-testid="wo-item-name" />
+          )}
+        </div>
+        <div className="w-28">
+          <label className="text-[10px] uppercase tracking-wider font-bold text-slate-600">Qty Drawing</label>
+          <input type="number" min="0" value={qty} onChange={(e) => setQty(e.target.value)} disabled={!editable}
+            className="w-full h-9 rounded-none border border-slate-300 px-2 text-sm disabled:opacity-60" data-testid="wo-item-qty" />
+        </div>
+        {editable && (
+          <Button onClick={save} disabled={saving} className="rounded-none bg-indigo-700 hover:bg-indigo-800 text-white h-9" data-testid="wo-item-save">
+            {saving ? <ArrowClockwise size={15} className="animate-spin" /> : "Simpan"}
+          </Button>
+        )}
+        {!editable && drawing.item_name && (
+          <div className="text-sm text-slate-700">Item: <b>{drawing.item_name}</b> · Qty: <b>{drawing.item_qty}</b></div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
   return (
     <div className="p-4 max-w-[1400px] mx-auto space-y-4">
       <BackLink />
@@ -155,6 +227,9 @@ export default function EngineeringWorkOrderPage() {
 
         {/* TAB 1 — Drawing & Upload + Submit */}
         <TabsContent value="drawing" className="mt-3 space-y-4">
+          {/* Feature K — Item DRF & Qty untuk drawing ini (auto-isi qty stamping SO) */}
+          <DrfItemPicker drawing={drawing} onSaved={load} editable={isDraft} />
+
           {/* Section B: Attachments (Upload PDF Drawing, Customer Ref, Extras) */}
           <div className="border-2 border-emerald-500">
             <div className="px-4 py-3 bg-emerald-600 text-white flex items-center gap-3">

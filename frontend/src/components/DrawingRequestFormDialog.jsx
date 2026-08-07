@@ -5,7 +5,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
-import { X, FileText, UploadSimple, MagnifyingGlass, Paperclip, Trash, Eye } from "@phosphor-icons/react";
+import { X, FileText, UploadSimple, MagnifyingGlass, Paperclip, Trash, Eye, Plus } from "@phosphor-icons/react";
 
 /**
  * DrawingRequestFormDialog — form buat/edit DRF.
@@ -29,6 +29,8 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
   const [queuedFiles, setQueuedFiles] = useState([]); // File objects untuk DRF baru (belum tersimpan)
   const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef();
+  const poFileRef = useRef();
+  const otherFileRef = useRef();
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
 
   const [form, setForm] = useState({
@@ -42,6 +44,9 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
     qty_order: initial?.qty_order ?? 1,
     unit: initial?.unit || "pcs",
     material: initial?.material || "TBA",
+    items: (initial?.items && initial.items.length > 0)
+      ? initial.items.map((it) => ({ name: it.name || "", qty: it.qty ?? 1, unit: it.unit || "pcs", material: it.material || "TBA" }))
+      : (initial?.qty_order ? [{ name: initial?.project_name || "Item 1", qty: initial.qty_order, unit: initial?.unit || "pcs", material: initial?.material || "TBA" }] : []),
     expected_due_date: initial?.expected_due_date || "",
     notes: initial?.notes || "",
     referenced_drawings: initial?.referenced_drawings || [],
@@ -52,6 +57,21 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
   useEffect(() => {
     api.get("/sales-orders").then(({ data }) => setSoList(data || [])).catch(() => {});
   }, []);
+
+  // Feature H — Load Customer Code Master untuk auto-isi Kode Customer
+  const [customers, setCustomers] = useState([]);
+  useEffect(() => {
+    api.get("/customers").then(({ data }) => {
+      setCustomers(Array.isArray(data) ? data : (data.items || []));
+    }).catch(() => {});
+  }, []);
+
+  const lookupCustomerCode = useCallback((name, fallback = "") => {
+    const n = (name || "").trim().toLowerCase();
+    if (!n) return fallback;
+    const hit = customers.find((c) => (c.name || c.customer_name || "").trim().toLowerCase() === n);
+    return (hit && (hit.customer_code || hit.code)) ? (hit.customer_code || hit.code) : fallback;
+  }, [customers]);
 
   // Load drawings for repeat order
   useEffect(() => {
@@ -90,11 +110,11 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
         so_no: so.so_no,
         project_name: type === "new_order" ? (so.description || f.project_name) : f.project_name,
         customer_name: so.customer || "",
-        customer_code: (so.customer || "").split(" ")[0].toUpperCase() || "",
+        customer_code: lookupCustomerCode(so.customer, (so.customer || "").split(" ")[0].toUpperCase() || ""),
       }));
       setSoQ("");
     }
-  }, [type]);
+  }, [type, lookupCustomerCode]);
 
   const toggleDrawing = (d) => {
     setForm((f) => {
@@ -111,13 +131,18 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
   const _validate = () => {
     if (!form.so_no) { toast.error("Pilih SO dulu"); return false; }
     if (type === "repeat_order" && !form.ref_so_no) { toast.error("Pilih SO referensi (lama) dulu"); return false; }
-    if (!form.qty_order || form.qty_order < 1) { toast.error("Qty order minimal 1"); return false; }
+    const validItems = (form.items || []).filter((it) => (it.name || "").trim());
+    if (validItems.length === 0) { toast.error("Tambahkan minimal 1 item (isi Nama Item)"); return false; }
     return true;
   };
 
   // Simpan/Update DRF, kembalikan doc tersimpan (punya id) atau null bila gagal
   const persistDrf = async () => {
-    const payload = { ...form, request_type: type, qty_order: Number(form.qty_order) };
+    const items = (form.items || []).filter((it) => (it.name || "").trim()).map((it) => ({
+      name: (it.name || "").trim(), qty: Number(it.qty) || 0, unit: it.unit || "pcs", material: it.material || "TBA",
+    }));
+    const qty_total = items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
+    const payload = { ...form, request_type: type, items, qty_order: qty_total || 1 };
     if (isEdit) {
       const resp = await api.put(`/drawing-requests/${initial.id}`, payload);
       return resp.data;
@@ -129,15 +154,16 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
   // Upload semua file yang di-queue (untuk DRF baru) ke drf id
   const uploadQueued = async (drfId) => {
     if (!drfId || queuedFiles.length === 0) return;
-    for (const file of queuedFiles) {
+    for (const q of queuedFiles) {
       try {
         const fd = new FormData();
-        fd.append("file", file);
+        fd.append("file", q.file);
+        fd.append("category", q.category || "other");
         await api.post(`/drawing-requests/${drfId}/attachments`, fd, {
           headers: { "Content-Type": "multipart/form-data" },
         });
       } catch (e) {
-        toast.error(`Gagal upload "${file.name}": ${e.response?.data?.detail || "error"}`);
+        toast.error(`Gagal upload "${q.file.name}": ${e.response?.data?.detail || "error"}`);
       }
     }
   };
@@ -177,21 +203,22 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
   };
 
   // Pilih file dari input: DRF lama upload langsung, DRF baru masuk antrian lokal
-  const handleFilePick = async (fileList) => {
+  const handleFilePick = async (fileList, category = "other") => {
     const files = Array.from(fileList || []);
     if (files.length === 0) return;
     if (isEdit && initial?.id) {
-      for (const f of files) await doUpload(f);
+      for (const f of files) await doUpload(f, category);
     } else {
-      setQueuedFiles((prev) => [...prev, ...files]);
+      setQueuedFiles((prev) => [...prev, ...files.map((f) => ({ file: f, category }))]);
     }
   };
 
-  const doUpload = async (file) => {
+  const doUpload = async (file, category = "other") => {
     if (!file || !initial?.id) return;
     try {
       const fd = new FormData();
       fd.append("file", file);
+      fd.append("category", category);
       const { data } = await api.post(`/drawing-requests/${initial.id}/attachments`, fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
@@ -379,19 +406,70 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
               <Input value={form.po_customer_no} onChange={(e) => setForm((f) => ({ ...f, po_customer_no: e.target.value }))} disabled={isLocked} placeholder="Nomor PO dari customer (utk stamping SO)" className="rounded-none border-slate-300" data-testid="drf-po-customer" />
               <div className="text-[10px] text-slate-500 mt-0.5">Otomatis mengisi kolom P/O No. pada stamping SO saat Sales TTD.</div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="col-span-2">
-                <Label className="text-xs">Qty Order <span className="text-red-500">*</span></Label>
-                <Input type="number" min="1" value={form.qty_order} onChange={(e) => setForm((f) => ({ ...f, qty_order: e.target.value }))} disabled={isLocked} className="rounded-none border-slate-300" data-testid="drf-qty" />
-              </div>
-              <div>
-                <Label className="text-xs">Unit</Label>
-                <Input value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))} disabled={isLocked} className="rounded-none border-slate-300" data-testid="drf-unit" />
-              </div>
-            </div>
             <div>
-              <Label className="text-xs">Material</Label>
-              <Input value={form.material} onChange={(e) => setForm((f) => ({ ...f, material: e.target.value }))} disabled={isLocked} placeholder="TBA / SS304 / MS Plate..." className="rounded-none border-slate-300" data-testid="drf-material" />
+              <div className="flex items-center justify-between mb-1">
+                <Label className="text-xs">Daftar Item <span className="text-red-500">*</span></Label>
+                {!isLocked && (
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, items: [...(f.items || []), { name: "", qty: 1, unit: "pcs", material: "TBA" }] }))}
+                    className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase"
+                    data-testid="drf-add-item"
+                  >
+                    <Plus size={11} weight="bold" /> Tambah Item
+                  </button>
+                )}
+              </div>
+              <div className="border border-slate-300 overflow-hidden" data-testid="drf-items-table">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-100 text-[10px] uppercase tracking-wider text-slate-600">
+                    <tr>
+                      <th className="w-8 px-1 py-1.5 text-center">No</th>
+                      <th className="px-2 py-1.5 text-left">Nama Item</th>
+                      <th className="w-20 px-1 py-1.5 text-left">Qty</th>
+                      <th className="w-20 px-1 py-1.5 text-left">Unit</th>
+                      <th className="w-32 px-2 py-1.5 text-left">Material</th>
+                      {!isLocked && <th className="w-8 px-1 py-1.5"></th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(form.items || []).length === 0 && (
+                      <tr><td colSpan={isLocked ? 5 : 6} className="px-2 py-3 text-center text-slate-400 italic">Belum ada item. Klik "Tambah Item".</td></tr>
+                    )}
+                    {(form.items || []).map((it, idx) => {
+                      const upd = (field, val) => setForm((f) => {
+                        const items = [...(f.items || [])];
+                        items[idx] = { ...items[idx], [field]: val };
+                        return { ...f, items };
+                      });
+                      return (
+                        <tr key={idx} className="border-t border-slate-200" data-testid={`drf-item-row-${idx}`}>
+                          <td className="px-1 py-1 text-center font-mono text-slate-500">{idx + 1}</td>
+                          <td className="px-1 py-1">
+                            <Input value={it.name} onChange={(e) => upd("name", e.target.value)} disabled={isLocked} placeholder="Nama item" className="rounded-none border-slate-200 h-8" data-testid={`drf-item-name-${idx}`} />
+                          </td>
+                          <td className="px-1 py-1">
+                            <Input type="number" min="0" value={it.qty} onChange={(e) => upd("qty", e.target.value)} disabled={isLocked} className="rounded-none border-slate-200 h-8" data-testid={`drf-item-qty-${idx}`} />
+                          </td>
+                          <td className="px-1 py-1">
+                            <Input value={it.unit} onChange={(e) => upd("unit", e.target.value)} disabled={isLocked} className="rounded-none border-slate-200 h-8" data-testid={`drf-item-unit-${idx}`} />
+                          </td>
+                          <td className="px-1 py-1">
+                            <Input value={it.material} onChange={(e) => upd("material", e.target.value)} disabled={isLocked} placeholder="TBA / SS304..." className="rounded-none border-slate-200 h-8" data-testid={`drf-item-material-${idx}`} />
+                          </td>
+                          {!isLocked && (
+                            <td className="px-1 py-1 text-center">
+                              <button type="button" onClick={() => setForm((f) => ({ ...f, items: (f.items || []).filter((_, i) => i !== idx) }))} className="p-1 text-rose-600 hover:bg-rose-50" data-testid={`drf-item-remove-${idx}`}>
+                                <Trash size={13} weight="bold" />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -452,78 +530,42 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
             </div>
           )}
 
-          {/* Attachments — tampil langsung (multi-dokumen). DRF baru: antrian lokal, DRF tersimpan: upload langsung */}
-          <div className="border-t border-slate-200 pt-3">
-            <div className="flex items-center justify-between mb-2">
-              <Label className="text-xs font-bold uppercase tracking-widest text-slate-700">
-                Lampiran Dokumen <span className="text-slate-400 normal-case font-normal">(opsional · bisa banyak file)</span>
-              </Label>
-              {!isLocked && (
-                <Button
-                  size="sm"
-                  onClick={() => fileRef.current?.click()}
-                  className="rounded-none bg-slate-700 hover:bg-slate-800 text-white h-7 text-xs"
-                  data-testid="drf-upload-btn"
-                >
-                  <UploadSimple size={12} weight="bold" className="mr-1" /> Tambah File
-                </Button>
-              )}
-            </div>
-            <input
-              type="file"
-              multiple
-              ref={fileRef}
-              accept=".pdf,image/*,.xlsx,.xls,.dwg,.step,.stp,.iges,.igs"
-              onChange={(e) => { handleFilePick(e.target.files); e.target.value = ""; }}
-              className="hidden"
-              data-testid="drf-file-input"
+          {/* Attachments — 2 kategori: PO Customer & Attachment Lainnya (masing-masing multi-file) */}
+          <div className="border-t border-slate-200 pt-3 space-y-3">
+            <input type="file" multiple ref={poFileRef} accept=".pdf,image/*,.xlsx,.xls,.doc,.docx" onChange={(e) => { handleFilePick(e.target.files, "po_customer"); e.target.value = ""; }} className="hidden" data-testid="drf-po-file-input" />
+            <input type="file" multiple ref={otherFileRef} accept=".pdf,image/*,.xlsx,.xls,.dwg,.step,.stp,.iges,.igs,.doc,.docx" onChange={(e) => { handleFilePick(e.target.files, "other"); e.target.value = ""; }} className="hidden" data-testid="drf-other-file-input" />
+
+            <AttachmentBox
+              title="PO Customer"
+              hint="File PO dari customer (bisa lebih dari 1)"
+              accent="blue"
+              category="po_customer"
+              isLocked={isLocked}
+              isEdit={isEdit}
+              drfId={initial?.id}
+              apiUrl={apiUrl}
+              inputRef={poFileRef}
+              attachments={attachments.filter((f) => (f.category || "other") === "po_customer")}
+              queued={queuedFiles.map((q, i) => ({ ...q, _idx: i })).filter((q) => q.category === "po_customer")}
+              onDelete={doDeleteAttachment}
+              onDequeue={(gi) => setQueuedFiles((prev) => prev.filter((_, i) => i !== gi))}
             />
 
-            {!isLocked && (
-              <div
-                onClick={() => fileRef.current?.click()}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => { e.preventDefault(); handleFilePick(e.dataTransfer.files); }}
-                className="cursor-pointer text-xs text-slate-500 p-4 border-2 border-dashed border-slate-300 text-center hover:border-slate-500 hover:bg-slate-50 transition-colors"
-                data-testid="drf-dropzone"
-              >
-                <UploadSimple size={18} className="inline mr-1 text-slate-400" />
-                Klik atau seret file ke sini (PDF, gambar, Excel, DWG/STEP)
-              </div>
-            )}
-
-            {/* File tersimpan (DRF lama) */}
-            {attachments.length > 0 && (
-              <div className="space-y-1 mt-2" data-testid="drf-attachment-list">
-                {attachments.map((f) => (
-                  <div key={f.file_id} className="flex items-center gap-2 border border-slate-200 p-2 hover:bg-slate-50">
-                    <Paperclip size={14} className="text-slate-500" />
-                    <span className="flex-1 text-xs">{f.filename}</span>
-                    <span className="text-[10px] text-slate-400">{(f.size / 1024).toFixed(1)} KB</span>
-                    <a href={`${apiUrl}/api/drawing-requests/${initial.id}/attachments/${f.file_id}/download`} target="_blank" rel="noreferrer" className="p-1 hover:bg-slate-200"><Eye size={12} /></a>
-                    {!isLocked && (
-                      <button onClick={() => doDeleteAttachment(f.file_id)} className="p-1 hover:bg-rose-100 text-rose-600" data-testid={`drf-attachment-del-${f.file_id}`}><Trash size={12} /></button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* File di-queue (DRF baru, belum tersimpan) */}
-            {queuedFiles.length > 0 && (
-              <div className="space-y-1 mt-2" data-testid="drf-queued-list">
-                {queuedFiles.map((f, idx) => (
-                  <div key={`${f.name}-${idx}`} className="flex items-center gap-2 border border-amber-200 bg-amber-50 p-2">
-                    <Paperclip size={14} className="text-amber-600" />
-                    <span className="flex-1 text-xs">{f.name}</span>
-                    <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-bold uppercase tracking-wider">Belum diupload</span>
-                    <span className="text-[10px] text-slate-400">{(f.size / 1024).toFixed(1)} KB</span>
-                    <button onClick={() => setQueuedFiles((prev) => prev.filter((_, i) => i !== idx))} className="p-1 hover:bg-rose-100 text-rose-600" data-testid={`drf-queued-del-${idx}`}><Trash size={12} /></button>
-                  </div>
-                ))}
-                <div className="text-[10px] text-amber-700 italic">File akan otomatis terupload saat klik "Simpan" atau "Kirim Ke Engineering".</div>
-              </div>
-            )}
+            <AttachmentBox
+              title="Attachment Lainnya"
+              hint="Dokumen pendukung lain (PDF, gambar, Excel, DWG/STEP)"
+              accent="slate"
+              category="other"
+              isLocked={isLocked}
+              isEdit={isEdit}
+              drfId={initial?.id}
+              apiUrl={apiUrl}
+              inputRef={otherFileRef}
+              attachments={attachments.filter((f) => (f.category || "other") === "other")}
+              queued={queuedFiles.map((q, i) => ({ ...q, _idx: i })).filter((q) => (q.category || "other") === "other")}
+              onDelete={doDeleteAttachment}
+              onDequeue={(gi) => setQueuedFiles((prev) => prev.filter((_, i) => i !== gi))}
+            />
           </div>
 
           {/* Approval Info */}
@@ -573,6 +615,63 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
             </>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* Kotak attachment per-kategori (multi-file): PO Customer / Attachment Lainnya */
+function AttachmentBox({ title, hint, accent, isLocked, isEdit, drfId, apiUrl, inputRef, attachments, queued, onDelete, onDequeue }) {
+  const accents = {
+    blue: { border: "border-blue-300", head: "text-blue-800", chip: "text-blue-600" },
+    slate: { border: "border-slate-300", head: "text-slate-700", chip: "text-slate-500" },
+  };
+  const a = accents[accent] || accents.slate;
+  const empty = attachments.length === 0 && queued.length === 0;
+  return (
+    <div className={`border ${a.border}`} data-testid={`drf-attbox-${title.replace(/\s+/g, "-").toLowerCase()}`}>
+      <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+        <div>
+          <div className={`text-xs font-bold uppercase tracking-widest ${a.head}`}>{title}</div>
+          <div className="text-[10px] text-slate-500">{hint}</div>
+        </div>
+        {!isLocked && (
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="inline-flex items-center gap-1 px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-bold uppercase"
+            data-testid={`drf-attbox-add-${title.replace(/\s+/g, "-").toLowerCase()}`}
+          >
+            <UploadSimple size={11} weight="bold" /> Tambah File
+          </button>
+        )}
+      </div>
+      <div className="p-2 space-y-1">
+        {empty && <div className="text-[11px] text-slate-400 italic px-1 py-2">Belum ada file.</div>}
+        {attachments.map((f) => (
+          <div key={f.file_id} className="flex items-center gap-2 border border-slate-200 p-2 hover:bg-slate-50">
+            <Paperclip size={13} className={a.chip} />
+            <span className="flex-1 text-xs truncate">{f.filename}</span>
+            <span className="text-[10px] text-slate-400">{((f.size || 0) / 1024).toFixed(1)} KB</span>
+            {isEdit && drfId && (
+              <a href={`${apiUrl}/api/drawing-requests/${drfId}/attachments/${f.file_id}/download`} target="_blank" rel="noreferrer" className="p-1 hover:bg-slate-200"><Eye size={12} /></a>
+            )}
+            {!isLocked && (
+              <button type="button" onClick={() => onDelete(f.file_id)} className="p-1 hover:bg-rose-100 text-rose-600" data-testid={`drf-attachment-del-${f.file_id}`}><Trash size={12} /></button>
+            )}
+          </div>
+        ))}
+        {queued.map((q) => (
+          <div key={`q-${q._idx}`} className="flex items-center gap-2 border border-amber-200 bg-amber-50 p-2">
+            <Paperclip size={13} className="text-amber-600" />
+            <span className="flex-1 text-xs truncate">{q.file.name}</span>
+            <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-bold uppercase tracking-wider">Belum diupload</span>
+            {!isLocked && (
+              <button type="button" onClick={() => onDequeue(q._idx)} className="p-1 hover:bg-rose-100 text-rose-600" data-testid={`drf-queued-del-${q._idx}`}><Trash size={12} /></button>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
