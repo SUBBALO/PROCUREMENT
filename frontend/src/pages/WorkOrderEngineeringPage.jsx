@@ -7,30 +7,37 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
-import PageTabNav from "../components/PageTabNav";
-import { useWorkOrderTabs } from "../hooks/useEngTabs";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
-import { Wrench, ArrowClockwise, MagnifyingGlass, UserPlus, ArrowRight, Eye, CheckCircle, Tray, Gear, PencilSimple, ClockCounterClockwise } from "@phosphor-icons/react";
+import {
+  Wrench, ArrowClockwise, MagnifyingGlass, UserPlus, ArrowRight, Eye, CheckCircle,
+  Tray, PencilSimple, ClockCounterClockwise, ClipboardText, FilePlus, ArrowsClockwise,
+} from "@phosphor-icons/react";
 
 const LEADER_ROLES = ["eng_head", "eng_leader", "admin", "super_admin", "supervisor"];
 
+const INQ_STATUS = {
+  submitted: { label: "Perlu Diterima", cls: "bg-amber-100 text-amber-800 border-amber-400" },
+  accepted: { label: "Diterima", cls: "bg-sky-100 text-sky-800 border-sky-400" },
+  in_progress: { label: "Dikerjakan", cls: "bg-violet-100 text-violet-800 border-violet-400" },
+};
+
 /**
- * WorkOrderEngineeringPage — SATU pintu Engineering (role-aware), menggantikan 3 kartu lama.
- *  - Eng Leader (Riski): 2 tab → "Perlu Di-assign" (DRF baru dari Sales) & "Sedang Dikerjakan".
- *    Riski hanya Accept & tunjuk engineer (tidak generate/upload). Bisa juga tunjuk diri sendiri.
- *  - Eng Staff: langsung lihat DRF yang ditugaskan ke dia.
- *  Klik DRF → Work Group (generate nomor drawing, BOM bersama, upload & TTD per drawing).
+ * Hub "Pekerjaan Masuk" — SATU pintu Engineering (role-aware).
+ * Tab utama: Inquiry / New Order (Drawing Request) / Repeat Order.
+ * Tab tambahan (gabungan dari halaman Work Order lama): Perlu TTD Saya / Riwayat TTD.
+ * Assign engineer memakai AssignEngineerDialog + endpoint accept-assign (TIDAK diubah).
  */
 export default function WorkOrderEngineeringPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const woTabs = useWorkOrderTabs();
   const isLeader = LEADER_ROLES.includes(user?.role);
 
   const [items, setItems] = useState([]);
+  const [inquiries, setInquiries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
-  const [tab, setTab] = useState(isLeader ? "assign" : "inprogress");
+  const [tab, setTab] = useState("new_order");
+  const [subStatus, setSubStatus] = useState("all"); // all | submitted | working (untuk tab New/Repeat)
   const [assignDrf, setAssignDrf] = useState(null);
   const [pendingTtd, setPendingTtd] = useState([]);
   const [history, setHistory] = useState([]);
@@ -46,9 +53,16 @@ export default function WorkOrderEngineeringPage() {
     } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const loadInquiries = useCallback(async () => {
+    try {
+      const { data } = await api.get("/inquiries");
+      setInquiries(data.items || []);
+    } catch (e) { setInquiries([]); }
+  }, []);
 
-  // Load data untuk tab TTD saat dibuka
+  useEffect(() => { load(); loadInquiries(); }, [load, loadInquiries]);
+
+  // Load data untuk tab TTD / Riwayat saat dibuka
   useEffect(() => {
     if (tab === "pendingttd") {
       setSubLoading(true);
@@ -67,13 +81,27 @@ export default function WorkOrderEngineeringPage() {
 
   const matchQ = (d) => !q.trim() || `${d.form_no} ${d.so_no} ${d.customer_name} ${d.project_name}`.toLowerCase().includes(q.toLowerCase());
 
-  const needAssign = items.filter((d) => d.status === "submitted" && matchQ(d));
-  const inProgress = items.filter((d) => ["accepted", "in_progress"].includes(d.status)
-    && (isLeader || d.assigned_engineer_id === user?.id) && matchQ(d));
+  // DRF untuk tab tipe tertentu (new_order / repeat_order), gabungan assign + in-progress
+  const drfForType = (type) => items.filter((d) => {
+    if ((d.request_type || "new_order") !== type) return false;
+    if (!matchQ(d)) return false;
+    const isAssign = d.status === "submitted";
+    const isWorking = ["accepted", "in_progress"].includes(d.status) && (isLeader || d.assigned_engineer_id === user?.id);
+    if (!isAssign && !isWorking) return false;
+    if (subStatus === "submitted") return isAssign;
+    if (subStatus === "working") return isWorking;
+    return isAssign || isWorking;
+  });
 
-  const shown = isLeader ? (tab === "assign" ? needAssign : inProgress) : inProgress;
+  const currentType = tab === "repeat_order" ? "repeat_order" : "new_order";
+  const shown = (tab === "new_order" || tab === "repeat_order") ? drfForType(currentType) : [];
 
-  // Part B — search Riwayat TTD (SO/Customer/Drawing) + pagination semua tab
+  // Counts untuk badge tab
+  const countNew = items.filter((d) => (d.request_type || "new_order") === "new_order" && (d.status === "submitted" || (["accepted", "in_progress"].includes(d.status) && (isLeader || d.assigned_engineer_id === user?.id)))).length;
+  const countRepeat = items.filter((d) => d.request_type === "repeat_order" && (d.status === "submitted" || (["accepted", "in_progress"].includes(d.status) && (isLeader || d.assigned_engineer_id === user?.id)))).length;
+  const activeInq = inquiries.filter((i) => !["draft", "completed", "rejected", "cancelled"].includes(i.status));
+
+  // Riwayat TTD — search + pagination
   const [histQ, setHistQ] = useState("");
   const histFiltered = histQ.trim()
     ? history.filter((h) => `${h.drawing_no} ${h.so_no} ${h.customer_name} ${h.project_name} ${h.signed_by}`.toLowerCase().includes(histQ.toLowerCase()))
@@ -81,72 +109,129 @@ export default function WorkOrderEngineeringPage() {
   const pagShown = usePagination(shown, 20);
   const pagTtd = usePagination(pendingTtd, 20);
   const pagHist = usePagination(histFiltered, 20);
+  const pagInq = usePagination(activeInq, 20);
+
+  const SUB_FILTERS = [
+    { k: "all", label: "Semua" },
+    { k: "submitted", label: "Perlu Di-assign" },
+    { k: "working", label: "Sedang Dikerjakan" },
+  ];
 
   return (
     <div className="p-4 max-w-[1300px] mx-auto space-y-4">
       <BackLink />
-      <PageTabNav tabs={woTabs} />
       <div>
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-teal-700 mb-1">
-          <Wrench size={14} weight="fill" /> Engineering
+          <Wrench size={14} weight="fill" /> Engineering · Pekerjaan Masuk
         </div>
         <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
-          Work Order Engineering
+          Pekerjaan Masuk
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          {isLeader
-            ? "Terima Drawing Request dari Sales lalu tunjuk engineer yang mengerjakan. Pantau progress yang sedang dikerjakan."
-            : "Drawing Request yang ditugaskan Eng Leader kepada Anda. Buka untuk generate nomor drawing, isi BOM, upload & TTD."}
+          Satu pintu pekerjaan Engineering: <b>Inquiry</b> (costing dari Sales), <b>New Order</b> &amp; <b>Repeat Order</b> (Drawing Request).
+          {isLeader ? " Terima & tunjuk engineer, lalu pantau progres." : " Buka DRF yang ditugaskan untuk mulai bekerja."}
         </p>
       </div>
 
-      {/* Tabs (role-aware) */}
+      {/* Tabs utama */}
       <div className="flex gap-1 border-b border-slate-200 flex-wrap">
-        {isLeader && <TabBtn active={tab === "assign"} onClick={() => setTab("assign")} icon={Tray} label="Perlu Di-assign" count={needAssign.length} testid="wo-tab-assign" />}
-        <TabBtn active={tab === "inprogress"} onClick={() => setTab("inprogress")} icon={Gear} label="Sedang Dikerjakan" count={inProgress.length} testid="wo-tab-inprogress" />
-        <TabBtn active={tab === "pendingttd"} onClick={() => setTab("pendingttd")} icon={PencilSimple} label="Perlu TTD Saya" count={pendingTtd.length} testid="wo-tab-pendingttd" />
-        <TabBtn active={tab === "history"} onClick={() => setTab("history")} icon={ClockCounterClockwise} label="Riwayat TTD" testid="wo-tab-history" />
+        <TabBtn active={tab === "inquiry"} onClick={() => setTab("inquiry")} icon={ClipboardText} label="Inquiry" count={activeInq.length} testid="hub-tab-inquiry" />
+        <TabBtn active={tab === "new_order"} onClick={() => { setTab("new_order"); setSubStatus("all"); }} icon={FilePlus} label="New Order" count={countNew} testid="hub-tab-new-order" />
+        <TabBtn active={tab === "repeat_order"} onClick={() => { setTab("repeat_order"); setSubStatus("all"); }} icon={ArrowsClockwise} label="Repeat Order" count={countRepeat} testid="hub-tab-repeat-order" />
+        <div className="flex-1 min-w-[8px]" />
+        <TabBtn active={tab === "pendingttd"} onClick={() => setTab("pendingttd")} icon={PencilSimple} label="Perlu TTD Saya" count={pendingTtd.length} testid="hub-tab-pendingttd" />
+        <TabBtn active={tab === "history"} onClick={() => setTab("history")} icon={ClockCounterClockwise} label="Riwayat TTD" testid="hub-tab-history" />
       </div>
 
-      {/* DRF tabs: assign / inprogress */}
-      {(tab === "assign" || tab === "inprogress") && (
-      <Card className="rounded-none border-slate-200 overflow-hidden">
-        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
-          <MagnifyingGlass size={14} className="text-slate-500" />
-          <Input className="h-9 rounded-none border-slate-300 w-72" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari Form No / SO / Customer..." data-testid="wo-search" />
-          <Button variant="ghost" onClick={load} className="rounded-none h-9"><ArrowClockwise size={14} weight="bold" /></Button>
-          <div className="flex-1" />
-          <div className="text-xs text-slate-500"><b className="text-teal-700">{shown.length}</b> DRF</div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-white border-b border-slate-200">
-              <tr className="text-[10px] uppercase tracking-[0.08em] font-bold text-slate-500">
-                <th className="text-left p-3">Form No</th>
-                <th className="text-left p-3">Jenis</th>
-                <th className="text-left p-3">SO</th>
-                <th className="text-left p-3">Project</th>
-                <th className="text-left p-3">Customer</th>
-                <th className="text-right p-3">Qty</th>
-                <th className="text-left p-3">Engineer</th>
-                <th className="text-center p-3">Aksi</th>
-              </tr>
-            </thead>
-            <tbody data-testid="wo-list">
-              {loading && <tr><td colSpan={8} className="p-8 text-center text-slate-400">Memuat...</td></tr>}
-              {!loading && shown.length === 0 && (
-                <tr><td colSpan={8} className="p-12 text-center text-slate-400">
-                  {isLeader && tab === "assign" ? "Tidak ada DRF baru yang perlu di-assign." : "Belum ada DRF di sini."}
-                </td></tr>
-              )}
-              {pagShown.pagedData.map((d) => {
-                return (
+      {/* TAB INQUIRY */}
+      {tab === "inquiry" && (
+        <Card className="rounded-none border-slate-200 overflow-hidden" data-testid="hub-inquiry-panel">
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-500 flex items-center gap-2">
+            <ClipboardText size={14} className="text-slate-500" />
+            Antrian Inquiry Costing dari Sales. Klik <b>Buka</b> untuk menerima / mengerjakan.
+            <div className="flex-1" />
+            <Button variant="ghost" onClick={loadInquiries} className="rounded-none h-8"><ArrowClockwise size={14} weight="bold" /></Button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-white border-b border-slate-200">
+                <tr className="text-[10px] uppercase tracking-[0.08em] font-bold text-slate-500">
+                  <th className="text-left p-3">No. Inquiry</th>
+                  <th className="text-left p-3">Kategori</th>
+                  <th className="text-left p-3">Customer / Project</th>
+                  <th className="text-left p-3">Engineer</th>
+                  <th className="text-center p-3">Status</th>
+                  <th className="text-center p-3">Aksi</th>
+                </tr>
+              </thead>
+              <tbody data-testid="hub-inquiry-list">
+                {activeInq.length === 0 && <tr><td colSpan={6} className="p-12 text-center text-slate-400">Tidak ada inquiry aktif.</td></tr>}
+                {pagInq.pagedData.map((i) => {
+                  const st = INQ_STATUS[i.status === "submitted" ? "submitted" : (i.status === "accepted" ? "accepted" : "in_progress")] || INQ_STATUS.in_progress;
+                  return (
+                    <tr key={i.id} className="border-b border-slate-100 hover:bg-sky-50/40" data-testid={`hub-inq-row-${i.inquiry_no || i.id}`}>
+                      <td className="p-3 font-mono font-semibold text-slate-900 text-xs">{i.inquiry_no || i.title || i.id}</td>
+                      <td className="p-3 text-xs">{i.category || "Costing"}</td>
+                      <td className="p-3 text-xs"><span className="font-medium">{i.customer_name || "-"}</span>{i.project_name ? <span className="text-slate-400"> · {i.project_name}</span> : (i.title ? <span className="text-slate-400"> · {i.title}</span> : null)}</td>
+                      <td className="p-3 text-xs">{i.assigned_to_name || <span className="italic text-slate-400">-</span>}</td>
+                      <td className="p-3 text-center"><span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${st.cls}`}>{st.label}</span></td>
+                      <td className="p-3 text-center">
+                        <button onClick={() => navigate(`/engineering/inquiries?open=${i.id}`)} className="inline-flex items-center px-2 py-1 bg-sky-600 hover:bg-sky-700 text-white text-[10px] font-bold uppercase gap-0.5" data-testid={`hub-inq-open-${i.inquiry_no || i.id}`}>
+                          <ArrowRight size={11} weight="bold" /> Buka
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <PaginationBar {...pagInq} label="inquiry" testIdPrefix="hub-inq-pag" />
+        </Card>
+      )}
+
+      {/* TAB NEW ORDER / REPEAT ORDER (DRF) */}
+      {(tab === "new_order" || tab === "repeat_order") && (
+        <Card className="rounded-none border-slate-200 overflow-hidden">
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2 flex-wrap">
+            <MagnifyingGlass size={14} className="text-slate-500" />
+            <Input className="h-9 rounded-none border-slate-300 w-64" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari Form No / SO / Customer..." data-testid="wo-search" />
+            <div className="flex items-center gap-1 ml-1">
+              {SUB_FILTERS.map((f) => (
+                <button key={f.k} onClick={() => setSubStatus(f.k)}
+                  className={`px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider border ${subStatus === f.k ? "bg-teal-600 text-white border-teal-600" : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"}`}
+                  data-testid={`hub-substatus-${f.k}`}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <Button variant="ghost" onClick={load} className="rounded-none h-9"><ArrowClockwise size={14} weight="bold" /></Button>
+            <div className="flex-1" />
+            <div className="text-xs text-slate-500"><b className="text-teal-700">{shown.length}</b> DRF</div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-white border-b border-slate-200">
+                <tr className="text-[10px] uppercase tracking-[0.08em] font-bold text-slate-500">
+                  <th className="text-left p-3">Form No</th>
+                  <th className="text-left p-3">SO</th>
+                  <th className="text-left p-3">Project</th>
+                  <th className="text-left p-3">Customer</th>
+                  <th className="text-right p-3">Qty</th>
+                  <th className="text-left p-3">Engineer</th>
+                  <th className="text-center p-3">Aksi</th>
+                </tr>
+              </thead>
+              <tbody data-testid="wo-list">
+                {loading && <tr><td colSpan={7} className="p-8 text-center text-slate-400">Memuat...</td></tr>}
+                {!loading && shown.length === 0 && (
+                  <tr><td colSpan={7} className="p-12 text-center text-slate-400">
+                    {tab === "new_order" ? "Tidak ada New Order pada filter ini." : "Tidak ada Repeat Order pada filter ini."}
+                  </td></tr>
+                )}
+                {pagShown.pagedData.map((d) => (
                   <tr key={d.id} className="border-b border-slate-100 hover:bg-teal-50/40" data-testid={`wo-row-${d.form_no}`}>
-                    <td className="p-3 font-mono font-semibold text-slate-900 text-xs">{d.form_no}</td>                    <td className="p-3">
-                      <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase ${d.request_type === "new_order" ? "bg-emerald-100 text-emerald-800 border border-emerald-400" : "bg-blue-100 text-blue-800 border border-blue-400"}`}>
-                        {d.request_type === "new_order" ? "New" : "Repeat"}
-                      </span>
-                    </td>
+                    <td className="p-3 font-mono font-semibold text-slate-900 text-xs">{d.form_no}</td>
                     <td className="p-3 font-mono text-xs">{d.so_no || "-"}</td>
                     <td className="p-3 text-xs">{d.project_name || "-"}</td>
                     <td className="p-3 text-xs">{d.customer_name || "-"}</td>
@@ -173,13 +258,12 @@ export default function WorkOrderEngineeringPage() {
                       </div>
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <PaginationBar {...pagShown} label="DRF" testIdPrefix="wo-pag" />
-      </Card>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <PaginationBar {...pagShown} label="DRF" testIdPrefix="wo-pag" />
+        </Card>
       )}
 
       {/* Perlu TTD Saya */}
@@ -277,7 +361,7 @@ export default function WorkOrderEngineeringPage() {
             setAssignDrf(null);
             load();
             if (selfAssigned) navigate(`/engineering/drf/${drfId}`);
-            else { toast.success("Engineer ditugaskan. Mereka mengerjakan dari tab 'Sedang Dikerjakan' / menu mereka."); if (isLeader) setTab("inprogress"); }
+            else { toast.success("Engineer ditugaskan. Mereka mengerjakan dari tab 'Sedang Dikerjakan' / menu mereka."); setSubStatus("working"); }
           }}
         />
       )}

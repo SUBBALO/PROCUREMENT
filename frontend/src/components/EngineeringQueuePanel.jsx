@@ -96,6 +96,15 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
     return () => clearInterval(t);
   }, [fetchAll, fetchLeaderQueue]);
 
+  // Buka tab "Menunggu Verifikasi Leader" saat kartu menu di-klik / hash #verifikasi
+  useEffect(() => {
+    if (!isHead) return;
+    const openLeader = () => setTab("leader");
+    if (typeof window !== "undefined" && window.location.hash === "#verifikasi") openLeader();
+    window.addEventListener("open-leader-queue", openLeader);
+    return () => window.removeEventListener("open-leader-queue", openLeader);
+  }, [isHead]);
+
   // Normalisasi DRF + Inquiry → satu daftar antrian ("rows"), dibedakan via _kind
   const drfRows = drfs.map((d) => ({
     id: d.id, _kind: "drawing", _raw: d,

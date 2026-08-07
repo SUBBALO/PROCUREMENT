@@ -1,26 +1,30 @@
 [
   {
-    "content": "Phase N: Dashboard SO Progress + sidebar (backend 11/11 tested)",
+    "content": "Hub 'Pekerjaan Masuk': WorkOrderEngineeringPage 3 tab + gabung tab lama, assign preserved",
     "status": "completed"
   },
   {
-    "content": "Phase O: 2 antrian leader + klik buka EngLeaderReviewDialog",
+    "content": "Menu Engineering 4 grup (DeptPortal groups)",
     "status": "completed"
   },
   {
-    "content": "Phase L: DRF list redesign - expandable rows, hapus Aksi, tabel item + tabel drawing + preview",
+    "content": "Badge merah 'Menunggu Verifikasi' Leader di menu Engineering (card + count)",
     "status": "completed"
   },
   {
-    "content": "Phase M: Perlu TTD Sales section + TTD dari DRF list",
+    "content": "Notifikasi 'Drawing Siap Dilihat' klik -> buka preview drawing (AppShell modal)",
     "status": "completed"
   },
   {
-    "content": "Phase I: Notifikasi Sales 'Drawing Siap Dilihat'",
-    "status": "completed"
+    "content": "Riwayat TTD Sales per drawing di dalam DRF",
+    "status": "in_progress"
   },
   {
-    "content": "Comprehensive testing O/L/M/I (100% pass) + cleanup akun/kredensial QA + final build",
-    "status": "completed"
+    "content": "Approval BOM berjenjang (Leader -> Erwin/admin) + audit trail",
+    "status": "pending"
+  },
+  {
+    "content": "Regresi menyeluruh (fokus assign engineer) + cleanup + build",
+    "status": "pending"
   }
 ]

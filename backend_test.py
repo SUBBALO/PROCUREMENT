@@ -294,6 +294,54 @@ def test_phase_l_drf_endpoints(tester):
     tester.logout()
 
 
+def test_assign_engineer_endpoint(tester):
+    """Test engineering-users endpoint for assign engineer dialog"""
+    print("\n" + "="*60)
+    print("CRITICAL REGRESSION: Testing Assign Engineer Endpoint")
+    print("="*60)
+    
+    # Login as Leader
+    if not tester.login("qa_leader_tmp", "Qa!12345"):
+        print("❌ Cannot proceed - Leader login failed")
+        return
+    
+    # Test: GET /api/drawing-requests/engineering-users
+    def check_engineering_users(data):
+        items = data.get("items", [])
+        tester.log(f"Found {len(items)} engineering user(s)", "INFO")
+        
+        if len(items) == 0:
+            tester.log("❌ CRITICAL: No engineering users found! Assign dialog will be empty!", "FAIL")
+            return False
+        
+        # Check if eng_leader is in the list
+        has_leader = any(u.get("role") in ["eng_leader", "eng_head"] for u in items)
+        if has_leader:
+            tester.log("✓ Engineering leader found in list", "INFO")
+        else:
+            tester.log("⚠️  No engineering leader in list", "WARN")
+        
+        # Check structure
+        for user in items[:3]:
+            required = ["id", "username", "name", "role"]
+            missing = [f for f in required if f not in user]
+            if missing:
+                tester.log(f"User missing fields: {missing}", "WARN")
+                return False
+        
+        return True
+    
+    tester.test(
+        "GET /api/drawing-requests/engineering-users",
+        "GET",
+        "/drawing-requests/engineering-users",
+        200,
+        check_fn=check_engineering_users
+    )
+    
+    tester.logout()
+
+
 def main():
     print("="*60)
     print("ERP Backend API Testing - Phases O, L, M, I")
@@ -310,6 +358,7 @@ def main():
         test_phase_i_notifications(tester)
         test_phase_m_sales_ttd(tester)
         test_phase_l_drf_endpoints(tester)
+        test_assign_engineer_endpoint(tester)
         
     except KeyboardInterrupt:
         print("\n\n⚠️  Testing interrupted by user")

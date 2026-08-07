@@ -399,6 +399,7 @@ export default function DrawingRequestFormPage() {
                                       <th className="text-left p-2">Item</th>
                                       <th className="text-right p-2">Qty</th>
                                       <th className="text-left p-2">Status</th>
+                                      <th className="text-left p-2">TTD Sales</th>
                                       <th className="p-2 w-10"></th>
                                     </tr>
                                   </thead>
@@ -406,6 +407,7 @@ export default function DrawingRequestFormPage() {
                                     {dwgList.map((dw) => {
                                       const dst = DWG_STATUS[dw.approval_status] || { label: dw.approval_status || "-", cls: "bg-slate-100 text-slate-700 border-slate-300" };
                                       const canPreview = !!dw.file_id;
+                                      const salesSig = (dw.approvals || []).find((a) => a.stage === "sales");
                                       return (
                                         <tr key={dw.id} className="border-b border-slate-50">
                                           <td className="p-2 font-mono font-semibold text-slate-800">{dw.drawing_no || "-"}</td>
@@ -413,6 +415,19 @@ export default function DrawingRequestFormPage() {
                                           <td className="p-2 text-right tabular-nums">{dw.item_qty ?? "-"}</td>
                                           <td className="p-2">
                                             <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${dst.cls}`}>{dst.label}</span>
+                                          </td>
+                                          <td className="p-2" data-testid={`drf-dwg-salesttd-${dw.id}`}>
+                                            {salesSig ? (
+                                              <div className="flex items-center gap-1 text-emerald-700" title={`Ditandatangani ${salesSig.name} pada ${salesSig.at ? new Date(salesSig.at).toLocaleString("id-ID") : "-"}`}>
+                                                <CheckCircle size={12} weight="fill" className="text-emerald-600 shrink-0" />
+                                                <div className="leading-tight">
+                                                  <div className="font-semibold text-[10px]">{salesSig.name || "Sales"}</div>
+                                                  <div className="text-[9px] text-slate-400">{salesSig.at ? new Date(salesSig.at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "2-digit" }) : ""}</div>
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <span className="text-[10px] text-slate-300 italic">Belum</span>
+                                            )}
                                           </td>
                                           <td className="p-2 text-right">
                                             <div className="flex gap-1 justify-end">

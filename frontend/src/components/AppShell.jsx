@@ -8,6 +8,7 @@ import {
 } from "./ui/dropdown-menu";
 import { toast } from "sonner";
 import GlobalSearch from "./GlobalSearch";
+import PdfPreviewModal from "./PdfPreviewModal";
 import {
   ChartBar, Plus, MagnifyingGlass, SignOut, Package, ChartLineUp, ShieldStar, Warehouse, ArrowDown, ArrowUp,
   ClipboardText, CaretDown, ShoppingCart, Storefront, Truck, ClockCounterClockwise, Bell, HardDrives, UploadSimple,
@@ -220,6 +221,7 @@ export default function AppShell({ children }) {
   // Universal notifications — poll aggregate count + full list
   const [notifData, setNotifData] = useState({ total_count: 0, categories: [] });
   const [notifOpen, setNotifOpen] = useState(false);
+  const [notifPreview, setNotifPreview] = useState(null); // {drawingId,title} untuk preview drawing dari notif
   const loadNotif = React.useCallback(async () => {
     try {
       const { data } = await api.get("/notifications");
@@ -453,7 +455,15 @@ export default function AppShell({ children }) {
                               {cat.items.slice(0, 5).map((it) => (
                                 <div key={it.id} className="border-t border-slate-100 flex items-stretch" data-testid={`notif-row-${cat.key}`}>
                                   <button
-                                    onClick={() => { setNotifOpen(false); nav(it.link || (cat.key === "store_requests" ? "/admin?tab=requests" : "/")); }}
+                                    onClick={() => {
+                                      if (cat.key === "drawing_ready_view" && it.id) {
+                                        setNotifOpen(false);
+                                        setNotifPreview({ drawingId: it.id, title: it.title });
+                                        return;
+                                      }
+                                      setNotifOpen(false);
+                                      nav(it.link || (cat.key === "store_requests" ? "/admin?tab=requests" : "/"));
+                                    }}
                                     className="flex-1 text-left px-3 py-2 hover:bg-sky-50 text-xs"
                                     data-testid={`notif-item-${cat.key}`}
                                   >
@@ -543,6 +553,19 @@ export default function AppShell({ children }) {
       <footer className="border-t border-slate-200 bg-white px-6 py-3 text-[11px] text-slate-400 uppercase tracking-[0.15em]">
         Developed by Purchasing Department &copy; {new Date().getFullYear()} — PT. Mitra Karya Sarana
       </footer>
+      )}
+
+      {notifPreview && (
+        <PdfPreviewModal
+          drawingId={notifPreview.drawingId}
+          target="mks"
+          stamped={false}
+          noDownload
+          noPrint
+          title={notifPreview.title || "Preview Drawing"}
+          subtitle="Preview view-only dari notifikasi"
+          onClose={() => setNotifPreview(null)}
+        />
       )}
     </div>
   );

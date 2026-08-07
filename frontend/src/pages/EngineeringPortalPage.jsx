@@ -20,6 +20,7 @@ export default function EngineeringPortalPage() {
   const [drfPending, setDrfPending] = useState(0);    // DRF menunggu ditangani (Eng Leader)
   const [overloadCount, setOverloadCount] = useState(0); // engineer overload (monitor beban)
   const [ncActive, setNcActive] = useState(0);            // NC/CAR belum tuntas
+  const [leaderPending, setLeaderPending] = useState(0);  // SO menunggu verifikasi leader (Phase O)
   useEffect(() => {
     api.get("/ecn-register?kind=ecn")
       .then(({ data }) => setEcnTotal((data.items || []).length))
@@ -41,10 +42,32 @@ export default function EngineeringPortalPage() {
       api.get("/drawing-requests/pending-count-for-engineering")
         .then(({ data }) => setDrfPending(data.count || 0))
         .catch(() => setDrfPending(0));
+      api.get("/engineering/pending-leader-verification")
+        .then(({ data }) => setLeaderPending(data.count || 0))
+        .catch(() => setLeaderPending(0));
     }
   }, [isEngUser, isHead]);
 
+  const goToLeaderQueue = () => {
+    // Buka tab "Menunggu Verifikasi Leader" pada panel antrian & scroll ke sana
+    try { window.location.hash = "verifikasi"; } catch (e) {}
+    const el = document.querySelector("[data-testid='eng-queue-panel']");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.dispatchEvent(new CustomEvent("open-leader-queue"));
+  };
+
   const CARDS = [
+    ...(isHead ? [{
+      key: "leader-verify",
+      label: "Menunggu Verifikasi Leader",
+      stats: "Antrian TTD Drawing · Review Dokumen SO",
+      description: "Daftar SO/DRF yang memiliki drawing menunggu verifikasi & TTD Anda. Klik untuk membuka antrian & review dokumen SO lengkap.",
+      icon: PencilSimpleLine,
+      onClick: goToLeaderQueue,
+      badgeCount: leaderPending,
+      accent: "from-emerald-500 via-teal-500 to-green-500",
+      accentText: "text-emerald-400",
+    }] : []),
     ...(isEngUser ? [{
       key: "so-tracker",
       label: "SO Document Tracker",
@@ -57,11 +80,11 @@ export default function EngineeringPortalPage() {
     }] : []),
     ...(isEngUser ? [{
       key: "work-orders",
-      label: "Work Order Engineering",
-      stats: isHead ? "Terima DRF · Assign · Pantau" : "Job Saya · Kerjakan Drawing",
+      label: "Pekerjaan Masuk (Work Order)",
+      stats: isHead ? "Inquiry · New Order · Repeat Order" : "Job Saya · Kerjakan Drawing",
       description: isHead
-        ? "Satu pintu Engineering: terima Drawing Request dari Sales, tunjuk engineer yang mengerjakan, dan pantau yang sedang dikerjakan. Engineer lalu generate nomor drawing (bisa >1 berbagi 1 BOM), upload & TTD."
-        : "Berisi tab Job Saya (terima & mulai kerja job yang ditugaskan) dan Work Order (generate nomor drawing, upload dokumen, isi BOM, lalu TTD & submit).",
+        ? "Satu pintu Engineering: tab Inquiry (costing), New Order & Repeat Order (Drawing Request). Terima DRF, tunjuk engineer, dan pantau progres."
+        : "Berisi tab Inquiry / New Order / Repeat Order serta 'Perlu TTD Saya' & 'Riwayat TTD'. Buka DRF untuk generate nomor drawing, upload, isi BOM, lalu TTD & submit.",
       icon: Kanban,
       href: isHead ? "/engineering/work-orders" : "/engineering/my-queue",
       badgeCount: isHead ? drfPending : jobPending,
@@ -127,12 +150,38 @@ export default function EngineeringPortalPage() {
     },
   ];
 
+  // Susun kartu ke dalam 4 grup menu
+  const GROUP_OF = {
+    "work-orders": "masuk",
+    "inquiry-masterlist": "masuk",
+    "leader-verify": "approval",
+    "ecn": "approval",
+    "nonconformance": "approval",
+    "bom": "approval",
+    "drawings": "data",
+    "material-costing": "data",
+    "eng-process": "data",
+    "so-tracker": "monitor",
+    "workload": "monitor",
+    "kpi": "monitor",
+  };
+  const GROUP_DEFS = [
+    { key: "masuk", label: "Pekerjaan Masuk" },
+    { key: "approval", label: "Proses & Approval" },
+    { key: "data", label: "Master & Data" },
+    { key: "monitor", label: "Monitor" },
+  ];
+  const groups = GROUP_DEFS.map((g) => ({
+    ...g,
+    cards: CARDS.filter((c) => (GROUP_OF[c.key] || "data") === g.key),
+  }));
+
   return (
     <DeptPortal
       deptLabel="Engineering Department"
-      deptTagline="Menu di atas · Antrian Drawing Request · Tugas Saya di bawah"
+      deptTagline="Menu dikelompokkan: Pekerjaan Masuk · Proses & Approval · Master & Data · Monitor"
       accentColor="amber"
-      cards={CARDS}
+      groups={groups}
       compactCards
       cardsFirst
       cardsLabel="Menu Engineering"

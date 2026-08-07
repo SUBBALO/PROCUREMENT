@@ -5,31 +5,53 @@ import { ArrowRight, ArrowLeft, Sparkle } from "@phosphor-icons/react";
 /**
  * Reusable department sub-portal (LIGHT theme, 1-screen compact).
  */
-export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky", cards, children, compactCards = false, cardsFirst = false, cardsLabel = "Menu" }) {
+export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky", cards, groups, children, compactCards = false, cardsFirst = false, cardsLabel = "Menu" }) {
   const navigate = useNavigate();
+
+  const gridCls = compactCards
+    ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2"
+    : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3";
+
+  const renderCards = (list) => (
+    <div className={gridCls}>
+      {list.map((c, idx) => (
+        <Card
+          key={c.key}
+          card={c}
+          compact={compactCards}
+          onEnter={() => {
+            if (c.comingSoon) return;
+            if (typeof c.onClick === "function") { c.onClick(); return; }
+            if (c.href && c.href !== "#") navigate(c.href);
+          }}
+          delay={idx * 60}
+        />
+      ))}
+    </div>
+  );
 
   const cardsBlock = (
     <>
-      {compactCards && (
-        <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-400 mb-2">{cardsLabel}</div>
+      {Array.isArray(groups) && groups.length > 0 ? (
+        <div className="space-y-4" data-testid="dept-portal-groups">
+          {groups.filter((g) => (g.cards || []).length > 0).map((g) => (
+            <div key={g.key} data-testid={`dept-group-${g.key}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-500">{g.label}</div>
+                <div className="flex-1 h-px bg-slate-200" />
+              </div>
+              {renderCards(g.cards)}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          {compactCards && (
+            <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-400 mb-2">{cardsLabel}</div>
+          )}
+          {renderCards(cards || [])}
+        </>
       )}
-      <div className={compactCards
-        ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2"
-        : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3"}>
-        {cards.map((c, idx) => (
-          <Card
-            key={c.key}
-            card={c}
-            compact={compactCards}
-            onEnter={() => {
-              if (c.comingSoon) return;
-              if (typeof c.onClick === "function") { c.onClick(); return; }
-              if (c.href && c.href !== "#") navigate(c.href);
-            }}
-            delay={idx * 60}
-          />
-        ))}
-      </div>
     </>
   );
 
