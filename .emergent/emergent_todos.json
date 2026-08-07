@@ -12,15 +12,15 @@
     "status": "completed"
   },
   {
-    "content": "Phase M: Perlu TTD Sales section + TTD dari DRF list (SignaturePlacementModal stage=sales, prefill PO dari DRF)",
+    "content": "Phase M: Perlu TTD Sales section + TTD dari DRF list",
     "status": "completed"
   },
   {
-    "content": "Phase I: Notifikasi Sales 'Drawing Siap Dilihat' (kategori baru di notifications)",
+    "content": "Phase I: Notifikasi Sales 'Drawing Siap Dilihat'",
     "status": "completed"
   },
   {
-    "content": "Comprehensive testing (backend+frontend) O/L/M/I + cleanup akun/kredensial QA",
-    "status": "in_progress"
+    "content": "Comprehensive testing O/L/M/I (100% pass) + cleanup akun/kredensial QA + final build",
+    "status": "completed"
   }
 ]

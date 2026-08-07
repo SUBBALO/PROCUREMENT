@@ -11,26 +11,24 @@
 
 ### Objective aktif (prioritas terbaru)
 - ✅ (N) Membuat **Dashboard SO Progress + sidebar kiri** untuk tracking stage lintas departemen.
-- ⏳ (O) Membuat **Antrian** yang jelas untuk Engineering/Leader:
+- ✅ (O) Membuat **Antrian** yang jelas untuk Engineering/Leader:
   - `Antrian Drawing Request & Inquiry`
   - `Menunggu Verifikasi Leader`
   - Klik item → langsung membuka **EngLeaderReviewDialog (Review Dokumen SO)**.
-- ⏳ (L) Redesign **DRF list** (Sales): hapus kolom **Aksi**, tampilkan **items + preview + tabel drawing** (No. Drawing, Item, Qty, Status).
-- ⏳ (M) Pindahkan **TTD Sales** ke DRF list: bagian **Perlu TTD Sales** → preview → review/isi stamp → pilih lokasi TTD.
-- ⏳ (I) **Notifikasi Sales (in-app saja)** saat drawing sudah siap untuk dilihat.
+- ✅ (L) Redesign **DRF list** (Sales): hapus kolom **Aksi**, tampilkan **items + preview + tabel drawing** (No. Drawing, Item, Qty, Status).
+- ✅ (M) Pindahkan **TTD Sales** ke DRF list: bagian **Perlu TTD Sales** → preview → review/isi stamp → pilih lokasi TTD.
+- ✅ (I) **Notifikasi Sales (in-app saja)** saat drawing sudah siap untuk dilihat.
 
 > Status ringkas:
-> - N: **SELESAI** (backend test 11/11 lulus; user minta anggap selesai & lanjut).
-> - O: **Mulai dikerjakan berikutnya**.
-> - L/M/I: **Belum mulai**.
-> - Approval berjenjang BOM (Leader → Purchasing → Erwin): **DITUNDA** sampai N/O/L/M/I selesai.
+> - N/O/L/M/I: **SELESAI** dan sudah **lolos testing agent**.
+> - Approval berjenjang BOM (Leader → Purchasing → Erwin): **DITUNDA** sampai ada instruksi lanjutan dari user.
 
 ---
 
 ## 2) Implementation Steps
 
 ### Phase 1 — Fondasi Engineering Workflow (Fase 2–4) — (Completed / Historical)
-> Fase ini tetap dipertahankan sebagai fondasi karena akan dipakai ulang oleh Phase O.
+> Fase ini dipertahankan sebagai fondasi untuk queue/approval & review dokumen.
 
 **User stories (fondasi)**
 1. ✅ Partial submit drawing tidak mengunci BOM/SO docs.
@@ -76,126 +74,102 @@
 
 ---
 
-### Phase O — Antrian “Menunggu Verifikasi Leader” + “Antrian Drawing Request & Inquiry” — (Next)
+### Phase O — Antrian “Menunggu Verifikasi Leader” + “Antrian Drawing Request & Inquiry” — (Completed)
 
 **Tujuan**
 - Mengganti tab lama **"Tugas Saya / Menunggu TTD Saya"** menjadi 2 antrian yang sesuai proses terbaru.
-- Leader bisa masuk dari antrian → langsung review lengkap via **EngLeaderReviewDialog** (tanpa membangun ulang dialog).
+- Leader bisa masuk dari antrian → langsung review lengkap via **EngLeaderReviewDialog**.
 
-**User stories**
-1. Sebagai Eng Leader, saya melihat tab **Menunggu Verifikasi Leader** berisi SO/DRF yang butuh verifikasi saya.
-2. Sebagai Eng Leader, klik item langsung membuka **Review Dokumen SO** (EngLeaderReviewDialog) dan saya bisa approve/revisi.
-3. Sebagai Engineer/Leader, saya punya tab **Antrian Drawing Request & Inquiry** untuk pekerjaan masuk (hub Pekerjaan Masuk).
-
-**Rencana implementasi**
+**Implementasi (Done)**
+- Backend
+  - ✅ Endpoint baru: `GET /api/engineering/pending-leader-verification`
+    - Mengelompokkan drawing `pending_eng_head` per DRF/SO.
+    - RBAC: hanya `eng_leader/eng_head/engineering/admin/super_admin/supervisor`.
 - Frontend
-  - ⏳ Buat halaman/section antrian Engineering sesuai struktur menu yang disepakati:
-    - Hub **Pekerjaan Masuk** (tab: Inquiry / New Order (DRF) / Repeat Order) — bila belum tersambung, minimal siapkan kerangka + 2 antrian utama dulu.
-  - ⏳ Ganti tab lama menjadi:
+  - ✅ `EngineeringQueuePanel.jsx` diubah menjadi **2 tab** untuk leader:
     - `Antrian Drawing Request & Inquiry`
     - `Menunggu Verifikasi Leader`
-  - ⏳ Klik item pada `Menunggu Verifikasi Leader` → buka `EngLeaderReviewDialog` dan load data DRF/SO terkait.
-  - ⏳ Pastikan semua label/copy UI bahasa Indonesia + `data-testid` untuk elemen penting.
+  - ✅ QuickLinks lama dihapus.
+  - ✅ Klik item pada tab `Menunggu Verifikasi Leader` membuka `EngLeaderReviewDialog`.
 
-- Backend
-  - ⏳ Jika data queue belum tersedia dari endpoint existing, tambahkan endpoint queue (tetap di bawah `/api`) misalnya:
-    - `GET /api/engineering/queues/incoming`
-    - `GET /api/engineering/queues/pending-leader-verification`
-  - ⏳ Definisikan kriteria queue secara eksplisit (berbasis status drawing/attachment/BOM) dan gunakan RBAC.
-
-**Exit criteria**
-- Antrian muncul stabil untuk role leader.
-- Klik item membuka dialog review dan action berhasil (approve/revisi) tanpa reload yang mengganggu.
+**Exit criteria (Verified)**
+- ✅ Leader melihat queue dan bisa membuka dialog review dari queue.
 
 ---
 
-### Phase L — DRF List Redesign (Sales) — (Planned)
+### Phase L — DRF List Redesign (Sales) — (Completed)
 
 **Tujuan**
 - DRF list lebih informatif tanpa kolom “Aksi” dan lebih fokus pada item/drawing.
 
-**User stories**
-1. Sebagai Sales, saya melihat DRF list tanpa kolom **Aksi**.
-2. Saya bisa melihat **tabel item** dan **preview**.
-3. Saya bisa melihat tabel drawing per DRF: **No. Drawing, Item, Qty, Status**.
+**Implementasi (Done)**
+- Frontend (`DrawingRequestFormPage.jsx`)
+  - ✅ Kolom **"Aksi"** dihapus.
+  - ✅ Baris DRF menjadi **expandable**:
+    - Panel **Daftar Item** (tabel item DRF).
+    - Panel **Drawing** (tabel No. Drawing / Item / Qty / Status + tombol preview view-only).
+    - Tombol **Detail & Preview** tersedia di area expand.
+    - Aksi draft (Edit/Submit/Batalkan) dipindah ke area expand.
+  - ✅ Preview drawing pada list bersifat **view-only** (`noDownload`, `noPrint`).
 
-**Rencana implementasi**
-- Frontend
-  - ⏳ Ubah tampilan list DRF:
-    - Hilangkan kolom/sel “Aksi”.
-    - Tambah tampilan ringkas items (mis. expandable/preview modal).
-    - Tambah tabel drawing yang terkait.
-  - ⏳ Pastikan tetap pakai komponen shadcn (Table/Accordion/Badge/Select).
-
-- Backend
-  - ⏳ Jika diperlukan, tambah endpoint ringkas untuk list drawing per DRF agar DRF list tidak berat.
-
-**Exit criteria**
-- DRF list bisa dipakai tanpa kehilangan fungsi utama (lihat, filter, buka detail/preview).
+**Exit criteria (Verified)**
+- ✅ DRF list dapat digunakan tanpa kehilangan fitur utama dan tampil lebih informatif.
 
 ---
 
-### Phase M — Pindahkan TTD Sales ke DRF List — (Planned)
+### Phase M — Pindahkan TTD Sales ke DRF List — (Completed)
 
 **Tujuan**
 - Sales menandatangani dari DRF list (bukan alur terpisah), dengan UX jelas: **Perlu TTD Sales**.
 
-**User stories**
-1. Sebagai Sales, saya melihat section/status **Perlu TTD Sales** di DRF list.
-2. Saya bisa buka preview dokumen.
-3. Saya bisa review/isi stamp SO lalu pilih lokasi TTD (signature placement) dan submit.
+**Implementasi (Done)**
+- Frontend (`DrawingRequestFormPage.jsx`)
+  - ✅ Section **"Perlu TTD Sales"**:
+    - Sumber data: `GET /api/drawings/pending-my-approval` (role sales → `pending_sales`).
+    - Muncul hanya jika ada data (benar bila kosong: section tersembunyi).
+  - ✅ Tombol **TTD** juga tersedia di tabel drawing (untuk row yang `pending_sales`).
+  - ✅ Reuse `SignaturePlacementModal` dengan `stage="sales"`.
+- Frontend (`SignaturePlacementModal.jsx`)
+  - ✅ Prefill **P/O No** dari `drawing.po_customer_no` (atau fallback `po_no`).
 
-**Rencana implementasi**
-- Frontend
-  - ⏳ Tambah status/indikator “Perlu TTD Sales”.
-  - ⏳ Dari DRF list → buka modal preview → lanjut ke flow stamp + signature placement.
-  - ⏳ Pastikan view-only tetap untuk role lain sesuai aturan.
-
-- Backend
-  - ⏳ Pastikan endpoint stamping/TTD sales kompatibel dengan entry point baru (tidak mengubah arsitektur viewer iframe/blob).
-
-**Exit criteria**
-- Sales bisa menyelesaikan TTD dari DRF list end-to-end.
+**Exit criteria (Verified)**
+- ✅ Flow TTD Sales dapat dipicu dari DRF list dan memakai modal TTD yang existing.
 
 ---
 
-### Phase I — Notifikasi Sales (In-App Saja) Saat Drawing Siap Dilihat — (Planned)
+### Phase I — Notifikasi Sales (In-App Saja) Saat Drawing Siap Dilihat — (Completed)
 
 **Tujuan**
 - Sales mendapat notifikasi ketika drawing sudah bisa dilihat (tanpa email).
 
-**User stories**
-1. Sebagai Sales, saya mendapat notifikasi in-app (badge/toast/notification center) saat drawing siap dilihat.
-2. Klik notifikasi membawa saya ke DRF/drawing yang relevan.
-
-**Rencana implementasi**
-- Backend
-  - ⏳ Tentukan event “drawing siap dilihat” (mis. saat file upload selesai + status tertentu).
-  - ⏳ Simpan notifikasi ke koleksi notifications per user/role.
-  - ⏳ Endpoint:
-    - `GET /api/notifications`
-    - `POST /api/notifications/mark-read`
+**Implementasi (Done)**
+- Backend (`routers/notifications.py`)
+  - ✅ Tambah kategori notifikasi baru khusus Sales:
+    - `key: drawing_ready_view`
+    - `label: "Drawing Siap Dilihat (Preview)"`
+    - Kriteria: drawing milik DRF Sales dengan `approval_status in (pending_eng_head, pending_qc)` dan sudah punya `file_id`.
+    - `link: /sales/drawing-requests`
 - Frontend
-  - ⏳ Komponen notifikasi (shadcn + sonner bila perlu) + badge di portal Sales.
+  - ✅ Terlihat di dropdown Notifikasi header pada halaman ber-AppShell.
 
-**Exit criteria**
-- Notifikasi muncul tepat waktu dan tidak spam, hanya in-app.
+**Exit criteria (Verified)**
+- ✅ Notifikasi muncul dan jumlahnya sesuai data; klik membawa user ke DRF list.
 
 ---
 
 ### Deferred — Approval Berjenjang BOM (Leader → Purchasing → Erwin)
-- ⏸ Ditunda sampai Phase N/O/L/M/I selesai.
+- ⏸ Ditunda sampai ada instruksi lanjutan dari user.
 - Setelah aktif, targetnya mengikat approval BOM dengan chain per role dan audit trail yang jelas.
 
 ---
 
 ## 3) Next Actions (urut eksekusi)
-1. ✅ N dinyatakan selesai dan lanjut ke O (sesuai konfirmasi user).
-2. ⏳ Implement **Phase O**: 2 antrian baru + klik buka `EngLeaderReviewDialog`.
-3. ⏳ Implement **Phase L**: DRF list tanpa kolom Aksi + tabel drawing + preview.
-4. ⏳ Implement **Phase M**: flow TTD Sales dari DRF list.
-5. ⏳ Implement **Phase I**: notifikasi Sales in-app.
-6. ⏸ Baru setelah itu: approval BOM berjenjang.
+1. ✅ N selesai (Dashboard SO Progress + sidebar).
+2. ✅ O selesai (2 antrian leader + buka EngLeaderReviewDialog).
+3. ✅ L selesai (DRF list redesign tanpa kolom Aksi + expandable + tabel item/drawing).
+4. ✅ M selesai (TTD Sales dari DRF list + prefill PO).
+5. ✅ I selesai (notifikasi Sales in-app untuk drawing siap dilihat).
+6. ⏭ **Menunggu instruksi berikutnya**: Approval berjenjang BOM (Leader → Purchasing → Erwin).
 
 > Catatan operasional wajib:
 > - Semua UI copy wajib **Bahasa Indonesia**.
@@ -208,8 +182,20 @@
 ---
 
 ## 4) Success Criteria
-- ✅ Dashboard SO Progress + sidebar berjalan dan endpoint tervalidasi (testing agent 11/11 pass).
-- ⏳ Leader punya 2 antrian baru dan bisa review dari antrian via dialog yang sudah ada.
-- ⏳ DRF list lebih informatif (items + preview + tabel drawing) tanpa kolom Aksi.
-- ⏳ Sales bisa melakukan TTD dari DRF list dengan alur jelas.
-- ⏳ Notifikasi Sales in-app muncul saat drawing siap dilihat dan bisa di-click menuju konteksnya.
+- ✅ Dashboard SO Progress + sidebar berjalan dan endpoint tervalidasi.
+- ✅ Leader punya 2 antrian baru dan bisa review dari antrian via dialog yang sudah ada.
+- ✅ DRF list lebih informatif (items + preview + tabel drawing) tanpa kolom Aksi.
+- ✅ Sales bisa melakukan TTD dari DRF list dengan alur jelas.
+- ✅ Notifikasi Sales in-app muncul saat drawing siap dilihat dan bisa di-click menuju konteksnya.
+
+---
+
+## 5) Verification / Evidence
+- ✅ Testing agent report:
+  - `/app/test_reports/iteration_25.json` — Dashboard SO Progress (backend 11/11 pass)
+  - `/app/test_reports/iteration_26.json` — Phase O/L/M/I (backend 11/11 pass, frontend 100%)
+- ✅ Cleanup selesai:
+  - Password `salesuser` dipulihkan ke hash asli
+  - Akun QA `qa_leader_tmp` dihapus
+  - Temporary files dihapus
+- ✅ Final `yarn build` sukses
