@@ -155,6 +155,11 @@ async def dashboard_so_progress(q: str = "", limit: int = 60, current: dict = De
         {"_id": 0, "so_no": 1, "approval_status": 1, "approvals": 1, "updated_at": 1, "drawing_no": 1, "item_name": 1, "item_qty": 1},
     ).to_list(length=5000)
     deliveries = await db.deliveries.find({"so_no": {"$in": so_nos}}, {"_id": 0, "so_no": 1, "delivery_date": 1}).to_list(length=5000)
+    # Deadline kerjaan (target due date) diambil dari DRF terkait SO
+    drfs = await db.drawing_requests.find(
+        {"so_no": {"$in": so_nos}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "so_no": 1, "expected_due_date": 1},
+    ).to_list(length=5000)
     issuances = await db.store_issuances.find({"so_no": {"$in": so_nos}}, {"_id": 0, "so_no": 1, "issue_date": 1, "created_at": 1}).to_list(length=5000)
     qc_insp = await db.qc_inspections.find({"so_no": {"$in": so_nos}, "deleted_at": {"$exists": False}}, {"_id": 0, "so_no": 1, "status": 1, "inspected_at": 1, "created_at": 1}).to_list(length=5000)
 
@@ -168,6 +173,7 @@ async def dashboard_so_progress(q: str = "", limit: int = 60, current: dict = De
     del_by = group(deliveries, "so_no")
     iss_by = group(issuances, "so_no")
     qc_by = group(qc_insp, "so_no")
+    drf_by = group(drfs, "so_no")
 
     APPROVED = {"approved", "controlled", "released"}
     DC_DONE = {"controlled", "released"}
@@ -235,11 +241,15 @@ async def dashboard_so_progress(q: str = "", limit: int = 60, current: dict = De
         ]
         # tahap aktif = stage pertama yang belum done
         current_stage = next((s["label"] for s in stages if s["status"] != "done"), "Delivery")
+        # Deadline kerjaan produksi (due date paling awal dari DRF terkait)
+        _dls = [r.get("expected_due_date") for r in drf_by.get(sono, []) if r.get("expected_due_date")]
+        deadline = min(_dls) if _dls else ""
         out.append({
             "so_no": sono,
             "customer": so.get("customer", ""),
             "description": so.get("description", ""),
             "so_date": so.get("so_date", ""),
+            "deadline": deadline,
             "drawings_total": total,
             "drawings_approved": approved,
             "current_stage": current_stage,

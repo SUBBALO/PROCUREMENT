@@ -1,17 +1,33 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import api from "../lib/api";
-import { MagnifyingGlass, ArrowClockwise, CheckCircle, CircleNotch, Circle } from "@phosphor-icons/react";
+import { MagnifyingGlass, ArrowClockwise } from "@phosphor-icons/react";
 
 const STAGE_STYLE = {
-  done: { dot: "bg-emerald-500 border-emerald-500 text-white", line: "bg-emerald-400", label: "text-emerald-700", Icon: CheckCircle },
-  in_progress: { dot: "bg-amber-400 border-amber-500 text-white", line: "bg-slate-200", label: "text-amber-700", Icon: CircleNotch },
-  pending: { dot: "bg-white border-slate-300 text-slate-300", line: "bg-slate-200", label: "text-slate-400", Icon: Circle },
+  done: { dot: "bg-emerald-500", text: "text-emerald-700", label: "Selesai" },
+  in_progress: { dot: "bg-amber-500", text: "text-amber-700", label: "Proses" },
+  pending: { dot: "bg-slate-300", text: "text-slate-400", label: "—" },
 };
+
+const STAGE_ORDER = ["engineering", "doccon", "produksi", "qc", "delivery"];
+const STAGE_HEAD = { engineering: "Engineering", doccon: "DocCon", produksi: "Produksi", qc: "QC Final", delivery: "Delivery" };
 
 function fmtDate(s) {
   if (!s) return "";
   try { return new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "2-digit" }); }
   catch { return s; }
+}
+
+function StageCell({ st }) {
+  const style = STAGE_STYLE[st?.status] || STAGE_STYLE.pending;
+  return (
+    <td className="px-2 py-1.5 align-top border-l border-slate-100">
+      <div className={`inline-flex items-center gap-1 text-[11px] font-semibold ${style.text}`}>
+        <span className={`w-2 h-2 rounded-full ${style.dot} shrink-0`} />
+        {style.label}{st?.progress ? <span className="font-mono text-slate-500">·{st.progress}</span> : null}
+      </div>
+      {st?.date ? <div className="text-[10px] text-slate-400 leading-tight">{fmtDate(st.date)}</div> : null}
+    </td>
+  );
 }
 
 export default function SoProgressTracker() {
@@ -30,16 +46,24 @@ export default function SoProgressTracker() {
 
   useEffect(() => { load(); }, [load]);
 
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  const stageMap = (so) => {
+    const m = {};
+    (so.stages || []).forEach((s) => { m[s.key] = s; });
+    return m;
+  };
+
   return (
     <div className="bg-white border border-slate-200" data-testid="so-progress-tracker">
-      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 bg-slate-50">
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-slate-200 bg-slate-50">
         <div>
           <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-500">Monitoring</div>
-          <h2 className="text-lg font-bold text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>Progress Sales Order</h2>
-          <p className="text-[11px] text-slate-500">Alur: Engineering → DocCon → Produksi → QC → Delivery</p>
+          <h2 className="text-base font-bold text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>Progress Sales Order</h2>
+          <p className="text-[11px] text-slate-500">Alur: Engineering → DocCon → Produksi → QC Final → Delivery</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 border border-slate-300 bg-white px-2 h-9">
+          <div className="flex items-center gap-1.5 border border-slate-300 bg-white px-2 h-8">
             <MagnifyingGlass size={14} className="text-slate-400" />
             <input
               value={q}
@@ -50,52 +74,58 @@ export default function SoProgressTracker() {
               data-testid="so-progress-search"
             />
           </div>
-          <button onClick={() => load(q)} className="h-9 px-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold uppercase tracking-wider inline-flex items-center gap-1" data-testid="so-progress-refresh">
+          <button onClick={() => load(q)} className="h-8 px-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold uppercase tracking-wider inline-flex items-center gap-1" data-testid="so-progress-refresh">
             <ArrowClockwise size={14} weight="bold" className={loading ? "animate-spin" : ""} /> Muat
           </button>
         </div>
       </div>
 
-      <div className="divide-y divide-slate-100 max-h-[calc(100vh-260px)] overflow-y-auto">
-        {loading && <div className="p-8 text-center text-slate-400 text-sm">Memuat progress SO…</div>}
-        {!loading && items.length === 0 && <div className="p-8 text-center text-slate-400 text-sm">Tidak ada SO dalam workflow.</div>}
-        {!loading && items.map((so) => (
-          <div key={so.so_no} className="p-4 hover:bg-slate-50 transition-colors" data-testid={`so-progress-row-${so.so_no}`}>
-            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-              <div className="min-w-0">
-                <span className="font-mono font-bold text-slate-900">{so.so_no}</span>
-                <span className="text-slate-400 mx-1.5">·</span>
-                <span className="text-sm text-slate-700">{so.customer || "-"}</span>
-                {so.description ? <span className="text-xs text-slate-400 ml-1.5 truncate">— {so.description}</span> : null}
-              </div>
-              <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-1 bg-slate-900 text-white">
-                Tahap: {so.current_stage}
-              </span>
-            </div>
-
-            {/* Horizontal stepper */}
-            <div className="flex items-stretch">
-              {so.stages.map((st, i) => {
-                const style = STAGE_STYLE[st.status] || STAGE_STYLE.pending;
-                const Icon = style.Icon;
-                return (
-                  <div key={st.key} className="flex-1 flex flex-col items-center relative">
-                    {i < so.stages.length - 1 && (
-                      <div className={`absolute top-3 left-1/2 w-full h-0.5 ${(so.stages[i + 1].status === "done" || st.status === "done") ? "bg-emerald-400" : "bg-slate-200"}`} />
-                    )}
-                    <div className={`relative z-10 w-6 h-6 rounded-full border-2 flex items-center justify-center ${style.dot}`}>
-                      <Icon size={14} weight={st.status === "pending" ? "regular" : "fill"} className={st.status === "in_progress" ? "animate-spin" : ""} />
+      <div className="max-h-[calc(100vh-240px)] overflow-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead className="sticky top-0 z-10 bg-slate-100 text-slate-600">
+            <tr className="text-[10px] uppercase tracking-wider">
+              <th className="px-3 py-2 text-left font-bold">SO / Customer</th>
+              <th className="px-2 py-2 text-left font-bold border-l border-slate-200">Deadline</th>
+              {STAGE_ORDER.map((k) => (
+                <th key={k} className="px-2 py-2 text-left font-bold border-l border-slate-200">{STAGE_HEAD[k]}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {loading && (
+              <tr><td colSpan={7} className="p-8 text-center text-slate-400 text-sm">Memuat progress SO…</td></tr>
+            )}
+            {!loading && items.length === 0 && (
+              <tr><td colSpan={7} className="p-8 text-center text-slate-400 text-sm">Tidak ada SO dalam workflow.</td></tr>
+            )}
+            {!loading && items.map((so) => {
+              const m = stageMap(so);
+              const delivered = m.delivery?.status === "done";
+              const overdue = so.deadline && so.deadline < today && !delivered;
+              return (
+                <tr key={so.so_no} className="hover:bg-slate-50 transition-colors" data-testid={`so-progress-row-${so.so_no}`}>
+                  <td className="px-3 py-1.5 align-top">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono font-bold text-slate-900 text-[13px]">{so.so_no}</span>
+                      <span className="text-[9px] uppercase tracking-wide font-bold px-1.5 py-0.5 bg-slate-800 text-white">{so.current_stage}</span>
                     </div>
-                    <div className={`mt-1.5 text-[10px] uppercase tracking-wide font-bold ${style.label}`}>{st.label}</div>
-                    {st.progress ? <div className="text-[9px] text-slate-500 font-mono">{st.progress}</div> : null}
-                    {st.date ? <div className="text-[9px] text-slate-400">{fmtDate(st.date)}</div> : null}
-                    {st.pic ? <div className="text-[9px] text-slate-400 truncate max-w-[80px]" title={st.pic}>{st.pic}</div> : null}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+                    <div className="text-[11px] text-slate-600 truncate max-w-[220px]" title={`${so.customer || ""} ${so.description || ""}`}>
+                      {so.customer || "-"}{so.description ? ` · ${so.description}` : ""}
+                    </div>
+                  </td>
+                  <td className="px-2 py-1.5 align-top border-l border-slate-100">
+                    {so.deadline ? (
+                      <span className={`text-[11px] font-semibold ${overdue ? "text-rose-600" : "text-slate-700"}`}>
+                        {fmtDate(so.deadline)}{overdue ? " ⚠" : ""}
+                      </span>
+                    ) : <span className="text-[11px] text-slate-300">—</span>}
+                  </td>
+                  {STAGE_ORDER.map((k) => (<StageCell key={k} st={m[k]} />))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
