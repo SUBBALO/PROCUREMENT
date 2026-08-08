@@ -1392,10 +1392,10 @@ function WorkOrderView() {
           </Button>
         )}
         {canSubmit && (
-          <Button className="h-10 rounded-none bg-amber-600 hover:bg-amber-700 text-white text-sm" onClick={submitForReview} disabled={submitting} data-testid="wo-submit-review">
-            <PaperPlaneTilt size={16} weight="bold" className="mr-1" />
-            {submitting ? "Submitting..." : "Submit ke Engineering Leader"}
-          </Button>
+          <div className="text-[11px] text-slate-500 italic mr-auto max-w-md" data-testid="wo-bom-submit-note">
+            BOM cukup <b>disimpan</b>. Pengiriman ke Engineering dilakukan lewat tombol <b>TTD &amp; Submit</b> pada
+            Work Order (tab Drawing &amp; Upload), yang memverifikasi drawing + BOM sekaligus.
+          </div>
         )}
         {canApprove && (
           <>

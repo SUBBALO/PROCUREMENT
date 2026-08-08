@@ -176,13 +176,13 @@ function DrfItemPicker({ drawing, onSaved, editable }) {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-teal-700 mb-1">
-            <Wrench size={14} weight="fill" /> Engineering · Work Order
+          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] font-bold text-teal-700 mb-0.5">
+            <Wrench size={12} weight="fill" /> Engineering · Work Order
           </div>
-          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
             {drawing.drawing_no || "(belum ada nomor)"}
           </h1>
-          <div className="text-sm text-slate-600 mt-1">
+          <div className="text-xs text-slate-600 mt-0.5">
             <b>{drawing.title || drawing.project_name || "-"}</b>
             {drawing.customer_name && <> · Customer: <b>{drawing.customer_name}</b></>}
             {drawing.so_no && <> · SO: <b className="font-mono">{drawing.so_no}</b></>}
@@ -205,8 +205,8 @@ function DrfItemPicker({ drawing, onSaved, editable }) {
 
 
       {/* Info card: assign, prepared_by, from DRF */}
-      <Card className="rounded-none border-slate-200 p-4 bg-slate-50">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+      <Card className="rounded-none border-slate-200 px-3 py-2 bg-slate-50">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
           <Info k="Di-assign ke" v={drawing.assigned_to_name} />
           <Info k="Prepared By" v={drawing.prepared_by} />
           <Info k="Request By (Sales)" v={drawing.request_by_sales} />
@@ -217,10 +217,10 @@ function DrfItemPicker({ drawing, onSaved, editable }) {
       {/* Feature B — 2 Tab: (1) Drawing & Upload  (2) BOM (tetap 1 SO) */}
       <Tabs defaultValue="drawing" className="w-full">
         <TabsList className="rounded-none bg-slate-100 border border-slate-200 p-0 h-auto">
-          <TabsTrigger value="drawing" className="rounded-none data-[state=active]:bg-emerald-600 data-[state=active]:text-white px-5 py-2.5 text-sm font-bold uppercase tracking-wider" data-testid="wo-tab-drawing">
+          <TabsTrigger value="drawing" className="rounded-none data-[state=active]:bg-emerald-600 data-[state=active]:text-white px-4 py-1.5 text-xs font-bold uppercase tracking-wider" data-testid="wo-tab-drawing">
             1 · Drawing &amp; Upload
           </TabsTrigger>
-          <TabsTrigger value="bom" className="rounded-none data-[state=active]:bg-amber-600 data-[state=active]:text-white px-5 py-2.5 text-sm font-bold uppercase tracking-wider" data-testid="wo-tab-bom">
+          <TabsTrigger value="bom" className="rounded-none data-[state=active]:bg-amber-600 data-[state=active]:text-white px-4 py-1.5 text-xs font-bold uppercase tracking-wider" data-testid="wo-tab-bom">
             2 · Bill of Material
           </TabsTrigger>
         </TabsList>
@@ -250,8 +250,9 @@ function DrfItemPicker({ drawing, onSaved, editable }) {
               </div>
               <div className="p-4 bg-sky-50 flex items-center justify-between gap-4">
                 <div className="text-sm text-slate-700 flex-1">
-                  Setelah PDF drawing di-upload &amp; kategori kerja dipilih, klik tombol di kanan untuk TTD
-                  posisi <b>Prepared By</b> pada PDF, lalu drawing otomatis dikirim ke Eng Head untuk approval.
+                  Ini <b>satu-satunya</b> tombol Submit ke Engineering. Sistem akan <b>memverifikasi kelengkapan</b>
+                  (PDF drawing ter-upload, kategori kerja, dan BOM sudah diisi) sebelum dikirim. BOM cukup <b>disimpan</b>
+                  di tab Bill of Material — tidak perlu submit terpisah.
                   {!drawing.file_id && (
                     <div className="mt-1 text-rose-700 font-bold">⚠ Upload PDF Drawing dulu di atas sebelum submit.</div>
                   )}
