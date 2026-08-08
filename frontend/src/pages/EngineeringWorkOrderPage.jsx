@@ -9,8 +9,7 @@ import BackLink from "../components/BackLink";
 import { DrawingAttachmentsPanel } from "./MasterDrawingPage";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
 import PdfPreviewModal from "../components/PdfPreviewModal";
-import FinalSubmitChecklistDialog from "../components/FinalSubmitChecklistDialog";
-import { Wrench, ClipboardText, ArrowClockwise, PaperPlaneRight, CheckCircle, Warning, Eye, DownloadSimple, Paperclip, PencilSimpleLine, Clock, XCircle, PlayCircle, Factory, ShieldCheck, Archive, Signature, Package, Lock } from "@phosphor-icons/react";
+import { Wrench, ClipboardText, ArrowClockwise, CheckCircle, Warning, Eye, DownloadSimple, Paperclip, PencilSimpleLine, Clock, XCircle, PlayCircle, Factory, ShieldCheck, Archive, Signature } from "@phosphor-icons/react";
 
 /**
  * EngineeringWorkOrderPage — halaman kerja engineer setelah Eng Head assign drawing.
@@ -27,10 +26,7 @@ export default function EngineeringWorkOrderPage() {
 
   const [drawing, setDrawing] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showSubmitSig, setShowSubmitSig] = useState(false);
-  const [showChecklist, setShowChecklist] = useState(false);
-  const [wgStatus, setWgStatus] = useState(null);
-  const [checkingFinal, setCheckingFinal] = useState(false);
+  const [showPreparedSig, setShowPreparedSig] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,39 +58,11 @@ export default function EngineeringWorkOrderPage() {
   const isDraft = drawing.approval_status === "draft" || !drawing.approval_status;
   const isPending = (drawing.approval_status || "").startsWith("pending_");
   const hasWorkCat = ["simple", "moderate", "complex"].includes((drawing.work_category || "").toLowerCase());
-  const canSubmit = isDraft && drawing.file_id && hasWorkCat;
+  // Bisa TTD Prepared By bila draft + PDF ter-upload + kategori kerja dipilih.
+  const canSignPrepared = isDraft && drawing.file_id && hasWorkCat;
+  const preparedSigned = !!drawing.prepared_signed;
   const isEngUser = ["eng_staff", "eng_leader", "admin", "super_admin"].includes(user?.role);
   const rr = drawing.revision_request || null;
-
-  // Fase 2 — deteksi "submit final" (drawing draft terakhir di 1 SO).
-  // Jika final → tampilkan checklist wajib dulu sebelum buka modal TTD.
-  const handleSubmitClick = async () => {
-    if (!drawing.from_drf_id) { setShowSubmitSig(true); return; }
-    setCheckingFinal(true);
-    try {
-      const { data } = await api.get(`/drawing-requests/${drawing.from_drf_id}/workgroup-status`);
-      if (isDraft && (data.draft_count || 0) <= 1) {
-        setWgStatus(data);
-        setShowChecklist(true);
-      } else {
-        setShowSubmitSig(true);
-      }
-    } catch {
-      setShowSubmitSig(true);
-    } finally {
-      setCheckingFinal(false);
-    }
-  };
-
-  const gotoDoc = (target) => {
-    setShowChecklist(false);
-    if (target === "bom" && drawing.bom_id) {
-      navigate(`/engineering/bom-entry/${drawing.bom_id}`);
-    } else if (drawing.from_drf_id) {
-      // Nesting / CAD / Costing di-upload di halaman Work Group (SoDocsPanel)
-      navigate(`/engineering/drf/${drawing.from_drf_id}#so-docs`);
-    }
-  };
 
 function DrfItemPicker({ drawing, onSaved, editable }) {
   const [items, setItems] = React.useState([]);
@@ -206,13 +174,12 @@ function DrfItemPicker({ drawing, onSaved, editable }) {
       <EcnAckPanel drawing={drawing} user={user} onReload={load} />
 
 
-      {/* Info card: assign, prepared_by, from DRF */}
+      {/* Info card: assign, prepared_by, from DRF (tanpa kolom BOM — BOM ada di Work Group) */}
       <Card className="rounded-none border-slate-200 px-3 py-2 bg-slate-50">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
           <Info k="Di-assign ke" v={drawing.assigned_to_name} />
           <Info k="Prepared By" v={drawing.prepared_by} />
           <Info k="Request By (Sales)" v={drawing.request_by_sales} />
-          <Info k="BOM Link" v={drawing.bom_no || <span className="italic text-slate-400">Belum di-link</span>} mono />
         </div>
       </Card>
 
@@ -221,59 +188,61 @@ function DrfItemPicker({ drawing, onSaved, editable }) {
           {/* Feature K — Item DRF & Qty untuk drawing ini (auto-isi qty stamping SO) */}
           <DrfItemPicker drawing={drawing} onSaved={load} editable={isDraft} />
 
-          {/* Section A: Attachments (Upload PDF Drawing, Customer Ref, Extras) */}
+          {/* Section A: Attachments (Upload PDF Drawing, Customer Ref, Extras) — tanpa tombol BOM */}
           <div className="border border-emerald-500">
             <div className="px-3 py-1.5 bg-emerald-600 text-white flex items-center gap-2 text-[12px] uppercase tracking-widest font-bold">
               <Paperclip size={14} weight="bold" /> Upload Dokumen Drawing
             </div>
             <div className="p-3">
-              <DrawingAttachmentsPanel drawing={drawing} onDrawingUpdated={() => load()} editable={isDraft} />
+              <DrawingAttachmentsPanel drawing={drawing} onDrawingUpdated={() => load()} editable={isDraft} hideBomLink />
             </div>
           </div>
 
-          {/* BOM info strip — pointer ke Work Group */}
-          <div className="border border-amber-400 bg-amber-50/60 px-3 py-2 flex flex-wrap items-center gap-2 text-xs text-slate-700" data-testid="wo-bom-note">
-            <Package size={15} weight="fill" className="text-amber-600" />
-            <span>Item <b>BOM</b> diisi di halaman <b>Work Group</b> (tab BOM) — 1 BOM bersama untuk semua drawing pada SO ini.</span>
-            {drawing.from_drf_id && (
-              <button
-                onClick={() => navigate(`/engineering/drf/${drawing.from_drf_id}`)}
-                className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold uppercase tracking-widest"
-                data-testid="wo-goto-workgroup-bom"
-              >
-                Buka Work Group →
-              </button>
-            )}
-          </div>
-
-          {/* Section B: Submit for approval — satu gerbang final */}
+          {/* Section B: TTD Prepared By — SIMPAN saja (submit ke Eng Leader dari Work Group) */}
           {isDraft && (
-            <div className="border border-sky-500">
-              <div className="px-3 py-1.5 bg-sky-600 text-white flex items-center gap-2 text-[12px] uppercase tracking-widest font-bold">
-                <PaperPlaneRight size={14} weight="bold" /> TTD Prepared By &amp; Submit ke Eng Head
+            <div className={`border ${preparedSigned ? "border-emerald-500" : "border-sky-500"}`}>
+              <div className={`px-3 py-1.5 ${preparedSigned ? "bg-emerald-600" : "bg-sky-600"} text-white flex items-center gap-2 text-[12px] uppercase tracking-widest font-bold`}>
+                <Signature size={14} weight="bold" /> TTD Prepared By (Engineer)
               </div>
-              <div className="p-3 bg-sky-50 flex flex-wrap items-center justify-between gap-3">
+              <div className={`p-3 ${preparedSigned ? "bg-emerald-50" : "bg-sky-50"} flex flex-wrap items-center justify-between gap-3`}>
                 <div className="text-xs text-slate-700 flex-1 min-w-[220px]">
-                  Ini <b>satu-satunya</b> tombol Submit ke Engineering. Sistem <b>memverifikasi kelengkapan</b>
-                  (PDF drawing, kategori kerja, dan BOM) sebelum dikirim. BOM cukup <b>disimpan</b> di Work Group — tanpa submit terpisah.
-                  {!drawing.file_id && (
-                    <div className="mt-1 text-rose-700 font-bold">⚠ Upload PDF Drawing dulu sebelum submit.</div>
-                  )}
-                  {drawing.file_id && !hasWorkCat && (
-                    <div className="mt-1 text-rose-700 font-bold">⚠ Pilih Kategori Pekerjaan (SIMPLE / MODERATE / COMPLEX) dulu sebelum submit.</div>
+                  {preparedSigned ? (
+                    <span className="flex items-center gap-1.5 text-emerald-800 font-semibold">
+                      <CheckCircle size={16} weight="fill" /> Sudah TTD Prepared By{drawing.prepared_by ? ` oleh ${drawing.prepared_by}` : ""}.
+                      <span className="font-normal text-slate-600">Submit ke Eng Leader dilakukan dari <b>Work Group</b> (bisa pilih sebagian drawing).</span>
+                    </span>
+                  ) : (
+                    <span>
+                      TTD di posisi yang dipilih pada PDF drawing, lalu <b>Simpan</b>. Status tetap DRAFT — <b>submit ke Eng Leader</b> dilakukan terpisah dari halaman <b>Work Group</b>.
+                      {!drawing.file_id && (
+                        <div className="mt-1 text-rose-700 font-bold">⚠ Upload PDF Drawing dulu sebelum TTD.</div>
+                      )}
+                      {drawing.file_id && !hasWorkCat && (
+                        <div className="mt-1 text-rose-700 font-bold">⚠ Pilih Kategori Pekerjaan (SIMPLE / MODERATE / COMPLEX) dulu sebelum TTD.</div>
+                      )}
+                    </span>
                   )}
                 </div>
-                <Button
-                  onClick={handleSubmitClick}
-                  disabled={!canSubmit || checkingFinal}
-                  className="rounded-none bg-sky-700 hover:bg-sky-800 text-white h-10 px-6 text-sm disabled:opacity-40 transition-colors duration-150 active:translate-y-[1px]"
-                  data-testid="wo-ttd-submit-btn"
-                >
-                  {checkingFinal
-                    ? <ArrowClockwise size={16} className="animate-spin mr-2" />
-                    : <PaperPlaneRight size={16} weight="bold" className="mr-2" />}
-                  TTD &amp; Submit
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => setShowPreparedSig(true)}
+                    disabled={!canSignPrepared}
+                    className={`rounded-none text-white h-10 px-6 text-sm disabled:opacity-40 transition-colors duration-150 active:translate-y-[1px] ${preparedSigned ? "bg-emerald-700 hover:bg-emerald-800" : "bg-sky-700 hover:bg-sky-800"}`}
+                    data-testid="wo-ttd-prepared-btn"
+                  >
+                    <Signature size={16} weight="bold" className="mr-2" />
+                    {preparedSigned ? "Ubah / TTD Ulang" : "TTD Prepared By"}
+                  </Button>
+                  {preparedSigned && drawing.from_drf_id && (
+                    <button
+                      onClick={() => navigate(`/engineering/drf/${drawing.from_drf_id}`)}
+                      className="inline-flex items-center gap-1 px-3 h-10 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold uppercase tracking-widest"
+                      data-testid="wo-goto-submit"
+                    >
+                      Submit di Work Group →
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -295,22 +264,14 @@ function DrfItemPicker({ drawing, onSaved, editable }) {
         </Card>
       )}
 
-      {showSubmitSig && (
+      {showPreparedSig && (
         <SignaturePlacementModal
           drawing={drawing}
-          stage="submit"
-          onDone={() => { setShowSubmitSig(false); load(); }}
-          onClose={() => setShowSubmitSig(false)}
+          stage="prepared"
+          onDone={() => { setShowPreparedSig(false); load(); }}
+          onClose={() => setShowPreparedSig(false)}
         />
       )}
-
-      <FinalSubmitChecklistDialog
-        open={showChecklist}
-        status={wgStatus}
-        onClose={() => setShowChecklist(false)}
-        onProceed={() => { setShowChecklist(false); setShowSubmitSig(true); }}
-        onGoto={gotoDoc}
-      />
     </div>
   );
 }

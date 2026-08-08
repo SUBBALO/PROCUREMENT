@@ -1,22 +1,38 @@
 [
   {
-    "content": "Refactor WorkOrderView in BomEntryGridPage.jsx → accept {bomId, embedded}, export it, guard nav on error, conditional header/action-bar chrome",
+    "content": "Work Group 2 tabs + embeddable BOM + minimalist; remove Nesting/Extra chip",
     "status": "completed"
   },
   {
-    "content": "Restructure EngineeringDrfWorkPage.jsx (Work Group): add group-level Tabs (Drawing & Upload | BOM), embed BOM grid in BOM tab, make minimalist",
+    "content": "Backend: /bom/by-so + /bom/add-part (multi-BOM parts -P{n})",
     "status": "completed"
   },
   {
-    "content": "Simplify per-drawing EngineeringWorkOrderPage.jsx: remove BOM tab, keep single Drawing & Upload + Submit gate, make compact",
+    "content": "Backend: /drawings/{id}/sign-prepared + submit placement fallback",
     "status": "completed"
   },
   {
-    "content": "esbuild/yarn build check + fix compile errors",
+    "content": "Modal 'prepared' stage; per-drawing TTD Prepared (save-only), remove submit/checklist",
+    "status": "completed"
+  },
+  {
+    "content": "Work Group BOM sub-tabs Part1/Part2 + Tambah BOM; embedded shows all SO drawings",
+    "status": "completed"
+  },
+  {
+    "content": "Work Group partial-submit panel (checkboxes) to Eng Leader",
+    "status": "completed"
+  },
+  {
+    "content": "Per-drawing: remove BOM Link column + Isi Data BOM button (hideBomLink); colored tab boxes",
+    "status": "completed"
+  },
+  {
+    "content": "Run testing_agent_v3 for full Work Group/Work Order + BOM multi-part + partial submit flow",
     "status": "in_progress"
   },
   {
-    "content": "Screenshot both routes + run testing_agent_v3 for Work Group/Work Order flow",
+    "content": "Cleanup qa_shot user + test artifacts",
     "status": "pending"
   }
 ]

@@ -2128,6 +2128,46 @@ def _apply_placement_to_stamp(stamp: dict, payload) -> None:
         if payload.stamp_size: stamp["size"] = str(payload.stamp_size).upper()
 
 
+@router.post("/drawings/{drawing_id}/sign-prepared")
+async def drawing_sign_prepared(
+    drawing_id: str,
+    payload: ApprovalActionIn = None,
+    current: dict = Depends(get_current_user),
+):
+    """Engineer TTD 'Prepared By' pada posisi terpilih lalu SIMPAN (status tetap draft).
+    Submit ke Eng Leader dilakukan terpisah dari halaman Work Group (boleh partial)."""
+    drawing = await db.drawings.find_one({"id": drawing_id})
+    if not drawing:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    status = drawing.get("approval_status", "draft")
+    if status != "draft":
+        raise HTTPException(status_code=409, detail=f"Drawing sudah '{status}', tidak bisa TTD Prepared ulang")
+    if not drawing.get("file_id"):
+        raise HTTPException(status_code=400, detail="Upload PDF drawing dulu sebelum TTD")
+    if (drawing.get("work_category") or "").strip().lower() not in ("simple", "moderate", "complex"):
+        raise HTTPException(status_code=400, detail="Pilih Kategori Pekerjaan dulu sebelum TTD")
+    if not is_engineering(current) and not is_admin_like(current):
+        raise HTTPException(status_code=403, detail="Hanya Engineering yang boleh TTD Prepared")
+    if not _can_modify_drawing(current, drawing):
+        raise HTTPException(status_code=403, detail=f"Drawing ini di-assign ke {drawing.get('assigned_to_name','-')}.")
+    stamp = _sig_stamp(current, notes=(payload.notes if payload else ""))
+    stamp["stage"] = "submit"
+    _apply_placement_to_stamp(stamp, payload)
+    if not stamp.get("placements") and stamp.get("x") is None:
+        raise HTTPException(status_code=400, detail="Pilih posisi TTD di PDF dulu")
+    await db.drawings.update_one(
+        {"id": drawing_id},
+        {"$set": {
+            "prepared_signature": stamp,
+            "prepared_signed": True,
+            "prepared_by": stamp["name"],
+            "prepared_signed_at": _now_iso(),
+        }},
+    )
+    await log_action(current, "drawing_sign_prepared", "drawings", drawing_id, {"drawing_no": drawing.get("drawing_no")})
+    return {"success": True, "prepared_signed": True, "signed_by": stamp["name"], "approval_status": "draft"}
+
+
 @router.post("/drawings/{drawing_id}/submit-for-approval")
 async def drawing_submit_for_approval(
     drawing_id: str,
@@ -2158,6 +2198,18 @@ async def drawing_submit_for_approval(
     stamp["stage"] = "submit"
     # Iter 22/40 — Prepared By TTD digital di posisi terpilih (dukung per-halaman placements)
     _apply_placement_to_stamp(stamp, payload)
+    # Alur baru: TTD Prepared By disimpan lebih dulu (endpoint sign-prepared) lalu submit
+    # dari Work Group (bisa partial). Bila submit tidak mengirim posisi, pakai posisi TTD
+    # yang sudah disimpan saat Prepared By.
+    if not stamp.get("placements") and stamp.get("x") is None:
+        prev = drawing.get("prepared_signature") or {}
+        if prev.get("placements"):
+            stamp["placements"] = prev["placements"]
+        for _k in ("x", "y", "page", "size"):
+            if prev.get(_k) is not None:
+                stamp[_k] = prev[_k]
+        if prev.get("notes") and not stamp.get("notes"):
+            stamp["notes"] = prev["notes"]
 
     submitter_is_leader = is_eng_head(current)
 

@@ -1557,7 +1557,7 @@ function SOAutocompleteInput({ value, onChange, testid, required }) {
 
 /* ============ ATTACHMENTS PANEL (inline in DrawingForm) ============ */
 
-export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated, editable = true }) {
+export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated, editable = true, hideBomLink = false }) {
   const [bomAttachments, setBomAttachments] = useState({ drawing: [], nesting: [], costing: [] });
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -2008,7 +2008,7 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated, editable = 
           📎 File Attachments — {editable ? "Upload & Preview" : "Preview"}
         </div>
         <div className="flex items-center gap-2">
-          {activeDwg.bom_id && (
+          {!hideBomLink && activeDwg.bom_id && (
             <a
               href={`/engineering/bom-entry/${activeDwg.bom_id}`}
               target="_blank"
@@ -2020,7 +2020,7 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated, editable = 
               {editable ? "➕ Isi Data BOM" : "👁 Lihat BOM"} {activeDwg.bom_no ? `(${activeDwg.bom_no})` : ""}
             </a>
           )}
-          {!activeDwg.bom_id && editable && (
+          {!hideBomLink && !activeDwg.bom_id && editable && (
             <div className="text-[10px] text-amber-700 italic">
               Nesting &amp; Costing memerlukan Link BOM — set di form saat register.
             </div>

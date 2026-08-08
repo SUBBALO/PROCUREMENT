@@ -965,6 +965,7 @@ export function WorkOrderView({ bomId: propBomId, embedded = false } = {}) {
 
   const [bom, setBom] = useState(null);
   const [linkedDrawings, setLinkedDrawings] = useState([]);
+  const [allSoDrawings, setAllSoDrawings] = useState([]);
   const [attachments, setAttachments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([emptyRow()]);
@@ -1041,12 +1042,15 @@ export function WorkOrderView({ bomId: propBomId, embedded = false } = {}) {
         weight_kg: it.weight_kg ?? "", purchase_due_date: it.purchase_due_date || "", remark: it.remark || "",
       }));
       setRows(its.length ? [...its, emptyRow()] : [emptyRow()]);
-      // Fetch linked drawings by SO
+      // Fetch drawings by SO — tampilkan SEMUA drawing di SO (1 SO bisa banyak drawing)
       if (bomData.so_no) {
         try {
-          const { data: drs } = await api.get("/drawings", { params: { so_no: bomData.so_no, limit: 30 } });
-          setLinkedDrawings((drs.items || []).filter((d) => d.bom_id === bomData.id));
-        } catch { /* linked drawings optional */ }
+          const { data: drs } = await api.get("/drawings", { params: { so_no: bomData.so_no, limit: 50 } });
+          const all = drs.items || [];
+          setAllSoDrawings(all);
+          // linkedDrawings (khusus bom_id ini) tetap dipakai untuk logika lock
+          setLinkedDrawings(all.filter((d) => d.bom_id === bomData.id));
+        } catch { /* drawings optional */ }
       }
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal muat BOM");
@@ -1280,7 +1284,7 @@ export function WorkOrderView({ bomId: propBomId, embedded = false } = {}) {
 
       {/* SECTION 1 - Info Drawing / SO */}
       <SectionCard title="1. Info Drawing / Order" icon={FileText}>
-        <InfoDrawingSection bom={bom} canEdit={canEditItems} onSaved={loadAll} linkedDrawings={linkedDrawings} />
+        <InfoDrawingSection bom={bom} canEdit={canEditItems} onSaved={loadAll} linkedDrawings={allSoDrawings.length ? allSoDrawings : linkedDrawings} />
       </SectionCard>
 
       {/* SECTION 2 - BOM Grid (Attachments dipindah ke halaman "Upload & TTD" per-drawing) */}

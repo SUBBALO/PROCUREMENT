@@ -242,11 +242,11 @@ export default function EngineeringDrfWorkPage() {
 
       {/* Feature: 2 tab level GRUP — Drawing & Upload | BOM (1 BOM per SO) */}
       <Tabs defaultValue="drawing" className="w-full">
-        <TabsList className="rounded-none bg-slate-100 border border-slate-200 p-0 h-auto">
-          <TabsTrigger value="drawing" className="rounded-none data-[state=active]:bg-teal-600 data-[state=active]:text-white px-4 py-1.5 text-xs font-bold uppercase tracking-wider" data-testid="wg-tab-drawing">
+        <TabsList className="rounded-none bg-transparent border-0 p-0 h-auto gap-1.5">
+          <TabsTrigger value="drawing" className="rounded-none border border-teal-300 bg-teal-50 text-teal-800 data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:border-teal-600 px-4 py-1.5 text-xs font-bold uppercase tracking-wider" data-testid="wg-tab-drawing">
             Drawing &amp; Upload
           </TabsTrigger>
-          <TabsTrigger value="bom" className="rounded-none data-[state=active]:bg-amber-600 data-[state=active]:text-white px-4 py-1.5 text-xs font-bold uppercase tracking-wider" data-testid="wg-tab-bom">
+          <TabsTrigger value="bom" className="rounded-none border border-amber-300 bg-amber-50 text-amber-800 data-[state=active]:bg-amber-600 data-[state=active]:text-white data-[state=active]:border-amber-600 px-4 py-1.5 text-xs font-bold uppercase tracking-wider" data-testid="wg-tab-bom">
             {sharedBomNo ? `BOM · ${sharedBomNo}` : "BOM"}
           </TabsTrigger>
         </TabsList>
@@ -362,23 +362,18 @@ export default function EngineeringDrfWorkPage() {
 
       {drawings.length > 0 && canEdit && (
         <div className="border-2 border-sky-500 bg-sky-50 p-3 text-xs text-slate-700">
-          <b>Langkah berikutnya:</b> untuk tiap drawing klik <b>Upload &amp; TTD</b> → upload PDF MKS, lalu <b>TTD &amp; Submit ke Eng Leader</b>. Isi item BOM di tab <b>BOM</b> (1 BOM untuk semua drawing). Submit final memverifikasi drawing + BOM sekaligus.
+          <b>Langkah berikutnya:</b> untuk tiap drawing klik <b>Upload &amp; TTD</b> → upload PDF MKS, lalu <b>TTD Prepared By</b> (simpan). Isi item BOM di tab <b>BOM</b>. Kalau sudah siap, centang drawing di panel <b>Submit ke Eng Leader</b> di bawah (boleh sebagian).
         </div>
+      )}
+
+      {canWork && drawings.length > 0 && (
+        <SubmitToLeaderPanel drawings={drawings} onDone={load} />
       )}
         </TabsContent>
 
-        {/* TAB 2 — BOM (embedded editable grid, Simpan saja · tanpa Submit) */}
+        {/* TAB 2 — BOM (multi-part sub-tab: Part 1 / Part 2 / + Tambah BOM) */}
         <TabsContent value="bom" className="mt-3">
-          {sharedBomId ? (
-            <div className="border-2 border-amber-500 p-3" data-testid="wg-bom-embed">
-              <WorkOrderView bomId={sharedBomId} embedded />
-            </div>
-          ) : (
-            <div className="border-2 border-dashed border-amber-400 bg-amber-50/50 p-8 text-center text-sm text-slate-600" data-testid="wg-bom-empty">
-              <Package size={28} weight="fill" className="mx-auto mb-2 text-amber-500" />
-              BOM bersama belum terbentuk. Generate minimal 1 nomor drawing di tab <b>Drawing &amp; Upload</b> — BOM akan otomatis dibuat dan muncul di sini.
-            </div>
-          )}
+          <BomTabsPanel soNo={drf.so_no} canEdit={canWork} />
         </TabsContent>
       </Tabs>
 
@@ -945,4 +940,194 @@ function StatusBadge({ status }) {
   };
   const m = map[status] || map.draft;
   return <span className={`px-2 py-1 text-[9px] font-bold uppercase tracking-widest border ${m.cls}`}>{m.label}</span>;
+}
+
+
+/* ============ BOM multi-part sub-tab (Part 1 / Part 2 / + Tambah BOM) ============ */
+function BomTabsPanel({ soNo, canEdit }) {
+  const [boms, setBoms] = useState([]);
+  const [active, setActive] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+
+  const loadBoms = useCallback(async () => {
+    if (!soNo) { setBoms([]); setLoading(false); return; }
+    setLoading(true);
+    try {
+      const { data } = await api.get("/bom/by-so", { params: { so_no: soNo } });
+      const items = data.items || [];
+      setBoms(items);
+      setActive((prev) => (prev && items.some((b) => b.id === prev) ? prev : (items[0]?.id || "")));
+    } catch {
+      setBoms([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [soNo]);
+
+  useEffect(() => { loadBoms(); }, [loadBoms]);
+
+  const addPart = async () => {
+    setAdding(true);
+    try {
+      const { data } = await api.post("/bom/add-part", { so_no: soNo });
+      toast.success(`BOM Part baru dibuat: ${data.bom_no}`);
+      await loadBoms();
+      setActive(data.id);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal menambah BOM part");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  if (loading) return <div className="p-8 text-center text-slate-400 text-sm">Memuat BOM...</div>;
+
+  if (boms.length === 0) {
+    return (
+      <div className="border-2 border-dashed border-amber-400 bg-amber-50/50 p-8 text-center text-sm text-slate-600" data-testid="wg-bom-empty">
+        <Package size={28} weight="fill" className="mx-auto mb-2 text-amber-500" />
+        BOM belum terbentuk. Generate minimal 1 nomor drawing di tab <b>Drawing &amp; Upload</b> — BOM Part 1 otomatis dibuat.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3" data-testid="wg-bom-embed">
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 pb-2">
+        {boms.map((b, i) => (
+          <button
+            key={b.id}
+            type="button"
+            onClick={() => setActive(b.id)}
+            className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider border transition-colors duration-150 ${active === b.id ? "bg-amber-600 text-white border-amber-600" : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"}`}
+            data-testid={`wg-bom-part-${b.part_no || i + 1}`}
+          >
+            BOM Part {b.part_no || i + 1} · <span className="font-mono normal-case">{b.bom_no}</span>
+          </button>
+        ))}
+        {canEdit && (
+          <button
+            type="button"
+            onClick={addPart}
+            disabled={adding}
+            className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider border border-dashed border-emerald-500 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 transition-colors duration-150"
+            data-testid="wg-bom-add-part"
+          >
+            <Plus size={12} weight="bold" className="inline mr-1" />{adding ? "Menambah..." : "Tambah BOM"}
+          </button>
+        )}
+      </div>
+      {active && (
+        <div className="border-2 border-amber-500 p-3">
+          <WorkOrderView key={active} bomId={active} embedded />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============ Submit ke Eng Leader — partial submit dengan checkbox ============ */
+function SubmitToLeaderPanel({ drawings, onDone }) {
+  const draftDrawings = (drawings || []).filter((d) => (d.approval_status || "draft") === "draft");
+  const [sel, setSel] = useState({});
+  const [busy, setBusy] = useState(false);
+
+  const eligible = (d) =>
+    !!d.file_id &&
+    ["simple", "moderate", "complex"].includes((d.work_category || "").toLowerCase()) &&
+    !!d.prepared_signed;
+
+  const eligibleIds = draftDrawings.filter(eligible).map((d) => d.id);
+  const selectedIds = Object.keys(sel).filter((k) => sel[k]);
+  const allSelected = eligibleIds.length > 0 && eligibleIds.every((id) => sel[id]);
+
+  if (draftDrawings.length === 0) {
+    return (
+      <div className="border-2 border-emerald-500 bg-emerald-50 p-3 flex items-center gap-2 text-sm text-emerald-800" data-testid="wg-submit-done">
+        <CheckCircle size={18} weight="fill" /> Semua drawing sudah di-submit ke Eng Leader.
+      </div>
+    );
+  }
+
+  const toggleAll = () => {
+    if (allSelected) { setSel({}); return; }
+    const n = {};
+    eligibleIds.forEach((id) => { n[id] = true; });
+    setSel(n);
+  };
+
+  const submit = async () => {
+    if (selectedIds.length === 0) { toast.error("Pilih minimal 1 drawing yang siap disubmit"); return; }
+    setBusy(true);
+    let ok = 0;
+    for (const id of selectedIds) {
+      try {
+        await api.post(`/drawings/${id}/submit-for-approval`, {});
+        ok++;
+      } catch (e) {
+        toast.error(e.response?.data?.detail || "Gagal submit 1 drawing");
+      }
+    }
+    if (ok > 0) toast.success(`${ok} drawing disubmit ke Eng Leader`);
+    setSel({});
+    setBusy(false);
+    onDone?.();
+  };
+
+  return (
+    <div className="border-2 border-indigo-600" data-testid="wg-submit-leader-panel">
+      <div className="px-3 py-2 bg-indigo-600 text-white flex items-center gap-2 text-[11px] uppercase tracking-widest font-bold">
+        <PaperPlaneRight size={15} weight="bold" /> Submit ke Eng Leader
+        <span className="ml-auto font-normal normal-case opacity-90 text-[10px]">Centang drawing yang siap — boleh sebagian (partial)</span>
+      </div>
+      <div className="p-3 bg-indigo-50/60 space-y-2">
+        <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer w-fit">
+          <input type="checkbox" className="accent-indigo-600" checked={allSelected} onChange={toggleAll} disabled={eligibleIds.length === 0} data-testid="wg-submit-selectall" />
+          Pilih semua yang siap ({eligibleIds.length})
+        </label>
+        <div className="divide-y divide-slate-200 border border-slate-200 bg-white">
+          {draftDrawings.map((d) => {
+            const ok = eligible(d);
+            const cat = ["simple", "moderate", "complex"].includes((d.work_category || "").toLowerCase());
+            return (
+              <label
+                key={d.id}
+                className={`flex items-center gap-2 p-2 text-xs ${ok ? "cursor-pointer hover:bg-indigo-50/50" : "opacity-70"}`}
+                data-testid={`wg-submit-row-${d.drawing_no}`}
+              >
+                <input
+                  type="checkbox"
+                  className="accent-indigo-600"
+                  checked={!!sel[d.id]}
+                  disabled={!ok}
+                  onChange={() => setSel((p) => ({ ...p, [d.id]: !p[d.id] }))}
+                  data-testid={`wg-submit-cb-${d.drawing_no}`}
+                />
+                <span className="font-mono font-bold text-slate-900">{d.drawing_no}</span>
+                <span className="text-slate-500 truncate max-w-[220px]">{d.title || d.project_name || ""}</span>
+                <span className="ml-auto flex items-center gap-2">
+                  {!d.file_id && <span className="text-[10px] text-rose-600 font-bold">Belum PDF</span>}
+                  {d.file_id && !cat && <span className="text-[10px] text-rose-600 font-bold">Belum Kategori</span>}
+                  {d.file_id && cat && !d.prepared_signed && <span className="text-[10px] text-amber-600 font-bold">Belum TTD</span>}
+                  {ok && <span className="text-[10px] text-emerald-700 font-bold flex items-center gap-0.5"><CheckCircle size={12} weight="fill" />Siap</span>}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <div className="flex justify-end">
+          <Button
+            onClick={submit}
+            disabled={busy || selectedIds.length === 0}
+            className="rounded-none bg-indigo-700 hover:bg-indigo-800 text-white h-10 px-6 disabled:opacity-40 transition-colors duration-150 active:translate-y-[1px]"
+            data-testid="wg-submit-btn"
+          >
+            <PaperPlaneRight size={15} weight="bold" className="mr-2" />
+            {busy ? "Submit..." : `Submit Terpilih (${selectedIds.length}) ke Eng Leader`}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }

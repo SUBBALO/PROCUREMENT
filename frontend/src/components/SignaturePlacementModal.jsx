@@ -103,12 +103,19 @@ export default function SignaturePlacementModal({ drawing, stage, onDone, onClos
       };
       if (isSalesStage) payload.so_stamp_data = soData;
       // Iter 22 — stage "submit" pakai endpoint submit-for-approval (Prepared By TTD)
-      const url = stage === "submit"
-        ? `/drawings/${drawing.id}/submit-for-approval`
-        : `/drawings/${drawing.id}/approve/${stage}`;
+      // Alur baru — stage "prepared": TTD Prepared By lalu SIMPAN saja (status tetap draft)
+      const url = stage === "prepared"
+        ? `/drawings/${drawing.id}/sign-prepared`
+        : stage === "submit"
+          ? `/drawings/${drawing.id}/submit-for-approval`
+          : `/drawings/${drawing.id}/approve/${stage}`;
       const { data } = await api.post(url, payload);
-      const label = stage === "submit" ? "Prepared By" : stage;
-      toast.success(`✓ TTD ${label} berhasil → status: ${data.approval_status}`);
+      if (stage === "prepared") {
+        toast.success("✓ TTD Prepared By tersimpan — lanjut Submit ke Eng Leader dari Work Group");
+      } else {
+        const label = stage === "submit" ? "Prepared By" : stage;
+        toast.success(`✓ TTD ${label} berhasil → status: ${data.approval_status}`);
+      }
       onDone?.(data);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal approve");
@@ -116,6 +123,7 @@ export default function SignaturePlacementModal({ drawing, stage, onDone, onClos
   };
 
   const STAGE_LABEL = {
+    prepared: "Prepared By — Engineer (Simpan)",
     submit: "Prepared By — Engineer",
     eng_head: "Engineering Head (Riski)",
     qc: "Quality Control (QC)",
@@ -153,7 +161,7 @@ export default function SignaturePlacementModal({ drawing, stage, onDone, onClos
             className="px-3 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed"
             data-testid="sig-confirm-approve-btn"
           >
-            {busy ? "..." : "✓ Konfirmasi & TTD"}
+            {busy ? "..." : (stage === "prepared" ? "✓ Simpan TTD" : "✓ Konfirmasi & TTD")}
           </button>
         </div>
       </div>

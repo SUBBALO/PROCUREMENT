@@ -1,353 +1,266 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for Engineering Portal & Features
-Tests all Engineering menu endpoints and new features
+Backend API Testing for Engineering Work Order / Work Group Revision
+Tests the new flow: TTD Prepared By (save-only) + partial submit + multi-part BOM
 """
 import requests
 import sys
+import os
 from datetime import datetime
 
-BASE_URL = "https://error-fix-dev.preview.emergentagent.com/api"
+# Get backend URL from frontend/.env
+BACKEND_URL = "https://error-fix-dev.preview.emergentagent.com"
 
-class EngineeringAPITester:
+class TestRunner:
     def __init__(self):
+        self.base_url = f"{BACKEND_URL}/api"
         self.session = requests.Session()
-        self.token = None
         self.tests_run = 0
         self.tests_passed = 0
-        self.cookies = {}
-
-    def test(self, name, method, endpoint, expected_status, data=None, json_data=None, use_auth=True):
-        """Run a single API test"""
-        url = f"{BASE_URL}/{endpoint}"
-        headers = {'Content-Type': 'application/json'}
+        self.created_bom_ids = []  # Track created BOMs for cleanup
+        self.modified_drawings = []  # Track modified drawings for revert
         
+    def log(self, msg, level="INFO"):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        print(f"[{timestamp}] {level}: {msg}")
+        
+    def test(self, name, func):
+        """Run a single test"""
         self.tests_run += 1
-        print(f"\n🔍 Test {self.tests_run}: {name}")
-        print(f"   {method} {endpoint}")
+        self.log(f"Testing: {name}")
+        try:
+            func()
+            self.tests_passed += 1
+            self.log(f"✅ PASSED: {name}", "PASS")
+            return True
+        except AssertionError as e:
+            self.log(f"❌ FAILED: {name} - {str(e)}", "FAIL")
+            return False
+        except Exception as e:
+            self.log(f"❌ ERROR: {name} - {str(e)}", "ERROR")
+            return False
+    
+    def login(self):
+        """Login with test credentials"""
+        self.log("Logging in as qa_shot...")
+        resp = self.session.post(
+            f"{self.base_url}/auth/login",
+            json={"username": "qa_shot", "password": "QaShot#2026"}
+        )
+        assert resp.status_code == 200, f"Login failed: {resp.status_code} - {resp.text}"
+        self.log("✅ Login successful")
+        
+    def cleanup(self):
+        """Clean up test data"""
+        self.log("Cleaning up test data...")
+        
+        # Delete created BOMs
+        for bom_id in self.created_bom_ids:
+            try:
+                resp = self.session.delete(f"{self.base_url}/bom/{bom_id}")
+                if resp.status_code in [200, 204]:
+                    self.log(f"Deleted BOM: {bom_id}")
+                else:
+                    self.log(f"Failed to delete BOM {bom_id}: {resp.status_code}", "WARN")
+            except Exception as e:
+                self.log(f"Error deleting BOM {bom_id}: {e}", "WARN")
+        
+        # Revert modified drawings
+        for drawing_data in self.modified_drawings:
+            try:
+                drawing_id = drawing_data['id']
+                # Revert to draft status
+                resp = self.session.post(
+                    f"{self.base_url}/drawings/{drawing_id}/revert-to-draft",
+                    json={}
+                )
+                if resp.status_code in [200, 404]:  # 404 is ok if endpoint doesn't exist
+                    self.log(f"Reverted drawing: {drawing_id}")
+                else:
+                    self.log(f"Failed to revert drawing {drawing_id}: {resp.status_code}", "WARN")
+            except Exception as e:
+                self.log(f"Error reverting drawing {drawing_id}: {e}", "WARN")
+        
+        self.log("Cleanup completed")
+    
+    # ==================== Backend API Tests ====================
+    
+    def test_bom_by_so(self):
+        """Test GET /api/bom/by-so?so_no=SO-TEST-9001"""
+        resp = self.session.get(f"{self.base_url}/bom/by-so", params={"so_no": "SO-TEST-9001"})
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
+        
+        data = resp.json()
+        assert "items" in data, "Response should have 'items' field"
+        items = data["items"]
+        
+        self.log(f"Found {len(items)} BOM(s) for SO-TEST-9001")
+        
+        # Verify structure
+        if len(items) > 0:
+            bom = items[0]
+            assert "id" in bom, "BOM should have 'id' field"
+            assert "bom_no" in bom, "BOM should have 'bom_no' field"
+            assert "part_no" in bom or "so_no" in bom, "BOM should have 'part_no' or 'so_no' field"
+            assert "items_count" in bom, "BOM should have 'items_count' field"
+            self.log(f"BOM structure verified: {bom['bom_no']}")
+    
+    def test_add_bom_part(self):
+        """Test POST /api/bom/add-part - creates new BOM part with -P{n} suffix"""
+        resp = self.session.post(
+            f"{self.base_url}/bom/add-part",
+            json={"so_no": "SO-TEST-9001"}
+        )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        
+        data = resp.json()
+        assert "id" in data, "Response should have 'id' field"
+        assert "bom_no" in data, "Response should have 'bom_no' field"
+        
+        bom_no = data["bom_no"]
+        bom_id = data["id"]
+        
+        # Verify -P{n} suffix
+        assert "-P" in bom_no, f"BOM number should have -P suffix, got: {bom_no}"
+        self.log(f"Created BOM part: {bom_no} (ID: {bom_id})")
+        
+        # Track for cleanup
+        self.created_bom_ids.append(bom_id)
+        
+        # Verify inheritance from part-1
+        assert "customer" in data or "project_name" in data, "Should inherit metadata from part-1"
+        assert data.get("engineering_status") == "draft", "New BOM part should be draft"
+        
+        self.log(f"BOM part verified: status={data.get('engineering_status')}, customer={data.get('customer')}")
+    
+    def test_sign_prepared(self):
+        """Test POST /api/drawings/{drawing_id}/sign-prepared - saves signature, status stays draft"""
+        # Use drawing: 5c1bf451-6d4a-4354-bc86-2512cd8ebd84
+        drawing_id = "5c1bf451-6d4a-4354-bc86-2512cd8ebd84"
+        
+        # First, get drawing to check current state
+        resp = self.session.get(f"{self.base_url}/drawings/{drawing_id}")
+        if resp.status_code != 200:
+            self.log(f"Drawing {drawing_id} not found, skipping test", "WARN")
+            return
+        
+        drawing = resp.json()
+        original_status = drawing.get("approval_status", "draft")
+        has_file = drawing.get("file_id") is not None
+        has_category = drawing.get("work_category") in ["simple", "moderate", "complex"]
+        
+        self.log(f"Drawing state: file={has_file}, category={has_category}, status={original_status}")
+        
+        if not has_file or not has_category:
+            self.log("Drawing missing file_id or work_category, cannot test sign-prepared", "WARN")
+            return
+        
+        # Track for revert
+        self.modified_drawings.append({"id": drawing_id, "original_status": original_status})
+        
+        # Sign prepared with placement
+        resp = self.session.post(
+            f"{self.base_url}/drawings/{drawing_id}/sign-prepared",
+            json={
+                "placement": {
+                    "page": 1,
+                    "x": 100,
+                    "y": 100,
+                    "width": 150,
+                    "height": 50
+                }
+            }
+        )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        
+        data = resp.json()
+        assert data.get("prepared_signed") == True, "prepared_signed should be True"
+        assert data.get("approval_status") == "draft", f"Status should stay draft, got: {data.get('approval_status')}"
+        
+        self.log(f"✅ Signature saved, status remains: {data.get('approval_status')}")
+    
+    def test_submit_without_placement(self):
+        """Test POST /api/drawings/{drawing_id}/submit-for-approval without placement - uses saved position"""
+        drawing_id = "5c1bf451-6d4a-4354-bc86-2512cd8ebd84"
+        
+        # Get drawing to check if prepared_signed
+        resp = self.session.get(f"{self.base_url}/drawings/{drawing_id}")
+        if resp.status_code != 200:
+            self.log(f"Drawing {drawing_id} not found, skipping test", "WARN")
+            return
+        
+        drawing = resp.json()
+        if not drawing.get("prepared_signed"):
+            self.log("Drawing not prepared_signed, skipping submit test", "WARN")
+            return
+        
+        # Submit without placement (should use saved position)
+        resp = self.session.post(
+            f"{self.base_url}/drawings/{drawing_id}/submit-for-approval",
+            json={}
+        )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        
+        data = resp.json()
+        new_status = data.get("approval_status")
+        
+        # Status should change to pending_eng_head or pending_qc (depending on submitter role)
+        assert new_status in ["pending_eng_head", "pending_qc"], f"Expected pending status, got: {new_status}"
+        
+        self.log(f"✅ Submit successful, status changed to: {new_status}")
+    
+    def test_route_ordering(self):
+        """Test that /api/bom/by-so and /api/bom/add-part are not shadowed by /api/bom/{bom_id}"""
+        # Test /api/bom/by-so
+        resp1 = self.session.get(f"{self.base_url}/bom/by-so", params={"so_no": "SO-TEST-9001"})
+        assert resp1.status_code == 200, f"/bom/by-so should return 200, got {resp1.status_code}"
+        
+        # Test /api/bom/add-part
+        resp2 = self.session.post(
+            f"{self.base_url}/bom/add-part",
+            json={"so_no": "SO-TEST-9001"}
+        )
+        assert resp2.status_code == 200, f"/bom/add-part should return 200, got {resp2.status_code}"
+        
+        # Track for cleanup
+        if resp2.status_code == 200:
+            data = resp2.json()
+            if "id" in data:
+                self.created_bom_ids.append(data["id"])
+        
+        self.log("✅ Route ordering verified: by-so and add-part not shadowed")
+    
+    def run_all_tests(self):
+        """Run all backend tests"""
+        self.log("=" * 60)
+        self.log("Starting Backend API Tests")
+        self.log("=" * 60)
         
         try:
-            if method == 'GET':
-                response = self.session.get(url, headers=headers, cookies=self.cookies if use_auth else {})
-            elif method == 'POST':
-                if json_data:
-                    response = self.session.post(url, json=json_data, headers=headers, cookies=self.cookies if use_auth else {})
-                else:
-                    response = self.session.post(url, data=data, headers=headers, cookies=self.cookies if use_auth else {})
-            elif method == 'PUT':
-                response = self.session.put(url, json=json_data, headers=headers, cookies=self.cookies if use_auth else {})
-            elif method == 'DELETE':
-                response = self.session.delete(url, headers=headers, cookies=self.cookies if use_auth else {})
-            else:
-                print(f"❌ Unsupported method: {method}")
-                return False
-
-            success = response.status_code == expected_status
-            if success:
-                self.tests_passed += 1
-                print(f"✅ PASS - Status: {response.status_code}")
-                return True, response
-            else:
-                print(f"❌ FAIL - Expected {expected_status}, got {response.status_code}")
-                try:
-                    print(f"   Response: {response.json()}")
-                except Exception:
-                    print(f"   Response: {response.text[:200]}")
-                return False, response
-
-        except Exception as e:
-            print(f"❌ FAIL - Error: {str(e)}")
-            return False, None
-
-    def login(self, username, password):
-        """Login and store cookies"""
-        print(f"\n🔐 Logging in as {username}...")
-        success, response = self.test(
-            f"Login as {username}",
-            "POST",
-            "auth/login",
-            200,
-            json_data={"username": username, "password": password},
-            use_auth=False
-        )
-        if success and response:
-            # Store cookies from response
-            self.cookies = response.cookies.get_dict()
-            print(f"✅ Login successful, cookies stored")
-            return True
-        return False
-
-    def test_engineering_portal_endpoints(self):
-        """Test all Engineering portal menu endpoints"""
-        print("\n" + "="*60)
-        print("TESTING ENGINEERING PORTAL MENU ENDPOINTS")
-        print("="*60)
+            # Login first
+            self.login()
+            
+            # Run tests
+            self.test("GET /api/bom/by-so", self.test_bom_by_so)
+            self.test("POST /api/bom/add-part", self.test_add_bom_part)
+            self.test("Route ordering check", self.test_route_ordering)
+            self.test("POST /api/drawings/{id}/sign-prepared", self.test_sign_prepared)
+            self.test("POST /api/drawings/{id}/submit-for-approval", self.test_submit_without_placement)
+            
+        finally:
+            # Always cleanup
+            self.cleanup()
         
-        # Test main portal endpoints
-        endpoints = [
-            ("Engineering Workload", "GET", "engineering/workload", 200),
-            ("Pending Leader Verification", "GET", "engineering/pending-leader-verification", 200),
-            ("SO Document Tracker", "GET", "drawings", 200),  # SO tracker uses drawings endpoint
-            ("Master List ECN & ECR", "GET", "ecn-register?kind=ecn", 200),
-            ("Internal Engineering Process", "GET", "engineering/process", 200),
-            ("KPI Engineering", "GET", "engineering/kpi", 200),
-            ("Masterlist Inquiry", "GET", "inquiries", 200),
-            ("Engineering Material Costing", "GET", "engineering/material-costing", 200),
-            ("Drawing Master List", "GET", "drawings", 200),
-            ("BOM List", "GET", "bom", 200),
-        ]
-        
-        for name, method, endpoint, expected in endpoints:
-            self.test(name, method, endpoint, expected)
-
-    def test_inquiry_assignment(self):
-        """Test assigning inquiry to eng_leader"""
-        print("\n" + "="*60)
-        print("TESTING INQUIRY ASSIGNMENT TO ENG_LEADER")
-        print("="*60)
-        
-        # First get list of inquiries
-        success, response = self.test(
-            "Get Inquiries List",
-            "GET",
-            "inquiries?status=submitted",
-            200
-        )
-        
-        if success and response:
-            try:
-                data = response.json()
-                inquiries = data.get('items', [])
-                if inquiries:
-                    inquiry_id = inquiries[0].get('id')
-                    print(f"\n📋 Found inquiry: {inquiry_id}")
-                    
-                    # Try to assign to eng_leader (qa_leader_tmp)
-                    # Note: We need to get the user ID first
-                    success2, response2 = self.test(
-                        "Assign Inquiry to Engineering Leader",
-                        "POST",
-                        f"inquiries/{inquiry_id}/assign",
-                        200,
-                        json_data={"assigned_to_role": "engineering"}
-                    )
-                    
-                    if success2:
-                        print("✅ Inquiry assignment to Engineering works")
-                    else:
-                        print("⚠️  Inquiry assignment may need specific user ID")
-                else:
-                    print("ℹ️  No submitted inquiries found to test assignment")
-            except Exception as e:
-                print(f"⚠️  Could not parse inquiry response: {e}")
-
-    def test_drawing_master_list_rev_column(self):
-        """Test Drawing Master List has Rev column"""
-        print("\n" + "="*60)
-        print("TESTING DRAWING MASTER LIST - REV COLUMN")
-        print("="*60)
-        
-        success, response = self.test(
-            "Get Drawings with Rev Info",
-            "GET",
-            "drawings?limit=5",
-            200
-        )
-        
-        if success and response:
-            try:
-                data = response.json()
-                items = data.get('items', [])
-                if items:
-                    first_drawing = items[0]
-                    has_rev_no = 'rev_no' in first_drawing
-                    has_revision = 'revision' in first_drawing
-                    
-                    print(f"\n📊 Drawing fields check:")
-                    print(f"   - has 'rev_no' field: {has_rev_no}")
-                    print(f"   - has 'revision' field: {has_revision}")
-                    
-                    if has_rev_no or has_revision:
-                        print("✅ Drawing Master List has revision tracking")
-                        if has_rev_no:
-                            print(f"   Sample rev_no: {first_drawing.get('rev_no', 0)}")
-                    else:
-                        print("❌ Drawing Master List missing revision fields")
-                else:
-                    print("ℹ️  No drawings found to check Rev column")
-            except Exception as e:
-                print(f"⚠️  Could not parse drawings response: {e}")
-
-    def test_drf_revision_flow(self):
-        """Test Drawing Request Form revision flow (backend)"""
-        print("\n" + "="*60)
-        print("TESTING DRF REVISION FLOW (BACKEND)")
-        print("="*60)
-        
-        # Get list of DRFs
-        success, response = self.test(
-            "Get Drawing Requests",
-            "GET",
-            "drawing-requests",
-            200
-        )
-        
-        if success and response:
-            try:
-                data = response.json()
-                items = data.get('items', [])
-                
-                # Look for a submitted or accepted DRF to test revision
-                test_drf = None
-                for item in items:
-                    if item.get('status') in ['submitted', 'accepted']:
-                        test_drf = item
-                        break
-                
-                if test_drf:
-                    drf_id = test_drf['id']
-                    print(f"\n📋 Testing with DRF: {test_drf.get('form_no', drf_id)}")
-                    
-                    # Test request-revision endpoint
-                    success2, response2 = self.test(
-                        "Request DRF Revision",
-                        "POST",
-                        f"drawing-requests/{drf_id}/request-revision",
-                        200,
-                        json_data={"reason": "ZZTEST - Testing revision flow"}
-                    )
-                    
-                    if success2:
-                        print("✅ DRF revision request works")
-                        
-                        # Test approve-revision endpoint (as admin/supervisor)
-                        # This would need admin login, skipping for now
-                        print("ℹ️  Approve-revision requires admin/supervisor role")
-                    else:
-                        print("⚠️  DRF revision request may have failed (could be permission issue)")
-                else:
-                    print("ℹ️  No suitable DRF found to test revision flow")
-            except Exception as e:
-                print(f"⚠️  Could not test DRF revision: {e}")
-
-    def test_bom_procurement_chain(self):
-        """Test BOM procurement approval chain"""
-        print("\n" + "="*60)
-        print("TESTING BOM PROCUREMENT APPROVAL CHAIN")
-        print("="*60)
-        
-        # Get approved BOMs
-        success, response = self.test(
-            "Get Approved BOMs",
-            "GET",
-            "bom?engineering_status=approved&limit=5",
-            200
-        )
-        
-        if success and response:
-            try:
-                data = response.json()
-                items = data.get('items', [])
-                
-                if items:
-                    # Check if BOM has procurement_status field
-                    first_bom = items[0]
-                    has_procurement = 'procurement_status' in first_bom or 'procurement_signatures' in first_bom
-                    
-                    print(f"\n📊 BOM procurement fields check:")
-                    print(f"   - has procurement tracking: {has_procurement}")
-                    
-                    if has_procurement:
-                        print("✅ BOM has procurement approval chain structure")
-                        print(f"   Sample status: {first_bom.get('procurement_status', 'N/A')}")
-                    else:
-                        print("⚠️  BOM procurement chain fields not found")
-                        
-                    # Test procurement endpoints exist
-                    bom_id = first_bom.get('id')
-                    if bom_id:
-                        # Just check if endpoints exist (may fail due to status/permission)
-                        print("\n🔍 Checking procurement endpoints...")
-                        self.test(
-                            "BOM Procurement Pending Count",
-                            "GET",
-                            "bom/procurement/pending-count",
-                            200
-                        )
-                else:
-                    print("ℹ️  No approved BOMs found to test procurement chain")
-            except Exception as e:
-                print(f"⚠️  Could not test BOM procurement: {e}")
-
-    def test_ecn_scope_endpoints(self):
-        """Test ECN revision with scope (drawing/bom/both)"""
-        print("\n" + "="*60)
-        print("TESTING ECN REVISION SCOPE (BACKEND)")
-        print("="*60)
-        
-        # Get ECN register
-        success, response = self.test(
-            "Get ECN Register",
-            "GET",
-            "ecn-register?kind=ecn&limit=5",
-            200
-        )
-        
-        if success and response:
-            try:
-                data = response.json()
-                items = data.get('items', [])
-                
-                if items:
-                    first_ecn = items[0]
-                    has_scope = 'scope' in first_ecn
-                    
-                    print(f"\n📊 ECN scope field check:")
-                    print(f"   - has 'scope' field: {has_scope}")
-                    
-                    if has_scope:
-                        print("✅ ECN has scope tracking (drawing/bom/both)")
-                        print(f"   Sample scope: {first_ecn.get('scope', 'N/A')}")
-                    else:
-                        print("ℹ️  ECN scope field not found (may be in revision_request)")
-                else:
-                    print("ℹ️  No ECN records found to test scope")
-            except Exception as e:
-                print(f"⚠️  Could not test ECN scope: {e}")
-
-    def print_summary(self):
-        """Print test summary"""
-        print("\n" + "="*60)
-        print("TEST SUMMARY")
-        print("="*60)
-        print(f"Total Tests: {self.tests_run}")
-        print(f"Passed: {self.tests_passed}")
-        print(f"Failed: {self.tests_run - self.tests_passed}")
-        print(f"Success Rate: {(self.tests_passed/self.tests_run*100):.1f}%")
-        print("="*60)
+        # Print summary
+        self.log("=" * 60)
+        self.log(f"Tests completed: {self.tests_passed}/{self.tests_run} passed")
+        self.log("=" * 60)
         
         return 0 if self.tests_passed == self.tests_run else 1
 
-
 def main():
-    tester = EngineeringAPITester()
-    
-    # Login as eng_leader to test Engineering features
-    if not tester.login("qa_leader_tmp", "QaTest12345"):
-        print("❌ Login failed, cannot proceed with tests")
-        return 1
-    
-    # Run all test suites
-    tester.test_engineering_portal_endpoints()
-    tester.test_inquiry_assignment()
-    tester.test_drawing_master_list_rev_column()
-    tester.test_drf_revision_flow()
-    tester.test_bom_procurement_chain()
-    tester.test_ecn_scope_endpoints()
-    
-    # Print summary
-    return tester.print_summary()
-
+    runner = TestRunner()
+    return runner.run_all_tests()
 
 if __name__ == "__main__":
     sys.exit(main())
