@@ -464,7 +464,103 @@ async def lookup_boms(q: str = "", limit: int = 20, current: dict = Depends(get_
     return {"items": items}
 
 
-# ============ BOM Item Manual Entry ============
+class BomAddPartIn(BaseModel):
+    so_no: str = ""
+
+
+@router.get("/by-so")
+async def list_boms_by_so(so_no: str = "", current: dict = Depends(get_current_user)):
+    """Daftar semua BOM (part) untuk 1 SO — dipakai sub-tab BOM di Work Group.
+    Diurutkan berdasarkan waktu buat (part 1 duluan)."""
+    so = (so_no or "").strip()
+    if not so:
+        return {"items": []}
+    cursor = db.boms.find(
+        {"so_no": so, "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "bom_no": 1, "so_no": 1, "engineering_status": 1, "items": 1, "part_no": 1, "uploaded_at": 1},
+    ).sort("uploaded_at", 1)
+    docs = await cursor.to_list(length=100)
+    items = []
+    for idx, d in enumerate(docs):
+        if not d.get("bom_no"):
+            continue
+        items.append({
+            "id": d.get("id"),
+            "bom_no": d.get("bom_no"),
+            "so_no": d.get("so_no"),
+            "engineering_status": d.get("engineering_status") or "approved",
+            "items_count": len(d.get("items") or []),
+            "part_no": d.get("part_no") or (idx + 1),
+        })
+    return {"items": items}
+
+
+@router.post("/add-part")
+async def add_bom_part(payload: BomAddPartIn, current: dict = Depends(require_bom_edit)):
+    """Tambah BOM part baru untuk 1 SO. Nomor mengikuti BOM part-1 + akhiran -P{n}.
+    BOM baru mewarisi metadata (customer/project/class) dari part-1, item mulai kosong."""
+    so = (payload.so_no or "").strip()
+    if not so:
+        raise HTTPException(status_code=400, detail="so_no wajib diisi")
+    existing = await db.boms.find(
+        {"so_no": so, "deleted_at": {"$exists": False}},
+        {"_id": 0},
+    ).sort("uploaded_at", 1).to_list(length=100)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Belum ada BOM untuk SO ini. Generate drawing dulu untuk membuat BOM Part 1.")
+    base = existing[0]
+    base_no = re.sub(r"-P\d+$", "", (base.get("bom_no") or "").strip())
+    n = len(existing) + 1
+    new_no = f"{base_no}-P{n}"
+    _guard = 0
+    while await db.boms.find_one({"bom_no": new_no, "deleted_at": {"$exists": False}}, {"_id": 1}):
+        n += 1
+        new_no = f"{base_no}-P{n}"
+        _guard += 1
+        if _guard > 50:
+            raise HTTPException(status_code=409, detail="Gagal membuat nomor BOM part unik")
+    user_name = current.get("name") or current.get("username")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "so_no": so,
+        "rev_no": 0,
+        "bom_no": new_no,
+        "bom_no_auto": True,
+        "project_name": base.get("project_name") or "",
+        "project_dwg": base.get("project_dwg") or "",
+        "customer": base.get("customer") or "",
+        "class_material": base.get("class_material") or "",
+        "delivery_date": base.get("delivery_date") or "",
+        "bom_date": datetime.utcnow().date().isoformat(),
+        "prepared_by": user_name or "",
+        "items": [],
+        "annotations": {},
+        "revision_reason": "",
+        "auto_generated": True,
+        "source": "add_part",
+        "is_repeat": False,
+        "part_no": n,
+        "base_bom_no": base_no,
+        "drawing_id": None,
+        "drawing_no": "",
+        "uploaded_by_id": current.get("id"),
+        "uploaded_by_name": user_name,
+        "uploaded_by_role": current.get("role"),
+        "uploaded_at": datetime.utcnow().isoformat(),
+        "original_filename": None,
+        "remark": "",
+        "engineering_status": "draft",
+        "signatures": {
+            "prepared_by": None,
+            "checked_by": None,
+            "acknowledged_by": None,
+            "approved_by": None,
+        },
+    }
+    await db.boms.insert_one(doc.copy())
+    await log_action(current, "bom_add_part", "bom", doc["id"], {"bom_no": new_no, "so_no": so, "part_no": n})
+    doc.pop("_id", None)
+    return doc
 class BOMItemIn(BaseModel):
     item_no: Optional[int] = None  # kosong = auto next
     item_name: str
