@@ -1,0 +1,170 @@
+{
+  "summary": "Completed comprehensive audit of Engineering department - tested all menu groups, workflows, and API endpoints for both eng_leader and eng_staff roles. Found mostly working system with minor UX improvements needed.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "minor_issues": [
+      {
+        "endpoint": "/api/engineering/kpi",
+        "issue": "Requires year and month query parameters but returns 422 without them",
+        "impact": "Frontend needs to pass year/month parameters when calling KPI endpoint",
+        "fix_priority": "LOW",
+        "recommendation": "Add default parameters (current year/month) or make them optional"
+      }
+    ],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "component": "EngLeaderReviewDialog",
+        "issue": "Missing DialogTitle for accessibility (screen reader users)",
+        "affected_selectors": ["[data-testid='eng-leader-review-dialog']"],
+        "fix_priority": "LOW",
+        "recommendation": "Add DialogTitle wrapped in VisuallyHidden component or add aria-describedby"
+      }
+    ],
+    "ux_gaps": [
+      {
+        "area": "Engineering Portal - eng_staff view",
+        "issue": "Material Costing menu not visible for eng_staff (may be intentional based on role permissions)",
+        "affected_users": "eng_staff",
+        "fix_priority": "LOW",
+        "recommendation": "Verify if Material Costing should be accessible to eng_staff or if current behavior is correct"
+      }
+    ]
+  },
+  "passed_tests": [
+    "✅ Login successful for both qa_eng_leader and qa_eng_staff",
+    "✅ Engineering portal loads without errors for both roles",
+    "✅ All 4 menu groups visible: Pekerjaan Masuk, Proses & Approval, Master & Data, Monitor",
+    "✅ Engineering Queue Panel working correctly",
+    "✅ 'Menunggu Verifikasi Leader' tab accessible to eng_leader only (correct role-based access)",
+    "✅ Eng Leader Review Dialog opens and displays correctly",
+    "✅ Dialog width is appropriate (1150px) - NOT cut off as previously reported",
+    "✅ Document list in review dialog shows 3 documents with proper status badges",
+    "✅ Work Group page (/engineering/drf/{drfId}) loads correctly",
+    "✅ Work Group has 2 tabs: 'Drawing & Upload' and 'BOM' (with BOM sub-tabs)",
+    "✅ Per-drawing page (/engineering/work-order/{drawingId}) loads correctly",
+    "✅ Per-drawing page does NOT have BOM Link/Isi Data BOM elements (correct - BOM is at Work Group level)",
+    "✅ TTD Prepared By section present on per-drawing page",
+    "✅ Upload Dokumen section present on per-drawing page",
+    "✅ Drawing Master List accessible and loads correctly",
+    "✅ Backend API: GET /api/drawing-requests?scope=for_engineering (17 items)",
+    "✅ Backend API: GET /api/inquiries (5 items)",
+    "✅ Backend API: GET /api/drawings/pending-my-approval (3 items)",
+    "✅ Backend API: GET /api/drawings/my-signature-history (working)",
+    "✅ Backend API: GET /api/engineering/pending-leader-verification (2 items)",
+    "✅ Backend API: GET /api/engineering/workload (working)",
+    "✅ Backend API: GET /api/material-costing/materials (working)",
+    "✅ Backend API: GET /api/notifications (working)",
+    "✅ Backend API: GET /api/bom/by-so (1 BOM found for SO-TEST-9001)",
+    "✅ Backend API: POST /api/bom/add-part (successfully created BOM001-07-2026-P2)",
+    "✅ Route ordering verified: /api/bom/by-so and /api/bom/add-part not shadowed by /api/bom/{bom_id}"
+  ],
+  "test_report_links": [
+    "/app/backend_test.py",
+    "/app/test_reports/iteration_35.json"
+  ],
+  "action_item_for_main_agent": "",
+  "updated_files": [
+    "/app/backend_test.py"
+  ],
+  "success_percentage": {
+    "backend": "92% (11/12 tests passed - 1 test requires parameters)",
+    "frontend": "100% (all critical flows working)",
+    "overall": "96%"
+  },
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": true,
+  "detailed_findings": {
+    "menu_structure": {
+      "pekerjaan_masuk": {
+        "status": "✅ Working",
+        "items": ["Pekerjaan Masuk (Work Order)", "Masterlist Inquiry"],
+        "notes": "Both items accessible and functional"
+      },
+      "proses_approval": {
+        "status": "✅ Working",
+        "items": ["Menunggu Verifikasi Leader (eng_leader only)", "Master List ECN & ECR", "Bill of Material (BOM)"],
+        "notes": "Role-based access working correctly - leader verification only visible to eng_leader"
+      },
+      "master_data": {
+        "status": "✅ Working",
+        "items": ["Internal Engineering Process", "Engineering Masterlist Material Price", "Drawing Master List"],
+        "notes": "All items accessible and load correctly"
+      },
+      "monitor": {
+        "status": "✅ Working",
+        "items": ["SO Document Tracker", "KPI Engineering", "Monitor Beban Kerja"],
+        "notes": "All items present, KPI requires year/month parameters"
+      }
+    },
+    "key_workflows": {
+      "work_group_flow": {
+        "status": "✅ Working",
+        "url": "/engineering/drf/{drfId}",
+        "features": [
+          "2 tabs: Drawing & Upload, BOM",
+          "BOM tab has sub-tabs: BOM Part + Tambah BOM",
+          "Submit ke Eng Leader panel present",
+          "Daftar Drawing (3 drawings) with UPLOAD & TTD buttons"
+        ]
+      },
+      "per_drawing_flow": {
+        "status": "✅ Working",
+        "url": "/engineering/work-order/{drawingId}",
+        "features": [
+          "Item & Qty Drawing picker",
+          "Upload Dokumen Drawing section",
+          "TTD Prepared By section (save-only)",
+          "NO BOM Link/Isi Data BOM elements (correct - BOM at Work Group level)",
+          "Work category selection (SIMPLE/MODERATE/COMPLEX)"
+        ]
+      },
+      "eng_leader_review": {
+        "status": "✅ Working",
+        "features": [
+          "Review Dokumen SO popup opens correctly",
+          "Dialog width: 1150px (not cut off)",
+          "Document list with status badges (PERLU REVIEW, BELUM DISUBMIT, OK/APPROVED, REVISI)",
+          "Tabs: BELUM, PERLU REVIEW, OK/APPROVED, REVISI",
+          "Search and filter functionality"
+        ]
+      }
+    },
+    "role_based_access": {
+      "eng_leader": {
+        "status": "✅ Correct",
+        "unique_access": ["Menunggu Verifikasi Leader", "Review & TTD popup"],
+        "notes": "Leader-specific features properly restricted"
+      },
+      "eng_staff": {
+        "status": "✅ Correct",
+        "restricted_from": ["Menunggu Verifikasi Leader"],
+        "notes": "Staff cannot see leader verification queue (correct)"
+      }
+    }
+  },
+  "recommendations": {
+    "high_priority": [],
+    "medium_priority": [],
+    "low_priority": [
+      "Add DialogTitle to EngLeaderReviewDialog for accessibility compliance",
+      "Make year/month parameters optional for KPI endpoint with defaults to current period",
+      "Verify Material Costing menu visibility for eng_staff is intentional"
+    ]
+  },
+  "test_environment": {
+    "backend_url": "https://error-fix-dev.preview.emergentagent.com/api",
+    "frontend_url": "https://error-fix-dev.preview.emergentagent.com",
+    "test_users": [
+      "qa_eng_leader (role: eng_leader)",
+      "qa_eng_staff (role: eng_staff)"
+    ],
+    "test_so": "SO-TEST-9001",
+    "test_drf_id": "4e58b362-9991-4f95-99b7-65b63a959a26",
+    "test_drawing_id": "5c1bf451-6d4a-4354-bc86-2512cd8ebd84"
+  }
+}

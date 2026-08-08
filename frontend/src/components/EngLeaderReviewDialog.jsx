@@ -168,7 +168,7 @@ export default function EngLeaderReviewDialog({ open, onClose, drfId, bomId, bom
   return (
     <>
       <Dialog open={open} onOpenChange={(o) => { if (!o) onClose?.(); }}>
-        <DialogContent className="w-[min(1150px,96vw)] h-[min(84vh,900px)] rounded-none p-0 overflow-hidden gap-0" data-testid="eng-leader-review-dialog">
+        <DialogContent className="w-[min(1150px,96vw)] max-w-[min(1150px,96vw)] h-[min(85vh,900px)] rounded-none p-0 overflow-hidden gap-0 flex flex-col" data-testid="eng-leader-review-dialog">
           {/* Header */}
           <div className="flex items-center justify-between gap-3 px-5 py-3 bg-slate-900 text-slate-50 shrink-0">
             <div className="flex items-center gap-2 min-w-0">

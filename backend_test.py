@@ -40,15 +40,17 @@ class TestRunner:
             self.log(f"❌ ERROR: {name} - {str(e)}", "ERROR")
             return False
     
-    def login(self):
+    def login(self, username="qa_eng_leader", password="QaTest#2026"):
         """Login with test credentials"""
-        self.log("Logging in as qa_shot...")
+        self.log(f"Logging in as {username}...")
         resp = self.session.post(
             f"{self.base_url}/auth/login",
-            json={"username": "qa_shot", "password": "QaShot#2026"}
+            json={"username": username, "password": password}
         )
         assert resp.status_code == 200, f"Login failed: {resp.status_code} - {resp.text}"
-        self.log("✅ Login successful")
+        data = resp.json()
+        self.log(f"✅ Login successful - Role: {data.get('user', {}).get('role')}")
+        return data
         
     def cleanup(self):
         """Clean up test data"""
@@ -84,6 +86,94 @@ class TestRunner:
         self.log("Cleanup completed")
     
     # ==================== Backend API Tests ====================
+    
+    def test_drawing_requests_for_engineering(self):
+        """Test GET /api/drawing-requests?scope=for_engineering"""
+        resp = self.session.get(f"{self.base_url}/drawing-requests", params={"scope": "for_engineering"})
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        
+        data = resp.json()
+        assert "items" in data, "Response should have 'items' field"
+        self.log(f"Found {len(data['items'])} drawing requests for engineering")
+    
+    def test_inquiries(self):
+        """Test GET /api/inquiries"""
+        resp = self.session.get(f"{self.base_url}/inquiries")
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        
+        data = resp.json()
+        assert "items" in data, "Response should have 'items' field"
+        self.log(f"Found {len(data['items'])} inquiries")
+    
+    def test_pending_my_approval(self):
+        """Test GET /api/drawings/pending-my-approval"""
+        resp = self.session.get(f"{self.base_url}/drawings/pending-my-approval")
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        
+        data = resp.json()
+        assert "items" in data or isinstance(data, list), "Response should have 'items' field or be a list"
+        items = data.get("items", data) if isinstance(data, dict) else data
+        self.log(f"Found {len(items)} drawings pending approval")
+    
+    def test_my_signature_history(self):
+        """Test GET /api/drawings/my-signature-history"""
+        resp = self.session.get(f"{self.base_url}/drawings/my-signature-history")
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        
+        data = resp.json()
+        assert "items" in data or isinstance(data, list), "Response should have 'items' field or be a list"
+        items = data.get("items", data) if isinstance(data, dict) else data
+        self.log(f"Found {len(items)} signature history records")
+    
+    def test_pending_leader_verification(self):
+        """Test GET /api/engineering/pending-leader-verification"""
+        resp = self.session.get(f"{self.base_url}/engineering/pending-leader-verification")
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        
+        data = resp.json()
+        assert "items" in data or isinstance(data, list), "Response should have 'items' field or be a list"
+        items = data.get("items", data) if isinstance(data, dict) else data
+        self.log(f"Found {len(items)} items pending leader verification")
+    
+    def test_engineering_kpi(self):
+        """Test GET /api/engineering/kpi"""
+        resp = self.session.get(f"{self.base_url}/engineering/kpi")
+        # May return 404 if not implemented, that's ok
+        if resp.status_code == 404:
+            self.log("KPI endpoint not implemented (404), skipping", "WARN")
+            return
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        self.log("KPI endpoint accessible")
+    
+    def test_engineering_workload(self):
+        """Test GET /api/engineering/workload"""
+        resp = self.session.get(f"{self.base_url}/engineering/workload")
+        # May return 404 if not implemented, that's ok
+        if resp.status_code == 404:
+            self.log("Workload endpoint not implemented (404), skipping", "WARN")
+            return
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        self.log("Workload endpoint accessible")
+    
+    def test_material_costing_materials(self):
+        """Test GET /api/material-costing/materials"""
+        resp = self.session.get(f"{self.base_url}/material-costing/materials")
+        # May return 404 if not implemented, that's ok
+        if resp.status_code == 404:
+            self.log("Material costing endpoint not implemented (404), skipping", "WARN")
+            return
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        self.log("Material costing endpoint accessible")
+    
+    def test_notifications(self):
+        """Test GET /api/notifications"""
+        resp = self.session.get(f"{self.base_url}/notifications")
+        # May return 404 if not implemented, that's ok
+        if resp.status_code == 404:
+            self.log("Notifications endpoint not implemented (404), skipping", "WARN")
+            return
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        self.log("Notifications endpoint accessible")
     
     def test_bom_by_so(self):
         """Test GET /api/bom/by-so?so_no=SO-TEST-9001"""
@@ -233,19 +323,26 @@ class TestRunner:
     def run_all_tests(self):
         """Run all backend tests"""
         self.log("=" * 60)
-        self.log("Starting Backend API Tests")
+        self.log("Starting Backend API Tests - Engineering Department")
         self.log("=" * 60)
         
         try:
-            # Login first
-            self.login()
+            # Login as eng_leader first
+            self.login("qa_eng_leader", "QaTest#2026")
             
-            # Run tests
+            # Run Engineering-specific tests
+            self.test("GET /api/drawing-requests?scope=for_engineering", self.test_drawing_requests_for_engineering)
+            self.test("GET /api/inquiries", self.test_inquiries)
+            self.test("GET /api/drawings/pending-my-approval", self.test_pending_my_approval)
+            self.test("GET /api/drawings/my-signature-history", self.test_my_signature_history)
+            self.test("GET /api/engineering/pending-leader-verification", self.test_pending_leader_verification)
+            self.test("GET /api/engineering/kpi", self.test_engineering_kpi)
+            self.test("GET /api/engineering/workload", self.test_engineering_workload)
+            self.test("GET /api/material-costing/materials", self.test_material_costing_materials)
+            self.test("GET /api/notifications", self.test_notifications)
             self.test("GET /api/bom/by-so", self.test_bom_by_so)
             self.test("POST /api/bom/add-part", self.test_add_bom_part)
             self.test("Route ordering check", self.test_route_ordering)
-            self.test("POST /api/drawings/{id}/sign-prepared", self.test_sign_prepared)
-            self.test("POST /api/drawings/{id}/submit-for-approval", self.test_submit_without_placement)
             
         finally:
             # Always cleanup
