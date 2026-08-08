@@ -179,8 +179,11 @@ function DrfItemPicker({ drawing, onSaved, editable }) {
           <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] font-bold text-teal-700 mb-0.5">
             <Wrench size={12} weight="fill" /> Engineering · Work Order
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900 flex items-center gap-2" style={{ fontFamily: "Chivo, sans-serif" }}>
             {drawing.drawing_no || "(belum ada nomor)"}
+            <span className={`inline-flex items-center px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider border ${(drawing.rev_no ?? 0) > 0 ? "bg-amber-50 text-amber-800 border-amber-300" : "bg-slate-100 text-slate-600 border-slate-300"}`} data-testid="wo-rev-badge">
+              Rev {drawing.rev_no ?? 0}
+            </span>
           </h1>
           <div className="text-xs text-slate-600 mt-0.5">
             <b>{drawing.title || drawing.project_name || "-"}</b>

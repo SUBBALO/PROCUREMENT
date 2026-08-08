@@ -2380,6 +2380,7 @@ async def drawing_reject_stage(
 
 class EcnIn(BaseModel):
     ecr_no: str = ""
+    scope: str = "both"                # drawing | bom | both — bagian yang akan direvisi
     m4: List[str] = []                 # MAN / MACHINE / METHOD / MATERIAL
     item_of_change: List[str] = []     # process/materials/inspection/subcon/design_spec/packing/other
     item_other: str = ""
@@ -2462,6 +2463,7 @@ async def request_drawing_revision(drawing_id: str, payload: EcnIn, current: dic
     rr = {
         "status": "pending",
         "type": "ecn",
+        "scope": (payload.scope or "both") if (payload.scope in ("drawing", "bom", "both")) else "both",
         "ecn": ecn,
         "reason": (payload.purpose_explanation or payload.proposed_desc or "").strip(),
         "requested_by": who,
@@ -2583,24 +2585,67 @@ async def drawing_start_revision(drawing_id: str, current: dict = Depends(get_cu
     rr["status"] = "in_progress"
     rr["started_by"] = who
     rr["started_at"] = now
+    scope = rr.get("scope") or "both"
+    do_drawing = scope in ("drawing", "both")
+    do_bom = scope in ("bom", "both")
 
-    upd = {
-        "revision_request": rr,
-        "rev_no": old_rev + 1,
-        "is_revision": True,
-        "approval_status": "draft",
-        "approvals": [],  # TTD siklus baru mulai dari kosong (TTD lama tersimpan di snapshot)
-        "revision_opened_at": now,
-        "revision_reason": rr.get("reason", ""),
-        # reset flag controlled agar siklus baru bersih; timestamp lama tersimpan di snapshot
-        "controlled_at": None,
-        "updated_at": now,
-    }
-    await db.drawings.update_one({"id": drawing_id},
-                                 {"$set": upd, "$push": {"revisions": rev_entry}})
+    # ── Revisi BOM (bila scope mencakup BOM): snapshot BOM lama + buka kembali ──
+    bom_result = None
+    if do_bom and d.get("bom_id"):
+        try:
+            bom = await db.boms.find_one({"id": d["bom_id"], "deleted_at": {"$exists": False}})
+            if bom:
+                b_old = int(bom.get("rev_no") or 0)
+                bsnap = {
+                    "rev_no": b_old, "bom_no": bom.get("bom_no"),
+                    "engineering_status": bom.get("engineering_status"),
+                    "items": bom.get("items") or [], "signatures": bom.get("signatures") or {},
+                    "procurement_status": bom.get("procurement_status"),
+                    "procurement_signatures": bom.get("procurement_signatures") or {},
+                    "snapshot_at": now, "ecn_no": ecn.get("ecn_no"),
+                }
+                await db.boms.update_one({"id": bom["id"]}, {
+                    "$set": {
+                        "rev_no": b_old + 1, "engineering_status": "draft",
+                        "signatures": {}, "procurement_status": None,
+                        "procurement_signatures": {}, "is_revision": True,
+                        "revision_reason": rr.get("reason", ""), "updated_at": now,
+                    },
+                    "$push": {"revisions": bsnap},
+                })
+                bom_result = {"bom_no": bom.get("bom_no"), "new_rev_no": b_old + 1}
+        except Exception:
+            pass
+
+    if do_drawing:
+        upd = {
+            "revision_request": rr,
+            "rev_no": old_rev + 1,
+            "is_revision": True,
+            "approval_status": "draft",
+            "approvals": [],  # TTD siklus baru mulai dari kosong (TTD lama tersimpan di snapshot)
+            "revision_opened_at": now,
+            "revision_reason": rr.get("reason", ""),
+            # reset flag controlled agar siklus baru bersih; timestamp lama tersimpan di snapshot
+            "controlled_at": None,
+            "updated_at": now,
+        }
+        await db.drawings.update_one({"id": drawing_id},
+                                     {"$set": upd, "$push": {"revisions": rev_entry}})
+        new_rev = old_rev + 1
+    else:
+        # BOM-only: drawing TIDAK direset. Catat riwayat & tutup pengajuan.
+        rev_entry["scope"] = scope
+        await db.drawings.update_one({"id": drawing_id},
+                                     {"$set": {"revision_request": rr, "updated_at": now},
+                                      "$push": {"revisions": rev_entry}})
+        new_rev = old_rev
+
     await log_action(current, "drawing_start_revision", "drawings", drawing_id,
-                     {"ecn_no": ecn.get("ecn_no"), "new_rev_no": old_rev + 1})
-    return {"success": True, "rev_no": old_rev + 1, "approval_status": "draft"}
+                     {"ecn_no": ecn.get("ecn_no"), "scope": scope, "new_rev_no": new_rev, "bom": bom_result})
+    return {"success": True, "scope": scope, "rev_no": new_rev,
+            "approval_status": "draft" if do_drawing else d.get("approval_status"),
+            "bom_revised": bom_result}
 
 
 def _is_production(user: dict) -> bool:

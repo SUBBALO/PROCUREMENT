@@ -274,6 +274,7 @@ export default function MasterDrawingPage() {
             <thead className="bg-white border-b border-slate-200">
               <tr className="text-[10px] uppercase tracking-[0.08em] font-bold text-slate-500">
                 <th className="text-left p-3">Drawing</th>
+                <th className="text-left p-3">Rev</th>
                 <th className="text-left p-3">Title / Project</th>
                 <th className="text-left p-3">Status &amp; TTD</th>
                 <th className="text-left p-3">Kategori &amp; Progres</th>
@@ -281,8 +282,8 @@ export default function MasterDrawingPage() {
               </tr>
             </thead>
             <tbody data-testid="dw-list">
-              {loading && (<tr><td colSpan={5} className="p-8 text-center text-slate-400">Memuat...</td></tr>)}
-              {!loading && viewItems.length === 0 && (<tr><td colSpan={5} className="p-8 text-center text-slate-400">{(mine || designer) ? "Tidak ada drawing untuk filter ini." : "Belum ada drawing. Alur register drawing baru: Sales buat DRF (MKS-F-ENG-001) → Eng Head Accept → Assign Engineer."}</td></tr>)}
+              {loading && (<tr><td colSpan={6} className="p-8 text-center text-slate-400">Memuat...</td></tr>)}
+              {!loading && viewItems.length === 0 && (<tr><td colSpan={6} className="p-8 text-center text-slate-400">{(mine || designer) ? "Tidak ada drawing untuk filter ini." : "Belum ada drawing. Alur register drawing baru: Sales buat DRF (MKS-F-ENG-001) → Eng Head Accept → Assign Engineer."}</td></tr>)}
               {pag.pagedData.map((it) => (
                 <DrawingMasterRow
                   key={it.id}
@@ -448,11 +449,20 @@ function DrawingMasterRow({ it, onDetail }) {
       <td className="p-3">
         <div className="font-mono font-semibold text-slate-900 text-sm">{it.drawing_no}</div>
         <div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-500">
-          <span className="px-1 py-0.5 bg-slate-100 text-slate-600 font-semibold">{it.revision}</span>
           <span>{it.discipline}</span>
           <span className="text-slate-300">·</span>
           <span className="font-mono" title="SO">SO {it.so_no || "-"}</span>
         </div>
+      </td>
+
+      {/* Rev — revisi drawing saat ini */}
+      <td className="p-3 whitespace-nowrap" data-testid={`dw-rev-${it.id}`}>
+        <span className={`inline-flex items-center justify-center min-w-[46px] px-2 py-1 text-[11px] font-bold uppercase tracking-wider border ${(it.rev_no ?? 0) > 0 ? "bg-amber-50 text-amber-800 border-amber-300" : "bg-slate-100 text-slate-600 border-slate-300"}`} title={it.revision || `Rev ${it.rev_no ?? 0}`}>
+          Rev {it.rev_no ?? 0}
+        </span>
+        {it.revision_request?.status === "in_progress" && (
+          <div className="text-[9px] text-amber-600 font-bold mt-0.5">sedang revisi</div>
+        )}
       </td>
 
       {/* Title / Project (dipangkas) */}

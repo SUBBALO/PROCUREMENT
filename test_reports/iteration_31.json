@@ -1,0 +1,164 @@
+{
+  "summary": "Completed comprehensive backend testing of Drawing Revision & BOM Logic (Iter 36). All 6 major test scenarios passed successfully with 64 individual API tests executed. Verified SCOPE-based revision flow (drawing/bom/both), BOM submit-gate integration, and regression of existing approval workflows.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "✅ SCOPE Persist - Verified scope field ('drawing'|'bom'|'both') is correctly saved in drawing.revision_request.scope",
+    "✅ Start Revision scope='both' - Drawing rev_no +1 & approval_status 'draft', BOM rev_no +1 & engineering_status 'draft', both have snapshot entries in revisions array",
+    "✅ Start Revision scope='bom' - Drawing approval_status UNCHANGED (remains pending_qc), drawing rev_no UNCHANGED, BOM rev_no +1 & engineering_status 'draft'",
+    "✅ Start Revision scope='drawing' - Drawing rev_no +1 & approval_status 'draft', BOM rev_no UNCHANGED (remains 0)",
+    "✅ BOM Submit-gate (Non-leader) - qa_eng_tmp submits drawing → drawing 'pending_eng_head', BOM 'pending_review'",
+    "✅ BOM Submit-gate (Leader) - qa_leader_tmp submits drawing → drawing 'pending_qc' (auto-verified), BOM 'approved' + procurement_status 'leader_checked'",
+    "✅ Authentication - All test accounts (qa_eng_tmp, qa_leader_tmp, qa_admin_tmp) login successfully",
+    "✅ Drawing Creation - Auto-generate drawing numbers with customer code ZZTEST",
+    "✅ BOM Creation - Auto-generate BOM numbers and link to drawings",
+    "✅ BOM Items - Successfully add multiple items to BOM",
+    "✅ PDF Upload - Upload drawing PDFs with embedded drawing numbers",
+    "✅ Work Category - Set work category (simple/moderate/complex) before submission",
+    "✅ Approval Workflow - Sequential approval flow (draft → pending_eng_head → pending_qc)",
+    "✅ ECN Request - Request revision with scope parameter",
+    "✅ ECN Approval - Engineering leader approves revision requests",
+    "✅ Start Revision - Execute revision with scope-based logic"
+  ],
+  "test_report_links": [
+    "/app/backend_test.py"
+  ],
+  "success_percentage": {
+    "backend": "100% (64/64 tests passed)",
+    "frontend": "N/A (backend-only testing as requested)"
+  },
+  "updated_files": [],
+  "action_item_for_main_agent": "",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false,
+  "test_details": {
+    "test_environment": {
+      "backend_url": "https://error-fix-dev.preview.emergentagent.com/api",
+      "test_accounts": {
+        "eng_staff": "qa_eng_tmp",
+        "eng_leader": "qa_leader_tmp",
+        "admin": "qa_admin_tmp"
+      },
+      "test_data_marker": "ZZTEST (customer code for easy cleanup)"
+    },
+    "test_scenarios": {
+      "1_scope_persist": {
+        "description": "Verify EcnIn.scope field is accepted and persisted",
+        "steps": [
+          "Create drawing with BOM",
+          "Upload PDF",
+          "Make drawing non-draft (submit + approve)",
+          "Request revision with scope='both'",
+          "Verify scope saved in drawing.revision_request.scope"
+        ],
+        "result": "PASS - Scope correctly saved as 'both'"
+      },
+      "2_start_revision_scope_both": {
+        "description": "Both drawing and BOM get revised when scope='both'",
+        "steps": [
+          "Create drawing with BOM and items",
+          "Make drawing non-draft",
+          "Request revision scope='both'",
+          "Approve ECN as leader",
+          "Start revision",
+          "Verify drawing: rev_no +1, approval_status 'draft'",
+          "Verify BOM: rev_no +1, engineering_status 'draft'"
+        ],
+        "result": "PASS - Both drawing and BOM revised correctly"
+      },
+      "3_start_revision_scope_bom": {
+        "description": "Only BOM revised when scope='bom', drawing unchanged",
+        "steps": [
+          "Create drawing with BOM and items",
+          "Make drawing non-draft (status: pending_qc)",
+          "Request revision scope='bom'",
+          "Approve and start revision",
+          "Verify drawing: rev_no unchanged, approval_status unchanged",
+          "Verify BOM: rev_no +1"
+        ],
+        "result": "PASS - Drawing unchanged (rev=0, status=pending_qc), BOM revised"
+      },
+      "4_start_revision_scope_drawing": {
+        "description": "Only drawing revised when scope='drawing', BOM unchanged",
+        "steps": [
+          "Create drawing with BOM and items",
+          "Make drawing non-draft",
+          "Request revision scope='drawing'",
+          "Approve and start revision",
+          "Verify drawing: rev_no +1, approval_status 'draft'",
+          "Verify BOM: rev_no unchanged"
+        ],
+        "result": "PASS - BOM unchanged (rev=0), drawing revised"
+      },
+      "5_bom_submit_gate_non_leader": {
+        "description": "Non-leader submit pushes BOM to pending_review",
+        "steps": [
+          "Login as qa_eng_tmp (eng_staff)",
+          "Create drawing with BOM and items",
+          "Upload PDF and set work category",
+          "Submit drawing for approval",
+          "Verify drawing: approval_status 'pending_eng_head'",
+          "Verify BOM: engineering_status 'pending_review'"
+        ],
+        "result": "PASS - Drawing pending_eng_head, BOM pending_review"
+      },
+      "6_bom_submit_gate_leader": {
+        "description": "Leader submit auto-approves BOM with procurement_status",
+        "steps": [
+          "Login as qa_leader_tmp (eng_leader)",
+          "Create drawing with BOM and items",
+          "Upload PDF and set work category",
+          "Submit drawing for approval",
+          "Verify drawing: approval_status 'pending_qc' (auto-verified)",
+          "Verify BOM: engineering_status 'approved'",
+          "Verify BOM: procurement_status 'leader_checked'"
+        ],
+        "result": "PASS - Drawing pending_qc, BOM approved with leader_checked"
+      }
+    },
+    "regression_tests": {
+      "drawing_creation": "PASS - Auto-generate drawing numbers",
+      "bom_creation": "PASS - Auto-generate BOM numbers",
+      "bom_items": "PASS - Add items to BOM",
+      "pdf_upload": "PASS - Upload PDF with validation",
+      "work_category": "PASS - Set work category",
+      "approval_workflow": "PASS - Sequential approval stages",
+      "ecn_request": "PASS - Request revision with ECN",
+      "ecn_approval": "PASS - Leader approves ECN"
+    },
+    "api_coverage": {
+      "POST /api/auth/login": "PASS",
+      "POST /api/drawings": "PASS",
+      "POST /api/drawings/{id}/upload": "PASS",
+      "POST /api/drawings/{id}/work-category": "PASS",
+      "POST /api/drawings/{id}/submit-for-approval": "PASS",
+      "POST /api/drawings/{id}/approve/eng_head": "PASS",
+      "POST /api/drawings/{id}/request-revision": "PASS",
+      "POST /api/drawings/{id}/revision-decision": "PASS",
+      "POST /api/drawings/{id}/start-revision": "PASS",
+      "GET /api/drawings/{id}": "PASS",
+      "POST /api/bom/{id}/items": "PASS",
+      "GET /api/bom/{id}": "PASS"
+    }
+  },
+  "notes": [
+    "All test accounts (qa_eng_tmp, qa_leader_tmp, qa_admin_tmp) are working correctly",
+    "SCOPE field implementation is complete and functional",
+    "BOM submit-gate integration works as expected for both leader and non-leader roles",
+    "Revision flow correctly handles all three scope options: 'drawing', 'bom', 'both'",
+    "Drawing approval_status and rev_no are correctly preserved when scope='bom'",
+    "BOM rev_no is correctly preserved when scope='drawing'",
+    "Auto-approval logic for leader submissions is working correctly",
+    "Procurement_status is correctly set to 'leader_checked' when leader submits",
+    "All test data is marked with ZZTEST customer code for easy identification and cleanup",
+    "No backend errors or exceptions encountered during testing",
+    "All API endpoints respond with correct status codes and data structures"
+  ]
+}

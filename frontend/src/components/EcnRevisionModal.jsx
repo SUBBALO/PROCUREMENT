@@ -35,7 +35,7 @@ function ChipGroup({ options, value, onChange, testid }) {
 
 export default function EcnRevisionModal({ drawing, open, onClose, onDone }) {
   const [f, setF] = useState({
-    ecr_no: "", m4: [], item_of_change: [], item_other: "", change_type: "permanent",
+    ecr_no: "", scope: "both", m4: [], item_of_change: [], item_other: "", change_type: "permanent",
     expired_date: "", current_desc: "", proposed_desc: "", purpose: [], purpose_other: "",
     purpose_explanation: "", effective_date: "", affected_document: ["drawing_spec"], affected_other: "",
   });
@@ -68,6 +68,19 @@ export default function EcnRevisionModal({ drawing, open, onClose, onDone }) {
         </DialogHeader>
 
         <div className="space-y-4 py-1 text-sm">
+          {/* Scope revisi — bagian yang akan dibuka untuk direvisi */}
+          <div className="border-2 border-amber-400 bg-amber-50 p-3">
+            <Label className="text-[11px] uppercase tracking-widest font-bold text-amber-800">Yang Direvisi <span className="text-rose-600">*</span></Label>
+            <div className="text-[11px] text-slate-600 mb-2">Pilih bagian yang akan dibuka untuk direvisi. Hanya bagian terpilih yang di-reset & naik Rev.</div>
+            <div className="grid grid-cols-3 gap-2">
+              {[["drawing", "Drawing saja"], ["bom", "BOM saja"], ["both", "Drawing & BOM"]].map(([k, l]) => (
+                <button key={k} type="button" onClick={() => up("scope", k)}
+                  className={`px-2 py-2 text-[12px] font-bold uppercase tracking-wider border-2 transition-colors ${f.scope === k ? "bg-amber-600 text-white border-amber-700" : "bg-white text-slate-600 border-slate-300 hover:border-amber-400"}`}
+                  data-testid={`ecn-scope-${k}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+
           {/* Info auto */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-slate-50 border border-slate-200 p-2 text-[12px]">
             <div><span className="text-slate-400">SO No</span><div className="font-mono font-semibold">{drawing.so_no || "-"}</div></div>
