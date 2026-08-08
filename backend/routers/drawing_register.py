@@ -2144,8 +2144,8 @@ async def drawing_sign_prepared(
         raise HTTPException(status_code=409, detail=f"Drawing sudah '{status}', tidak bisa TTD Prepared ulang")
     if not drawing.get("file_id"):
         raise HTTPException(status_code=400, detail="Upload PDF drawing dulu sebelum TTD")
-    if (drawing.get("work_category") or "").strip().lower() not in ("simple", "moderate", "complex"):
-        raise HTTPException(status_code=400, detail="Pilih Kategori Pekerjaan dulu sebelum TTD")
+    # Kategori pekerjaan TIDAK wajib untuk TTD Prepared (boleh TTD langsung setelah upload).
+    # Kategori tetap divalidasi saat SUBMIT ke Eng Leader.
     if not is_engineering(current) and not is_admin_like(current):
         raise HTTPException(status_code=403, detail="Hanya Engineering yang boleh TTD Prepared")
     if not _can_modify_drawing(current, drawing):

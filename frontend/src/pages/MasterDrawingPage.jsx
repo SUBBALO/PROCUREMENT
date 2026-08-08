@@ -1557,7 +1557,7 @@ function SOAutocompleteInput({ value, onChange, testid, required }) {
 
 /* ============ ATTACHMENTS PANEL (inline in DrawingForm) ============ */
 
-export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated, editable = true, hideBomLink = false }) {
+export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated, editable = true, hideBomLink = false, onDrawingPdfUploaded, suppressWorkCatPopup = false }) {
   const [bomAttachments, setBomAttachments] = useState({ drawing: [], nesting: [], costing: [] });
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -1673,10 +1673,12 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated, editable = 
 
   const uploadDrawingPdf = async (file) => {
     setUploading("drawing_pdf");
+    let uploaded = false;
     try {
       const fd = new FormData();
       fd.append("file", file);
       const { data } = await api.post(`/drawings/${activeDwg.id}/upload`, fd);
+      uploaded = true;
       // Local patch (tidak reload parent dulu — hindari flash warning bila akan auto-rename)
       const patch = {
         file_id: "temp",
@@ -1689,7 +1691,9 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated, editable = 
       setLocalDrawing((d) => ({ ...d, ...patch }));
 
       // Wajib pilih Kategori Pekerjaan setelah upload MKS (kalau belum ada).
-      if (editable && !activeDwg.work_category) setWorkCatPopup(true);
+      // Di halaman Work Order per-drawing (suppressWorkCatPopup) — dilewati, karena
+      // engineer langsung diarahkan ke pemilihan titik TTD (kategori dipilih sebelum submit).
+      if (editable && !activeDwg.work_category && !suppressWorkCatPopup) setWorkCatPopup(true);
 
       // Auto-baca nomor DWG dari isi PDF (repeat/manual upload).
       const detected = (data?.detected_no || "").trim();
@@ -1745,7 +1749,7 @@ export function DrawingAttachmentsPanel({ drawing, onDrawingUpdated, editable = 
         toast.error((typeof det === "string" ? det : det?.message) || "Gagal upload drawing PDF");
       }
     }
-    finally { setUploading(null); }
+    finally { setUploading(null); if (uploaded) onDrawingPdfUploaded?.(); }
   };
 
   const uploadBomAttachment = async (category, file) => {

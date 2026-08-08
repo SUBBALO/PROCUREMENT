@@ -4,35 +4,27 @@
     "status": "completed"
   },
   {
-    "content": "Backend: /bom/by-so + /bom/add-part (multi-BOM parts -P{n})",
+    "content": "Multi-part BOM: /bom/by-so + /bom/add-part; sub-tabs Part1/Part2 + Tambah BOM; show all SO drawings",
     "status": "completed"
   },
   {
-    "content": "Backend: /drawings/{id}/sign-prepared + submit placement fallback",
+    "content": "Split TTD: sign-prepared (save-only, no category needed) + per-drawing TTD Prepared section",
     "status": "completed"
   },
   {
-    "content": "Modal 'prepared' stage; per-drawing TTD Prepared (save-only), remove submit/checklist",
+    "content": "Partial submit to Eng Leader (checkboxes) at Work Group bottom, with BOM included/shown",
     "status": "completed"
   },
   {
-    "content": "Work Group BOM sub-tabs Part1/Part2 + Tambah BOM; embedded shows all SO drawings",
+    "content": "Per-drawing: remove BOM Link column + Isi Data BOM button; colored tab boxes",
     "status": "completed"
   },
   {
-    "content": "Work Group partial-submit panel (checkboxes) to Eng Leader",
+    "content": "Auto-open TTD placement modal after PDF upload (multi-page signing supported)",
     "status": "completed"
   },
   {
-    "content": "Per-drawing: remove BOM Link column + Isi Data BOM button (hideBomLink); colored tab boxes",
+    "content": "Testing (agent iter_34 100%) + direct curl verify + screenshots + QA cleanup",
     "status": "completed"
-  },
-  {
-    "content": "Run testing_agent_v3 for full Work Group/Work Order + BOM multi-part + partial submit flow",
-    "status": "in_progress"
-  },
-  {
-    "content": "Cleanup qa_shot user + test artifacts",
-    "status": "pending"
   }
 ]

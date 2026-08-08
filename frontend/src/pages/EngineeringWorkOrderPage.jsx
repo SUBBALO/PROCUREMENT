@@ -59,7 +59,7 @@ export default function EngineeringWorkOrderPage() {
   const isPending = (drawing.approval_status || "").startsWith("pending_");
   const hasWorkCat = ["simple", "moderate", "complex"].includes((drawing.work_category || "").toLowerCase());
   // Bisa TTD Prepared By bila draft + PDF ter-upload + kategori kerja dipilih.
-  const canSignPrepared = isDraft && drawing.file_id && hasWorkCat;
+  const canSignPrepared = isDraft && drawing.file_id;
   const preparedSigned = !!drawing.prepared_signed;
   const isEngUser = ["eng_staff", "eng_leader", "admin", "super_admin"].includes(user?.role);
   const rr = drawing.revision_request || null;
@@ -194,7 +194,14 @@ function DrfItemPicker({ drawing, onSaved, editable }) {
               <Paperclip size={14} weight="bold" /> Upload Dokumen Drawing
             </div>
             <div className="p-3">
-              <DrawingAttachmentsPanel drawing={drawing} onDrawingUpdated={() => load()} editable={isDraft} hideBomLink />
+              <DrawingAttachmentsPanel
+                drawing={drawing}
+                onDrawingUpdated={() => load()}
+                editable={isDraft}
+                hideBomLink
+                suppressWorkCatPopup
+                onDrawingPdfUploaded={async () => { await load(); if (isDraft) setShowPreparedSig(true); }}
+              />
             </div>
           </div>
 
@@ -209,16 +216,16 @@ function DrfItemPicker({ drawing, onSaved, editable }) {
                   {preparedSigned ? (
                     <span className="flex items-center gap-1.5 text-emerald-800 font-semibold">
                       <CheckCircle size={16} weight="fill" /> Sudah TTD Prepared By{drawing.prepared_by ? ` oleh ${drawing.prepared_by}` : ""}.
-                      <span className="font-normal text-slate-600">Submit ke Eng Leader dilakukan dari <b>Work Group</b> (bisa pilih sebagian drawing).</span>
+                      <span className="font-normal text-slate-600">Submit ke Eng Leader dilakukan dari <b>Work Group</b> (bisa pilih sebagian drawing). Kategori pekerjaan wajib dipilih sebelum submit.</span>
                     </span>
                   ) : (
                     <span>
-                      TTD di posisi yang dipilih pada PDF drawing, lalu <b>Simpan</b>. Status tetap DRAFT — <b>submit ke Eng Leader</b> dilakukan terpisah dari halaman <b>Work Group</b>.
+                      Klik <b>TTD Prepared By</b> → PDF drawing langsung terbuka, pilih titik TTD (boleh <b>beda posisi tiap halaman</b> bila PDF banyak lembar), lalu <b>Simpan</b>. Status tetap DRAFT — submit ke Eng Leader dilakukan dari <b>Work Group</b>.
                       {!drawing.file_id && (
-                        <div className="mt-1 text-rose-700 font-bold">⚠ Upload PDF Drawing dulu sebelum TTD.</div>
+                        <div className="mt-1 text-rose-700 font-bold">⚠ Upload PDF Drawing dulu — TTD otomatis terbuka setelah upload.</div>
                       )}
                       {drawing.file_id && !hasWorkCat && (
-                        <div className="mt-1 text-rose-700 font-bold">⚠ Pilih Kategori Pekerjaan (SIMPLE / MODERATE / COMPLEX) dulu sebelum TTD.</div>
+                        <div className="mt-1 text-amber-700">Catatan: Kategori Pekerjaan (SIMPLE / MODERATE / COMPLEX) boleh dipilih nanti, tapi <b>wajib</b> sebelum submit ke Eng Leader.</div>
                       )}
                     </span>
                   )}

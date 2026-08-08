@@ -367,7 +367,7 @@ export default function EngineeringDrfWorkPage() {
       )}
 
       {canWork && drawings.length > 0 && (
-        <SubmitToLeaderPanel drawings={drawings} onDone={load} />
+        <SubmitToLeaderPanel drawings={drawings} soNo={drf.so_no} onDone={load} />
       )}
         </TabsContent>
 
@@ -1028,10 +1028,20 @@ function BomTabsPanel({ soNo, canEdit }) {
 }
 
 /* ============ Submit ke Eng Leader — partial submit dengan checkbox ============ */
-function SubmitToLeaderPanel({ drawings, onDone }) {
+function SubmitToLeaderPanel({ drawings, soNo, onDone }) {
   const draftDrawings = (drawings || []).filter((d) => (d.approval_status || "draft") === "draft");
   const [sel, setSel] = useState({});
   const [busy, setBusy] = useState(false);
+  const [boms, setBoms] = useState([]);
+
+  useEffect(() => {
+    let alive = true;
+    if (!soNo) { setBoms([]); return; }
+    api.get("/bom/by-so", { params: { so_no: soNo } })
+      .then(({ data }) => { if (alive) setBoms(data.items || []); })
+      .catch(() => { if (alive) setBoms([]); });
+    return () => { alive = false; };
+  }, [soNo]);
 
   const eligible = (d) =>
     !!d.file_id &&
@@ -1042,10 +1052,33 @@ function SubmitToLeaderPanel({ drawings, onDone }) {
   const selectedIds = Object.keys(sel).filter((k) => sel[k]);
   const allSelected = eligibleIds.length > 0 && eligibleIds.every((id) => sel[id]);
 
+  const BomInclude = () => (
+    boms.length > 0 ? (
+      <div className="border border-amber-400 bg-amber-50 p-2.5" data-testid="wg-submit-bom-include">
+        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold text-amber-800 mb-1.5">
+          <Package size={13} weight="fill" /> BOM ikut ter-submit ke Eng Leader
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {boms.map((b, i) => (
+            <span key={b.id} className="inline-flex items-center gap-1.5 bg-white border border-amber-300 px-2 py-1 text-[11px]" data-testid={`wg-submit-bom-${b.part_no || i + 1}`}>
+              <span className="font-bold text-amber-800">Part {b.part_no || i + 1}</span>
+              <span className="font-mono text-slate-800">{b.bom_no}</span>
+              <span className="text-slate-500">· {b.items_count} item</span>
+            </span>
+          ))}
+        </div>
+        <div className="text-[10px] text-slate-500 mt-1">Saat drawing disubmit, BOM bersama pada SO ini otomatis ikut maju ke review Eng Leader.</div>
+      </div>
+    ) : null
+  );
+
   if (draftDrawings.length === 0) {
     return (
-      <div className="border-2 border-emerald-500 bg-emerald-50 p-3 flex items-center gap-2 text-sm text-emerald-800" data-testid="wg-submit-done">
-        <CheckCircle size={18} weight="fill" /> Semua drawing sudah di-submit ke Eng Leader.
+      <div className="border-2 border-emerald-500 bg-emerald-50 p-3 space-y-2" data-testid="wg-submit-done">
+        <div className="flex items-center gap-2 text-sm text-emerald-800">
+          <CheckCircle size={18} weight="fill" /> Semua drawing sudah di-submit ke Eng Leader.
+        </div>
+        <BomInclude />
       </div>
     );
   }
@@ -1069,7 +1102,7 @@ function SubmitToLeaderPanel({ drawings, onDone }) {
         toast.error(e.response?.data?.detail || "Gagal submit 1 drawing");
       }
     }
-    if (ok > 0) toast.success(`${ok} drawing disubmit ke Eng Leader`);
+    if (ok > 0) toast.success(`${ok} drawing + BOM disubmit ke Eng Leader`);
     setSel({});
     setBusy(false);
     onDone?.();
@@ -1079,9 +1112,10 @@ function SubmitToLeaderPanel({ drawings, onDone }) {
     <div className="border-2 border-indigo-600" data-testid="wg-submit-leader-panel">
       <div className="px-3 py-2 bg-indigo-600 text-white flex items-center gap-2 text-[11px] uppercase tracking-widest font-bold">
         <PaperPlaneRight size={15} weight="bold" /> Submit ke Eng Leader
-        <span className="ml-auto font-normal normal-case opacity-90 text-[10px]">Centang drawing yang siap — boleh sebagian (partial)</span>
+        <span className="ml-auto font-normal normal-case opacity-90 text-[10px]">Centang drawing yang siap — boleh sebagian (partial). BOM ikut ter-submit.</span>
       </div>
       <div className="p-3 bg-indigo-50/60 space-y-2">
+        <BomInclude />
         <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer w-fit">
           <input type="checkbox" className="accent-indigo-600" checked={allSelected} onChange={toggleAll} disabled={eligibleIds.length === 0} data-testid="wg-submit-selectall" />
           Pilih semua yang siap ({eligibleIds.length})
@@ -1124,7 +1158,7 @@ function SubmitToLeaderPanel({ drawings, onDone }) {
             data-testid="wg-submit-btn"
           >
             <PaperPlaneRight size={15} weight="bold" className="mr-2" />
-            {busy ? "Submit..." : `Submit Terpilih (${selectedIds.length}) ke Eng Leader`}
+            {busy ? "Submit..." : `Submit Terpilih (${selectedIds.length}) + BOM ke Eng Leader`}
           </Button>
         </div>
       </div>

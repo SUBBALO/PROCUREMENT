@@ -1,94 +1,128 @@
-# Rencana Perbaikan Work Order (Work Group + Work Order) — BOM 1 per SO
+# Rencana Perbaikan Work Order (Work Group + Work Order) — BOM di Level SO (Support Multi‑Part) + TTD Prepared + Partial Submit
 
 ## 1) Objectives
-- Pusatkan konsep **1 SO = banyak Drawing = 1 BOM**: tab **BOM** ada di level **Work Group** (`/engineering/drf/:drfId`), bukan per-drawing.
-- **Tab BOM** di Work Group menampilkan **grid BOM editable (embedded)** + **tombol Simpan saja** (tanpa Submit).
-- **Submit ke Engineering** tetap **satu gerbang** di per-drawing **Drawing & Upload** (`/engineering/work-order/:drawingId`) dengan verifikasi drawing + BOM.
-- Buat **UI minimalis & compact** untuk **dua halaman**: Work Group dan Work Order per-drawing.
-- Pastikan perubahan tervalidasi dengan **testing_agent** karena user melaporkan mismatch.
+- Pusatkan konsep **BOM di level SO/Work Group**: engineer bekerja per-SO pada halaman **Work Group** (`/engineering/drf/:drfId`) dengan 2 tab: **Drawing & Upload** dan **BOM**.
+- **Tab BOM** di Work Group menampilkan **grid BOM editable (embedded)** + **tombol Simpan saja** (tanpa Submit BOM).
+- Dukung realita operasional: **1 SO dapat memiliki beberapa BOM (Part)** → **sub-tab BOM Part 1/Part 2 + Tambah BOM** dengan penomoran **`-P{n}`**.
+- Perjelas alur TTD:
+  - **TTD Prepared By** dilakukan **per-drawing** dan hanya **Simpan** (status drawing tetap `draft`).
+  - **Submit ke Eng Leader** dipindah ke **Work Group (bawah)** dengan **checkbox** (bisa **partial submit**) dan **BOM ikut tersubmit**.
+- Buat UI **minimalis & compact** untuk **dua halaman** (Work Group dan Work Order per-drawing): header tipis, tabel rapat, padding kecil, kontrol jelas.
+- Pastikan perubahan tervalidasi dengan **testing_agent_v3** karena user melaporkan mismatch (jangan klaim “sudah berubah” tanpa verifikasi route/role/data).
 
 ## 2) Implementation Steps
 
 ### Phase 1 — Core Flow POC (wajib): “BOM tab di Work Group = grid embedded + Simpan saja”
 **User stories (POC)**
-1. Sebagai engineer, saya bisa membuka Work Group dan melihat 2 tab: **Drawing & Upload** dan **BOM** untuk 1 SO.
-2. Sebagai engineer, saya bisa mengisi item BOM langsung di tab BOM tanpa pindah halaman.
-3. Sebagai engineer, saya hanya melihat tombol **Simpan Draft** di tab BOM (tidak ada Submit BOM).
-4. Sebagai engineer, saya bisa kembali ke daftar drawing di tab Drawing tanpa kehilangan konteks.
-5. Sebagai engineer, saya melihat info bahwa BOM ini **shared** untuk semua drawing pada SO tersebut.
+1. Engineer membuka Work Group dan melihat 2 tab: **Drawing & Upload** dan **BOM** untuk 1 SO.
+2. Engineer mengisi item BOM langsung di tab BOM tanpa pindah halaman.
+3. Engineer hanya melihat tombol **Simpan** di tab BOM (tidak ada Submit BOM).
+4. Engineer kembali ke daftar drawing di tab Drawing tanpa kehilangan konteks.
+5. Engineer memahami BOM ini shared di level SO (ditampilkan di UI).
 
 **Langkah teknis**
 - Refactor `frontend/src/pages/BomEntryGridPage.jsx`:
-  - Ekstrak `WorkOrderView` menjadi komponen reusable: mis. `BomWorkOrderView({ bomId, embedded })`.
+  - Ekstrak & export `WorkOrderView({ bomId, embedded })`.
   - Mode `embedded=true`:
-    - Sembunyikan header besar + tombol navigasi/back internal BOM page.
-    - Sembunyikan tombol/aksi yang bukan kebutuhan embedded (export/print/link ke BOM utama, dll) sesuai kebutuhan minimal.
-    - Pertahankan: grid, save, status lock/read-only logic, revision panel yang relevan.
-  - Export komponen tersebut untuk dipakai di Work Group.
+    - Sembunyikan header besar + tombol back internal halaman BOM.
+    - Pertahankan grid, save, status lock/read-only, panel revision yang relevan.
 - Ubah `frontend/src/pages/EngineeringDrfWorkPage.jsx`:
   - Tambah Tabs level grup: `Drawing & Upload` (default) dan `BOM`.
-  - Di tab `BOM`, render `BomWorkOrderView` (embedded) menggunakan `sharedBomId`.
-  - Pastikan fallback state:
-    - jika `sharedBomId` kosong: tampilkan pesan “BOM belum terbentuk — generate drawing dulu / hubungi leader”.
-- Pastikan di embedded BOM tab **tidak ada tombol submit** (hanya save) walau status memungkinkan.
+  - Di tab `BOM`, render `WorkOrderView` (embedded) menggunakan BOM SO.
+  - Fallback state: jika BOM belum ada → pesan “Generate minimal 1 drawing dulu”.
 
-**Checkpoint POC (jangan lanjut sebelum lolos)**
-- Bisa buka `/engineering/drf/:drfId` → tab BOM tampil grid dan dapat simpan.
+**Checkpoint POC**
+- `/engineering/drf/:drfId` → tab BOM tampil grid dan dapat simpan.
 - Tidak ada tombol submit BOM di tab BOM.
-- BOM yang disimpan tercermin saat reload.
+- Data BOM tersimpan dan muncul saat reload.
+
+**Status**: ✅ **Selesai** (embedded BOM di Work Group sudah berjalan dan tervalidasi).
+
+---
 
 ### Phase 2 — V1 App Development: Restruktur & Minimalis (Work Group + Work Order)
 **User stories (V1)**
-1. Sebagai engineer, Work Group tampil ringkas: header tipis, info penting saja, tabel compact.
-2. Sebagai engineer, saya bisa melihat daftar drawing dalam SO dan membuka Work Order per drawing dengan 1 klik.
-3. Sebagai engineer, saya bisa mengisi BOM bersama di tab BOM tanpa bingung “BOM per drawing”.
-4. Sebagai engineer, saya bisa upload drawing dan submit dari Work Order per drawing dengan UI yang tidak kebesaran.
-5. Sebagai leader/reviewer, saya tetap bisa membuka Work Order per drawing untuk lihat status/attachment tanpa layout berantakan.
+1. Work Group tampil ringkas: header tipis, info penting saja, tabel compact.
+2. Daftar drawing jelas dan cepat untuk buka per-drawing Work Order.
+3. BOM tidak lagi terasa “BOM per drawing” (BOM ditempatkan di tab grup).
+4. Alur TTD per-drawing tidak membingungkan dan tidak kebesaran.
 
 **Langkah teknis**
 - `frontend/src/pages/EngineeringWorkOrderPage.jsx` (per-drawing):
-  - Hapus tab BOM di per-drawing (atau ubah jadi “Info BOM” kecil saja) agar konsep tidak dobel.
-  - Kompakkan layout:
-    - perkecil padding, kurangi border tebal “section A/B”, jadikan header strip tipis.
-    - ringkas panel info (grid lebih rapat, font kecil konsisten).
-  - Tombol **TTD & Submit** tetap ada di Drawing & Upload; copy tetap menegaskan “BOM disimpan di Work Group tab BOM”.
+  - Hapus konsep BOM tab/kolom BOM di halaman per-drawing.
+  - Hilangkan elemen BOM yang mengganggu:
+    - ✅ hapus **kolom “BOM Link”**.
+    - ✅ hilangkan tombol **“Isi Data BOM”** pada attachments (gunakan `hideBomLink`).
+  - Kompakkan layout (padding/font/button ringkas) dan copy menegaskan BOM ada di Work Group.
 - `frontend/src/pages/EngineeringDrfWorkPage.jsx` (Work Group):
-  - Kompakkan header, tabel daftar drawing, dan panel BOM bersama.
-  - Pastikan tab default tetap “Drawing & Upload” supaya alur kerja drawing tetap cepat.
-- Konsistensi gating:
-  - Submit drawing memverifikasi prasyarat (PDF upload, kategori kerja, dan BOM terisi sesuai aturan backend yang ada).
-  - Jika perlu, tambahkan indikator ringan di Work Group bahwa BOM “sudah diisi / belum”.
+  - Kompakkan header/tabel.
+  - Chip daftar drawing: hanya **MKS** dan **Cust Dwg** (Nesting/Extra di panel dokumen bawah).
 
 **Akhiri Phase 2 dengan**
 - `yarn build` frontend.
-- Jalankan `testing_agent_v3` (regresi + verifikasi kasus user-reported mismatch).
+- Jalankan `testing_agent_v3`.
 
-### Phase 3 — Hardening + UX Polish
+**Status**: ✅ **Selesai** (UI minimalis/compact di dua halaman sudah diterapkan dan diverifikasi).
+
+---
+
+### Phase 3 — Hardening + UX Polish: Multi‑Part BOM + TTD Prepared + Partial Submit
 **User stories**
-1. Sebagai engineer, saya tidak kehilangan input BOM saat pindah tab (state tersimpan/terjaga).
-2. Sebagai engineer, saya melihat status lock BOM jelas saat ada drawing sudah submit.
-3. Sebagai leader, saya bisa review BOM di tab BOM (read-only bila terkunci) tanpa tombol yang membingungkan.
-4. Sebagai user, tabel dan header tetap nyaman dipakai di layar kecil (responsif).
-5. Sebagai QA, setiap aksi penting punya `data-testid` unik.
+1. SO dapat memiliki **BOM Part 1/Part 2** (dst) bila diperlukan.
+2. Nomor BOM part tambahan memakai suffix **`-P2`, `-P3`, ...**.
+3. Di setiap BOM part, section **Nomor Drawing Terdaftar** menampilkan **semua drawing pada SO**.
+4. Engineer TTD Prepared per-drawing (save-only) dengan pemilihan lokasi stamp digital.
+5. Submit ke Eng Leader dilakukan dari Work Group dengan checkbox (partial), **BOM ikut tersubmit**.
 
 **Langkah teknis**
-- Rapikan `data-testid` untuk: tab group, embedded bom grid, save button, indikator lock.
-- Pastikan embedded mode tidak merusak route BOM editor normal (`/engineering/bom-entry/:bomId`).
-- Tambah screenshot route:
-  - Work Group tab BOM
-  - Work Order per-drawing
-- Jalankan `testing_agent_v3` lagi.
+- Backend (`backend/routers/bom.py`):
+  - ✅ `GET /api/bom/by-so?so_no=...` untuk daftar BOM per SO.
+  - ✅ `POST /api/bom/add-part` untuk membuat BOM part baru (suffix `-P{n}`), mewarisi metadata part‑1.
+- Frontend Work Group (`frontend/src/pages/EngineeringDrfWorkPage.jsx`):
+  - ✅ Tab BOM berisi sub-tab: **BOM Part 1 / BOM Part 2 / + Tambah BOM**.
+  - ✅ Klik part → render embedded grid BOM untuk part tersebut.
+- Frontend BOM embedded (`frontend/src/pages/BomEntryGridPage.jsx`):
+  - ✅ Fetch drawings by SO dan tampilkan **SEMUA drawing SO** pada “Nomor Drawing Terdaftar”.
+- Backend TTD Prepared (`backend/routers/drawing_register.py`):
+  - ✅ `POST /api/drawings/{id}/sign-prepared` menyimpan prepared_signature, status tetap `draft`.
+  - ✅ `submit-for-approval` fallback menggunakan posisi prepared_signature bila submit tanpa placement.
+  - ✅ Relaksasi: **TTD Prepared tidak wajib kategori**; kategori tetap wajib saat submit.
+- Frontend Signature modal (`frontend/src/components/SignaturePlacementModal.jsx`):
+  - ✅ Stage `prepared` → panggil endpoint `sign-prepared`, tombol menjadi “Simpan TTD”.
+  - ✅ Mendukung multi-halaman via `placements` (boleh sign lebih dari 1 halaman bila perlu).
+- Frontend per-drawing upload UX (`frontend/src/pages/MasterDrawingPage.jsx` + `EngineeringWorkOrderPage.jsx`):
+  - ✅ Setelah upload PDF MKS sukses, **auto-open** modal pemilihan titik TTD (opsional per kebutuhan user).
+  - ✅ `suppressWorkCatPopup` untuk menghindari popup kategori mengganggu saat engineer langsung memilih titik TTD.
+- Partial submit (`frontend/src/pages/EngineeringDrfWorkPage.jsx`):
+  - ✅ Panel **Submit ke Eng Leader** di bawah (checkbox, select all, submit terpilih).
+  - ✅ Panel menampilkan BOM yang akan ikut tersubmit (**BOM IKUT TER‑SUBMIT KE ENG LEADER**).
+
+**Status**: ✅ **Selesai** (multi‑part BOM + TTD Prepared + partial submit + BOM included sudah berjalan).
 
 ## 3) Next Actions (eksekusi terdekat)
-1. Refactor `WorkOrderView` di `BomEntryGridPage.jsx` menjadi komponen exported dengan flag `embedded`.
-2. Tambah Tabs di `EngineeringDrfWorkPage.jsx` dan embed grid BOM.
-3. Hilangkan BOM tab pada `EngineeringWorkOrderPage.jsx` dan perjelas navigasi “BOM ada di Work Group”.
-4. Kompakkan UI kedua halaman (padding, header, tabel).
-5. `yarn build` + `testing_agent_v3` + perbaiki temuan sampai clean.
+1. **Monitor real usage**: pastikan user melihat perubahan di route yang benar:
+   - Work Group: `/engineering/drf/:drfId`
+   - Work Order per-drawing: `/engineering/work-order/:drawingId`
+2. (Opsional UX lanjutan) Tambah indikator ringkas di daftar drawing:
+   - “PDF OK”, “TTD OK”, “Kategori OK”, “Siap Submit” agar engineer cepat pilih partial submit.
+3. (Opsional) Aturan bisnis BOM multi-part:
+   - Jika diperlukan, tambahkan penjelasan “kapan perlu Part 2” + guard agar tidak membuat part berlebihan.
 
 ## 4) Success Criteria
-- Di **Work Group** (`/engineering/drf/:drfId`) ada 2 tab: **Drawing & Upload** dan **BOM**.
-- Tab **BOM** menampilkan **grid BOM editable** dan hanya ada **Simpan** (tidak ada Submit BOM).
-- **Work Order per-drawing** tidak lagi menampilkan BOM sebagai tab utama; submit tetap single gate dari drawing.
-- UI **minimalis/compact**: header tipis, tabel rapat, tidak “kebesaran”.
-- `yarn build` sukses dan **testing_agent_v3** untuk flow Work Group/Work Order tidak menemukan bug kritis.
+- **Work Group** (`/engineering/drf/:drfId`) memiliki 2 tab: **Drawing & Upload** dan **BOM**.
+- Tab **BOM**:
+  - Menampilkan **grid BOM embedded** (editable) dan hanya ada **Simpan**.
+  - Mendukung **multi-part BOM** via sub-tab Part 1/Part 2 + **Tambah BOM** (suffix `-P{n}`).
+  - “Nomor Drawing Terdaftar” menampilkan **semua drawing pada SO**.
+- **Work Order per-drawing** (`/engineering/work-order/:drawingId`):
+  - Tidak menampilkan kolom/tombol yang berhubungan dengan BOM (BOM ada di Work Group).
+  - Setelah upload PDF, engineer dapat langsung memilih lokasi stamp digital dan **Simpan TTD Prepared**.
+  - Modal TTD mendukung **multi-halaman** (boleh sign halaman tertentu saja).
+- **Submit ke Eng Leader**:
+  - Dilakukan di **Work Group** dengan **checkbox** (partial submit).
+  - Panel menegaskan **BOM ikut tersubmit**.
+- **Verifikasi**:
+  - `testing_agent_v3` (Iterasi 34) ✅ backend 5/5, frontend 11/11.
+  - Direct curl ✅ sign-prepared (dengan/tanpa kategori), submit fallback placement.
+  - Screenshot ✅ Work Group + BOM tab + Work Order.
+  - Cleanup ✅ 0 user `qa_`, artefak uji dibersihkan.
