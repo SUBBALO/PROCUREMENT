@@ -2596,12 +2596,17 @@ async def drawing_start_revision(drawing_id: str, current: dict = Depends(get_cu
             bom = await db.boms.find_one({"id": d["bom_id"], "deleted_at": {"$exists": False}})
             if bom:
                 b_old = int(bom.get("rev_no") or 0)
+                _atts = await db.bom_attachments.find(
+                    {"bom_id": bom["id"], "deleted_at": {"$exists": False}},
+                    {"_id": 0, "id": 1, "category": 1, "filename": 1, "uploaded_at": 1},
+                ).to_list(300)
                 bsnap = {
                     "rev_no": b_old, "bom_no": bom.get("bom_no"),
                     "engineering_status": bom.get("engineering_status"),
                     "items": bom.get("items") or [], "signatures": bom.get("signatures") or {},
                     "procurement_status": bom.get("procurement_status"),
                     "procurement_signatures": bom.get("procurement_signatures") or {},
+                    "attachments": _atts,
                     "snapshot_at": now, "ecn_no": ecn.get("ecn_no"),
                 }
                 await db.boms.update_one({"id": bom["id"]}, {

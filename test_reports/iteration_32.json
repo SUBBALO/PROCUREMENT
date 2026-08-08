@@ -1,0 +1,78 @@
+{
+  "summary": "Comprehensive testing of Engineering Portal menu items and new features completed. All critical menu items load successfully, Rev column present in Drawing Master List, BOM procurement chain implemented. Some endpoints missing (Internal Engineering Process, Material Costing) and minor API parameter issues found.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "missing_endpoints": [
+      {
+        "endpoint": "/api/engineering/process",
+        "issue": "Returns 404 - Internal Engineering Process endpoint not implemented",
+        "impact": "Menu item 'Internal Engineering Process' will not work",
+        "fix_priority": "MEDIUM"
+      },
+      {
+        "endpoint": "/api/engineering/material-costing",
+        "issue": "Returns 404 - Engineering Material Costing endpoint not implemented",
+        "impact": "Menu item 'Engineering Masterlist Material Price' will not work",
+        "fix_priority": "MEDIUM"
+      }
+    ],
+    "api_parameter_issues": [
+      {
+        "endpoint": "/api/engineering/kpi",
+        "issue": "Requires 'year' and 'month' query parameters but none provided in menu link",
+        "impact": "KPI Engineering page may fail to load without default parameters",
+        "fix_priority": "LOW"
+      },
+      {
+        "endpoint": "/api/inquiries/{id}/assign",
+        "issue": "Requires 'engineer_id' field, not 'assigned_to_role'",
+        "impact": "Inquiry assignment to Engineering may need UI adjustment",
+        "fix_priority": "LOW"
+      }
+    ],
+    "permission_issues": [
+      {
+        "endpoint": "/api/drawing-requests/{id}/request-revision",
+        "issue": "Returns 403 when eng_leader tries to request revision (only Sales/creator allowed)",
+        "impact": "Expected behavior - revision request is role-gated correctly",
+        "fix_priority": "NONE"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "✅ Login as qa_leader_tmp successful",
+    "✅ Engineering Portal (/engineering) loads without errors",
+    "✅ All 10 sidebar menu items present and clickable (Pekerjaan Masuk, Masterlist Inquiry, Menunggu Verifikasi Leader, Master List ECN, Bill of Material, Drawing Master List, Engineering Masterlist Material Price, SO Document Tracker, KPI Engineering, Monitor Beban Kerja)",
+    "✅ Antrian Drawing Request panel (dept-portal-children) renders on right side",
+    "✅ Drawing Master List page loads successfully",
+    "✅ Rev column present in Drawing Master List (found 20 dw-rev-* elements)",
+    "✅ Masterlist Inquiry page loads successfully",
+    "✅ Engineering Workload endpoint works (200)",
+    "✅ Pending Leader Verification endpoint works (200)",
+    "✅ SO Document Tracker (drawings endpoint) works (200)",
+    "✅ Master List ECN & ECR endpoint works (200)",
+    "✅ BOM List endpoint works (200)",
+    "✅ BOM has procurement_status field (procurement chain implemented)",
+    "✅ BOM Procurement Pending Count endpoint works (200)",
+    "✅ Drawing Master List has revision tracking (revision field present)"
+  ],
+  "test_report_links": [
+    "/app/backend_test.py"
+  ],
+  "success_percentage": {
+    "backend": "73.7% (14/19 tests passed)",
+    "frontend": "100% (all critical UI elements working)"
+  },
+  "action_item_for_main_agent": "1. Implement missing endpoints: /api/engineering/process and /api/engineering/material-costing. 2. Add default year/month parameters to KPI Engineering endpoint or handle in frontend. 3. Verify inquiry assignment UI uses correct 'engineer_id' field. 4. Test Drawing Request Form field changes (no Project Name, field order, required dates) - requires Sales login. 5. Test BOM submit-gate (no submit button in BOM tab) - requires Work Order page testing. 6. Test ECN scope field (drawing/bom/both) - may be in revision_request object. 7. Test BOM Revision History panel - requires BOM with revisions data.",
+  "updated_files": [
+    "/app/backend_test.py"
+  ],
+  "should_call_test_agent_after_fix": "true",
+  "should_main_agent_test_itself": "false",
+  "notes": "Testing focused on Engineering Portal menu structure and backend API availability. All critical menu items render correctly. Rev column confirmed in Drawing Master List. BOM procurement chain structure present. Some advanced features (DRF form changes, BOM submit-gate, ECN scope, BOM revision history) require more complex test scenarios with specific data setup and were not fully tested in this iteration. Recommend main agent verify these features work end-to-end with proper test data."
+}

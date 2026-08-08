@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom";
 import api, { formatDateID } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import PdfPreviewModal from "../components/PdfPreviewModal";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
@@ -22,6 +23,7 @@ import {
   ChatCircleDots,
   ChatText,
   Clock,
+  ArrowClockwise,
 } from "@phosphor-icons/react";
 
 /* -------------------- Constants -------------------- */
@@ -1368,6 +1370,13 @@ function WorkOrderView() {
           manual di dokumen cetak sesuai format berlaku. Workflow status (Draft →
           Pending Review → Approved) tetap dipertahankan sebagai audit trail. */}
 
+      {/* SECTION — Riwayat Revisi BOM (snapshot versi lama + preview) */}
+      {Array.isArray(bom?.revisions) && bom.revisions.length > 0 && (
+        <SectionCard title="Riwayat Revisi BOM" icon={ArrowClockwise}>
+          <BomRevisionHistory bom={bom} role={role} />
+        </SectionCard>
+      )}
+
       {/* SECTION 6 — Approval BOM Berjenjang (Procurement): Leader → Purchasing → Manager (Erwin) */}
       {status === "approved" && (
         <SectionCard title="3. Approval BOM Berjenjang (Procurement)" icon={CheckCircle}>
@@ -1702,6 +1711,84 @@ function SectionCard({ title, icon: Icon, children }) {
     </div>
   );
 }
+
+/* Riwayat Revisi BOM — snapshot versi lama (items + lampiran) dengan preview */
+function BomRevisionHistory({ bom, role }) {
+  const [openIdx, setOpenIdx] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const backendUrl = process.env.REACT_APP_BACKEND_URL;
+  const canCosting = ["super_admin", "admin", "finance", "supervisor"].includes(role);
+  const PRICE_CATS = ["costing", "nesting_price", "costing_prev"];
+  const catLabel = { drawing: "Drawing", customer_ref: "Ref Customer", nesting: "Nesting", nesting_price: "Nesting Price", costing: "Costing", costing_prev: "Costing Prev" };
+  const revs = [...(bom.revisions || [])].sort((a, b) => (b.rev_no ?? 0) - (a.rev_no ?? 0));
+
+  const openPreview = (a) => setPreview({
+    name: a.filename || "Dokumen",
+    metaUrl: `/bom/${bom.id}/attachments/${a.id}/page-meta`,
+    pageBase: `${backendUrl}/api/bom/${bom.id}/attachments/${a.id}/page-image`,
+    downloadUrl: `${backendUrl}/api/bom/${bom.id}/attachments/${a.id}/download`,
+  });
+
+  return (
+    <div className="space-y-2" data-testid="bom-revision-history">
+      {revs.map((r, i) => {
+        const atts = (r.attachments || []).filter((a) => canCosting || !PRICE_CATS.includes(a.category));
+        const isOpen = openIdx === i;
+        return (
+          <div key={i} className="border border-slate-200">
+            <button type="button" onClick={() => setOpenIdx(isOpen ? null : i)} className="w-full flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 text-left" data-testid={`bom-rev-row-${r.rev_no}`}>
+              <span className="inline-flex items-center px-2 py-0.5 text-[11px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-300">Rev {r.rev_no ?? 0}</span>
+              <span className="text-xs text-slate-600">{r.snapshot_at ? new Date(r.snapshot_at).toLocaleString("id-ID") : ""}</span>
+              {r.ecn_no && <span className="text-[11px] font-mono text-slate-500">ECN {r.ecn_no}</span>}
+              <span className="text-[11px] text-slate-400 ml-auto">{(r.items || []).length} item · {atts.length} lampiran</span>
+            </button>
+            {isOpen && (
+              <div className="p-3 space-y-2">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border border-slate-200">
+                    <thead className="bg-slate-100"><tr>
+                      <th className="p-1.5 text-left">No</th><th className="p-1.5 text-left">Nama</th><th className="p-1.5 text-right">Qty</th><th className="p-1.5 text-left">Unit</th><th className="p-1.5 text-left">Material</th>
+                    </tr></thead>
+                    <tbody>
+                      {(r.items || []).map((it, idx) => (
+                        <tr key={idx} className="border-t border-slate-100">
+                          <td className="p-1.5">{idx + 1}</td><td className="p-1.5">{it.name}</td><td className="p-1.5 text-right">{it.qty}</td><td className="p-1.5">{it.unit}</td><td className="p-1.5">{it.material}</td>
+                        </tr>
+                      ))}
+                      {(r.items || []).length === 0 && <tr><td colSpan={5} className="p-2 text-center text-slate-400 italic">Tidak ada item</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+                {atts.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {atts.map((a) => (
+                      <button key={a.id} type="button" onClick={() => openPreview(a)} className="inline-flex items-center gap-1 px-2 py-1 text-[11px] border border-slate-300 bg-white hover:bg-emerald-50" data-testid={`bom-rev-att-${a.id}`}>
+                        <Eye size={12} weight="bold" /> {catLabel[a.category] || a.category}: {a.filename}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {(r.signatures?.prepared_by?.name || r.signatures?.checked_by?.name) && (
+                  <div className="text-[10px] text-slate-500">Prepared: {r.signatures?.prepared_by?.name || "-"} · Checked: {r.signatures?.checked_by?.name || "-"}</div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {preview && (
+        <PdfPreviewModal
+          metaUrl={preview.metaUrl}
+          pageUrlBuilder={(n) => `${preview.pageBase}?page=${n}&scale=2`}
+          title={preview.name}
+          downloadUrl={preview.downloadUrl}
+          onClose={() => setPreview(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 
 function MetaCell({ label, value, strong, full }) {
   return (
