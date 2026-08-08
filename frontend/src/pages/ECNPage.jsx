@@ -7,7 +7,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
-import { ArrowClockwise, MagnifyingGlass, Archive, ArrowSquareOut, Clock, PencilSimpleLine, Factory, ShieldCheck } from "@phosphor-icons/react";
+import { ArrowClockwise, MagnifyingGlass, Archive, ArrowSquareOut, Clock, PencilSimpleLine, Factory, ShieldCheck, X } from "@phosphor-icons/react";
 
 const STATUS = {
   draft: "bg-slate-200 text-slate-700 border-slate-400",
