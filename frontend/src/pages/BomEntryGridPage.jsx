@@ -1006,6 +1006,13 @@ function WorkOrderView() {
     return false;
   }, [bom, canEditItems]);
   const canApprove = useMemo(() => bom?.engineering_status === "pending_review" && isEngLeader, [bom, isEngLeader]);
+  const isAdminLike = useMemo(() => ["admin", "super_admin", "supervisor"].includes(role), [role]);
+  const isPurchasing = useMemo(() => role === "purchasing" || isAdminLike, [role, isAdminLike]);
+  const procState = useMemo(() => {
+    if (!bom) return "not_ready";
+    if (bom.procurement_status) return bom.procurement_status;
+    return bom.engineering_status === "approved" ? "leader_checked" : "not_ready";
+  }, [bom]);
   // canAcknowledge & canFinalApprove dihilangkan — TT Purchasing & Admin dilakukan manual di cetak
 
   const loadAll = useCallback(async () => {
@@ -1182,6 +1189,35 @@ function WorkOrderView() {
     }
   };
 
+  // ── Approval BOM berjenjang (Procurement chain) ──────────────────────
+  const purchasingReview = async () => {
+    const notes = window.prompt("Catatan review Purchasing (opsional):", "") ;
+    if (notes === null) return;
+    try {
+      await api.post(`/bom/${bomId}/procurement/purchasing-review`, { notes: (notes || "").trim() });
+      toast.success("BOM di-review Purchasing. Menunggu approval Manager (Erwin).");
+      await loadAll();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal review Purchasing"); }
+  };
+  const managerApprove = async () => {
+    if (!window.confirm("Setujui final BOM ini sebagai Procurement Manager (Erwin)?")) return;
+    try {
+      await api.post(`/bom/${bomId}/procurement/manager-approve`, {});
+      toast.success("BOM disetujui final oleh Manager (Erwin).");
+      await loadAll();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal approve Manager"); }
+  };
+  const procurementReject = async () => {
+    const reason = window.prompt("Alasan menolak (wajib):", "");
+    if (reason === null) return;
+    if (!reason.trim()) { toast.error("Alasan wajib diisi"); return; }
+    try {
+      await api.post(`/bom/${bomId}/procurement/reject`, { reason: reason.trim() });
+      toast.success("BOM dikembalikan ke tahap Leader Checked.");
+      await loadAll();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal menolak"); }
+  };
+
   /* -------------------- Render -------------------- */
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-500">Memuat Work Order...</div>;
@@ -1331,6 +1367,21 @@ function WorkOrderView() {
           Semua tanda tangan (Prepared / Checked / Acknowledged / Approved) dilakukan
           manual di dokumen cetak sesuai format berlaku. Workflow status (Draft →
           Pending Review → Approved) tetap dipertahankan sebagai audit trail. */}
+
+      {/* SECTION 6 — Approval BOM Berjenjang (Procurement): Leader → Purchasing → Manager (Erwin) */}
+      {status === "approved" && (
+        <SectionCard title="3. Approval BOM Berjenjang (Procurement)" icon={CheckCircle}>
+          <ProcurementChain
+            bom={bom}
+            procState={procState}
+            isPurchasing={isPurchasing}
+            isAdminLike={isAdminLike}
+            onPurchasingReview={purchasingReview}
+            onManagerApprove={managerApprove}
+            onReject={procurementReject}
+          />
+        </SectionCard>
+      )}
 
       {/* Action Bar */}
       <div className="sticky bottom-0 bg-white border-t-2 border-slate-800 p-3 -mx-4 lg:-mx-6 z-10 flex flex-wrap items-center justify-end gap-2">
@@ -1657,6 +1708,78 @@ function MetaCell({ label, value, strong, full }) {
     <div className={full ? "col-span-2 md:col-span-2" : ""}>
       <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
       <div className={`text-xs mt-0.5 ${strong ? "font-bold text-slate-900" : "text-slate-700"}`}>{value || "-"}</div>
+    </div>
+  );
+}
+
+
+/* Rantai approval procurement: Leader Checked → Purchasing Reviewed → Manager (Erwin) Approved */
+function ProcurementChain({ bom, procState, isPurchasing, isAdminLike, onPurchasingReview, onManagerApprove, onReject }) {
+  const sigs = bom.procurement_signatures || {};
+  const leaderSig = (bom.signatures || {}).checked_by;
+  const order = ["leader_checked", "purchasing_reviewed", "manager_approved"];
+  const curIdx = order.indexOf(procState);
+  const fmt = (s) => s?.at ? new Date(s.at).toLocaleString("id-ID") : "";
+
+  const Step = ({ idx, title, roleLabel, sig, done }) => {
+    const active = curIdx === idx && !done;
+    return (
+      <div className={`flex-1 min-w-[180px] border-2 p-3 ${done ? "border-emerald-400 bg-emerald-50" : active ? "border-sky-400 bg-sky-50" : "border-slate-200 bg-slate-50"}`} data-testid={`bom-proc-step-${idx}`}>
+        <div className="flex items-center gap-1.5 mb-1">
+          <div className={`w-5 h-5 rounded-full grid place-items-center text-[10px] font-bold text-white ${done ? "bg-emerald-600" : active ? "bg-sky-600" : "bg-slate-400"}`}>{done ? "✓" : idx + 1}</div>
+          <div className="text-[11px] uppercase tracking-wider font-bold text-slate-700">{title}</div>
+        </div>
+        <div className="text-[10px] text-slate-500 mb-1">{roleLabel}</div>
+        {sig?.name ? (
+          <div className="text-xs">
+            <div className="font-bold text-slate-800">{sig.name}</div>
+            <div className="text-[10px] text-slate-500">{fmt(sig)}</div>
+            {sig.notes && <div className="text-[10px] text-slate-600 italic mt-0.5">“{sig.notes}”</div>}
+          </div>
+        ) : (
+          <div className="text-[11px] italic text-slate-400">{active ? "Menunggu tanda tangan..." : "Belum"}</div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-3" data-testid="bom-procurement-chain">
+      <div className="flex flex-col md:flex-row gap-2">
+        <Step idx={0} title="Leader Checked" roleLabel="Engineering Leader" sig={leaderSig} done={curIdx >= 0} />
+        <Step idx={1} title="Purchasing Reviewed" roleLabel="Purchasing" sig={sigs.purchasing} done={curIdx >= 2 || (curIdx === 1 && !!sigs.purchasing) || procState === "manager_approved"} />
+        <Step idx={2} title="Manager Approved" roleLabel="Procurement Manager (Erwin/Admin)" sig={sigs.manager} done={procState === "manager_approved"} />
+      </div>
+
+      {procState === "manager_approved" ? (
+        <div className="flex items-center gap-2 bg-emerald-100 border border-emerald-400 px-3 py-2 text-xs font-bold text-emerald-800" data-testid="bom-proc-complete">
+          <CheckCircle size={16} weight="bold" /> Approval procurement lengkap — BOM sudah disetujui berjenjang (Leader → Purchasing → Manager).
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-200">
+          {procState === "leader_checked" && isPurchasing && (
+            <Button className="h-9 rounded-none bg-sky-700 hover:bg-sky-800 text-white text-sm" onClick={onPurchasingReview} data-testid="bom-proc-purchasing-btn">
+              <CheckCircle size={15} weight="bold" className="mr-1" /> TTD Purchasing (Review)
+            </Button>
+          )}
+          {procState === "purchasing_reviewed" && isAdminLike && (
+            <Button className="h-9 rounded-none bg-emerald-700 hover:bg-emerald-800 text-white text-sm" onClick={onManagerApprove} data-testid="bom-proc-manager-btn">
+              <CheckCircle size={15} weight="bold" className="mr-1" /> Approve Manager (Erwin)
+            </Button>
+          )}
+          {(isPurchasing || isAdminLike) && ["leader_checked", "purchasing_reviewed"].includes(procState) && (
+            <Button variant="outline" className="h-9 rounded-none border-rose-400 text-rose-700 hover:bg-rose-50 text-sm" onClick={onReject} data-testid="bom-proc-reject-btn">
+              <XCircle size={15} weight="bold" className="mr-1" /> Tolak
+            </Button>
+          )}
+          {procState === "leader_checked" && !isPurchasing && (
+            <div className="text-[11px] italic text-slate-500">Menunggu Purchasing menandatangani review.</div>
+          )}
+          {procState === "purchasing_reviewed" && !isAdminLike && (
+            <div className="text-[11px] italic text-slate-500">Menunggu Procurement Manager (Erwin) menyetujui.</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

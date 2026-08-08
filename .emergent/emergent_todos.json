@@ -1,18 +1,10 @@
 [
   {
-    "content": "Create Head Sales user 'nicholas' (role supervisor)",
+    "content": "Feature 2: Revisi DR Berjenjang (backend + frontend, tested iter_30)",
     "status": "completed"
   },
   {
-    "content": "Backend: DR revision workflow endpoints + status revision_requested + role guard",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: DR dialog Minta Revisi / Setujui / Tolak + status banner",
-    "status": "completed"
-  },
-  {
-    "content": "Bug fix: assign inquiry to eng_leader (Riski)",
+    "content": "Bug fix: assign inquiry to eng_leader",
     "status": "completed"
   },
   {
@@ -20,11 +12,11 @@
     "status": "completed"
   },
   {
-    "content": "Test Feature 2 + bug fixes (iteration_30: backend 17/17 pass)",
+    "content": "Feature 4: BOM sequential procurement approval (Leader -> Purchasing -> Manager/Erwin) with audit",
     "status": "completed"
   },
   {
-    "content": "Feature 4: BOM sequential approval (Leader -> Purchasing -> Erwin/Admin) with audit",
-    "status": "in_progress"
+    "content": "Full yarn build passes",
+    "status": "completed"
   }
 ]

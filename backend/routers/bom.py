@@ -22,6 +22,7 @@ from deps import (
     require_bom_edit,
     can_view_costing,
     is_admin_like,
+    is_purchasing,
 )
 from services.soft_delete import NOT_DELETED_FILTER, merged, soft_delete_one
 from utils.workgroup import so_locked_by_bom
@@ -657,6 +658,7 @@ async def bom_submit_review(bom_id: str, current: dict = Depends(get_current_use
                 "approved_at": datetime.utcnow().isoformat(),
                 "updated_at": datetime.utcnow().isoformat(),
                 "auto_approved_by_leader": True,
+                "procurement_status": "leader_checked",
             }},
         )
         await log_action(current, "bom_auto_approve_by_leader", "bom", bom_id, {"bom_no": bom.get("bom_no")})
@@ -700,6 +702,7 @@ async def bom_approve_review(bom_id: str, current: dict = Depends(get_current_us
             "signatures": sigs,
             "approved_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat(),
+            "procurement_status": "leader_checked",
         }},
     )
     await log_action(current, "bom_approve_review", "bom", bom_id, {"bom_no": bom.get("bom_no")})
@@ -754,6 +757,119 @@ async def bom_reject_review(bom_id: str, payload: dict = None, current: dict = D
     )
     await log_action(current, "bom_reject_review", "bom", bom_id, {"reason": reason, "attach_count": len(attach_ids)})
     return {"success": True, "engineering_status": "draft", "reason": reason, "note": note}
+
+
+# =========================================================================
+# Approval BOM Berjenjang — rantai PROCUREMENT (setelah Leader Checked)
+# Leader Checked → Purchasing Reviewed → Manager (Erwin/Admin) Approved
+# Terpisah dari engineering_status agar tidak mengubah kapan BOM jadi 'approved'.
+# =========================================================================
+def _procurement_state(bom: dict) -> str:
+    """State procurement efektif. BOM yang sudah engineering approved namun belum
+    punya field procurement_status dianggap 'leader_checked'."""
+    ps = bom.get("procurement_status")
+    if ps:
+        return ps
+    if bom.get("engineering_status") == "approved":
+        return "leader_checked"
+    return "not_ready"
+
+
+@router.post("/{bom_id}/procurement/purchasing-review")
+async def bom_purchasing_review(bom_id: str, payload: dict = None, current: dict = Depends(get_current_user)):
+    """Purchasing menandatangani (review) BOM. Syarat: BOM sudah di-check Leader
+    (engineering_status=approved & procurement_status=leader_checked)."""
+    if not (is_purchasing(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Purchasing / Admin yang boleh review BOM (tahap Purchasing)")
+    bom = await db.boms.find_one({"id": bom_id, "deleted_at": {"$exists": False}})
+    if not bom:
+        raise HTTPException(status_code=404, detail="BOM tidak ditemukan")
+    if bom.get("engineering_status") != "approved":
+        raise HTTPException(status_code=409, detail="BOM belum disetujui Engineering Leader")
+    state = _procurement_state(bom)
+    if state != "leader_checked":
+        raise HTTPException(status_code=409, detail=f"Tahap Purchasing hanya bisa saat 'Leader Checked' (sekarang: {state})")
+    notes = str((payload or {}).get("notes") or "").strip()
+    sigs = dict(bom.get("procurement_signatures") or {})
+    stamp = _sig_stamp(current); stamp["notes"] = notes; stamp["stage"] = "purchasing"
+    sigs["purchasing"] = stamp
+    await db.boms.update_one({"id": bom_id}, {"$set": {
+        "procurement_status": "purchasing_reviewed",
+        "procurement_signatures": sigs,
+        "updated_at": datetime.utcnow().isoformat(),
+    }})
+    await log_action(current, "bom_purchasing_review", "bom", bom_id, {"bom_no": bom.get("bom_no"), "notes": notes})
+    return {"success": True, "procurement_status": "purchasing_reviewed", "signed_by": stamp["name"]}
+
+
+@router.post("/{bom_id}/procurement/manager-approve")
+async def bom_manager_approve(bom_id: str, payload: dict = None, current: dict = Depends(get_current_user)):
+    """Procurement Manager (Erwin/Admin) menyetujui BOM — tahap final procurement.
+    Syarat: procurement_status = purchasing_reviewed."""
+    if not is_admin_like(current):
+        raise HTTPException(status_code=403, detail="Hanya Admin (Procurement Manager / Erwin) yang boleh approve final")
+    bom = await db.boms.find_one({"id": bom_id, "deleted_at": {"$exists": False}})
+    if not bom:
+        raise HTTPException(status_code=404, detail="BOM tidak ditemukan")
+    state = _procurement_state(bom)
+    if state != "purchasing_reviewed":
+        raise HTTPException(status_code=409, detail=f"Approval Manager hanya bisa setelah Purchasing review (sekarang: {state})")
+    notes = str((payload or {}).get("notes") or "").strip()
+    sigs = dict(bom.get("procurement_signatures") or {})
+    stamp = _sig_stamp(current); stamp["notes"] = notes; stamp["stage"] = "manager"
+    sigs["manager"] = stamp
+    await db.boms.update_one({"id": bom_id}, {"$set": {
+        "procurement_status": "manager_approved",
+        "procurement_signatures": sigs,
+        "procurement_completed_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat(),
+    }})
+    await log_action(current, "bom_manager_approve", "bom", bom_id, {"bom_no": bom.get("bom_no"), "notes": notes})
+    return {"success": True, "procurement_status": "manager_approved", "signed_by": stamp["name"]}
+
+
+@router.post("/{bom_id}/procurement/reject")
+async def bom_procurement_reject(bom_id: str, payload: dict = None, current: dict = Depends(get_current_user)):
+    """Purchasing / Manager menolak → procurement_status kembali ke 'leader_checked' dengan alasan (audit)."""
+    if not (is_purchasing(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Purchasing / Admin yang boleh menolak")
+    bom = await db.boms.find_one({"id": bom_id, "deleted_at": {"$exists": False}})
+    if not bom:
+        raise HTTPException(status_code=404, detail="BOM tidak ditemukan")
+    state = _procurement_state(bom)
+    if state not in ("purchasing_reviewed", "leader_checked"):
+        raise HTTPException(status_code=409, detail=f"Tidak bisa reject pada tahap '{state}'")
+    reason = str((payload or {}).get("reason") or "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="Alasan penolakan wajib diisi")
+    note = {
+        "id": str(uuid.uuid4()), "kind": "procurement_reject",
+        "by": current.get("name") or current.get("username"), "user_id": current.get("id"),
+        "role": current.get("role"), "comment": reason, "at": datetime.utcnow().isoformat(),
+    }
+    await db.boms.update_one({"id": bom_id}, {"$set": {
+        "procurement_status": "leader_checked",
+        "updated_at": datetime.utcnow().isoformat(),
+    }, "$push": {"revision_notes": note}, "$unset": {"procurement_signatures.manager": ""}})
+    await log_action(current, "bom_procurement_reject", "bom", bom_id, {"bom_no": bom.get("bom_no"), "reason": reason})
+    return {"success": True, "procurement_status": "leader_checked", "reason": reason}
+
+
+@router.get("/procurement/pending-count")
+async def bom_procurement_pending_count(current: dict = Depends(get_current_user)):
+    """Badge: jumlah BOM menunggu aksi procurement.
+    - purchasing: menunggu review Purchasing (leader_checked)
+    - admin/manager: menunggu approve Manager (purchasing_reviewed)"""
+    base = {"engineering_status": "approved", "deleted_at": {"$exists": False}}
+    waiting_purchasing = await db.boms.count_documents({**base, "procurement_status": "leader_checked"})
+    # termasuk approved lama tanpa field procurement_status
+    legacy = await db.boms.count_documents({**base, "procurement_status": {"$exists": False}})
+    waiting_manager = await db.boms.count_documents({**base, "procurement_status": "purchasing_reviewed"})
+    return {
+        "waiting_purchasing": waiting_purchasing + legacy,
+        "waiting_manager": waiting_manager,
+    }
+
 
 
 @router.post("/{bom_id}/revision-note")
