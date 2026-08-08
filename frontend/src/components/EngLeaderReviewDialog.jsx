@@ -167,8 +167,22 @@ export default function EngLeaderReviewDialog({ open, onClose, drfId, bomId, bom
 
   return (
     <>
-      <Dialog open={open} onOpenChange={(o) => { if (!o) onClose?.(); }}>
-        <DialogContent className="w-[min(1150px,96vw)] max-w-[min(1150px,96vw)] h-[min(85vh,900px)] rounded-none p-0 overflow-hidden gap-0 flex flex-col" data-testid="eng-leader-review-dialog">
+      {/* Backdrop manual (Dialog non-modal agar preview PDF di atasnya bisa diklik) */}
+      {open && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60"
+          onClick={() => { if (!preview && !sigDrawing) onClose?.(); }}
+          data-testid="review-backdrop"
+        />
+      )}
+      <Dialog open={open} modal={false} onOpenChange={(o) => { if (!o && !preview && !sigDrawing) onClose?.(); }}>
+        <DialogContent
+          className="w-[min(1150px,96vw)] max-w-[min(1150px,96vw)] h-[min(85vh,900px)] rounded-none p-0 overflow-hidden gap-0 flex flex-col"
+          data-testid="eng-leader-review-dialog"
+          onInteractOutside={(e) => { if (preview || sigDrawing) e.preventDefault(); }}
+          onPointerDownOutside={(e) => { if (preview || sigDrawing) e.preventDefault(); }}
+          onEscapeKeyDown={(e) => { if (preview || sigDrawing) e.preventDefault(); }}
+        >
           {/* Header */}
           <div className="flex items-center justify-between gap-3 px-5 py-3 bg-slate-900 text-slate-50 shrink-0">
             <div className="flex items-center gap-2 min-w-0">
