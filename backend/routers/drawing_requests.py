@@ -138,8 +138,8 @@ def _stage(status, date="", pic="", extra=None):
 
 @router.get("/dashboard/so-progress")
 async def dashboard_so_progress(q: str = "", limit: int = 60, current: dict = Depends(get_current_user)):
-    """Progress tiap SO lintas departemen (Sales -> Eng -> Purchasing -> Store -> QC -> Delivery).
-    Fokus ke SO yang masuk workflow Engineering (punya drawing), plus pencarian so_no/customer."""
+    """Progress tiap SO berbasis TAHAP PROSES (Engineering -> DocCon -> Produksi -> QC -> Delivery).
+    Departemen kondisional (mis. Purchasing) tidak dijadikan tahap. Fokus SO yang punya drawing."""
     # SO yang punya drawing (workflow aktif)
     dwg_so = [s for s in await db.drawings.distinct("so_no") if s]
     so_filter = {"so_no": {"$in": dwg_so}} if dwg_so else {"id": "__none__"}
@@ -154,9 +154,9 @@ async def dashboard_so_progress(q: str = "", limit: int = 60, current: dict = De
         {"so_no": {"$in": so_nos}, "deleted_at": {"$exists": False}},
         {"_id": 0, "so_no": 1, "approval_status": 1, "approvals": 1, "updated_at": 1, "drawing_no": 1, "item_name": 1, "item_qty": 1},
     ).to_list(length=5000)
-    receipts = await db.store_receipts.find({"so_no": {"$in": so_nos}}, {"_id": 0, "so_no": 1, "receive_date": 1}).to_list(length=5000)
-    txns = await db.transactions.find({"project_no": {"$in": so_nos}}, {"_id": 0, "project_no": 1, "po_date": 1, "receive_date": 1}).to_list(length=5000)
-    deliveries = await db.deliveries.find({"so_no": {"$in": so_nos}}, {"_id": 0, "so_no": 1}).to_list(length=5000)
+    deliveries = await db.deliveries.find({"so_no": {"$in": so_nos}}, {"_id": 0, "so_no": 1, "delivery_date": 1}).to_list(length=5000)
+    issuances = await db.store_issuances.find({"so_no": {"$in": so_nos}}, {"_id": 0, "so_no": 1, "issue_date": 1, "created_at": 1}).to_list(length=5000)
+    qc_insp = await db.qc_inspections.find({"so_no": {"$in": so_nos}, "deleted_at": {"$exists": False}}, {"_id": 0, "so_no": 1, "status": 1, "inspected_at": 1, "created_at": 1}).to_list(length=5000)
 
     def group(rows, key):
         g = {}
@@ -165,30 +165,26 @@ async def dashboard_so_progress(q: str = "", limit: int = 60, current: dict = De
         return g
 
     dwg_by = group(drawings, "so_no")
-    rec_by = group(receipts, "so_no")
-    txn_by = group(txns, "project_no")
     del_by = group(deliveries, "so_no")
+    iss_by = group(issuances, "so_no")
+    qc_by = group(qc_insp, "so_no")
 
     APPROVED = {"approved", "controlled", "released"}
+    DC_DONE = {"controlled", "released"}
     out = []
     for so in sos:
         sono = so.get("so_no")
         dws = dwg_by.get(sono, [])
         total = len(dws)
         approved = sum(1 for d in dws if (d.get("approval_status") or "") in APPROVED)
+        controlled = sum(1 for d in dws if (d.get("approval_status") or "") in DC_DONE)
         last_appr = ""
-        qc_done = 0
         for d in dws:
             for a in (d.get("approvals") or []):
                 if a.get("at", "") > last_appr:
                     last_appr = a.get("at", "")
-                if a.get("stage") in ("qc",):
-                    qc_done += 1
-            if (d.get("approval_status") or "") in ("controlled", "released"):
-                qc_done += 0  # controlled implies passed qc; counted via approvals too
 
-        # Stages
-        st_sales = _stage("done", so.get("so_date", ""), so.get("created_by_username", ""))
+        # 1) Engineering — semua drawing SO sudah approved
         if total == 0:
             st_eng = _stage("pending")
         elif approved >= total:
@@ -196,27 +192,44 @@ async def dashboard_so_progress(q: str = "", limit: int = 60, current: dict = De
         else:
             st_eng = _stage("in_progress", last_appr, extra={"progress": f"{approved}/{total}"})
 
-        recs = rec_by.get(sono, [])
-        txs = txn_by.get(sono, [])
-        st_pur = _stage("done", (txs[0].get("po_date") if txs else "")) if txs else _stage("pending")
-        st_store = _stage("done", (recs[0].get("receive_date") if recs else "")) if recs else _stage("pending")
-
-        # QC: dianggap done bila semua drawing controlled/released
-        controlled = sum(1 for d in dws if (d.get("approval_status") or "") in ("controlled", "released"))
+        # 2) DocCon — semua drawing di-stamp Document Control (controlled/released)
         if total > 0 and controlled >= total:
-            st_qc = _stage("done", last_appr, extra={"progress": f"{controlled}/{total}"})
+            st_doccon = _stage("done", last_appr, extra={"progress": f"{controlled}/{total}"})
         elif controlled > 0:
-            st_qc = _stage("in_progress", "", extra={"progress": f"{controlled}/{total}"})
+            st_doccon = _stage("in_progress", "", extra={"progress": f"{controlled}/{total}"})
+        else:
+            st_doccon = _stage("pending")
+
+        # 3) Produksi — material sudah di-issue dari Store (indikasi produksi berjalan)
+        isss = iss_by.get(sono, [])
+        if isss:
+            _idate = isss[0].get("issue_date") or isss[0].get("created_at") or ""
+            st_prod = _stage("done", _idate)
+        else:
+            st_prod = _stage("pending")
+
+        # 4) QC — ada hasil inspeksi QC (verified) untuk SO
+        qcs = qc_by.get(sono, [])
+        if any((qq.get("status") or "") == "verified" for qq in qcs):
+            _qdate = ""
+            for qq in qcs:
+                if (qq.get("status") or "") == "verified":
+                    _qdate = qq.get("inspected_at") or qq.get("created_at") or ""
+                    break
+            st_qc = _stage("done", _qdate)
+        elif qcs:
+            st_qc = _stage("in_progress")
         else:
             st_qc = _stage("pending")
 
-        st_del = _stage("done") if del_by.get(sono) else _stage("pending")
+        # 5) Delivery — ada record pengiriman untuk SO
+        dels = del_by.get(sono, [])
+        st_del = _stage("done", (dels[0].get("delivery_date") if dels else "")) if dels else _stage("pending")
 
         stages = [
-            {"key": "sales", "label": "Sales", **st_sales},
             {"key": "engineering", "label": "Engineering", **st_eng},
-            {"key": "purchasing", "label": "Purchasing", **st_pur},
-            {"key": "store", "label": "Store", **st_store},
+            {"key": "doccon", "label": "DocCon", **st_doccon},
+            {"key": "produksi", "label": "Produksi", **st_prod},
             {"key": "qc", "label": "QC", **st_qc},
             {"key": "delivery", "label": "Delivery", **st_del},
         ]

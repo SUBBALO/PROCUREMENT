@@ -36,7 +36,7 @@ export default function SoProgressTracker() {
         <div>
           <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-500">Monitoring</div>
           <h2 className="text-lg font-bold text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>Progress Sales Order</h2>
-          <p className="text-[11px] text-slate-500">Alur: Sales → Engineering → Purchasing → Store → QC → Delivery</p>
+          <p className="text-[11px] text-slate-500">Alur: Engineering → DocCon → Produksi → QC → Delivery</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 border border-slate-300 bg-white px-2 h-9">
