@@ -1,26 +1,30 @@
 [
   {
-    "content": "Create Head Sales user 'nicholas' (role supervisor) with forced password change",
-    "status": "in_progress"
+    "content": "Create Head Sales user 'nicholas' (role supervisor)",
+    "status": "completed"
   },
   {
-    "content": "Backend: DR revision workflow endpoints (request-revision, approve-revision, reject-revision) + status revision_requested + role guard (supervisor/admin)",
-    "status": "pending"
+    "content": "Backend: DR revision workflow endpoints + status revision_requested + role guard",
+    "status": "completed"
   },
   {
-    "content": "Frontend: DR dialog 'Minta Revisi' (sales) + 'Setujui/Tolak Revisi' (supervisor/admin) + status badges",
-    "status": "pending"
+    "content": "Frontend: DR dialog Minta Revisi / Setujui / Tolak + status banner",
+    "status": "completed"
   },
   {
-    "content": "Surface revision approval queue/indicator for Head Sales/Admin",
-    "status": "pending"
+    "content": "Bug fix: assign inquiry to eng_leader (Riski)",
+    "status": "completed"
   },
   {
-    "content": "Test Feature 2 with testing agent",
-    "status": "pending"
+    "content": "Bug fix: Leader's own drawing auto-passes Leader verification",
+    "status": "completed"
+  },
+  {
+    "content": "Test Feature 2 + bug fixes (iteration_30: backend 17/17 pass)",
+    "status": "completed"
   },
   {
     "content": "Feature 4: BOM sequential approval (Leader -> Purchasing -> Erwin/Admin) with audit",
-    "status": "pending"
+    "status": "in_progress"
   }
 ]
