@@ -954,8 +954,9 @@ export default function EngineeringWorkOrderPage() {
   return <WorkOrderView />;
 }
 
-function WorkOrderView() {
-  const { bomId } = useParams();
+export function WorkOrderView({ bomId: propBomId, embedded = false } = {}) {
+  const { bomId: paramBomId } = useParams();
+  const bomId = propBomId || paramBomId;
   const nav = useNavigate();
   const [sp] = useSearchParams();
   const { user } = useAuth();
@@ -1049,11 +1050,11 @@ function WorkOrderView() {
       }
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal muat BOM");
-      nav(-1);
+      if (!embedded) nav(-1);
     } finally {
       setLoading(false);
     }
-  }, [bomId, nav]);
+  }, [bomId, nav, embedded]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -1222,7 +1223,7 @@ function WorkOrderView() {
 
   /* -------------------- Render -------------------- */
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-500">Memuat Work Order...</div>;
+  if (loading) return <div className={`flex items-center justify-center text-slate-500 ${embedded ? "py-16" : "min-h-screen"}`}>Memuat Work Order...</div>;
   if (!bom) return null;
 
   const status = bom.engineering_status || "approved";
@@ -1233,8 +1234,9 @@ function WorkOrderView() {
   }[status] || { bg: "bg-slate-100", text: "text-slate-600", label: status };
 
   return (
-    <div className="max-w-[1600px] mx-auto p-4 lg:p-6 space-y-4 pb-24">
+    <div className={embedded ? "space-y-4" : "max-w-[1600px] mx-auto p-4 lg:p-6 space-y-4 pb-24"}>
       {/* Header */}
+      {!embedded && (
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <button type="button" onClick={() => nav(-1)} className="inline-flex items-center gap-2 px-3 h-9 text-xs uppercase tracking-[0.1em] font-bold text-slate-800 bg-white border-2 border-slate-400 shadow-sm hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors duration-150 active:translate-y-[1px]">
@@ -1252,6 +1254,18 @@ function WorkOrderView() {
           {statusBadge.label}
         </div>
       </div>
+      )}
+
+      {embedded && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs text-slate-600">
+            BOM bersama <b className="font-mono text-slate-900">{bom.bom_no}</b> — 1 BOM untuk semua drawing pada SO ini. Cukup <b>disimpan</b>; submit ke Engineering lewat tab Drawing &amp; Upload.
+          </div>
+          <div className={`px-2.5 py-1 border ${statusBadge.bg.replace("bg-", "border-")} ${statusBadge.bg} ${statusBadge.text} text-[10px] font-bold tracking-wider`} data-testid="wo-status-badge">
+            {statusBadge.label}
+          </div>
+        </div>
+      )}
 
       {/* Banner kunci — BOM dikunci karena drawing terkait sudah di-submit */}
       {drawingSubmitted && status !== "approved" && (
@@ -1393,7 +1407,7 @@ function WorkOrderView() {
       )}
 
       {/* Action Bar */}
-      <div className="sticky bottom-0 bg-white border-t-2 border-slate-800 p-3 -mx-4 lg:-mx-6 z-10 flex flex-wrap items-center justify-end gap-2">
+      <div className={`${embedded ? "" : "sticky bottom-0 -mx-4 lg:-mx-6 z-10"} bg-white border-t-2 border-slate-800 p-3 flex flex-wrap items-center justify-end gap-2`}>
         {canEditItems && (
           <Button variant="outline" className="h-10 rounded-none border-slate-400 text-sm" onClick={saveDraft} disabled={saving} data-testid="wo-save-draft">
             <FloppyDisk size={16} weight="bold" className="mr-1" />

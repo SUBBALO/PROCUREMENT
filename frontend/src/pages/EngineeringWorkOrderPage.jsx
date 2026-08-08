@@ -5,7 +5,6 @@ import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import BackLink from "../components/BackLink";
 import { DrawingAttachmentsPanel } from "./MasterDrawingPage";
 import SignaturePlacementModal from "../components/SignaturePlacementModal";
@@ -217,47 +216,48 @@ function DrfItemPicker({ drawing, onSaved, editable }) {
         </div>
       </Card>
 
-      {/* Feature B — 2 Tab: (1) Drawing & Upload  (2) BOM (tetap 1 SO) */}
-      <Tabs defaultValue="drawing" className="w-full">
-        <TabsList className="rounded-none bg-slate-100 border border-slate-200 p-0 h-auto">
-          <TabsTrigger value="drawing" className="rounded-none data-[state=active]:bg-emerald-600 data-[state=active]:text-white px-4 py-1.5 text-xs font-bold uppercase tracking-wider" data-testid="wo-tab-drawing">
-            1 · Drawing &amp; Upload
-          </TabsTrigger>
-          <TabsTrigger value="bom" className="rounded-none data-[state=active]:bg-amber-600 data-[state=active]:text-white px-4 py-1.5 text-xs font-bold uppercase tracking-wider" data-testid="wo-tab-bom">
-            2 · Bill of Material
-          </TabsTrigger>
-        </TabsList>
-
-        {/* TAB 1 — Drawing & Upload + Submit */}
-        <TabsContent value="drawing" className="mt-3 space-y-4">
+      {/* Drawing & Upload — BOM diisi di Work Group (1 BOM per SO), bukan per drawing */}
+      <div className="space-y-3">
           {/* Feature K — Item DRF & Qty untuk drawing ini (auto-isi qty stamping SO) */}
           <DrfItemPicker drawing={drawing} onSaved={load} editable={isDraft} />
 
-          {/* Section B: Attachments (Upload PDF Drawing, Customer Ref, Extras) */}
-          <div className="border-2 border-emerald-500">
-            <div className="px-4 py-3 bg-emerald-600 text-white flex items-center gap-3">
-              <span className="w-8 h-8 rounded-full bg-white text-emerald-700 flex items-center justify-center text-base font-extrabold">A</span>
-              <div className="text-[13px] uppercase tracking-widest font-bold">Upload Dokumen Drawing</div>
+          {/* Section A: Attachments (Upload PDF Drawing, Customer Ref, Extras) */}
+          <div className="border border-emerald-500">
+            <div className="px-3 py-1.5 bg-emerald-600 text-white flex items-center gap-2 text-[12px] uppercase tracking-widest font-bold">
+              <Paperclip size={14} weight="bold" /> Upload Dokumen Drawing
             </div>
             <div className="p-3">
               <DrawingAttachmentsPanel drawing={drawing} onDrawingUpdated={() => load()} editable={isDraft} />
             </div>
           </div>
 
-          {/* Section C: Submit for approval */}
+          {/* BOM info strip — pointer ke Work Group */}
+          <div className="border border-amber-400 bg-amber-50/60 px-3 py-2 flex flex-wrap items-center gap-2 text-xs text-slate-700" data-testid="wo-bom-note">
+            <Package size={15} weight="fill" className="text-amber-600" />
+            <span>Item <b>BOM</b> diisi di halaman <b>Work Group</b> (tab BOM) — 1 BOM bersama untuk semua drawing pada SO ini.</span>
+            {drawing.from_drf_id && (
+              <button
+                onClick={() => navigate(`/engineering/drf/${drawing.from_drf_id}`)}
+                className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold uppercase tracking-widest"
+                data-testid="wo-goto-workgroup-bom"
+              >
+                Buka Work Group →
+              </button>
+            )}
+          </div>
+
+          {/* Section B: Submit for approval — satu gerbang final */}
           {isDraft && (
-            <div className="border-2 border-sky-500">
-              <div className="px-4 py-3 bg-sky-600 text-white flex items-center gap-3">
-                <span className="w-8 h-8 rounded-full bg-white text-sky-700 flex items-center justify-center text-base font-extrabold">B</span>
-                <div className="text-[13px] uppercase tracking-widest font-bold">TTD Prepared By &amp; Submit ke Eng Head</div>
+            <div className="border border-sky-500">
+              <div className="px-3 py-1.5 bg-sky-600 text-white flex items-center gap-2 text-[12px] uppercase tracking-widest font-bold">
+                <PaperPlaneRight size={14} weight="bold" /> TTD Prepared By &amp; Submit ke Eng Head
               </div>
-              <div className="p-4 bg-sky-50 flex items-center justify-between gap-4">
-                <div className="text-sm text-slate-700 flex-1">
-                  Ini <b>satu-satunya</b> tombol Submit ke Engineering. Sistem akan <b>memverifikasi kelengkapan</b>
-                  (PDF drawing ter-upload, kategori kerja, dan BOM sudah diisi) sebelum dikirim. BOM cukup <b>disimpan</b>
-                  di tab Bill of Material — tidak perlu submit terpisah.
+              <div className="p-3 bg-sky-50 flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-slate-700 flex-1 min-w-[220px]">
+                  Ini <b>satu-satunya</b> tombol Submit ke Engineering. Sistem <b>memverifikasi kelengkapan</b>
+                  (PDF drawing, kategori kerja, dan BOM) sebelum dikirim. BOM cukup <b>disimpan</b> di Work Group — tanpa submit terpisah.
                   {!drawing.file_id && (
-                    <div className="mt-1 text-rose-700 font-bold">⚠ Upload PDF Drawing dulu di atas sebelum submit.</div>
+                    <div className="mt-1 text-rose-700 font-bold">⚠ Upload PDF Drawing dulu sebelum submit.</div>
                   )}
                   {drawing.file_id && !hasWorkCat && (
                     <div className="mt-1 text-rose-700 font-bold">⚠ Pilih Kategori Pekerjaan (SIMPLE / MODERATE / COMPLEX) dulu sebelum submit.</div>
@@ -266,24 +266,18 @@ function DrfItemPicker({ drawing, onSaved, editable }) {
                 <Button
                   onClick={handleSubmitClick}
                   disabled={!canSubmit || checkingFinal}
-                  className="rounded-none bg-sky-700 hover:bg-sky-800 text-white h-12 px-7 text-base disabled:opacity-40 transition-colors duration-150 active:translate-y-[1px]"
+                  className="rounded-none bg-sky-700 hover:bg-sky-800 text-white h-10 px-6 text-sm disabled:opacity-40 transition-colors duration-150 active:translate-y-[1px]"
                   data-testid="wo-ttd-submit-btn"
                 >
                   {checkingFinal
-                    ? <ArrowClockwise size={18} className="animate-spin mr-2" />
-                    : <PaperPlaneRight size={18} weight="bold" className="mr-2" />}
+                    ? <ArrowClockwise size={16} className="animate-spin mr-2" />
+                    : <PaperPlaneRight size={16} weight="bold" className="mr-2" />}
                   TTD &amp; Submit
                 </Button>
               </div>
             </div>
           )}
-        </TabsContent>
-
-        {/* TAB 2 — BOM (1 BOM per SO) */}
-        <TabsContent value="bom" className="mt-3">
-          <BomReferenceSection drawing={drawing} navigate={navigate} />
-        </TabsContent>
-      </Tabs>
+      </div>
 
       {isPending && (
         <Card className="rounded-none border-amber-500 border-2 p-4 bg-amber-50">
@@ -759,39 +753,4 @@ function StatusBadge({ status }) {
   );
 }
 
-/* ---------------- BOM Reference Section (read-only, 1 BOM per SO) ---------------- */
-function BomReferenceSection({ drawing, navigate }) {
-  const linked = !!drawing.bom_id;
-  return (
-    <div className="border-2 border-amber-500" data-testid="wo-bom-reference">
-      <div className="px-4 py-3 bg-amber-600 text-white flex items-center gap-3">
-        <span className="w-8 h-8 rounded-full bg-white text-amber-700 flex items-center justify-center text-base font-extrabold">A</span>
-        <div className="text-[13px] uppercase tracking-widest font-bold flex-1 flex items-center gap-2">
-          <Package size={16} weight="fill" /> Bill of Material
-          <span className="text-[11px] normal-case tracking-normal opacity-90">— 1 BOM bersama per Sales Order</span>
-        </div>
-        {linked && (
-          <button
-            onClick={() => navigate(`/engineering/bom-entry/${drawing.bom_id}`)}
-            className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-amber-800 bg-white hover:bg-amber-50 px-4 h-9 rounded-none border border-amber-200 shadow-sm transition-colors duration-150"
-            data-testid="wo-open-bom"
-          >
-            Isi / Buka BOM →
-          </button>
-        )}
-      </div>
-      <div className="p-4 bg-amber-50 text-sm text-slate-700">
-        {linked ? (
-          <span>
-            Drawing ini memakai BOM bersama <b className="font-mono">{drawing.bom_no}</b>.
-            Isi/edit item BOM dilakukan sekali untuk seluruh SO — klik <b>Isi / Buka BOM</b> di kanan atas.
-          </span>
-        ) : (
-          <span className="italic text-slate-500">
-            BOM bersama diatur otomatis di halaman <b>Work Group</b> saat generate drawing. Belum ada BOM ter-link untuk drawing ini.
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
+/* ---------------- BomReferenceSection dihapus — BOM kini tab di Work Group ---------------- */

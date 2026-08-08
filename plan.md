@@ -1,201 +1,94 @@
-# Plan — Dashboard SO Progress + Antrian Leader + DRF List + TTD Sales + Notifikasi (N → O → L → M → I)
+# Rencana Perbaikan Work Order (Work Group + Work Order) — BOM 1 per SO
 
 ## 1) Objectives
-
-### Objective yang sudah tercapai (riwayat)
-- ✅ Menyelaraskan alur Engineering dengan realita: **1 BOM per SO/DRF**, drawing bisa **submit bertahap** tanpa mengunci BOM/dokumen SO.
-- ✅ Menambahkan **popup submit final** (drawing terakhir) dengan **checklist wajib** + item yang bisa diklik untuk diarahkan ke lokasi upload/isi.
-- ✅ Menerapkan **lock dinamis** setelah **submit final**: **BOM + Dokumen SO** terkunci; **auto-unlock** jika ada drawing kembali ke `draft` (reject).
-- ✅ Membuat **Eng Leader Review Popup**: masterlist semua dokumen 1 SO (drawing + nesting/cad/costing + BOM), aksi per item (Approve/TTD atau Revisi) dengan catatan revisi wajib.
-- ✅ Merapikan UX Work Order: fokus ke upload/submit drawing + BOM khusus 1 SO.
-
-### Objective aktif (prioritas terbaru)
-- ✅ (N) Membuat **Dashboard SO Progress + sidebar kiri** untuk tracking stage lintas departemen.
-- ✅ (O) Membuat **Antrian** yang jelas untuk Engineering/Leader:
-  - `Antrian Drawing Request & Inquiry`
-  - `Menunggu Verifikasi Leader`
-  - Klik item → langsung membuka **EngLeaderReviewDialog (Review Dokumen SO)**.
-- ✅ (L) Redesign **DRF list** (Sales): hapus kolom **Aksi**, tampilkan **items + preview + tabel drawing** (No. Drawing, Item, Qty, Status).
-- ✅ (M) Pindahkan **TTD Sales** ke DRF list: bagian **Perlu TTD Sales** → preview → review/isi stamp → pilih lokasi TTD.
-- ✅ (I) **Notifikasi Sales (in-app saja)** saat drawing sudah siap untuk dilihat.
-
-> Status ringkas:
-> - N/O/L/M/I: **SELESAI** dan sudah **lolos testing agent**.
-> - Approval berjenjang BOM (Leader → Purchasing → Erwin): **DITUNDA** sampai ada instruksi lanjutan dari user.
-
----
+- Pusatkan konsep **1 SO = banyak Drawing = 1 BOM**: tab **BOM** ada di level **Work Group** (`/engineering/drf/:drfId`), bukan per-drawing.
+- **Tab BOM** di Work Group menampilkan **grid BOM editable (embedded)** + **tombol Simpan saja** (tanpa Submit).
+- **Submit ke Engineering** tetap **satu gerbang** di per-drawing **Drawing & Upload** (`/engineering/work-order/:drawingId`) dengan verifikasi drawing + BOM.
+- Buat **UI minimalis & compact** untuk **dua halaman**: Work Group dan Work Order per-drawing.
+- Pastikan perubahan tervalidasi dengan **testing_agent** karena user melaporkan mismatch.
 
 ## 2) Implementation Steps
 
-### Phase 1 — Fondasi Engineering Workflow (Fase 2–4) — (Completed / Historical)
-> Fase ini dipertahankan sebagai fondasi untuk queue/approval & review dokumen.
+### Phase 1 — Core Flow POC (wajib): “BOM tab di Work Group = grid embedded + Simpan saja”
+**User stories (POC)**
+1. Sebagai engineer, saya bisa membuka Work Group dan melihat 2 tab: **Drawing & Upload** dan **BOM** untuk 1 SO.
+2. Sebagai engineer, saya bisa mengisi item BOM langsung di tab BOM tanpa pindah halaman.
+3. Sebagai engineer, saya hanya melihat tombol **Simpan Draft** di tab BOM (tidak ada Submit BOM).
+4. Sebagai engineer, saya bisa kembali ke daftar drawing di tab Drawing tanpa kehilangan konteks.
+5. Sebagai engineer, saya melihat info bahwa BOM ini **shared** untuk semua drawing pada SO tersebut.
 
-**User stories (fondasi)**
-1. ✅ Partial submit drawing tidak mengunci BOM/SO docs.
-2. ✅ Submit final menampilkan checklist wajib + deep-link.
-3. ✅ Setelah final submit: BOM + SO docs lock.
-4. ✅ Reject → unlock otomatis.
-5. ✅ Eng Leader review 1 SO dalam 1 popup.
+**Langkah teknis**
+- Refactor `frontend/src/pages/BomEntryGridPage.jsx`:
+  - Ekstrak `WorkOrderView` menjadi komponen reusable: mis. `BomWorkOrderView({ bomId, embedded })`.
+  - Mode `embedded=true`:
+    - Sembunyikan header besar + tombol navigasi/back internal BOM page.
+    - Sembunyikan tombol/aksi yang bukan kebutuhan embedded (export/print/link ke BOM utama, dll) sesuai kebutuhan minimal.
+    - Pertahankan: grid, save, status lock/read-only logic, revision panel yang relevan.
+  - Export komponen tersebut untuk dipakai di Work Group.
+- Ubah `frontend/src/pages/EngineeringDrfWorkPage.jsx`:
+  - Tambah Tabs level grup: `Drawing & Upload` (default) dan `BOM`.
+  - Di tab `BOM`, render `BomWorkOrderView` (embedded) menggunakan `sharedBomId`.
+  - Pastikan fallback state:
+    - jika `sharedBomId` kosong: tampilkan pesan “BOM belum terbentuk — generate drawing dulu / hubungi leader”.
+- Pastikan di embedded BOM tab **tidak ada tombol submit** (hanya save) walau status memungkinkan.
 
-**Komponen/endpoint yang sudah ada**
-- Backend
-  - ✅ `GET /api/drawing-requests/{drfId}/workgroup-status`
-  - ✅ Guard lock untuk BOM & attachment
-  - ✅ Review attachment non-drawing: `POST /api/bom/{bomId}/attachments/{attachId}/review`
-- Frontend
-  - ✅ `FinalSubmitChecklistDialog.jsx`
-  - ✅ `EngLeaderReviewDialog.jsx`
-  - ✅ Mode Cepat default (reduce-motion) + toggle
+**Checkpoint POC (jangan lanjut sebelum lolos)**
+- Bisa buka `/engineering/drf/:drfId` → tab BOM tampil grid dan dapat simpan.
+- Tidak ada tombol submit BOM di tab BOM.
+- BOM yang disimpan tercermin saat reload.
 
-**Testing (Completed)**
-- ✅ Lolos regression sebelumnya (lihat `/app/test_reports/iteration_21.json`).
+### Phase 2 — V1 App Development: Restruktur & Minimalis (Work Group + Work Order)
+**User stories (V1)**
+1. Sebagai engineer, Work Group tampil ringkas: header tipis, info penting saja, tabel compact.
+2. Sebagai engineer, saya bisa melihat daftar drawing dalam SO dan membuka Work Order per drawing dengan 1 klik.
+3. Sebagai engineer, saya bisa mengisi BOM bersama di tab BOM tanpa bingung “BOM per drawing”.
+4. Sebagai engineer, saya bisa upload drawing dan submit dari Work Order per drawing dengan UI yang tidak kebesaran.
+5. Sebagai leader/reviewer, saya tetap bisa membuka Work Order per drawing untuk lihat status/attachment tanpa layout berantakan.
 
----
+**Langkah teknis**
+- `frontend/src/pages/EngineeringWorkOrderPage.jsx` (per-drawing):
+  - Hapus tab BOM di per-drawing (atau ubah jadi “Info BOM” kecil saja) agar konsep tidak dobel.
+  - Kompakkan layout:
+    - perkecil padding, kurangi border tebal “section A/B”, jadikan header strip tipis.
+    - ringkas panel info (grid lebih rapat, font kecil konsisten).
+  - Tombol **TTD & Submit** tetap ada di Drawing & Upload; copy tetap menegaskan “BOM disimpan di Work Group tab BOM”.
+- `frontend/src/pages/EngineeringDrfWorkPage.jsx` (Work Group):
+  - Kompakkan header, tabel daftar drawing, dan panel BOM bersama.
+  - Pastikan tab default tetap “Drawing & Upload” supaya alur kerja drawing tetap cepat.
+- Konsistensi gating:
+  - Submit drawing memverifikasi prasyarat (PDF upload, kategori kerja, dan BOM terisi sesuai aturan backend yang ada).
+  - Jika perlu, tambahkan indikator ringan di Work Group bahwa BOM “sudah diisi / belum”.
 
-### Phase N — Dashboard SO Progress + Sidebar Kiri — (Completed)
+**Akhiri Phase 2 dengan**
+- `yarn build` frontend.
+- Jalankan `testing_agent_v3` (regresi + verifikasi kasus user-reported mismatch).
 
-**Tujuan**
-- Menyediakan dashboard ringkas untuk memantau **progress SO** lintas stage (Sales → Engineering → Purchasing → Store → QC → Delivery), termasuk progress drawing (approved/total).
+### Phase 3 — Hardening + UX Polish
+**User stories**
+1. Sebagai engineer, saya tidak kehilangan input BOM saat pindah tab (state tersimpan/terjaga).
+2. Sebagai engineer, saya melihat status lock BOM jelas saat ada drawing sudah submit.
+3. Sebagai leader, saya bisa review BOM di tab BOM (read-only bila terkunci) tanpa tombol yang membingungkan.
+4. Sebagai user, tabel dan header tetap nyaman dipakai di layar kecil (responsif).
+5. Sebagai QA, setiap aksi penting punya `data-testid` unik.
 
-**Implementasi (Done)**
-- Backend
-  - ✅ Endpoint: `GET /api/dashboard/so-progress`
-    - Return: `{ items: [...], count }`
-    - Mendukung query:
-      - `q` (search SO/customer/description)
-      - `limit`
-- Frontend
-  - ✅ Komponen: `frontend/src/components/SoProgressTracker.jsx`
-  - ✅ Integrasi halaman landing: `frontend/src/pages/LandingPage.jsx` + sidebar kiri
+**Langkah teknis**
+- Rapikan `data-testid` untuk: tab group, embedded bom grid, save button, indikator lock.
+- Pastikan embedded mode tidak merusak route BOM editor normal (`/engineering/bom-entry/:bomId`).
+- Tambah screenshot route:
+  - Work Group tab BOM
+  - Work Order per-drawing
+- Jalankan `testing_agent_v3` lagi.
 
-**Testing (Done)**
-- ✅ Testing agent report: `/app/test_reports/iteration_25.json`
-  - Backend: **11/11 pass**, tidak ada bug.
-
----
-
-### Phase O — Antrian “Menunggu Verifikasi Leader” + “Antrian Drawing Request & Inquiry” — (Completed)
-
-**Tujuan**
-- Mengganti tab lama **"Tugas Saya / Menunggu TTD Saya"** menjadi 2 antrian yang sesuai proses terbaru.
-- Leader bisa masuk dari antrian → langsung review lengkap via **EngLeaderReviewDialog**.
-
-**Implementasi (Done)**
-- Backend
-  - ✅ Endpoint baru: `GET /api/engineering/pending-leader-verification`
-    - Mengelompokkan drawing `pending_eng_head` per DRF/SO.
-    - RBAC: hanya `eng_leader/eng_head/engineering/admin/super_admin/supervisor`.
-- Frontend
-  - ✅ `EngineeringQueuePanel.jsx` diubah menjadi **2 tab** untuk leader:
-    - `Antrian Drawing Request & Inquiry`
-    - `Menunggu Verifikasi Leader`
-  - ✅ QuickLinks lama dihapus.
-  - ✅ Klik item pada tab `Menunggu Verifikasi Leader` membuka `EngLeaderReviewDialog`.
-
-**Exit criteria (Verified)**
-- ✅ Leader melihat queue dan bisa membuka dialog review dari queue.
-
----
-
-### Phase L — DRF List Redesign (Sales) — (Completed)
-
-**Tujuan**
-- DRF list lebih informatif tanpa kolom “Aksi” dan lebih fokus pada item/drawing.
-
-**Implementasi (Done)**
-- Frontend (`DrawingRequestFormPage.jsx`)
-  - ✅ Kolom **"Aksi"** dihapus.
-  - ✅ Baris DRF menjadi **expandable**:
-    - Panel **Daftar Item** (tabel item DRF).
-    - Panel **Drawing** (tabel No. Drawing / Item / Qty / Status + tombol preview view-only).
-    - Tombol **Detail & Preview** tersedia di area expand.
-    - Aksi draft (Edit/Submit/Batalkan) dipindah ke area expand.
-  - ✅ Preview drawing pada list bersifat **view-only** (`noDownload`, `noPrint`).
-
-**Exit criteria (Verified)**
-- ✅ DRF list dapat digunakan tanpa kehilangan fitur utama dan tampil lebih informatif.
-
----
-
-### Phase M — Pindahkan TTD Sales ke DRF List — (Completed)
-
-**Tujuan**
-- Sales menandatangani dari DRF list (bukan alur terpisah), dengan UX jelas: **Perlu TTD Sales**.
-
-**Implementasi (Done)**
-- Frontend (`DrawingRequestFormPage.jsx`)
-  - ✅ Section **"Perlu TTD Sales"**:
-    - Sumber data: `GET /api/drawings/pending-my-approval` (role sales → `pending_sales`).
-    - Muncul hanya jika ada data (benar bila kosong: section tersembunyi).
-  - ✅ Tombol **TTD** juga tersedia di tabel drawing (untuk row yang `pending_sales`).
-  - ✅ Reuse `SignaturePlacementModal` dengan `stage="sales"`.
-- Frontend (`SignaturePlacementModal.jsx`)
-  - ✅ Prefill **P/O No** dari `drawing.po_customer_no` (atau fallback `po_no`).
-
-**Exit criteria (Verified)**
-- ✅ Flow TTD Sales dapat dipicu dari DRF list dan memakai modal TTD yang existing.
-
----
-
-### Phase I — Notifikasi Sales (In-App Saja) Saat Drawing Siap Dilihat — (Completed)
-
-**Tujuan**
-- Sales mendapat notifikasi ketika drawing sudah bisa dilihat (tanpa email).
-
-**Implementasi (Done)**
-- Backend (`routers/notifications.py`)
-  - ✅ Tambah kategori notifikasi baru khusus Sales:
-    - `key: drawing_ready_view`
-    - `label: "Drawing Siap Dilihat (Preview)"`
-    - Kriteria: drawing milik DRF Sales dengan `approval_status in (pending_eng_head, pending_qc)` dan sudah punya `file_id`.
-    - `link: /sales/drawing-requests`
-- Frontend
-  - ✅ Terlihat di dropdown Notifikasi header pada halaman ber-AppShell.
-
-**Exit criteria (Verified)**
-- ✅ Notifikasi muncul dan jumlahnya sesuai data; klik membawa user ke DRF list.
-
----
-
-### Deferred — Approval Berjenjang BOM (Leader → Purchasing → Erwin)
-- ⏸ Ditunda sampai ada instruksi lanjutan dari user.
-- Setelah aktif, targetnya mengikat approval BOM dengan chain per role dan audit trail yang jelas.
-
----
-
-## 3) Next Actions (urut eksekusi)
-1. ✅ N selesai (Dashboard SO Progress + sidebar).
-2. ✅ O selesai (2 antrian leader + buka EngLeaderReviewDialog).
-3. ✅ L selesai (DRF list redesign tanpa kolom Aksi + expandable + tabel item/drawing).
-4. ✅ M selesai (TTD Sales dari DRF list + prefill PO).
-5. ✅ I selesai (notifikasi Sales in-app untuk drawing siap dilihat).
-6. ⏭ **Menunggu instruksi berikutnya**: Approval berjenjang BOM (Leader → Purchasing → Erwin).
-
-> Catatan operasional wajib:
-> - Semua UI copy wajib **Bahasa Indonesia**.
-> - Tetap pakai shadcn UI (hindari native select).
-> - Pertahankan viewer PDF hybrid `<iframe>` blob (jangan ubah ke render PNG server).
-> - Mode Cepat default aktif (reduce-motion).
-> - Jangan ubah `frontend/.env` dan `backend/.env`.
-> - Gunakan `yarn`.
-
----
+## 3) Next Actions (eksekusi terdekat)
+1. Refactor `WorkOrderView` di `BomEntryGridPage.jsx` menjadi komponen exported dengan flag `embedded`.
+2. Tambah Tabs di `EngineeringDrfWorkPage.jsx` dan embed grid BOM.
+3. Hilangkan BOM tab pada `EngineeringWorkOrderPage.jsx` dan perjelas navigasi “BOM ada di Work Group”.
+4. Kompakkan UI kedua halaman (padding, header, tabel).
+5. `yarn build` + `testing_agent_v3` + perbaiki temuan sampai clean.
 
 ## 4) Success Criteria
-- ✅ Dashboard SO Progress + sidebar berjalan dan endpoint tervalidasi.
-- ✅ Leader punya 2 antrian baru dan bisa review dari antrian via dialog yang sudah ada.
-- ✅ DRF list lebih informatif (items + preview + tabel drawing) tanpa kolom Aksi.
-- ✅ Sales bisa melakukan TTD dari DRF list dengan alur jelas.
-- ✅ Notifikasi Sales in-app muncul saat drawing siap dilihat dan bisa di-click menuju konteksnya.
-
----
-
-## 5) Verification / Evidence
-- ✅ Testing agent report:
-  - `/app/test_reports/iteration_25.json` — Dashboard SO Progress (backend 11/11 pass)
-  - `/app/test_reports/iteration_26.json` — Phase O/L/M/I (backend 11/11 pass, frontend 100%)
-- ✅ Cleanup selesai:
-  - Password `salesuser` dipulihkan ke hash asli
-  - Akun QA `qa_leader_tmp` dihapus
-  - Temporary files dihapus
-- ✅ Final `yarn build` sukses
+- Di **Work Group** (`/engineering/drf/:drfId`) ada 2 tab: **Drawing & Upload** dan **BOM**.
+- Tab **BOM** menampilkan **grid BOM editable** dan hanya ada **Simpan** (tidak ada Submit BOM).
+- **Work Order per-drawing** tidak lagi menampilkan BOM sebagai tab utama; submit tetap single gate dari drawing.
+- UI **minimalis/compact**: header tipis, tabel rapat, tidak “kebesaran”.
+- `yarn build` sukses dan **testing_agent_v3** untuk flow Work Group/Work Order tidak menemukan bug kritis.

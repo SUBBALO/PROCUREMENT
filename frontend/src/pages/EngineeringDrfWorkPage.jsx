@@ -18,6 +18,8 @@ import BackLink from "../components/BackLink";
 import PdfPreviewModal from "../components/PdfPreviewModal";
 import SoDocsPanel from "../components/SoDocsPanel";
 import EngLeaderReviewDialog from "../components/EngLeaderReviewDialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
+import { WorkOrderView } from "./BomEntryGridPage";
 import {
   Wrench, ArrowClockwise, Plus, Trash, FileText, Package,
   CheckCircle, PaperPlaneRight, PencilSimple, Lock, ArrowRight, Eye, ClipboardText,
@@ -169,42 +171,41 @@ export default function EngineeringDrfWorkPage() {
       <BackLink />
 
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-teal-700 mb-1">
-            <Wrench size={14} weight="fill" /> Engineering · Work Group
+          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] font-bold text-teal-700 mb-0.5">
+            <Wrench size={12} weight="fill" /> Engineering · Work Group
           </div>
-          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900 flex items-center gap-2" style={{ fontFamily: "Chivo, sans-serif" }}>
             {drf.form_no}
-          </h1>
-          <div className="text-sm text-slate-600 mt-1">
-            <span className={`px-1.5 py-0.5 text-[10px] font-bold uppercase mr-2 ${isRepeat ? "bg-blue-100 text-blue-800 border border-blue-400" : "bg-emerald-100 text-emerald-800 border border-emerald-400"}`}>
+            <span className={`px-1.5 py-0.5 text-[10px] font-bold uppercase ${isRepeat ? "bg-blue-100 text-blue-800 border border-blue-400" : "bg-emerald-100 text-emerald-800 border border-emerald-400"}`}>
               {isRepeat ? "Repeat Order" : "New Order"}
             </span>
+          </h1>
+          <div className="text-xs text-slate-600 mt-0.5">
             SO: <b className="font-mono">{drf.so_no}</b> · {drf.project_name || "-"} · Customer: <b>{drf.customer_name || "-"}</b>
           </div>
         </div>
-        <div className="text-right flex flex-col items-end gap-2">
+        <div className="text-right flex flex-col items-end gap-1.5">
           <div>
-            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Ditugaskan ke</div>
-            <div className="text-sm font-semibold text-slate-800">{drf.assigned_engineer_name || <span className="italic text-slate-400">Belum di-assign</span>}</div>
-            <div className="text-[10px] text-slate-500">oleh {drf.assigned_by || "-"}</div>
+            <div className="text-[9px] uppercase tracking-widest font-bold text-slate-500">Ditugaskan ke</div>
+            <div className="text-xs font-semibold text-slate-800">{drf.assigned_engineer_name || <span className="italic text-slate-400">Belum di-assign</span>}</div>
           </div>
           {isLeaderRole && drawings.length > 0 && (
             <button
               onClick={() => setShowReview(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold uppercase tracking-widest transition-colors duration-150 active:translate-y-[1px]"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold uppercase tracking-widest transition-colors duration-150 active:translate-y-[1px]"
               data-testid="open-eng-leader-review-dialog-button"
             >
-              <ClipboardText size={14} weight="fill" /> Review Dokumen SO
+              <ClipboardText size={13} weight="fill" /> Review Dokumen SO
             </button>
           )}
         </div>
       </div>
 
-      {/* Info order */}
-      <Card className="rounded-none border-slate-200 p-4 bg-slate-50">
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm">
+      {/* Info order — compact */}
+      <Card className="rounded-none border-slate-200 px-3 py-2 bg-slate-50">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
           <Info k="Qty Order" v={`${drf.qty_order} ${drf.unit}`} />
           <Info k="Material" v={drf.material} />
           <Info k="Due Date" v={drf.expected_due_date} />
@@ -239,6 +240,18 @@ export default function EngineeringDrfWorkPage() {
         </div>
       )}
 
+      {/* Feature: 2 tab level GRUP — Drawing & Upload | BOM (1 BOM per SO) */}
+      <Tabs defaultValue="drawing" className="w-full">
+        <TabsList className="rounded-none bg-slate-100 border border-slate-200 p-0 h-auto">
+          <TabsTrigger value="drawing" className="rounded-none data-[state=active]:bg-teal-600 data-[state=active]:text-white px-4 py-1.5 text-xs font-bold uppercase tracking-wider" data-testid="wg-tab-drawing">
+            Drawing &amp; Upload
+          </TabsTrigger>
+          <TabsTrigger value="bom" className="rounded-none data-[state=active]:bg-amber-600 data-[state=active]:text-white px-4 py-1.5 text-xs font-bold uppercase tracking-wider" data-testid="wg-tab-bom">
+            {sharedBomNo ? `BOM · ${sharedBomNo}` : "BOM"}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="drawing" className="mt-3 space-y-4">
       {isRepeat && (
         <div className="border-2 border-blue-300 bg-blue-50 p-3 text-sm text-blue-800">
           <b>Repeat Order:</b> tarik-otomatis <b>Drawing + BOM + Nesting + Costing</b> dari order lama (cari via SO / No. DWG). Hasil tarikan auto-attach & BOM autofill — <b>editable bila Qty berubah</b>. Kalau data lama tidak ketemu, tetap bisa generate drawing baru & upload manual di bawah.
@@ -266,40 +279,6 @@ export default function EngineeringDrfWorkPage() {
         </div>
       )}
 
-      {/* Shared BOM */}
-      {sharedBomId && (
-        <div className={`border-2 ${soLocked ? "border-slate-400" : "border-amber-500"}`}>
-          <div className={`px-3 py-2 ${soLocked ? "bg-slate-600" : "bg-amber-600"} text-white flex items-center gap-2`}>
-            <Package size={16} weight="fill" />
-            <div className="text-[11px] uppercase tracking-widest font-bold flex-1">
-              BOM Bersama — <span className="font-mono normal-case">{sharedBomNo}</span> (1 BOM untuk semua {drawings.length} drawing)
-            </div>
-            {soLocked ? (
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest bg-slate-800 px-2 py-1">
-                <Lock size={11} weight="fill" /> Terkunci
-              </span>
-            ) : (
-              <button
-                onClick={() => navigate(`/engineering/bom-entry/${sharedBomId}`)}
-                className="text-[10px] font-bold uppercase tracking-widest bg-amber-800 hover:bg-amber-900 px-2 py-1"
-                data-testid="drf-open-bom"
-              >
-                Isi / Edit BOM →
-              </button>
-            )}
-            {soLocked && (
-              <button
-                onClick={() => navigate(`/engineering/bom-entry/${sharedBomId}`)}
-                className="text-[10px] font-bold uppercase tracking-widest bg-slate-800 hover:bg-slate-900 px-2 py-1"
-                data-testid="drf-view-bom"
-              >
-                Lihat BOM →
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Drawings list */}
       <div className="border-2 border-teal-500">
         <div className="px-3 py-2 bg-teal-600 text-white flex items-center gap-2">
@@ -315,7 +294,6 @@ export default function EngineeringDrfWorkPage() {
             </div>
           )}
           {drawings.map((d) => {
-            const extras = d.additional_files || d.extras || [];
             const subtitle = `${d.title || d.project_name || ""} · ${d.drawing_type || ""}`;
             return (
             <div key={d.id} className="p-3 flex flex-wrap items-center gap-3 hover:bg-teal-50/40" data-testid={`drf-drawing-${d.drawing_no}`}>
@@ -338,12 +316,6 @@ export default function EngineeringDrfWorkPage() {
                   okLabel="Cust Dwg 👁" offLabel="Cust Dwg"
                   onClick={() => setViewer({ drawingId: d.id, target: "customer_ref", title: `${d.drawing_no} · Customer DWG`, subtitle })}
                   testid={`drf-preview-cust-${d.drawing_no}`}
-                />
-                <PreviewChip
-                  available={extras.length > 0}
-                  okLabel={`Nesting/Extra (${extras.length}) 👁`} offLabel={`Nesting/Extra (${extras.length})`}
-                  onClick={() => setViewer({ drawingId: d.id, target: "extra", extraId: extras[0]?.id, title: `${d.drawing_no} · ${extras[0]?.filename || "Nesting/Extra"}`, subtitle })}
-                  testid={`drf-preview-extra-${d.drawing_no}`}
                 />
               </div>
               <StatusBadge status={d.approval_status} />
@@ -389,10 +361,26 @@ export default function EngineeringDrfWorkPage() {
 
 
       {drawings.length > 0 && canEdit && (
-        <div className="border-2 border-sky-500 bg-sky-50 p-4 text-sm text-slate-700">
-          <b>Langkah berikutnya:</b> untuk tiap drawing klik <b>Upload & TTD</b> → upload PDF MKS (bisa lebih dari 1 dokumen: customer dwg & nesting), isi BOM bersama, lalu <b>TTD & Submit ke Eng Leader</b>. Drawing lama (repeat order tanpa dwg baru) tidak perlu TTD.
+        <div className="border-2 border-sky-500 bg-sky-50 p-3 text-xs text-slate-700">
+          <b>Langkah berikutnya:</b> untuk tiap drawing klik <b>Upload &amp; TTD</b> → upload PDF MKS, lalu <b>TTD &amp; Submit ke Eng Leader</b>. Isi item BOM di tab <b>BOM</b> (1 BOM untuk semua drawing). Submit final memverifikasi drawing + BOM sekaligus.
         </div>
       )}
+        </TabsContent>
+
+        {/* TAB 2 — BOM (embedded editable grid, Simpan saja · tanpa Submit) */}
+        <TabsContent value="bom" className="mt-3">
+          {sharedBomId ? (
+            <div className="border-2 border-amber-500 p-3" data-testid="wg-bom-embed">
+              <WorkOrderView bomId={sharedBomId} embedded />
+            </div>
+          ) : (
+            <div className="border-2 border-dashed border-amber-400 bg-amber-50/50 p-8 text-center text-sm text-slate-600" data-testid="wg-bom-empty">
+              <Package size={28} weight="fill" className="mx-auto mb-2 text-amber-500" />
+              BOM bersama belum terbentuk. Generate minimal 1 nomor drawing di tab <b>Drawing &amp; Upload</b> — BOM akan otomatis dibuat dan muncul di sini.
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {viewer && (
         <PdfPreviewModal

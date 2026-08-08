@@ -1,22 +1,22 @@
 [
   {
-    "content": "Feature 2: Revisi DR Berjenjang (backend + frontend, tested iter_30)",
+    "content": "Refactor WorkOrderView in BomEntryGridPage.jsx → accept {bomId, embedded}, export it, guard nav on error, conditional header/action-bar chrome",
     "status": "completed"
   },
   {
-    "content": "Bug fix: assign inquiry to eng_leader",
+    "content": "Restructure EngineeringDrfWorkPage.jsx (Work Group): add group-level Tabs (Drawing & Upload | BOM), embed BOM grid in BOM tab, make minimalist",
     "status": "completed"
   },
   {
-    "content": "Bug fix: Leader's own drawing auto-passes Leader verification",
+    "content": "Simplify per-drawing EngineeringWorkOrderPage.jsx: remove BOM tab, keep single Drawing & Upload + Submit gate, make compact",
     "status": "completed"
   },
   {
-    "content": "Feature 4: BOM sequential procurement approval (Leader -> Purchasing -> Manager/Erwin) with audit",
-    "status": "completed"
+    "content": "esbuild/yarn build check + fix compile errors",
+    "status": "in_progress"
   },
   {
-    "content": "Full yarn build passes",
-    "status": "completed"
+    "content": "Screenshot both routes + run testing_agent_v3 for Work Group/Work Order flow",
+    "status": "pending"
   }
 ]
