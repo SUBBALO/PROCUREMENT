@@ -15,6 +15,7 @@ Sumber data:
 from __future__ import annotations
 
 import calendar
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -275,12 +276,17 @@ async def _compute_month(year: int, month: int) -> dict:
 
 @router.get("/engineering/kpi")
 async def get_kpi(
-    year: int = Query(...),
-    month: int = Query(..., ge=1, le=12),
+    year: int = Query(None),
+    month: int = Query(None, ge=1, le=12),
     current: dict = Depends(get_current_user),
 ):
     if not _can_view_kpi(current):
         raise HTTPException(status_code=403, detail="Hanya Engineering/Manajemen yang dapat melihat KPI.")
+    # Default ke periode berjalan bila year/month tidak dikirim.
+    if not year or not month:
+        _now = datetime.now(timezone.utc)
+        year = year or _now.year
+        month = month or _now.month
     return await _compute_month(year, month)
 
 

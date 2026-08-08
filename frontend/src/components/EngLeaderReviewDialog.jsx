@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import api from "../lib/api";
 import {
-  Dialog, DialogContent,
+  Dialog, DialogContent, DialogTitle,
 } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -183,6 +183,7 @@ export default function EngLeaderReviewDialog({ open, onClose, drfId, bomId, bom
           onPointerDownOutside={(e) => { if (preview || sigDrawing) e.preventDefault(); }}
           onEscapeKeyDown={(e) => { if (preview || sigDrawing) e.preventDefault(); }}
         >
+          <DialogTitle className="sr-only">Review Dokumen SO</DialogTitle>
           {/* Header */}
           <div className="flex items-center justify-between gap-3 px-5 py-3 bg-slate-900 text-slate-50 shrink-0">
             <div className="flex items-center gap-2 min-w-0">
