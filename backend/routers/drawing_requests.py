@@ -799,6 +799,14 @@ async def engineering_workload_trend(weeks: int = 8, current: dict = Depends(get
     return {"weeks": labels, "items": items}
 
 
+@router.get("/drawing-requests/revision-pending-count")
+async def revision_pending_count(current: dict = Depends(get_current_user)):
+    """Jumlah DR yang menunggu approval revisi (untuk badge Head Sales/Admin)."""
+    n = await db.drawing_requests.count_documents({"status": "revision_requested", "deleted_at": {"$exists": False}})
+    return {"count": n}
+
+
+
 @router.get("/drawing-requests/{drf_id}")
 async def get_drawing_request(drf_id: str, current: dict = Depends(get_current_user)):
     doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}}, {"_id": 0})
@@ -886,6 +894,100 @@ async def accept_drawing_request(drf_id: str, current: dict = Depends(get_curren
     await log_action(current, "drf_accept", "drawing_requests", drf_id, {"form_no": doc.get("form_no")})
     out = await db.drawing_requests.find_one({"id": drf_id}, {"_id": 0})
     return out
+
+
+# =========================================================================
+# Revisi DR Berjenjang (Sales minta revisi → Head Sales/Admin setujui)
+# =========================================================================
+class RevisionReqIn(BaseModel):
+    reason: str = ""
+
+
+@router.post("/drawing-requests/{drf_id}/request-revision")
+async def request_drf_revision(drf_id: str, payload: RevisionReqIn, current: dict = Depends(get_current_user)):
+    """Sales (pembuat) minta revisi DR yang SUDAH diajukan.
+    Status → 'revision_requested' (menunggu approval Head Sales/Admin). DR tetap terkunci."""
+    doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="DRF tidak ditemukan")
+    if not _is_sales(current) and doc.get("created_by") != current["id"]:
+        raise HTTPException(status_code=403, detail="Hanya Sales/pembuat DR yang bisa minta revisi")
+    if doc["status"] not in ("submitted", "accepted"):
+        raise HTTPException(status_code=400, detail=f"Revisi hanya untuk DR yang sudah diajukan (status saat ini: {doc['status']})")
+    if not (payload.reason or "").strip():
+        raise HTTPException(status_code=400, detail="Alasan revisi wajib diisi")
+    upd = {
+        "status": "revision_requested",
+        "prev_status": doc["status"],
+        "revision_request": {
+            "by": current.get("name") or current.get("username"),
+            "by_id": current["id"],
+            "at": _now_iso(),
+            "reason": payload.reason.strip(),
+        },
+        "updated_at": _now_iso(),
+    }
+    await db.drawing_requests.update_one({"id": drf_id}, {"$set": upd})
+    await log_action(current, "drf_request_revision", "drawing_requests", drf_id, {"form_no": doc.get("form_no"), "reason": payload.reason.strip()})
+    return await db.drawing_requests.find_one({"id": drf_id}, {"_id": 0})
+
+
+@router.post("/drawing-requests/{drf_id}/approve-revision")
+async def approve_drf_revision(drf_id: str, current: dict = Depends(get_current_user)):
+    """Head Sales (supervisor) / Admin menyetujui revisi → DR dibuka lagi (status 'draft').
+    TTD pengajuan & penerimaan Engineering di-reset agar DR mengikuti alur ulang."""
+    if not is_admin_like(current):
+        raise HTTPException(status_code=403, detail="Hanya Head Sales / Admin yang boleh menyetujui revisi")
+    doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="DRF tidak ditemukan")
+    if doc["status"] != "revision_requested":
+        raise HTTPException(status_code=400, detail="DR tidak sedang menunggu approval revisi")
+    upd = {
+        "status": "draft",
+        "requested_by": None,
+        "submitted_at": None,
+        "received_by": None,
+        "accepted_at": None,
+        "assigned_engineer_id": None,
+        "assigned_engineer_name": None,
+        "revision_round": int(doc.get("revision_round") or 0) + 1,
+        "revision_approved": {
+            "by": current.get("name") or current.get("username"),
+            "at": _now_iso(),
+        },
+        "updated_at": _now_iso(),
+    }
+    await db.drawing_requests.update_one({"id": drf_id}, {"$set": upd, "$unset": {"prev_status": ""}})
+    await log_action(current, "drf_approve_revision", "drawing_requests", drf_id, {"form_no": doc.get("form_no")})
+    return await db.drawing_requests.find_one({"id": drf_id}, {"_id": 0})
+
+
+@router.post("/drawing-requests/{drf_id}/reject-revision")
+async def reject_drf_revision(drf_id: str, payload: RevisionReqIn, current: dict = Depends(get_current_user)):
+    """Head Sales / Admin menolak permintaan revisi → status kembali seperti semula."""
+    if not is_admin_like(current):
+        raise HTTPException(status_code=403, detail="Hanya Head Sales / Admin yang boleh menolak revisi")
+    doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="DRF tidak ditemukan")
+    if doc["status"] != "revision_requested":
+        raise HTTPException(status_code=400, detail="DR tidak sedang menunggu approval revisi")
+    restore = doc.get("prev_status") or "submitted"
+    upd = {
+        "status": restore,
+        "revision_rejected": {
+            "by": current.get("name") or current.get("username"),
+            "at": _now_iso(),
+            "reason": (payload.reason or "").strip(),
+        },
+        "updated_at": _now_iso(),
+    }
+    await db.drawing_requests.update_one({"id": drf_id}, {"$set": upd, "$unset": {"prev_status": ""}})
+    await log_action(current, "drf_reject_revision", "drawing_requests", drf_id, {"form_no": doc.get("form_no"), "reason": (payload.reason or '').strip()})
+    return await db.drawing_requests.find_one({"id": drf_id}, {"_id": 0})
+
+
 
 
 class AcceptAssignIn(BaseModel):

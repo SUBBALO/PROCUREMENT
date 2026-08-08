@@ -396,11 +396,11 @@ async def assign_inquiry(inq_id: str, payload: InquiryAssign, current: dict = De
     if d.get("status") not in ("submitted", "in_progress", "revision_requested"):
         raise HTTPException(status_code=400, detail=f"Status '{d.get('status')}' tidak bisa di-assign")
 
-    # Validate the target user is an engineer
+    # Validate the target user is an engineer (termasuk eng_leader — Leader boleh mengerjakan sendiri)
     target = await db.users.find_one({"id": payload.engineer_id, "deleted_at": {"$exists": False}})
     if not target:
         raise HTTPException(status_code=404, detail="User target tidak ditemukan")
-    if target.get("role") not in ("engineering", "eng_head", "eng_staff"):
+    if not is_engineering(target):
         raise HTTPException(status_code=400, detail="User target bukan Engineering")
 
     engineer_name = payload.engineer_name.strip() or target.get("name") or target.get("username")

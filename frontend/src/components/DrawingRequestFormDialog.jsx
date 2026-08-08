@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import api from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
-import { X, FileText, UploadSimple, MagnifyingGlass, Paperclip, Trash, Eye, Plus, Stack } from "@phosphor-icons/react";
+import { X, FileText, UploadSimple, MagnifyingGlass, Paperclip, Trash, Eye, Plus, Stack, ArrowClockwise, CheckCircle, XCircle } from "@phosphor-icons/react";
 import BomAttachmentsReadOnly from "./BomAttachmentsReadOnly";
 
 /**
@@ -16,9 +17,14 @@ import BomAttachmentsReadOnly from "./BomAttachmentsReadOnly";
  * Repeat Order → pilih SO referensi lama + SO baru + reference drawing lama
  */
 export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) {
+  const { user } = useAuth();
+  const role = user?.role;
+  const isAdminLike = ["admin", "super_admin", "supervisor"].includes(role);
+  const isSalesUser = role === "sales" || isAdminLike;
   // isEdit hanya bila membuka DRF yang SUDAH ADA (punya id). Bila `initial` hanya
   // berisi data prefill untuk DRF BARU (tanpa id, mis. dari Sales Order), ini CREATE mode.
   const isEdit = !!initial?.id;
+  const [revBusy, setRevBusy] = useState(false);
   const [type, setType] = useState(initial?.request_type || "new_order");
   const [soList, setSoList] = useState([]);
   const [soQ, setSoQ] = useState("");
@@ -277,6 +283,48 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal hapus");
     }
+  };
+
+  // ── Revisi DR Berjenjang ──────────────────────────────────────────────
+  const drfStatus = initial?.status;
+  const canRequestRevision = isEdit && isSalesUser && ["submitted", "accepted"].includes(drfStatus);
+  const isRevisionPending = drfStatus === "revision_requested";
+  const canApproveRevision = isEdit && isAdminLike && isRevisionPending;
+
+  const doRequestRevision = async () => {
+    const reason = window.prompt("Alasan minta revisi DR (wajib diisi):", "");
+    if (reason === null) return;
+    if (!reason.trim()) { toast.error("Alasan revisi wajib diisi"); return; }
+    setRevBusy(true);
+    try {
+      await api.post(`/drawing-requests/${initial.id}/request-revision`, { reason: reason.trim() });
+      toast.success("Permintaan revisi dikirim. Menunggu persetujuan Head Sales/Admin.");
+      onSaved?.();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal minta revisi"); }
+    finally { setRevBusy(false); }
+  };
+
+  const doApproveRevision = async () => {
+    if (!window.confirm("Setujui revisi? DR akan dibuka kembali untuk diedit Sales.")) return;
+    setRevBusy(true);
+    try {
+      await api.post(`/drawing-requests/${initial.id}/approve-revision`);
+      toast.success("Revisi disetujui. DR dibuka kembali (status draft).");
+      onSaved?.();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal menyetujui revisi"); }
+    finally { setRevBusy(false); }
+  };
+
+  const doRejectRevision = async () => {
+    const reason = window.prompt("Alasan menolak revisi (opsional):", "");
+    if (reason === null) return;
+    setRevBusy(true);
+    try {
+      await api.post(`/drawing-requests/${initial.id}/reject-revision`, { reason: (reason || "").trim() });
+      toast.success("Permintaan revisi ditolak.");
+      onSaved?.();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal menolak revisi"); }
+    finally { setRevBusy(false); }
   };
 
   const isLocked = isEdit && initial?.status !== "draft";
@@ -678,8 +726,51 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
           )}
         </div>
 
-        <div className="sticky bottom-0 bg-white border-t border-slate-200 p-3 flex justify-end gap-2">
+        <div className="sticky bottom-0 bg-white border-t border-slate-200 p-3 flex flex-wrap justify-end gap-2">
+          {isRevisionPending && (
+            <div className="w-full mb-1 flex items-start gap-2 bg-amber-50 border border-amber-300 px-3 py-2 text-xs" data-testid="drf-revision-banner">
+              <ArrowClockwise size={16} weight="bold" className="text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <span className="font-bold text-amber-800 uppercase tracking-wide">Menunggu Approval Revisi</span>
+                {initial?.revision_request?.reason && <span className="text-slate-700"> — Alasan: {initial.revision_request.reason}</span>}
+                {initial?.revision_request?.by && <span className="text-slate-500"> (oleh {initial.revision_request.by})</span>}
+              </div>
+            </div>
+          )}
           <Button variant="outline" onClick={onClose} className="rounded-none border-slate-300" data-testid="drf-cancel-btn">Batal</Button>
+          {canRequestRevision && (
+            <Button
+              onClick={doRequestRevision}
+              disabled={revBusy}
+              variant="outline"
+              className="rounded-none border-amber-400 text-amber-700 hover:bg-amber-50"
+              data-testid="drf-request-revision-btn"
+            >
+              <ArrowClockwise size={15} weight="bold" className="mr-1" />
+              {revBusy ? "Memproses..." : "Minta Revisi"}
+            </Button>
+          )}
+          {canApproveRevision && (
+            <>
+              <Button
+                onClick={doRejectRevision}
+                disabled={revBusy}
+                variant="outline"
+                className="rounded-none border-rose-300 text-rose-700 hover:bg-rose-50"
+                data-testid="drf-reject-revision-btn"
+              >
+                <XCircle size={15} weight="bold" className="mr-1" /> Tolak Revisi
+              </Button>
+              <Button
+                onClick={doApproveRevision}
+                disabled={revBusy}
+                className="rounded-none bg-emerald-700 hover:bg-emerald-800 text-white"
+                data-testid="drf-approve-revision-btn"
+              >
+                <CheckCircle size={15} weight="bold" className="mr-1" /> Setujui Revisi
+              </Button>
+            </>
+          )}
           {!isLocked && (
             <>
               <Button

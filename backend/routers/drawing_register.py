@@ -2158,6 +2158,27 @@ async def drawing_submit_for_approval(
     stamp["stage"] = "submit"
     # Iter 22/40 — Prepared By TTD digital di posisi terpilih (dukung per-halaman placements)
     _apply_placement_to_stamp(stamp, payload)
+
+    # Bila yang mengerjakan/submit adalah Engineering LEADER sendiri → verifikasi Leader
+    # otomatis lolos (tidak perlu approval Leader lagi). Langsung ke stage QC.
+    submitter_is_leader = is_eng_head(current)
+    if submitter_is_leader:
+        auto_check = _sig_stamp(current, notes="Auto-verifikasi: drawing dikerjakan oleh Engineering Leader")
+        auto_check["stage"] = "eng_head"
+        auto_check["auto"] = True
+        _apply_placement_to_stamp(auto_check, payload)
+        await db.drawings.update_one(
+            {"id": drawing_id},
+            {"$set": {"approval_status": "pending_qc", "submitted_at": _now_iso(),
+                      "submitted_by": stamp["name"], "prepared_by": stamp["name"],
+                      "checked_by": stamp["name"], "eng_head_at": _now_iso()},
+             "$push": {"approvals": {"$each": [stamp, auto_check]}}},
+        )
+        await log_action(current, "drawing_submit_approval", "drawings", drawing_id,
+                         {"drawing_no": drawing.get("drawing_no"), "auto_leader_verified": True})
+        return {"success": True, "approval_status": "pending_qc", "signed_by": stamp["name"],
+                "auto_leader_verified": True}
+
     await db.drawings.update_one(
         {"id": drawing_id},
         {"$set": {"approval_status": "pending_eng_head", "submitted_at": _now_iso(),

@@ -1,22 +1,26 @@
 [
   {
-    "content": "DRF form: remove Project Name + reorder fields + required dates + backend po_received_date",
-    "status": "completed"
+    "content": "Create Head Sales user 'nicholas' (role supervisor) with forced password change",
+    "status": "in_progress"
   },
   {
-    "content": "Repeat order: master customer autocomplete in manual SO box",
-    "status": "completed"
+    "content": "Backend: DR revision workflow endpoints (request-revision, approve-revision, reject-revision) + status revision_requested + role guard (supervisor/admin)",
+    "status": "pending"
   },
   {
-    "content": "Repeat order: auto-load reference SO attachments (drawing/BOM/nesting/costing) with preview",
-    "status": "completed"
+    "content": "Frontend: DR dialog 'Minta Revisi' (sales) + 'Setujui/Tolak Revisi' (supervisor/admin) + status badges",
+    "status": "pending"
   },
   {
-    "content": "Build frontend + testing_agent (iteration_28: frontend 100%, backend passed)",
-    "status": "completed"
+    "content": "Surface revision approval queue/indicator for Head Sales/Admin",
+    "status": "pending"
   },
   {
-    "content": "Cleanup QA accounts + orphan test DRF drafts",
-    "status": "completed"
+    "content": "Test Feature 2 with testing agent",
+    "status": "pending"
+  },
+  {
+    "content": "Feature 4: BOM sequential approval (Leader -> Purchasing -> Erwin/Admin) with audit",
+    "status": "pending"
   }
 ]
