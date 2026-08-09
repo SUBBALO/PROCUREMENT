@@ -4,7 +4,8 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { Printer, ChartLineUp, Clock, ShieldCheck, CheckCircle } from "@phosphor-icons/react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { Printer, ChartLineUp, Clock, ShieldCheck, CheckCircle, MagnifyingGlass, Database, CircleNotch, XCircle } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 import BackLink from "../components/BackLink";
@@ -31,12 +32,16 @@ const CATEGORY_STYLES = {
   "PERLU PERBAIKAN": { bg: "bg-red-500", text: "text-white" },
 };
 
+const achColor = (v) => (v == null ? "text-slate-300" : v >= 90 ? "text-emerald-600" : v >= 80 ? "text-sky-600" : v >= 71 ? "text-amber-600" : "text-rose-600");
+
 export default function KPIReportPage() {
   const [startDate, setStartDate] = useState(firstDayOfMonth());
   const [endDate, setEndDate] = useState(lastDayOfMonth());
   const [grace, setGrace] = useState(7);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [audit, setAudit] = useState(null);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -49,6 +54,21 @@ export default function KPIReportPage() {
       toast.error("Gagal memuat KPI");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openAudit = async (kpi) => {
+    setAudit({ key: kpi.key, name: kpi.name, source: "", records: null });
+    setAuditLoading(true);
+    try {
+      const { data } = await api.get(`/kpi/${kpi.key}/records`, {
+        params: { start_date: startDate, end_date: endDate, ontime_grace_days: grace },
+      });
+      setAudit((a) => ({ ...a, ...data }));
+    } catch (e) {
+      setAudit((a) => ({ ...a, records: [] }));
+    } finally {
+      setAuditLoading(false);
     }
   };
 
@@ -126,6 +146,7 @@ export default function KPIReportPage() {
                 <th className="border border-slate-400 p-2 w-20">Bobot Capaian</th>
                 <th className="border border-slate-400 p-2 w-24 bg-emerald-100">Capaian Aktual</th>
                 <th className="border border-slate-400 p-2 w-24 bg-blue-200">SKOR KPI</th>
+                <th className="border border-slate-400 p-2 w-16 print:hidden">Audit</th>
               </tr>
             </thead>
             <tbody>
@@ -159,6 +180,11 @@ export default function KPIReportPage() {
                   <td className="border border-slate-400 p-2 text-center bg-blue-100 font-bold tabular-nums text-lg" style={{ fontFamily: "Chivo, sans-serif" }}>
                     {k.score.toFixed(2)}
                   </td>
+                  <td className="border border-slate-400 p-1 text-center print:hidden">
+                    <button onClick={() => openAudit(k)} className="inline-flex items-center gap-1 px-1.5 py-1 text-[10px] font-bold uppercase tracking-wide border border-red-300 text-red-700 hover:bg-red-600 hover:text-white transition-colors" data-testid={`kpi-audit-btn-${k.key}`} title="Telusur record PO penyusun (audit)">
+                      <MagnifyingGlass size={11} weight="bold" />
+                    </button>
+                  </td>
                 </tr>
               ))}
               <tr>
@@ -168,6 +194,7 @@ export default function KPIReportPage() {
                 <td className="border border-slate-400 p-2 text-center font-black bg-yellow-300 tabular-nums text-lg" data-testid="kpi-total-score" style={{ fontFamily: "Chivo, sans-serif" }}>
                   {data ? data.total_score.toFixed(2) : "0.00"} %
                 </td>
+                <td className="border border-slate-400 print:hidden"></td>
               </tr>
               <tr>
                 <td colSpan={5} className="border border-slate-400 p-3 align-top">
@@ -179,7 +206,7 @@ export default function KPIReportPage() {
                     <div>≥ 90%</div><div className="text-emerald-600 font-bold">→ SANGAT BAIK</div>
                   </div>
                 </td>
-                <td colSpan={2} className={`border border-slate-400 p-3 text-right font-black text-xl ${catStyle.bg} ${catStyle.text}`} data-testid="kpi-category" style={{ fontFamily: "Chivo, sans-serif" }}>
+                <td colSpan={3} className={`border border-slate-400 p-3 text-right font-black text-xl ${catStyle.bg} ${catStyle.text}`} data-testid="kpi-category" style={{ fontFamily: "Chivo, sans-serif" }}>
                   {data?.category || "-"}
                 </td>
               </tr>
@@ -231,6 +258,57 @@ export default function KPIReportPage() {
           </div>
         )}
       </div>
+
+      {/* Audit drill modal (screen only) */}
+      <Dialog open={!!audit} onOpenChange={(o) => { if (!o) setAudit(null); }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="kpi-audit-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-800 text-base">
+              <MagnifyingGlass size={16} weight="bold" className="text-red-600" /> Audit: {audit?.name} — {fmtLongID(startDate)} s/d {fmtLongID(endDate)}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex items-start gap-1.5 text-[11px] text-slate-500 bg-slate-50 border border-slate-200 p-2 mb-2">
+            <Database size={13} className="mt-0.5 shrink-0 text-red-600" /> <span>{audit?.source}</span>
+          </div>
+          {auditLoading || audit?.records == null ? (
+            <div className="py-10 text-center text-slate-400"><CircleNotch size={22} className="animate-spin inline text-red-500 mr-1" weight="bold" /> Memuat record…</div>
+          ) : audit.records.length === 0 ? (
+            <div className="py-8 text-center text-slate-400 text-sm">Tidak ada PO penyusun pada periode ini.</div>
+          ) : (
+            <>
+              <div className="border border-slate-200 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                    <tr>
+                      <th className="text-left p-2 w-8">#</th>
+                      <th className="text-left p-2">No. PO</th>
+                      <th className="text-left p-2 w-24">Tanggal</th>
+                      <th className="text-left p-2">Keterangan</th>
+                      <th className="text-center p-2 w-16">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {audit.records.map((r, i) => (
+                      <tr key={i} className="border-b border-slate-100" data-testid={`kpi-audit-row-${i}`}>
+                        <td className="p-2 text-slate-400 tabular-nums">{i + 1}</td>
+                        <td className="p-2 font-mono font-semibold text-slate-800">{r.ref || "-"}</td>
+                        <td className="p-2 text-[12px] text-slate-500 tabular-nums">{r.date || "—"}</td>
+                        <td className="p-2 text-[12px] text-slate-600">{r.note}</td>
+                        <td className="p-2 text-center">
+                          {r.ok ? <CheckCircle size={16} weight="fill" className="text-emerald-500 inline" /> : <XCircle size={16} weight="fill" className="text-rose-500 inline" />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-[11px] text-slate-500 mt-2">
+                Memenuhi: <b className="text-emerald-600">{audit.records.filter((r) => r.ok).length}</b> · Tidak: <b className="text-rose-600">{audit.records.filter((r) => !r.ok).length}</b> · Total: <b>{audit.records.length}</b>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

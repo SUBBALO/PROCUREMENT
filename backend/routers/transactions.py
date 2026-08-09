@@ -796,63 +796,83 @@ async def stats_summary(current: dict = Depends(get_current_user), year: Optiona
 
 
 # ---------------- KPI Purchasing ----------------
-@router.get("/kpi")
-async def kpi_report(
-    current: dict = Depends(get_current_user),
-    start_date: str = Query(...),
-    end_date: str = Query(...),
-    ontime_grace_days: int = 7,
-):
+def _parse_d(s):
+    try:
+        return datetime.strptime(str(s).strip()[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+async def _compute_purchasing_kpi(start_date: str, end_date: str, ontime_grace_days: int = 7):
+    """Hitung KPI Purchasing + detail per-PO (untuk audit). Denominator = PO (punya No. PO).
+    On Time: receive_date <= plan_delivery_date (ETA). Tanggal kosong = tepat waktu;
+    receive_date kosong → pakai po_date. Compliance/Completion: penanda manual (NC/QC)."""
     match = {"invoice_date": {"$gte": start_date, "$lte": end_date}}
     txs = await db.transactions.find(match, {"_id": 0}).to_list(length=200000)
 
     groups: dict = defaultdict(list)
     for t in txs:
         po_no = (t.get("po_no") or "").strip()
-        inv_no = (t.get("invoice_no") or "").strip()
-        key = po_no if po_no else (f"INV:{inv_no}" if inv_no else f"ID:{t.get('id')}")
-        groups[key].append(t)
+        if not po_no:
+            continue  # hanya transaksi yang punya No. PO
+        groups[po_no].append(t)
 
     total_po = len(groups)
-    on_time_po = 0
-    compliant_po = 0
-    completed_po = 0
+    on_time_po = compliant_po = completed_po = 0
     late_details = []
+    per_po = []  # detail audit per PO
 
-    for key, items in groups.items():
-        po_on_time = True
+    for po_no, items in groups.items():
+        first = items[0]
+        # ---- On Time (vs Plan Delivery / ETA) ----
+        on_time = True
+        reason = "Tepat waktu (≤ ETA)"
+        worst_plan = worst_recv = None
         for it in items:
-            pd = it.get("po_date")
-            rd = it.get("receive_date")
-            if not pd or not rd:
-                po_on_time = False
+            plan = (it.get("plan_delivery_date") or "").strip()
+            if not plan:
+                continue  # tanpa ETA → dianggap tepat waktu
+            recv = (it.get("receive_date") or "").strip() or (it.get("po_date") or "").strip()
+            if not recv:
+                continue  # tanpa tgl terima/PO → dianggap tepat waktu
+            pd, rd = _parse_d(plan), _parse_d(recv)
+            if pd and rd and rd > pd:
+                on_time = False
+                worst_plan, worst_recv = plan, recv
+                reason = f"Terima {recv} > ETA {plan}"
                 break
-            try:
-                pd_d = datetime.strptime(pd, "%Y-%m-%d").date()
-                rd_d = datetime.strptime(rd, "%Y-%m-%d").date()
-                if rd_d > pd_d + timedelta(days=ontime_grace_days):
-                    po_on_time = False
-                    break
-            except Exception:
-                po_on_time = False
-                break
-        if po_on_time:
+        if on_time:
             on_time_po += 1
         else:
-            first = items[0]
             late_details.append({
-                "po_no": key,
-                "vendor": first.get("vendor_name", ""),
-                "invoice_no": first.get("invoice_no", ""),
-                "po_date": first.get("po_date"),
-                "receive_date": first.get("receive_date"),
+                "po_no": po_no, "vendor": first.get("vendor_name", ""),
+                "invoice_no": first.get("invoice_no", ""), "po_date": first.get("po_date"),
+                "receive_date": worst_recv or first.get("receive_date"),
+                "plan_delivery_date": worst_plan or first.get("plan_delivery_date"),
                 "item_name": first.get("item_name", ""),
             })
 
-        if all(it.get("is_compliant", True) for it in items):
+        # ---- Compliance (sesuai spesifikasi / tidak ada NC) ----
+        non_compliant = [it for it in items if not it.get("is_compliant", True)]
+        comp = len(non_compliant) == 0
+        if comp:
             compliant_po += 1
-        if all(it.get("is_completed", True) for it in items):
+
+        # ---- Completion (PO selesai/diterima) ----
+        done = all(it.get("is_completed", True) for it in items)
+        if done:
             completed_po += 1
+
+        per_po.append({
+            "po_no": po_no, "vendor": first.get("vendor_name", ""),
+            "invoice_no": first.get("invoice_no", ""),
+            "po_date": first.get("po_date"), "plan_delivery_date": first.get("plan_delivery_date"),
+            "receive_date": first.get("receive_date"),
+            "items": len(items),
+            "on_time": on_time, "on_time_reason": reason,
+            "compliant": comp, "non_compliant_items": [it.get("item_name", "") for it in non_compliant],
+            "completed": done,
+        })
 
     def pct(n, d):
         return round((n / d) * 100, 2) if d else 0.0
@@ -875,29 +895,29 @@ async def kpi_report(
     else:
         category = "PERLU PERBAIKAN"
 
-    return {
+    result = {
         "period": {"start_date": start_date, "end_date": end_date, "ontime_grace_days": ontime_grace_days},
         "total_po": total_po,
         "kpis": [
             {
-                "no": 1, "name": "On Time Delivery",
-                "description": "Persentase pengiriman barang dari supplier yang diterima tepat waktu sesuai dengan jadwal (ETA)",
+                "no": 1, "key": "on_time", "name": "On Time Delivery",
+                "description": "Persentase pengiriman barang dari supplier yang diterima tepat waktu sesuai jadwal Plan Delivery (ETA)",
                 "formula_num": "Jumlah On Time Shipment", "formula_den": "Total PO",
                 "target": "≥ 90%", "weight": 40,
                 "numerator": on_time_po, "denominator": total_po,
                 "achievement": on_time_pct, "score": score_on_time, "max_score": 40,
             },
             {
-                "no": 2, "name": "Compliance Quality",
-                "description": "Persentase pengiriman barang dari supplier yang diterima sesuai dengan pemesanan (spesifikasi)",
-                "formula_num": "Jumlah Pembelian yang sesuai Spesifikasi", "formula_den": "Total PO",
+                "no": 2, "key": "compliance", "name": "Compliance Quality",
+                "description": "Persentase pembelian yang sesuai spesifikasi (tidak ada NC/temuan QC)",
+                "formula_num": "Jumlah PO sesuai Spesifikasi", "formula_den": "Total PO",
                 "target": "≥ 98%", "weight": 35,
                 "numerator": compliant_po, "denominator": total_po,
                 "achievement": compliant_pct, "score": score_compliance, "max_score": 35,
             },
             {
-                "no": 3, "name": "PO Completion Rate",
-                "description": "Persentase Purchase Order yang berhasil diselesaikan dalam periode tertentu sebagai indikator efektivitas proses procurement",
+                "no": 3, "key": "completion", "name": "PO Completion Rate",
+                "description": "Persentase Purchase Order yang berhasil diselesaikan/diterima dalam periode",
                 "formula_num": "Jumlah PO selesai", "formula_den": "Total PO",
                 "target": "≥ 90%", "weight": 25,
                 "numerator": completed_po, "denominator": total_po,
@@ -908,6 +928,60 @@ async def kpi_report(
         "category": category,
         "late_details": late_details[:100],
     }
+    return result, per_po
+
+
+@router.get("/kpi")
+async def kpi_report(
+    current: dict = Depends(get_current_user),
+    start_date: str = Query(...),
+    end_date: str = Query(...),
+    ontime_grace_days: int = 7,
+):
+    result, _ = await _compute_purchasing_kpi(start_date, end_date, ontime_grace_days)
+    return result
+
+
+@router.get("/kpi/{key}/records")
+async def kpi_records(
+    key: str,
+    current: dict = Depends(get_current_user),
+    start_date: str = Query(...),
+    end_date: str = Query(...),
+    ontime_grace_days: int = 7,
+):
+    """Drill-down audit per KPI: daftar PO penyusun angka (referensi, tanggal, status)."""
+    _, per_po = await _compute_purchasing_kpi(start_date, end_date, ontime_grace_days)
+    src_map = {
+        "on_time": "Sumber: transaksi (per PO) — bandingkan Tgl Terima vs Plan Delivery (ETA).",
+        "compliance": "Sumber: penanda 'Sesuai Spesifikasi' per item (NC/temuan QC → tidak sesuai).",
+        "completion": "Sumber: penanda 'PO Selesai/Diterima' per item.",
+    }
+    records = []
+    for p in per_po:
+        if key == "on_time":
+            ok = p["on_time"]
+            note = p["on_time_reason"]
+            date = p.get("receive_date") or p.get("po_date") or ""
+        elif key == "compliance":
+            ok = p["compliant"]
+            note = "Sesuai spesifikasi" if ok else ("Tidak sesuai: " + ", ".join([x for x in p["non_compliant_items"] if x][:5]))
+            date = p.get("po_date") or ""
+        elif key == "completion":
+            ok = p["completed"]
+            note = "PO selesai/diterima" if ok else "Belum selesai"
+            date = p.get("receive_date") or p.get("po_date") or ""
+        else:
+            raise HTTPException(status_code=404, detail="KPI tidak dikenal")
+        records.append({
+            "ref": p["po_no"],
+            "date": (date or "")[:10],
+            "note": f"{p['vendor']} · {p['items']} item · {note}",
+            "ok": ok,
+        })
+    records.sort(key=lambda r: (r["ok"], r["ref"]))
+    return {"key": key, "source": src_map.get(key, ""), "records": records}
+
 
 
 # ---------------- Excel Import/Export ----------------

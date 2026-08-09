@@ -15,7 +15,7 @@ const DEFAULT_RATES = { IDR: 1, SGD: 12000, USD: 16000 };
 
 const emptyItem = () => ({ project_no: "", category: "", item_name: "", qty: 1, unit: "Ea", unit_price: 0, notes: "", post_to_store: false, should_stock: true });
 
-const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-sky-600 text-sm";
+const inputCls = "h-8 rounded-none border-slate-300 focus:ring-2 focus:ring-sky-600 text-sm";
 
 export default function InputTransactionPage() {
   const today = new Date().toISOString().slice(0, 10);
@@ -239,7 +239,7 @@ export default function InputTransactionPage() {
       <BackLink />
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
             Input Transaksi Pembelian
           </h1>
           <p className="text-sm text-slate-500 mt-1">Isi header sekali, lalu tambah item ke bawah. Tekan <kbd className="px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-700 text-[10px] rounded">Enter</kbd> untuk lompat kolom berikutnya; Enter di kolom terakhir akan menambah baris baru.</p>
@@ -320,7 +320,7 @@ export default function InputTransactionPage() {
         </div>
         <div className="text-right">
           <div className="text-[11px] uppercase tracking-[0.15em] font-bold text-slate-500">Grand Total ({header.currency})</div>
-          <div className="text-3xl font-semibold tabular-nums text-sky-700" data-testid="grand-total" style={{ fontFamily: "Chivo, sans-serif" }}>
+          <div className="text-2xl font-semibold tabular-nums text-sky-700" data-testid="grand-total" style={{ fontFamily: "Chivo, sans-serif" }}>
             {currSymbol} {grandTotal.toLocaleString("id-ID", { maximumFractionDigits: 2 })}
           </div>
           {header.currency !== "IDR" && (
@@ -404,7 +404,7 @@ export default function InputTransactionPage() {
           </Button>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
+          <table className="w-full text-sm border-collapse [&_td]:py-1 [&_th]:py-1.5">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-xs uppercase tracking-[0.1em] font-bold text-slate-500">
                 <th className="text-left p-3 w-10">#</th>
