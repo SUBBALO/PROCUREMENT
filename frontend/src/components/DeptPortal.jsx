@@ -26,6 +26,14 @@ export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky"
     </div>
   );
 
+  // Kartu besar (klasik) — dipakai untuk portal departemen non-Engineering
+  const bigGrid = "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3";
+  const renderBigCards = (list) => (
+    <div className={bigGrid}>
+      {list.map((c, idx) => <BigCard key={c.key} card={c} onEnter={() => go(c)} delay={idx * 60} />)}
+    </div>
+  );
+
   const cardsBlock = (
     <>
       {Array.isArray(groups) && groups.length > 0 ? (
@@ -46,12 +54,14 @@ export default function DeptPortal({ deptLabel, deptTagline, accentColor = "sky"
           ))}
         </div>
       ) : (
-        <div className="rounded-xl border border-slate-200 bg-white/80">
-          {compactCards && (
+        compactCards ? (
+          <div className="rounded-xl border border-slate-200 bg-white/80">
             <div className="px-4 pt-3 pb-1.5 text-[10.5px] uppercase tracking-[0.16em] font-bold text-slate-500">{cardsLabel}</div>
-          )}
-          <div className="px-3 pb-3">{renderTiles(cards || [])}</div>
-        </div>
+            <div className="px-3 pb-3">{renderTiles(cards || [])}</div>
+          </div>
+        ) : (
+          renderBigCards(cards || [])
+        )
       )}
     </>
   );
@@ -162,6 +172,52 @@ function LauncherTile({ card, onEnter, dense = false }) {
       {!disabled && !hasBadge && (
         <ArrowRight size={14} weight="bold" className="text-slate-300 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-[opacity,transform] duration-150 shrink-0" />
       )}
+    </button>
+  );
+}
+
+
+/* Kartu besar klasik (deskripsi + stats) — portal departemen non-Engineering */
+function BigCard({ card, onEnter, delay }) {
+  const Icon = card.icon;
+  const accentText = (card.accentText || "text-slate-500").replace(/-4\d\d/, "-600");
+  const disabled = card.comingSoon || (!card.href && typeof card.onClick !== "function") || card.href === "#";
+  return (
+    <button
+      type="button"
+      data-testid={`dept-portal-nav-item-${card.key}`}
+      onClick={onEnter}
+      disabled={disabled}
+      className="group relative text-left bg-white border border-slate-200 rounded-lg hover:border-slate-300 hover:shadow-lg transition-[box-shadow,border-color,transform] duration-200 overflow-hidden disabled:cursor-not-allowed disabled:opacity-60 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50"
+      style={{ animationDelay: `${delay}ms`, animationName: "fadeSlideIn", animationDuration: "500ms", animationFillMode: "backwards" }}
+    >
+      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${card.accent || "from-slate-300 to-slate-400"} opacity-70 group-hover:opacity-100 transition-opacity`} />
+      {card.comingSoon && (
+        <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-slate-100 border border-slate-300 text-[8px] uppercase tracking-[0.15em] font-bold text-slate-600">
+          Soon
+        </div>
+      )}
+      {!card.comingSoon && card.badgeCount > 0 && (
+        <div
+          className="absolute top-2 right-2 min-w-[24px] h-6 px-1.5 flex items-center justify-center bg-rose-600 text-white text-[11px] font-bold rounded-full shadow-md"
+          data-testid={`dept-portal-nav-badge-${card.key}`}
+          title={`${card.badgeCount} item menunggu tindakan Anda`}
+        >
+          {card.badgeCount > 99 ? "99+" : card.badgeCount}
+        </div>
+      )}
+      <div className="p-4 pt-5">
+        <div className="w-11 h-11 flex items-center justify-center bg-slate-50 border border-slate-200 mb-3 rounded-md group-hover:bg-slate-100 transition-colors">
+          <Icon size={22} weight="duotone" className={accentText} />
+        </div>
+        <div className="text-[9px] uppercase tracking-[0.15em] font-bold text-slate-500 mb-1">{card.stats || ""}</div>
+        <h3 className="text-lg font-bold tracking-tight text-slate-900 mb-1.5" style={{ fontFamily: "Chivo, sans-serif" }}>{card.label}</h3>
+        <p className="text-[11px] text-slate-600 leading-snug mb-3 min-h-[42px]">{card.description}</p>
+        <div className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.15em] font-bold ${accentText} group-hover:gap-2 transition-all`}>
+          {card.comingSoon ? "Segera" : "Buka"}
+          {!card.comingSoon && <ArrowRight size={12} weight="bold" />}
+        </div>
+      </div>
     </button>
   );
 }
