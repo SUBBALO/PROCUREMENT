@@ -28,7 +28,15 @@ const DOC_META = {
   nesting: { label: "Nesting", icon: StackSimple },
   cad: { label: "AutoCAD", icon: Cube },
   costing: { label: "Costing", icon: CurrencyDollar },
+  bom: { label: "BOM", icon: Package },
 };
+
+function bomStatusMeta(b) {
+  const s = (b && b.engineering_status) || "draft";
+  if (s === "pending_review") return { key: "review", label: "Perlu Review", cls: "border-amber-200 bg-amber-50 text-amber-700" };
+  if (s === "approved") return { key: "ok", label: "Approved", cls: "border-emerald-200 bg-emerald-50 text-emerald-700" };
+  return { key: "draft", label: "Belum disubmit", cls: "border-slate-200 bg-slate-100 text-slate-700" };
+}
 
 function drawingStatus(d) {
   const s = d.approval_status || "draft";
@@ -56,6 +64,7 @@ export default function EngLeaderReviewDialog({ open, onClose, drfId, bomId, bom
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(null);
   const [sigDrawing, setSigDrawing] = useState(null);
+  const [bomDoc, setBomDoc] = useState(null);
 
   const load = useCallback(async () => {
     if (!open || !drfId) return;
@@ -65,10 +74,15 @@ export default function EngLeaderReviewDialog({ open, onClose, drfId, bomId, bom
       const dItems = (dw.items || dw || []).slice().sort((a, b) => (a.drawing_no || "").localeCompare(b.drawing_no || ""));
       setDrawings(dItems);
       if (bomId) {
-        const { data: at } = await api.get(`/bom/${bomId}/attachments`);
+        const [{ data: at }, bomRes] = await Promise.all([
+          api.get(`/bom/${bomId}/attachments`),
+          api.get(`/bom/${bomId}`).catch(() => ({ data: null })),
+        ]);
         setAtts(at.items || []);
+        setBomDoc(bomRes?.data || null);
       } else {
         setAtts([]);
+        setBomDoc(null);
       }
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal memuat dokumen review");
@@ -90,6 +104,15 @@ export default function EngLeaderReviewDialog({ open, onClose, drfId, bomId, bom
         updated: d.updated_at || d.submitted_at,
       });
     });
+    if (bomDoc && bomDoc.id) {
+      const prep = (bomDoc.signatures || {}).prepared_by;
+      out.push({
+        key: `bom-${bomDoc.id}`, kind: "bom", id: bomDoc.id, name: bomDoc.bom_no || "BOM",
+        sub: `${(bomDoc.items || []).length} item${prep && prep.name ? ` · TTD: ${prep.name}` : ""}`,
+        raw: bomDoc, status: bomStatusMeta(bomDoc),
+        updated: bomDoc.updated_at || bomDoc.submitted_at,
+      });
+    }
     atts.forEach((a) => {
       const cat = ["nesting", "cad", "costing"].includes(a.category) ? a.category : null;
       if (!cat) return; // hanya dokumen SO non-drawing
@@ -100,7 +123,7 @@ export default function EngLeaderReviewDialog({ open, onClose, drfId, bomId, bom
       });
     });
     return out;
-  }, [drawings, atts]);
+  }, [drawings, atts, bomDoc]);
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -115,6 +138,10 @@ export default function EngLeaderReviewDialog({ open, onClose, drfId, bomId, bom
   const refresh = async () => { await load(); onReload?.(); };
 
   const openPreview = (row) => {
+    if (row.kind === "bom") {
+      toast.info("BOM berupa data grid — buka Work Order (tab BOM) untuk lihat detail item.");
+      return;
+    }
     if (row.kind === "drawing") {
       setPreview({ drawingId: row.id, target: "mks", stamped: false, title: `${row.name} · Drawing`, subtitle: row.sub });
     } else {
@@ -125,6 +152,18 @@ export default function EngLeaderReviewDialog({ open, onClose, drfId, bomId, bom
         title: row.name, subtitle: row.sub,
       });
     }
+  };
+
+  const doApproveBom = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/bom/${bomId}/approve-review`);
+      toast.success("BOM di-approve (TTD Leader) — masuk BOM Utama & lanjut ke Purchasing.");
+      setReviseMode(false); setReviseNotes("");
+      await refresh();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal approve BOM");
+    } finally { setBusy(false); }
   };
 
   const doMarkOk = async (row) => {
@@ -144,7 +183,10 @@ export default function EngLeaderReviewDialog({ open, onClose, drfId, bomId, bom
     if (notes.length < 3) { toast.error("Catatan revisi wajib diisi (min 3 karakter)"); return; }
     setBusy(true);
     try {
-      if (row.kind === "drawing") {
+      if (row.kind === "bom") {
+        if (notes.length < 5) { toast.error("Alasan revisi BOM min 5 karakter"); setBusy(false); return; }
+        await api.post(`/bom/${bomId}/reject-review`, { reason: notes });
+      } else if (row.kind === "drawing") {
         if (notes.length < 5) { toast.error("Catatan revisi drawing min 5 karakter"); setBusy(false); return; }
         await api.post(`/drawings/${row.id}/reject/eng_head`, { notes });
       } else {
@@ -306,6 +348,7 @@ export default function EngLeaderReviewDialog({ open, onClose, drfId, bomId, bom
                       onClick={() => openPreview(selected)}
                       className="rounded-none border-slate-300 mt-3 h-8 text-xs"
                       data-testid="review-open-preview-button"
+                      disabled={selected.kind === "bom"}
                     >
                       <Eye size={14} className="mr-1.5" /> Buka Preview Dokumen
                     </Button>
@@ -315,6 +358,8 @@ export default function EngLeaderReviewDialog({ open, onClose, drfId, bomId, bom
                     {/* Riwayat catatan */}
                     {selected.kind === "drawing" ? (
                       <DrawingHistory drawing={selected.raw} />
+                    ) : selected.kind === "bom" ? (
+                      <BomHistory bom={selected.raw} />
                     ) : (
                       <AttachmentHistory attachment={selected.raw} />
                     )}
@@ -363,6 +408,22 @@ export default function EngLeaderReviewDialog({ open, onClose, drfId, bomId, bom
                               {selected.status.key === "draft" ? "Drawing belum di-submit engineer." : "Drawing sudah lewat tahap Eng Leader."}
                             </div>
                           )
+                        ) : selected.kind === "bom" ? (
+                          selected.status.key === "review" ? (
+                            <Button
+                              onClick={doApproveBom}
+                              disabled={busy}
+                              className="rounded-none flex-1 bg-emerald-600 hover:bg-emerald-700 text-white transition-colors duration-150 active:translate-y-[1px]"
+                              data-testid="review-approve-bom-button"
+                            >
+                              {busy ? <ArrowClockwise size={14} className="animate-spin mr-1" /> : <Signature size={15} weight="bold" className="mr-1.5" />}
+                              Approve &amp; TTD BOM
+                            </Button>
+                          ) : (
+                            <div className="flex-1 text-[11px] text-slate-500 italic self-center">
+                              {selected.status.key === "draft" ? "BOM belum di-submit engineer." : "BOM sudah di-approve (masuk BOM Utama)."}
+                            </div>
+                          )
                         ) : (
                           <Button
                             onClick={() => doMarkOk(selected)}
@@ -374,7 +435,7 @@ export default function EngLeaderReviewDialog({ open, onClose, drfId, bomId, bom
                             Tandai OK
                           </Button>
                         )}
-                        {(selected.kind !== "drawing" || selected.status.key === "review") && (
+                        {((selected.kind === "drawing" || selected.kind === "bom") ? selected.status.key === "review" : true) && (
                           <Button
                             onClick={() => { setReviseMode(true); setReviseNotes(""); }}
                             disabled={busy}
@@ -443,6 +504,37 @@ function DrawingHistory({ drawing }) {
           <div className="text-[10px] font-bold uppercase text-slate-700">TTD · {a.stage}</div>
           <div className="text-xs text-slate-700">{a.name}</div>
           <div className="text-[10px] text-slate-500 mt-0.5">{a.at ? new Date(a.at).toLocaleString("id-ID") : ""}{a.notes ? ` · ${a.notes}` : ""}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BomHistory({ bom }) {
+  const sigs = bom.signatures || {};
+  const prep = sigs.prepared_by;
+  const checked = sigs.checked_by;
+  const notes = (bom.revision_notes || []).slice().reverse();
+  const fmt = (t) => (t ? new Date(t).toLocaleString("id-ID") : "");
+  return (
+    <div className="space-y-3">
+      <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 flex items-center gap-1">
+        <ClockCounterClockwise size={13} /> Info &amp; Riwayat BOM
+      </div>
+      <div className="border border-slate-200 bg-white p-2 text-xs space-y-1">
+        <div className="flex justify-between"><span className="text-slate-500">Jumlah item</span><b>{(bom.items || []).length}</b></div>
+        <div className="flex justify-between"><span className="text-slate-500">Prepared By (Engineer)</span><b>{prep && prep.name ? `${prep.name}` : "—"}</b></div>
+        {prep && prep.at && <div className="text-[10px] text-slate-400 text-right">{fmt(prep.at)}</div>}
+        <div className="flex justify-between"><span className="text-slate-500">Checked By (Leader)</span><b>{checked && checked.name ? `${checked.name}` : "—"}</b></div>
+        {checked && checked.at && <div className="text-[10px] text-slate-400 text-right">{fmt(checked.at)}</div>}
+      </div>
+      {notes.length === 0 ? (
+        <div className="text-xs text-slate-400 italic">Belum ada catatan revisi.</div>
+      ) : notes.map((n) => (
+        <div key={n.id} className={`border p-2 ${n.kind === "reject" ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-white"}`}>
+          <div className={`text-[10px] font-bold uppercase ${n.kind === "reject" ? "text-rose-800" : "text-slate-700"}`}>{n.kind === "reject" ? "Minta Revisi" : "Catatan"}</div>
+          {n.comment && <div className="text-xs text-slate-700 whitespace-pre-wrap">{n.comment}</div>}
+          <div className="text-[10px] text-slate-500 mt-0.5">{n.by} · {fmt(n.at)}</div>
         </div>
       ))}
     </div>

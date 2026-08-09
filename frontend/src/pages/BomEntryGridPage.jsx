@@ -24,6 +24,8 @@ import {
   ChatText,
   Clock,
   ArrowClockwise,
+  Signature,
+  Stamp,
 } from "@phosphor-icons/react";
 
 /* -------------------- Constants -------------------- */
@@ -994,11 +996,11 @@ export function WorkOrderView({ bomId: propBomId, embedded = false } = {}) {
     if (!engRoles.includes(role)) return false;
     // Approved BOM with items = frozen. But approved-empty (legacy pre-Iter35) is still editable.
     if (st === "approved" && hasItems) return false;
-    // Konsisten dengan Work Order: bila ada drawing terkait yang SUDAH di-submit
-    // (approval_status bukan draft), BOM dikunci agar item tidak berubah setelah submit.
-    if (drawingSubmitted) return false;
+    // Decoupling (workflow BOM terpisah): BOM TIDAK lagi dikunci oleh submit drawing.
+    // Kunci hanya berdasarkan status BOM sendiri (approved+items) & saat pending_review.
+    if (st === "pending_review") return false;
     return true;
-  }, [bom, role, drawingSubmitted]);
+  }, [bom, role]);
 
   const canSubmit = useMemo(() => {
     if (!bom) return false;
@@ -1167,6 +1169,41 @@ export function WorkOrderView({ bomId: propBomId, embedded = false } = {}) {
     }
   };
 
+  // TTD Prepared By (Engineer Staff) — tanda tangan audit (nama + waktu), simpan draft dulu.
+  const signPrepared = async () => {
+    const items = buildItemsPayload();
+    if (items.length === 0) return toast.error("Isi minimal 1 item BOM sebelum TTD Prepared");
+    setSubmitting(true);
+    try {
+      await api.post(`/bom/${bomId}/items-bulk`, { items });
+      await api.post(`/bom/${bomId}/sign-prepared`);
+      toast.success("TTD Prepared By tersimpan");
+      await loadAll();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal TTD Prepared");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Tandai / batalkan "Siap Submit" — simpan draft dulu agar item terbaru tersimpan.
+  const setReady = async (ready) => {
+    const items = buildItemsPayload();
+    if (ready && items.length === 0) return toast.error("Isi minimal 1 item BOM sebelum menandai Siap Submit");
+    setSubmitting(true);
+    try {
+      if (ready) await api.post(`/bom/${bomId}/items-bulk`, { items });
+      await api.post(`/bom/${bomId}/set-ready`, { ready });
+      // items-bulk mereset TTD & ready; jadi bila menandai Siap Submit, ingatkan TTD.
+      toast.success(ready ? "BOM ditandai Siap Submit" : "Status Siap Submit dibatalkan");
+      await loadAll();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal ubah status Siap Submit");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const submitForReview = async () => {
     const items = buildItemsPayload();
     if (items.length === 0) return toast.error("Minimal isi 1 item sebelum submit review");
@@ -1271,7 +1308,7 @@ export function WorkOrderView({ bomId: propBomId, embedded = false } = {}) {
       {embedded && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs text-slate-600">
-            BOM bersama <b className="font-mono text-slate-900">{bom.bom_no}</b> — 1 BOM untuk semua drawing pada SO ini. Cukup <b>disimpan</b>; submit ke Engineering lewat tab Drawing &amp; Upload.
+            BOM bersama <b className="font-mono text-slate-900">{bom.bom_no}</b> untuk semua drawing pada SO ini. Alur: <b>Simpan</b> → <b>TTD Prepared</b> → <b>Tandai Siap Submit</b>, lalu submit BOM dari panel <b>Submit ke Eng Leader</b> (checkbox BOM terpisah dari drawing).
           </div>
           <div className={`px-2.5 py-1 border ${statusBadge.bg.replace("bg-", "border-")} ${statusBadge.bg} ${statusBadge.text} text-[10px] font-bold tracking-wider`} data-testid="wo-status-badge">
             {statusBadge.label}
@@ -1279,16 +1316,7 @@ export function WorkOrderView({ bomId: propBomId, embedded = false } = {}) {
         </div>
       )}
 
-      {/* Banner kunci — BOM dikunci karena drawing terkait sudah di-submit */}
-      {drawingSubmitted && status !== "approved" && (
-        <div className="flex items-center gap-2 border border-slate-300 bg-slate-100 px-4 py-2.5 text-[12px] text-slate-600" data-testid="wo-bom-drawing-locked">
-          <span className="text-slate-500">🔒</span>
-          <span>
-            BOM terkunci — drawing terkait sudah di-<b>submit</b> untuk approval, jadi item BOM tidak bisa diubah lagi.
-            Item akan bisa diedit kembali saat siklus <b>revisi (ECN)</b> dimulai.
-          </span>
-        </div>
-      )}
+      {/* Banner kunci drawing dihapus — BOM kini terpisah dari submit drawing. */}
 
       {/* SECTION 1 - Info Drawing / SO */}
       <SectionCard title="1. Info Drawing / Order" icon={FileText}>
@@ -1426,10 +1454,45 @@ export function WorkOrderView({ bomId: propBomId, embedded = false } = {}) {
             {saving ? "Menyimpan..." : "Simpan Draft"}
           </Button>
         )}
-        {canSubmit && (
-          <div className="text-[11px] text-slate-500 italic mr-auto max-w-md" data-testid="wo-bom-submit-note">
-            BOM cukup <b>disimpan</b>. Pengiriman ke Engineering dilakukan lewat tombol <b>TTD &amp; Submit</b> pada
-            Work Order (tab Drawing &amp; Upload), yang memverifikasi drawing + BOM sekaligus.
+        {canEditItems && status === "draft" && (() => {
+          const prepared = (bom.signatures || {}).prepared_by;
+          const preparedName = prepared && typeof prepared === "object" ? prepared.name : null;
+          const ready = !!bom.ready_to_submit;
+          const hasItems = (bom.items || []).length > 0;
+          return (
+            <>
+              <Button
+                variant="outline"
+                className={`h-10 rounded-none text-sm ${preparedName ? "border-emerald-600 bg-emerald-50 text-emerald-800" : "border-slate-400 text-slate-700"}`}
+                onClick={signPrepared}
+                disabled={submitting || !hasItems}
+                data-testid="wo-bom-sign-prepared"
+                title="Tanda tangan Prepared By (Engineer Staff) — nama & waktu tercatat"
+              >
+                <Signature size={16} weight="bold" className="mr-1" />
+                {preparedName ? `TTD: ${preparedName}` : "TTD Prepared By (Engineer)"}
+              </Button>
+              <Button
+                variant="outline"
+                className={`h-10 rounded-none text-sm ${ready ? "border-indigo-600 bg-indigo-50 text-indigo-800" : "border-slate-400 text-slate-700"}`}
+                onClick={() => setReady(!ready)}
+                disabled={submitting || !hasItems}
+                data-testid="wo-bom-toggle-ready"
+                title="Tandai BOM siap untuk disubmit ke Eng Leader"
+              >
+                {ready ? <CheckCircle size={16} weight="fill" className="mr-1" /> : <Stamp size={16} weight="bold" className="mr-1" />}
+                {ready ? "Siap Submit ✓ (klik untuk batal)" : "Tandai Siap Submit"}
+              </Button>
+              <div className="text-[11px] text-slate-500 italic mr-auto max-w-sm" data-testid="wo-bom-submit-note">
+                Alur: <b>Simpan</b> → <b>TTD Prepared</b> → <b>Tandai Siap Submit</b>. Submit final ke Eng Leader dilakukan dari
+                panel <b>Submit ke Eng Leader</b> (tab Drawing &amp; Upload) — centang BOM di sana.
+              </div>
+            </>
+          );
+        })()}
+        {status === "pending_review" && !canApprove && (
+          <div className="text-[11px] text-amber-700 italic mr-auto max-w-md flex items-center gap-1.5" data-testid="wo-bom-pending-note">
+            <Clock size={14} weight="fill" /> BOM sudah disubmit — menunggu review &amp; approval Engineering Leader (Riski).
           </div>
         )}
         {canApprove && (

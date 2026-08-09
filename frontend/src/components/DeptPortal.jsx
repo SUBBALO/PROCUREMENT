@@ -210,9 +210,9 @@ function BigCard({ card, onEnter, delay }) {
         <div className="w-11 h-11 flex items-center justify-center bg-slate-50 border border-slate-200 mb-3 rounded-md group-hover:bg-slate-100 transition-colors">
           <Icon size={22} weight="duotone" className={accentText} />
         </div>
-        <div className="text-[9px] uppercase tracking-[0.15em] font-bold text-slate-500 mb-1">{card.stats || ""}</div>
-        <h3 className="text-lg font-bold tracking-tight text-slate-900 mb-1.5" style={{ fontFamily: "Chivo, sans-serif" }}>{card.label}</h3>
-        <p className="text-[11px] text-slate-600 leading-snug mb-3 min-h-[42px]">{card.description}</p>
+        <div className="text-[9px] uppercase tracking-[0.15em] font-bold text-slate-500 mb-1 truncate">{card.stats || ""}</div>
+        <h3 className="text-base font-bold tracking-tight text-slate-900 mb-1.5 leading-snug line-clamp-2 min-h-[44px]" style={{ fontFamily: "Chivo, sans-serif" }}>{card.label}</h3>
+        <p className="text-[11px] text-slate-600 leading-snug mb-3 line-clamp-3 min-h-[48px]">{card.description}</p>
         <div className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.15em] font-bold ${accentText} group-hover:gap-2 transition-all`}>
           {card.comingSoon ? "Segera" : "Buka"}
           {!card.comingSoon && <ArrowRight size={12} weight="bold" />}

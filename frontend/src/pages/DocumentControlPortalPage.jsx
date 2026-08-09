@@ -1,8 +1,23 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
+import api from "../lib/api";
 import { FileText, Stamp, Database } from "@phosphor-icons/react";
 
 export default function DocumentControlPortalPage() {
+  // Badge: Drawing MKS approved yang menunggu di-stamp Document Control
+  const [pendingStamp, setPendingStamp] = useState(0);
+
+  useEffect(() => {
+    const fetch = () => {
+      api.get("/drawings/pending-dc-stamp")
+        .then(({ data }) => setPendingStamp(data?.total || (data?.items || []).length || 0))
+        .catch(() => {});
+    };
+    fetch();
+    const t = setInterval(fetch, 45000);
+    return () => clearInterval(t);
+  }, []);
+
   const CARDS = [
     {
       key: "distribution",
@@ -13,6 +28,7 @@ export default function DocumentControlPortalPage() {
       href: "/document-control/distribution",
       accent: "from-red-500 via-rose-500 to-pink-500",
       accentText: "text-red-400",
+      badgeCount: pendingStamp,
     },
     {
       key: "so-stamp",

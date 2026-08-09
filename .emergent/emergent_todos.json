@@ -1,30 +1,22 @@
 [
   {
-    "content": "Work Group 2 tabs + embeddable BOM + minimalist; remove Nesting/Extra chip",
+    "content": "Rapikan deskripsi kartu agar tinggi seragam",
     "status": "completed"
   },
   {
-    "content": "Multi-part BOM: /bom/by-so + /bom/add-part; sub-tabs Part1/Part2 + Tambah BOM; show all SO drawings",
+    "content": "Badge notifikasi jumlah pekerjaan menunggu di kartu portal (Purchasing/Store/DocControl)",
     "status": "completed"
   },
   {
-    "content": "Split TTD: sign-prepared (save-only, no category needed) + per-drawing TTD Prepared section",
+    "content": "Backend: decouple drawing/BOM, sign-prepared, set-ready, submit-review guard, by-so fields (VERIFIED via curl)",
     "status": "completed"
   },
   {
-    "content": "Partial submit to Eng Leader (checkboxes) at Work Group bottom, with BOM included/shown",
+    "content": "Frontend: BOM action bar (TTD/Siap Submit), Work Group panel BOM checkbox terpisah, Leader review BOM row",
     "status": "completed"
   },
   {
-    "content": "Per-drawing: remove BOM Link column + Isi Data BOM button; colored tab boxes",
-    "status": "completed"
-  },
-  {
-    "content": "Auto-open TTD placement modal after PDF upload (multi-page signing supported)",
-    "status": "completed"
-  },
-  {
-    "content": "Testing (agent iter_34 100%) + direct curl verify + screenshots + QA cleanup",
-    "status": "completed"
+    "content": "Verifikasi menyeluruh via testing agent (portal cards + BOM workflow end-to-end)",
+    "status": "in_progress"
   }
 ]

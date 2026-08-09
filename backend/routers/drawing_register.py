@@ -2213,26 +2213,9 @@ async def drawing_submit_for_approval(
 
     submitter_is_leader = is_eng_head(current)
 
-    # Gerbang tunggal: submit drawing juga MENDORONG BOM tertaut ikut maju
-    # (BOM cukup disimpan di tab BOM — tidak ada submit terpisah).
-    if drawing.get("bom_id"):
-        try:
-            bom = await db.boms.find_one({"id": drawing["bom_id"], "deleted_at": {"$exists": False}})
-            if bom and bom.get("engineering_status") in (None, "draft") and (bom.get("items") or []):
-                bsig = dict(bom.get("signatures") or {})
-                bsig["prepared_by"] = bsig.get("prepared_by") or {"name": stamp["name"], "user_id": current.get("id"), "at": _now_iso()}
-                if submitter_is_leader:
-                    bsig["checked_by"] = {"name": stamp["name"], "user_id": current.get("id"), "at": _now_iso(), "auto": True}
-                    await db.boms.update_one({"id": bom["id"]}, {"$set": {
-                        "engineering_status": "approved", "signatures": bsig,
-                        "approved_at": _now_iso(), "procurement_status": "leader_checked",
-                        "auto_approved_by_leader": True, "updated_at": _now_iso()}})
-                else:
-                    await db.boms.update_one({"id": bom["id"]}, {"$set": {
-                        "engineering_status": "pending_review", "signatures": bsig,
-                        "submitted_at": _now_iso(), "updated_at": _now_iso()}})
-        except Exception:
-            pass
+    # CATATAN: Submit drawing TIDAK lagi otomatis menyeret BOM.
+    # BOM di-submit terpisah dari panel "Submit ke Eng Leader" (checkbox BOM sendiri),
+    # setelah Engineer Staff TTD Prepared + Tandai Siap Submit. Lihat bom.py /submit-review.
 
     # Bila yang mengerjakan/submit adalah Engineering LEADER sendiri → verifikasi Leader
     # otomatis lolos (tidak perlu approval Leader lagi). Langsung ke stage QC.

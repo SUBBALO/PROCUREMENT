@@ -477,13 +477,16 @@ async def list_boms_by_so(so_no: str = "", current: dict = Depends(get_current_u
         return {"items": []}
     cursor = db.boms.find(
         {"so_no": so, "deleted_at": {"$exists": False}},
-        {"_id": 0, "id": 1, "bom_no": 1, "so_no": 1, "engineering_status": 1, "items": 1, "part_no": 1, "uploaded_at": 1},
+        {"_id": 0, "id": 1, "bom_no": 1, "so_no": 1, "engineering_status": 1, "items": 1,
+         "part_no": 1, "uploaded_at": 1, "ready_to_submit": 1, "staff_prepared_signed": 1, "signatures": 1},
     ).sort("uploaded_at", 1)
     docs = await cursor.to_list(length=100)
     items = []
     for idx, d in enumerate(docs):
         if not d.get("bom_no"):
             continue
+        sigs = d.get("signatures") or {}
+        prepared = sigs.get("prepared_by") or None
         items.append({
             "id": d.get("id"),
             "bom_no": d.get("bom_no"),
@@ -491,6 +494,10 @@ async def list_boms_by_so(so_no: str = "", current: dict = Depends(get_current_u
             "engineering_status": d.get("engineering_status") or "approved",
             "items_count": len(d.get("items") or []),
             "part_no": d.get("part_no") or (idx + 1),
+            "ready_to_submit": bool(d.get("ready_to_submit")),
+            "staff_prepared_signed": bool(d.get("staff_prepared_signed") or (prepared is not None)),
+            "prepared_by_name": (prepared or {}).get("name") if isinstance(prepared, dict) else None,
+            "checked_by_name": ((sigs.get("checked_by") or {}).get("name") if isinstance(sigs.get("checked_by"), dict) else None),
         })
     return {"items": items}
 
@@ -662,12 +669,9 @@ async def replace_bom_items(bom_id: str, payload: BOMItemsBulkIn, current: dict 
     if not bom:
         raise HTTPException(status_code=404, detail="BOM tidak ditemukan")
 
-    # Fase 2 — LOCK: BOM ikut terkunci setelah semua drawing SO di-submit final.
-    if not is_admin_like(current) and await so_locked_by_bom(bom_id):
-        raise HTTPException(
-            status_code=409,
-            detail="BOM terkunci — semua drawing SO sudah di-submit final. Edit item tidak diizinkan.",
-        )
+    # Decoupling: BOM TIDAK lagi terkunci oleh submit drawing. BOM punya alur submit
+    # sendiri (Simpan → Tandai Siap Submit → TTD Engineer Staff → submit dari panel Work Group).
+    # Kunci hanya berdasarkan status BOM sendiri (approved dengan items = frozen) di bawah.
 
     status_now = bom.get("engineering_status", "approved")
     has_items = bool(bom.get("items") or [])
@@ -699,12 +703,37 @@ async def replace_bom_items(bom_id: str, payload: BOMItemsBulkIn, current: dict 
             "remark": (it.remark or "").strip(),
         })
 
-    await db.boms.update_one(
-        {"id": bom_id},
-        {"$set": {"items": new_items, "updated_at": datetime.utcnow().isoformat(),
-                  "last_edited_by": current.get("name") or current.get("username"),
-                  "last_edited_at": datetime.utcnow().isoformat()}},
-    )
+    # Deteksi perubahan item: reset TTD/Siap Submit HANYA bila item benar-benar berubah.
+    # Ini agar aksi "TTD" & "Tandai Siap Submit" (yang ikut menyimpan item tanpa perubahan)
+    # tidak saling menghapus.
+    def _norm(items_list):
+        out = []
+        for it in (items_list or []):
+            out.append((
+                (it.get("item_name") or "").strip(),
+                (it.get("item_specification") or "").strip(),
+                float(it.get("qty") or 0),
+                (it.get("uom") or "").strip(),
+                (it.get("material") or "").strip(),
+                it.get("weight_kg"),
+                (it.get("purchase_due_date") or "").strip(),
+                (it.get("remark") or "").strip(),
+            ))
+        return out
+    items_changed = _norm(bom.get("items")) != _norm(new_items)
+
+    set_fields = {
+        "items": new_items,
+        "updated_at": datetime.utcnow().isoformat(),
+        "last_edited_by": current.get("name") or current.get("username"),
+        "last_edited_at": datetime.utcnow().isoformat(),
+    }
+    if items_changed:
+        # Edit item = reset kesiapan submit + TTD staff (integritas audit).
+        set_fields["ready_to_submit"] = False
+        set_fields["staff_prepared_signed"] = False
+        set_fields["signatures.prepared_by"] = None
+    await db.boms.update_one({"id": bom_id}, {"$set": set_fields})
     # Auto-heal legacy: kalau BOM tadinya approved-kosong / no engineering_status, set ke draft supaya masuk workflow
     if auto_reset_draft:
         await db.boms.update_one({"id": bom_id}, {"$set": {"engineering_status": "draft"}})
@@ -723,10 +752,69 @@ def _sig_stamp(current: dict, name_override: str = "") -> dict:
     }
 
 
+@router.post("/{bom_id}/sign-prepared")
+async def bom_sign_prepared(bom_id: str, current: dict = Depends(get_current_user)):
+    """Engineer Staff TTD Prepared By pada BOM (tanda tangan audit: nama + waktu).
+    Tidak mengubah engineering_status. Syarat: BOM masih draft & sudah ada item.
+    Nama diambil otomatis dari user login aktif.
+    """
+    role = (current or {}).get("role")
+    if role not in ("engineering", "eng_leader", "eng_head", "eng_staff", "admin", "super_admin", "supervisor"):
+        raise HTTPException(status_code=403, detail="Hanya Engineering yang bisa TTD Prepared BOM")
+    bom = await db.boms.find_one({"id": bom_id, "deleted_at": {"$exists": False}})
+    if not bom:
+        raise HTTPException(status_code=404, detail="BOM tidak ditemukan")
+    if bom.get("engineering_status", "draft") not in ("draft",):
+        raise HTTPException(status_code=409, detail=f"TTD Prepared hanya bisa saat BOM draft (sekarang: {bom.get('engineering_status')})")
+    if not (bom.get("items") or []):
+        raise HTTPException(status_code=400, detail="Isi minimal 1 item BOM sebelum TTD Prepared")
+
+    sigs = dict(bom.get("signatures") or {})
+    stamp = _sig_stamp(current)
+    stamp["stage"] = "prepared"
+    sigs["prepared_by"] = stamp
+    await db.boms.update_one(
+        {"id": bom_id},
+        {"$set": {
+            "signatures": sigs,
+            "staff_prepared_signed": True,
+            "prepared_signed_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
+        }},
+    )
+    await log_action(current, "bom_sign_prepared", "bom", bom_id, {"bom_no": bom.get("bom_no"), "by": stamp.get("name")})
+    return {"success": True, "prepared_by": stamp}
+
+
+class BomSetReadyIn(BaseModel):
+    ready: bool = True
+
+
+@router.post("/{bom_id}/set-ready")
+async def bom_set_ready(bom_id: str, payload: BomSetReadyIn, current: dict = Depends(require_bom_edit)):
+    """Tandai / batalkan status 'Siap Submit' pada BOM.
+    Untuk set ready=true: BOM harus draft & punya minimal 1 item.
+    """
+    bom = await db.boms.find_one({"id": bom_id, "deleted_at": {"$exists": False}})
+    if not bom:
+        raise HTTPException(status_code=404, detail="BOM tidak ditemukan")
+    if bom.get("engineering_status", "draft") not in ("draft",):
+        raise HTTPException(status_code=409, detail=f"Status siap submit hanya bisa diubah saat BOM draft (sekarang: {bom.get('engineering_status')})")
+    if payload.ready and not (bom.get("items") or []):
+        raise HTTPException(status_code=400, detail="Isi minimal 1 item BOM sebelum menandai Siap Submit")
+    await db.boms.update_one(
+        {"id": bom_id},
+        {"$set": {"ready_to_submit": bool(payload.ready), "updated_at": datetime.utcnow().isoformat()}},
+    )
+    await log_action(current, "bom_set_ready", "bom", bom_id, {"bom_no": bom.get("bom_no"), "ready": bool(payload.ready)})
+    return {"success": True, "ready_to_submit": bool(payload.ready)}
+
+
 @router.post("/{bom_id}/submit-review")
 async def bom_submit_review(bom_id: str, current: dict = Depends(get_current_user)):
-    """Engineer submit BOM draft ke Engineering Leader untuk review.
-    Status: draft → pending_review. Stamp Prepared By signature.
+    """Engineer submit BOM draft ke Engineering Leader untuk review (dari panel Work Group).
+    Status: draft → pending_review.
+    Syarat: BOM sudah ditandai 'Siap Submit' + TTD Engineer Staff (Prepared By).
     """
     bom = await db.boms.find_one({"id": bom_id, "deleted_at": {"$exists": False}})
     if not bom:
@@ -737,9 +825,15 @@ async def bom_submit_review(bom_id: str, current: dict = Depends(get_current_use
         raise HTTPException(status_code=409, detail=f"Status BOM ({status_now}) tidak bisa disubmit ulang (sudah approved dengan items).")
     if not (bom.get("items") or []):
         raise HTTPException(status_code=400, detail="BOM belum ada item — isi minimal 1 item sebelum submit")
+    # Gerbang baru (workflow terpisah): wajib Siap Submit + TTD Engineer Staff
+    if not bom.get("ready_to_submit"):
+        raise HTTPException(status_code=409, detail="BOM belum ditandai 'Siap Submit'. Simpan lalu Tandai Siap Submit dulu.")
+    if not (bom.get("signatures") or {}).get("prepared_by"):
+        raise HTTPException(status_code=400, detail="BOM belum di-TTD Engineer Staff (Prepared By). TTD dulu sebelum submit.")
 
     sigs = dict(bom.get("signatures") or {})
-    sigs["prepared_by"] = _sig_stamp(current)
+    # Pertahankan TTD Prepared Engineer Staff yang sudah ada
+    sigs["prepared_by"] = sigs.get("prepared_by") or _sig_stamp(current)
 
     # Riski / Engineering Leader auto-approve → langsung ke status approved, skip pending_review
     is_eng_leader = (current or {}).get("role") in ("eng_leader", "eng_head")
