@@ -1087,7 +1087,15 @@ export function WorkOrderView({ bomId: propBomId, embedded = false } = {}) {
   const setCell = (rowIdx, key, val) => {
     setRows((prev) => {
       const next = [...prev];
-      next[rowIdx] = { ...next[rowIdx], [key]: val };
+      const row = { ...next[rowIdx], [key]: val };
+      // Auto-isi Purchase Due Date = hari ini + 5 hari saat item pertama kali diketik
+      // (hanya bila masih kosong, jadi tetap bisa diedit manual setelahnya).
+      if (key === "item_specification" && String(val).trim() && !row.purchase_due_date) {
+        const d = new Date();
+        d.setDate(d.getDate() + 5);
+        row.purchase_due_date = d.toISOString().slice(0, 10);
+      }
+      next[rowIdx] = row;
       return next;
     });
   };
