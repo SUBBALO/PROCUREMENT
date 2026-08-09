@@ -415,6 +415,51 @@ async def pending_leader_verification(current: dict = Depends(get_current_user))
         if sub and (not g["oldest_submitted_at"] or sub < g["oldest_submitted_at"]):
             g["oldest_submitted_at"] = sub
 
+    # Tambahan (workflow BOM terpisah): BOM berstatus pending_review juga masuk antrian
+    # Leader — walau tidak ada drawing yang pending. Grup via SO/DRF.
+    pending_boms = await db.boms.find(
+        {"engineering_status": "pending_review", "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "bom_no": 1, "so_no": 1, "submitted_at": 1, "updated_at": 1},
+    ).sort("submitted_at", 1).to_list(length=1000)
+    bom_so_nos = list({b.get("so_no") for b in pending_boms if b.get("so_no")})
+    so_to_drf: dict = {}
+    if bom_so_nos:
+        drfs_for_bom = await db.drawing_requests.find(
+            {"so_no": {"$in": bom_so_nos}},
+            {"_id": 0, "id": 1, "so_no": 1, "form_no": 1, "customer_name": 1,
+             "project_name": 1, "expected_due_date": 1, "created_at": 1},
+        ).sort("created_at", -1).to_list(length=2000)
+        for r in drfs_for_bom:
+            so_to_drf.setdefault(r.get("so_no"), r)  # ambil DRF terbaru per SO
+    bom_key_seen: set = set()
+    for b in pending_boms:
+        so = b.get("so_no")
+        drf = so_to_drf.get(so) or {}
+        key = drf.get("id") or f"__bomonly__{so or b.get('id')}"
+        g = groups.get(key)
+        if not g:
+            g = {
+                "drf_id": drf.get("id") or "",
+                "bom_id": "",
+                "bom_no": "",
+                "so_no": so or "",
+                "customer_name": drf.get("customer_name") or "",
+                "project_name": drf.get("project_name") or "",
+                "pending_count": 0,
+                "oldest_submitted_at": "",
+                "drawing_nos": [],
+            }
+            groups[key] = g
+        g["bom_pending_count"] = g.get("bom_pending_count", 0) + 1
+        # Prioritaskan BOM pending sebagai target review (BOM pending tertua per SO).
+        if key not in bom_key_seen:
+            g["bom_id"] = b.get("id")
+            g["bom_no"] = b.get("bom_no") or g.get("bom_no") or ""
+            bom_key_seen.add(key)
+        sub = b.get("submitted_at") or b.get("updated_at") or ""
+        if sub and (not g["oldest_submitted_at"] or sub < g["oldest_submitted_at"]):
+            g["oldest_submitted_at"] = sub
+
     drf_ids = [g["drf_id"] for g in groups.values() if g["drf_id"]]
     drf_map: dict = {}
     if drf_ids:
@@ -441,6 +486,7 @@ async def pending_leader_verification(current: dict = Depends(get_current_user))
             "bom_id": g["bom_id"],
             "bom_no": g["bom_no"],
             "pending_count": g["pending_count"],
+            "bom_pending_count": g.get("bom_pending_count", 0),
             "total_drawings": total,
             "drawing_nos": g["drawing_nos"][:6],
             "due_date": info.get("expected_due_date") or "",

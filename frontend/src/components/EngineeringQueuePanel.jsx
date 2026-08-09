@@ -368,7 +368,7 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
       {tab === "leader" && (
         <div className="p-3" data-testid="eng-queue-leader">
           <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-slate-400 mb-2">
-            SO/DRF dengan drawing menunggu review &amp; TTD Anda · {leaderRows.length} SO
+            SO/DRF dengan drawing / BOM menunggu review &amp; TTD Anda · {leaderRows.length} SO
             <span className="ml-2 normal-case tracking-normal text-slate-400 font-normal">(urut: paling lama menunggu)</span>
             {leaderLoading && <span className="ml-2 text-slate-400 animate-pulse normal-case">memuat…</span>}
           </div>
@@ -407,10 +407,18 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
                           {r.project_name ? <span className="text-slate-400"> · {r.project_name}</span> : null}
                         </td>
                         <td className="py-1.5 px-2 font-mono text-[11px] text-slate-600 whitespace-nowrap">{r.bom_no || "—"}</td>
-                        <td className="py-1.5 px-2 text-center">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold border bg-emerald-50 text-emerald-700 border-emerald-300">
-                            {r.pending_count} / {r.total_drawings}
-                          </span>
+                        <td className="py-1.5 px-2 text-center whitespace-nowrap">
+                          {r.pending_count > 0 && (
+                            <span title="Drawing menunggu TTD" className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold border bg-emerald-50 text-emerald-700 border-emerald-300">
+                              {r.pending_count}/{r.total_drawings} DWG
+                            </span>
+                          )}
+                          {r.bom_pending_count > 0 && (
+                            <span title="BOM menunggu approval" className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold border bg-amber-50 text-amber-700 border-amber-300 ml-1" data-testid={`eng-leader-bom-badge-${r.so_no}`}>
+                              {r.bom_pending_count} BOM
+                            </span>
+                          )}
+                          {r.pending_count === 0 && !r.bom_pending_count && <span className="text-slate-300">—</span>}
                         </td>
                         <td className="py-1.5 px-2 text-right">
                           <button

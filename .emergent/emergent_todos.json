@@ -8,15 +8,15 @@
     "status": "completed"
   },
   {
-    "content": "Backend: decouple drawing/BOM, sign-prepared, set-ready, submit-review guard, by-so fields (VERIFIED via curl)",
+    "content": "Backend: decouple drawing/BOM, sign-prepared, set-ready, submit-review guard, by-so fields, Leader queue include pending BOM (VERIFIED via curl end-to-end)",
     "status": "completed"
   },
   {
-    "content": "Frontend: BOM action bar (TTD/Siap Submit), Work Group panel BOM checkbox terpisah, Leader review BOM row",
+    "content": "Frontend: BOM action bar (TTD/Siap Submit), Work Group panel BOM checkbox terpisah, Leader review BOM row + approve/revise, queue BOM badge",
     "status": "completed"
   },
   {
-    "content": "Verifikasi menyeluruh via testing agent (portal cards + BOM workflow end-to-end)",
-    "status": "in_progress"
+    "content": "Verifikasi: testing agent (portal 100%, backend guards) + curl end-to-end BOM workflow + queue; data test direvert",
+    "status": "completed"
   }
 ]

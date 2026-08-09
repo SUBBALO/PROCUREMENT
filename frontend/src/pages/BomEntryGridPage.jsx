@@ -981,13 +981,6 @@ export function WorkOrderView({ bomId: propBomId, embedded = false } = {}) {
 
   // Konsisten dgn Work Order: kunci BOM bila ada drawing terkait yang sudah di-submit
   // (approval_status bukan draft). Saat siklus revisi ECN dimulai, drawing kembali draft → BOM terbuka lagi.
-  const drawingSubmitted = useMemo(() => {
-    return (linkedDrawings || []).some((d) => {
-      const st = (d.approval_status || "draft").toLowerCase();
-      return st !== "draft" && st !== "";
-    });
-  }, [linkedDrawings]);
-
   const canEditItems = useMemo(() => {
     if (!bom) return false;
     const st = bom.engineering_status || "approved";
@@ -1002,15 +995,6 @@ export function WorkOrderView({ bomId: propBomId, embedded = false } = {}) {
     return true;
   }, [bom, role]);
 
-  const canSubmit = useMemo(() => {
-    if (!bom) return false;
-    const st = bom.engineering_status || "approved";
-    // Allow submit from draft OR from legacy approved-empty state (so user can push to review)
-    const hasItems = (bom.items || []).length > 0;
-    if (st === "draft") return canEditItems;
-    if (st === "approved" && !hasItems) return canEditItems;
-    return false;
-  }, [bom, canEditItems]);
   const canApprove = useMemo(() => bom?.engineering_status === "pending_review" && isEngLeader, [bom, isEngLeader]);
   const isAdminLike = useMemo(() => ["admin", "super_admin", "supervisor"].includes(role), [role]);
   const isPurchasing = useMemo(() => role === "purchasing" || isAdminLike, [role, isAdminLike]);
@@ -1199,22 +1183,6 @@ export function WorkOrderView({ bomId: propBomId, embedded = false } = {}) {
       await loadAll();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal ubah status Siap Submit");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const submitForReview = async () => {
-    const items = buildItemsPayload();
-    if (items.length === 0) return toast.error("Minimal isi 1 item sebelum submit review");
-    setSubmitting(true);
-    try {
-      await api.post(`/bom/${bomId}/items-bulk`, { items });
-      await api.post(`/bom/${bomId}/submit-review`);
-      toast.success("BOM telah disubmit ke Engineering Leader (Riski) untuk review");
-      await loadAll();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Gagal submit review");
     } finally {
       setSubmitting(false);
     }
