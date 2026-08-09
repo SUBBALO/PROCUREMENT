@@ -26,6 +26,7 @@ import {
   ArrowClockwise,
   Signature,
   Stamp,
+  FilePdf,
 } from "@phosphor-icons/react";
 
 /* -------------------- Constants -------------------- */
@@ -1199,6 +1200,35 @@ export function WorkOrderView({ bomId: propBomId, embedded = false } = {}) {
     }
   };
 
+  // Cetak PDF BOM (lengkap TTD Prepared & Checked) — buka di tab baru untuk lihat/print.
+  const exportPdf = async () => {
+    try {
+      const res = await api.get(`/bom/${bomId}/export/pdf`, { responseType: "blob" });
+      const blob = new Blob([res.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      const w = window.open(url, "_blank");
+      if (!w) {
+        // popup diblokir → fallback download
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${bom?.bom_no || "BOM"}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+      setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+      toast.success("PDF BOM dibuka di tab baru");
+    } catch (e) {
+      // blob error → coba baca pesan
+      let msg = "Gagal cetak PDF BOM";
+      try {
+        const txt = await e.response?.data?.text?.();
+        if (txt) { const j = JSON.parse(txt); msg = j.detail || msg; }
+      } catch (_) {}
+      toast.error(msg);
+    }
+  };
+
   const doSign = async (stage) => {
     try {
       await api.post(`/bom/${bomId}/sign`, { stage });
@@ -1500,6 +1530,15 @@ export function WorkOrderView({ bomId: propBomId, embedded = false } = {}) {
               title="Download BOM sesuai template MKS-F-XXX untuk print"
             >
               📥 Export & Print (Excel)
+            </Button>
+            <Button
+              variant="outline"
+              className="h-10 rounded-none border-rose-700 bg-rose-50 text-rose-800 hover:bg-rose-100 text-sm font-bold"
+              onClick={() => exportPdf()}
+              data-testid="wo-export-pdf"
+              title="Cetak PDF BOM lengkap dengan TTD Prepared & Checked untuk arsip Purchasing"
+            >
+              <FilePdf size={16} weight="bold" className="mr-1" /> Cetak PDF (TTD)
             </Button>
             <Button
               variant="outline"

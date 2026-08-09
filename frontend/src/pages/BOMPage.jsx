@@ -8,7 +8,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
-import { MagnifyingGlass, UploadSimple, ClockCounterClockwise, Warning, PencilSimple, FloppyDisk, ArrowLeft } from "@phosphor-icons/react";
+import { MagnifyingGlass, UploadSimple, ClockCounterClockwise, Warning, PencilSimple, FloppyDisk, ArrowLeft, FilePdf } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { SortDropdown, sortItems, cmpStr, cmpDateStr } from "../components/SortDropdown";
 import { BomPurchaseBadge, BomListProgress, BomSearchLinkModal } from "../components/BomPurchaseWidgets";
@@ -590,6 +590,33 @@ function BomDetail({ bom, annotations, canAnnotate, savingAnn, onBack, onUpdate,
               title="Download BOM sesuai template untuk print"
             >
               📥 Export & Print (Excel)
+            </Button>
+          )}
+          {bom.engineering_status === "approved" && (
+            <Button
+              variant="outline"
+              className="rounded-none h-8 text-xs border-rose-700 bg-rose-50 text-rose-800 hover:bg-rose-100 font-bold"
+              onClick={async () => {
+                try {
+                  const res = await api.get(`/bom/${bom.id}/export/pdf`, { responseType: "blob" });
+                  const blob = new Blob([res.data], { type: "application/pdf" });
+                  const url = window.URL.createObjectURL(blob);
+                  const w = window.open(url, "_blank");
+                  if (!w) {
+                    const a = document.createElement("a");
+                    a.href = url; a.download = `${bom.bom_no || "BOM"}.pdf`;
+                    document.body.appendChild(a); a.click(); a.remove();
+                  }
+                  setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+                  toast.success("PDF BOM dibuka di tab baru");
+                } catch (e) {
+                  toast.error(e.response?.data?.detail || "Gagal cetak PDF BOM");
+                }
+              }}
+              data-testid="bom-detail-export-pdf"
+              title="Cetak PDF BOM lengkap dengan TTD Prepared & Checked untuk arsip Purchasing"
+            >
+              <FilePdf size={12} weight="bold" className="mr-1" /> Cetak PDF (TTD)
             </Button>
           )}
           {canAnnotate && (

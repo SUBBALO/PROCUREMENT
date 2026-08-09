@@ -2385,3 +2385,225 @@ async def export_bom_xlsx(bom_id: str, current: dict = Depends(get_current_user)
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# EXPORT BOM → PDF (arsip Purchasing) — lengkap TTD Prepared By & Checked By
+# ---------------------------------------------------------------------------
+def _fmt_sig_dt(iso_str: str) -> str:
+    if not iso_str:
+        return ""
+    try:
+        dt = datetime.fromisoformat(str(iso_str).replace("Z", "+00:00"))
+        return dt.strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        return str(iso_str)[:16]
+
+
+@router.get("/{bom_id}/export/pdf")
+async def export_bom_pdf(bom_id: str, current: dict = Depends(get_current_user)):
+    """Cetak PDF BOM untuk arsip Purchasing: tabel item + blok tanda tangan
+    Prepared By (Engineer) & Checked By (Eng Leader) beserta nama & waktu."""
+    from fastapi.responses import StreamingResponse
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
+    )
+
+    bom = await db.boms.find_one({"id": bom_id, "deleted_at": {"$exists": False}})
+    if not bom:
+        raise HTTPException(status_code=404, detail="BOM tidak ditemukan")
+    if not (bom.get("items") or []):
+        raise HTTPException(status_code=400, detail="BOM belum ada item — tidak ada yang bisa dicetak")
+
+    sigs = bom.get("signatures") or {}
+
+    def _sig(k):
+        s = sigs.get(k) or {}
+        if isinstance(s, dict):
+            return {"name": s.get("name") or s.get("username") or "", "at": s.get("at") or ""}
+        return {"name": str(s or ""), "at": ""}
+
+    prepared = _sig("prepared_by")
+    checked = _sig("checked_by")
+    if not prepared["name"]:
+        prepared["name"] = bom.get("prepared_by") or bom.get("created_by_name") or ""
+
+    status = bom.get("engineering_status") or "draft"
+    status_label = {
+        "draft": "DRAFT (belum disubmit)",
+        "pending_review": "MENUNGGU REVIEW LEADER",
+        "approved": "APPROVED / RELEASED",
+    }.get(status, status.upper())
+
+    # ---- Styles ----
+    styles = getSampleStyleSheet()
+    cell = ParagraphStyle("cell", parent=styles["Normal"], fontName="Helvetica", fontSize=7.5, leading=9)
+    cell_c = ParagraphStyle("cellc", parent=cell, alignment=1)
+    hcell = ParagraphStyle("hcell", parent=cell, fontName="Helvetica-Bold", fontSize=7.5, textColor=colors.white, alignment=1)
+    title = ParagraphStyle("title", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=14, leading=16)
+    sub = ParagraphStyle("sub", parent=styles["Normal"], fontName="Helvetica", fontSize=8, leading=10, textColor=colors.HexColor("#475569"))
+
+    accent = colors.HexColor("#1e3a8a")
+    header_bg = colors.HexColor("#1f2937")
+    zebra = colors.HexColor("#f1f5f9")
+
+    # ---- Header block ----
+    def _hdr_iso_date(v):
+        if not v:
+            return ""
+        try:
+            return datetime.fromisoformat(str(v).replace("Z", "+00:00")).strftime("%d/%m/%Y")
+        except Exception:
+            return str(v)[:10]
+
+    info_left = [
+        ["No. BOM", str(bom.get("bom_no") or "-")],
+        ["No. SO", str(bom.get("so_no") or "-")],
+        ["Customer", str(bom.get("customer") or bom.get("customer_name") or "-")],
+    ]
+    info_right = [
+        ["Project", str(bom.get("project_name") or "-")],
+        ["Revisi", str(bom.get("revision") or 0)],
+        ["Status", status_label],
+    ]
+    info_inner_style = TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#64748b")),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+    ])
+    left_tbl = Table(info_left, colWidths=[22 * mm, 95 * mm])
+    left_tbl.setStyle(info_inner_style)
+    right_tbl = Table(info_right, colWidths=[22 * mm, 95 * mm])
+    right_tbl.setStyle(info_inner_style)
+    info_tbl = Table([[left_tbl, right_tbl]], colWidths=[119 * mm, 119 * mm])
+    info_tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+
+    # ---- Items table ----
+    headers = ["No", "Nama Item", "Spesifikasi", "Qty", "UoM", "Material",
+               "Berat (kg)", "Due Beli", "Stok", "Qty Beli", "Remark"]
+    col_w = [8, 40, 55, 14, 12, 30, 16, 20, 14, 16, 30]
+    col_w = [w * mm for w in col_w]
+
+    data_rows = [[Paragraph(h, hcell) for h in headers]]
+    total_weight = 0.0
+    for i, it in enumerate(bom.get("items") or []):
+        w = it.get("weight_kg") or it.get("weight")
+        w_val = ""
+        if w not in (None, "", 0):
+            try:
+                total_weight += float(w)
+                w_val = f"{float(w):g}"
+            except Exception:
+                w_val = str(w)
+        qty = it.get("qty")
+        qty_str = (f"{float(qty):g}" if isinstance(qty, (int, float)) or (isinstance(qty, str) and qty.replace('.', '', 1).isdigit()) else str(qty or ""))
+        data_rows.append([
+            Paragraph(str(it.get("item_no") or (i + 1)), cell_c),
+            Paragraph(str(it.get("item_name") or ""), cell),
+            Paragraph(str(it.get("specification") or it.get("item_specification") or ""), cell),
+            Paragraph(qty_str, cell_c),
+            Paragraph(str(it.get("uom") or it.get("unit") or ""), cell_c),
+            Paragraph(str(it.get("material") or ""), cell),
+            Paragraph(w_val, cell_c),
+            Paragraph(_hdr_iso_date(it.get("purchase_due_date")), cell_c),
+            Paragraph("", cell_c),   # Stok — diisi manual Purchasing
+            Paragraph("", cell_c),   # Qty Beli — diisi manual Purchasing
+            Paragraph(str(it.get("remark") or ""), cell),
+        ])
+    # Total row
+    data_rows.append([
+        Paragraph("", cell), Paragraph("", cell), Paragraph("", cell), Paragraph("", cell),
+        Paragraph("", cell), Paragraph("TOTAL BERAT", ParagraphStyle("tb", parent=cell, fontName="Helvetica-Bold", alignment=2)),
+        Paragraph(f"{total_weight:g}" if total_weight > 0 else "-", ParagraphStyle("tv", parent=cell_c, fontName="Helvetica-Bold")),
+        Paragraph("", cell), Paragraph("", cell), Paragraph("", cell), Paragraph("", cell),
+    ])
+
+    items_tbl = Table(data_rows, colWidths=col_w, repeatRows=1)
+    ts = [
+        ("BACKGROUND", (0, 0), (-1, 0), header_bg),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        # total row styling
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#e2e8f0")),
+        ("SPAN", (0, -1), (4, -1)),
+    ]
+    for r in range(1, len(data_rows) - 1):
+        if r % 2 == 0:
+            ts.append(("BACKGROUND", (0, r), (-1, r), zebra))
+    items_tbl.setStyle(TableStyle(ts))
+
+    # ---- Signature block ----
+    def _sig_cell(role_label, name, at_iso):
+        name = name or "( belum ditandatangani )"
+        when = _fmt_sig_dt(at_iso)
+        return [
+            Paragraph(role_label, ParagraphStyle("sr", parent=cell, fontName="Helvetica-Bold", fontSize=8, alignment=1)),
+            Spacer(1, 16 * mm),
+            Paragraph(f"<b>{name}</b>", cell_c),
+            Paragraph(when or "-", ParagraphStyle("sw", parent=cell_c, textColor=colors.HexColor("#64748b"), fontSize=7)),
+        ]
+
+    ack = _sig("acknowledged_by")
+    appr = _sig("approved_by")
+    sig_tbl = Table(
+        [[
+            _sig_cell("Prepared By (Engineer)", prepared["name"], prepared["at"]),
+            _sig_cell("Checked By (Eng Leader)", checked["name"], checked["at"]),
+            _sig_cell("Reviewed By (Purchasing)", ack["name"], ack["at"]),
+            _sig_cell("Approved By (Manager)", appr["name"], appr["at"]),
+        ]],
+        colWidths=[59.5 * mm, 59.5 * mm, 59.5 * mm, 59.5 * mm],
+    )
+    sig_tbl.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#94a3b8")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+
+    printed = f"Dicetak: {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC · oleh {current.get('name') or current.get('username') or '-'}"
+
+    story = [
+        Paragraph("PT. MITRA KARYA SARANA", title),
+        Paragraph("BILL OF MATERIALS (BOM)", ParagraphStyle("h2", parent=sub, fontName="Helvetica-Bold", fontSize=10, textColor=accent)),
+        Spacer(1, 4 * mm),
+        info_tbl,
+        Spacer(1, 4 * mm),
+        items_tbl,
+        Spacer(1, 3 * mm),
+        Paragraph("Kolom <b>Stok</b> &amp; <b>Qty Beli</b> diisi manual oleh Purchasing.", ParagraphStyle("note", parent=sub, fontSize=7)),
+        Spacer(1, 8 * mm),
+        sig_tbl,
+        Spacer(1, 4 * mm),
+        Paragraph(printed, ParagraphStyle("ft", parent=sub, fontSize=7, textColor=colors.HexColor("#94a3b8"))),
+    ]
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        leftMargin=10 * mm, rightMargin=10 * mm, topMargin=10 * mm, bottomMargin=10 * mm,
+        title=f"BOM {bom.get('bom_no') or bom_id}",
+    )
+    doc.build(story)
+    buf.seek(0)
+
+    safe_project = (bom.get("project_name") or "BOM").replace("/", "_").replace("\\", "_")[:60]
+    filename = f"{bom.get('bom_no', bom_id)} - {safe_project}.pdf"
+    await log_action(current, "export_bom_pdf", "bom", bom_id, {"filename": filename})
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
