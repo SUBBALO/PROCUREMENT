@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import { ArrowsOut, ArrowsIn } from "@phosphor-icons/react";
 
 /*
  * Papan Progress Sales Order untuk Smart TV.
@@ -69,7 +70,22 @@ export default function TvSoProgressPage() {
   const [now, setNow] = useState(new Date());
   const [error, setError] = useState(false);
   const [view, setView] = useState("active"); // 'active' | 'deadline'
+  const [isFs, setIsFs] = useState(false);
   const scrollRef = useRef(null);
+
+  const toggleFullscreen = () => {
+    const el = document.documentElement;
+    if (!document.fullscreenElement) {
+      (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el);
+    } else {
+      (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document);
+    }
+  };
+  useEffect(() => {
+    const onFs = () => setIsFs(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -144,12 +160,23 @@ export default function TvSoProgressPage() {
             <p className="text-slate-400 text-sm mt-1">PT. Mitra Karya Sarana · Live Production Board · urut update terbaru</p>
           </div>
         </div>
-        <div className="text-right">
-          <div className="text-4xl font-black tabular-nums leading-none" style={{ fontFamily: "Chivo, sans-serif" }}>
-            {now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-          </div>
-          <div className="text-slate-400 text-sm mt-1">
-            {now.toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
+        <div className="flex items-center gap-5">
+          <button
+            onClick={toggleFullscreen}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/15 text-slate-200 border border-white/10 transition-colors"
+            data-testid="tv-fullscreen-btn"
+            title={isFs ? "Keluar layar penuh" : "Layar penuh (Smart TV)"}
+          >
+            {isFs ? <ArrowsIn size={20} weight="bold" /> : <ArrowsOut size={20} weight="bold" />}
+            <span className="text-sm font-semibold hidden sm:inline">{isFs ? "Keluar" : "Layar Penuh"}</span>
+          </button>
+          <div className="text-right">
+            <div className="text-4xl font-black tabular-nums leading-none" style={{ fontFamily: "Chivo, sans-serif" }}>
+              {now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            </div>
+            <div className="text-slate-400 text-sm mt-1">
+              {now.toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
+            </div>
           </div>
         </div>
       </header>
