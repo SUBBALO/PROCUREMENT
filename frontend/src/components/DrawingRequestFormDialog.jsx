@@ -45,6 +45,10 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
   const otherFileRef = useRef();
   const apiUrl = process.env.REACT_APP_BACKEND_URL;
 
+  // Deadline Drawing default: 5 hari sejak hari ini (opsional, boleh diubah manual)
+  const _p5 = new Date(); _p5.setDate(_p5.getDate() + 5);
+  const defaultDrawingDue = _p5.toISOString().slice(0, 10);
+
   const [form, setForm] = useState({
     so_no: initial?.so_no || "",
     ref_so_no: initial?.ref_so_no || "",
@@ -59,7 +63,7 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
     items: (initial?.items && initial.items.length > 0)
       ? initial.items.map((it) => ({ name: it.name || "", qty: it.qty ?? 1, unit: it.unit || "pcs", material: it.material || "TBA" }))
       : (initial?.qty_order ? [{ name: initial?.project_name || "Item 1", qty: initial.qty_order, unit: initial?.unit || "pcs", material: initial?.material || "TBA" }] : []),
-    expected_due_date: initial?.expected_due_date || "",
+    expected_due_date: initial?.expected_due_date || defaultDrawingDue,
     delivery_due_date: initial?.delivery_due_date || "",
     po_received_date: initial?.po_received_date || "",
     notes: initial?.notes || "",
@@ -174,7 +178,7 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
     if (!form.so_no) { toast.error("Pilih SO dulu"); return false; }
     if (type === "repeat_order" && !form.ref_so_no) { toast.error("Pilih SO referensi (lama) dulu"); return false; }
     if (!form.po_received_date) { toast.error("Tanggal Terima PO wajib diisi"); return false; }
-    if (!form.expected_due_date) { toast.error("Deadline Drawing wajib diisi"); return false; }
+    if (!form.delivery_due_date) { toast.error("Deadline Pengiriman Barang wajib diisi"); return false; }
     const validItems = (form.items || []).filter((it) => (it.name || "").trim());
     if (validItems.length === 0) { toast.error("Tambahkan minimal 1 item (isi Nama Item)"); return false; }
     return true;
@@ -538,14 +542,14 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
               <div className="text-[10px] text-slate-500 mt-0.5">Tanggal PO customer diterima. Wajib diisi.</div>
             </div>
             <div>
-              <Label className="text-xs font-bold text-amber-700">Deadline Drawing <span className="text-red-500">*</span></Label>
+              <Label className="text-xs font-bold text-amber-700">Deadline Drawing</Label>
               <Input type="date" value={form.expected_due_date} onChange={(e) => setForm((f) => ({ ...f, expected_due_date: e.target.value }))} disabled={isLocked} className="rounded-none border-amber-300 focus-visible:ring-amber-400" data-testid="drf-due-date" />
-              <div className="text-[10px] text-slate-500 mt-0.5">Target selesai gambar (Engineering). Dipakai untuk prioritas antrian & alarm tahap Engineering/DocCon. Wajib diisi.</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">Target selesai gambar. Otomatis terisi 5 hari dari hari ini — boleh diubah manual (opsional).</div>
             </div>
             <div>
-              <Label className="text-xs font-bold text-teal-700">Deadline Pengiriman Barang</Label>
+              <Label className="text-xs font-bold text-teal-700">Deadline Pengiriman Barang <span className="text-red-500">*</span></Label>
               <Input type="date" value={form.delivery_due_date} onChange={(e) => setForm((f) => ({ ...f, delivery_due_date: e.target.value }))} disabled={isLocked} className="rounded-none border-teal-300 focus-visible:ring-teal-400" data-testid="drf-delivery-date" />
-              <div className="text-[10px] text-slate-500 mt-0.5">Target barang terkirim ke customer. Dipakai untuk alarm tahap Produksi → QC → Delivery. Boleh diisi menyusul.</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">Target barang terkirim ke customer. Dipakai untuk alarm tahap Produksi → QC → Delivery. Wajib diisi.</div>
             </div>
             <div className="md:col-span-2">
               <div className="flex items-center justify-between mb-1">
