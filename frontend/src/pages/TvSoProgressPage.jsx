@@ -108,7 +108,7 @@ function DeadlineMini({ iso, active }) {
   const cls = dl.level === "past"
     ? "bg-rose-500/25 text-rose-200 ring-1 ring-rose-500/50 tv-alarm-badge"
     : dl.level === "soon"
-      ? "bg-amber-500/25 text-amber-200 ring-1 ring-amber-500/50"
+      ? "bg-amber-500/25 text-amber-200 ring-1 ring-amber-500/50 tv-alarm-badge"
       : "bg-slate-700/40 text-slate-300";
   const tag = dl.level === "past" ? `LEWAT ${Math.abs(dl.days)}h`
     : dl.level === "soon" ? (dl.days === 0 ? "HARI INI" : `H-${dl.days}`) : "";

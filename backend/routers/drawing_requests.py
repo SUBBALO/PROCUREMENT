@@ -1071,9 +1071,34 @@ async def update_drawing_request(
     return out
 
 
-# =========================================================================
-# Submit & Accept flow
-# =========================================================================
+class DeadlineUpdate(BaseModel):
+    expected_due_date: Optional[str] = None  # Deadline Drawing
+    delivery_due_date: Optional[str] = None  # Deadline Pengiriman
+
+
+@router.patch("/drawing-requests/{drf_id}/deadlines")
+async def update_drf_deadlines(
+    drf_id: str,
+    payload: DeadlineUpdate,
+    current: dict = Depends(get_current_user),
+):
+    """Ubah Deadline Drawing / Pengiriman KAPAN SAJA (termasuk setelah DRF submitted).
+    Hanya menyentuh 2 field deadline, tidak mengubah item/data lain."""
+    doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="DRF tidak ditemukan")
+    upd = {}
+    if payload.expected_due_date is not None:
+        upd["expected_due_date"] = payload.expected_due_date
+    if payload.delivery_due_date is not None:
+        upd["delivery_due_date"] = payload.delivery_due_date
+    if not upd:
+        raise HTTPException(status_code=400, detail="Tidak ada deadline yang diubah")
+    upd["updated_at"] = _now_iso()
+    await db.drawing_requests.update_one({"id": drf_id}, {"$set": upd})
+    await log_action(current, "drf_update_deadlines", "drawing_requests", drf_id, upd)
+    out = await db.drawing_requests.find_one({"id": drf_id}, {"_id": 0})
+    return out
 @router.post("/drawing-requests/{drf_id}/submit")
 async def submit_drawing_request(drf_id: str, current: dict = Depends(get_current_user)):
     """Sales submit DRF → auto-TTD Requested By, status = submitted."""

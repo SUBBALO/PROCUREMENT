@@ -42,6 +42,33 @@ export default function DrfDetailModal({ drf, isHead, onClose, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(null); // { mode:'attachment'|'drawing', ... }
   const [imgPreview, setImgPreview] = useState(null); // { url, name }
+  const [editDl, setEditDl] = useState(false);
+  const [dlDraw, setDlDraw] = useState("");
+  const [dlDel, setDlDel] = useState("");
+  const [savingDl, setSavingDl] = useState(false);
+
+  const openEditDl = () => {
+    setDlDraw(detail?.expected_due_date || "");
+    setDlDel(detail?.delivery_due_date || "");
+    setEditDl(true);
+  };
+  const saveDeadlines = async () => {
+    setSavingDl(true);
+    try {
+      const { data } = await api.patch(`/drawing-requests/${detail.id}/deadlines`, {
+        expected_due_date: dlDraw || "",
+        delivery_due_date: dlDel || "",
+      });
+      setDetail((d) => ({ ...d, expected_due_date: data.expected_due_date, delivery_due_date: data.delivery_due_date }));
+      toast.success("Deadline diperbarui");
+      setEditDl(false);
+      onChanged && onChanged();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal simpan deadline");
+    } finally {
+      setSavingDl(false);
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -138,9 +165,43 @@ export default function DrfDetailModal({ drf, isHead, onClose, onChanged }) {
             <InfoCell label="Project" value={detail?.project_name} />
             <InfoCell label="Qty Order" value={`${detail?.qty_order ?? "-"} ${detail?.unit || ""}`} />
             <InfoCell label="Material" value={detail?.material} />
-            <InfoCell label="Expected Due" value={detail?.expected_due_date} />
+            <InfoCell label="Tanggal Terima PO" value={detail?.po_received_date || "-"} />
+            <InfoCell label="Deadline Drawing" value={detail?.expected_due_date || "-"} />
+            <InfoCell label="Deadline Pengiriman" value={detail?.delivery_due_date || "-"} />
             <InfoCell label="Requested By" value={detail?.requested_by?.name} />
             <InfoCell label="Engineer Ditugaskan" value={detail?.assigned_engineer_name} />
+          </div>
+
+          {/* Editor deadline — bisa diubah kapan saja (termasuk setelah DRF diterima/submitted) */}
+          <div className="mt-3 border border-slate-200 bg-slate-50 rounded p-3">
+            {!editDl ? (
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[11px] text-slate-600">
+                  <b>Deadline Drawing:</b> {detail?.expected_due_date || "-"} &nbsp;·&nbsp;
+                  <b>Deadline Pengiriman:</b> {detail?.delivery_due_date || "-"}
+                </div>
+                <button onClick={openEditDl} className="px-2.5 py-1 text-[11px] font-bold uppercase bg-slate-700 hover:bg-slate-800 text-white rounded" data-testid="drf-edit-deadline-btn">
+                  Ubah Deadline
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <div className="text-[9px] uppercase tracking-wide font-bold text-amber-700">Deadline Drawing</div>
+                  <input type="date" value={dlDraw} onChange={(e) => setDlDraw(e.target.value)} className="border border-amber-300 rounded px-2 py-1 text-sm" data-testid="drf-edit-drawing-date" />
+                </div>
+                <div>
+                  <div className="text-[9px] uppercase tracking-wide font-bold text-teal-700">Deadline Pengiriman</div>
+                  <input type="date" value={dlDel} onChange={(e) => setDlDel(e.target.value)} className="border border-teal-300 rounded px-2 py-1 text-sm" data-testid="drf-edit-delivery-date" />
+                </div>
+                <button onClick={saveDeadlines} disabled={savingDl} className="px-3 py-1.5 text-[11px] font-bold uppercase bg-emerald-600 hover:bg-emerald-700 text-white rounded disabled:opacity-50" data-testid="drf-save-deadline-btn">
+                  {savingDl ? "Menyimpan…" : "Simpan"}
+                </button>
+                <button onClick={() => setEditDl(false)} className="px-3 py-1.5 text-[11px] font-bold uppercase bg-slate-200 hover:bg-slate-300 text-slate-700 rounded">
+                  Batal
+                </button>
+              </div>
+            )}
           </div>
           {detail?.notes && (
             <div className="text-sm">
