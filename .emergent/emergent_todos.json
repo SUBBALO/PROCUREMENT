@@ -1,18 +1,22 @@
 [
   {
-    "content": "REASSIGN — selesai & terverifikasi (backend+frontend+test+revert)",
+    "content": "REASSIGN — selesai & terverifikasi",
     "status": "completed"
   },
   {
-    "content": "VERSION CONTROL — Backend: arsip versi lama saat re-upload + endpoint list/download versi + rev label",
+    "content": "VERSION CONTROL file drawing — selesai & terverifikasi",
     "status": "completed"
   },
   {
-    "content": "VERSION CONTROL — Frontend: panel Riwayat Versi File di Work Order drawing",
+    "content": "OBSOLETE/DOCCON — Backend: auto-mark 'pending' saat rev baru controlled + endpoint list + stamp-obsolete (manual Salma) + cap OBSOLETE di PDF",
     "status": "completed"
   },
   {
-    "content": "VERSION CONTROL — Test end-to-end (Rev 0->A, download versi lama, cleanup)",
+    "content": "OBSOLETE/DOCCON — Frontend: tab Obsolete/Superseded + tombol Stamp OBSOLETE (DocCon) + preview cap",
+    "status": "completed"
+  },
+  {
+    "content": "OBSOLETE/DOCCON — Test end-to-end (auto-mark, manual stamp, cap burned, cleanup)",
     "status": "completed"
   }
 ]

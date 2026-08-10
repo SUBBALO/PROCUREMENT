@@ -3387,6 +3387,33 @@ async def drawing_stamp_controlled(
             upd["revision_request"] = rr_cur
 
     await db.drawings.update_one({"id": drawing_id}, {"$set": upd})
+
+    # === OBSOLETE CANDIDATE ===
+    # Saat Rev BARU jadi controlled, Rev lama (yang tadinya controlled) ditandai
+    # "menunggu stamp OBSOLETE" — TIDAK otomatis obsolete. Document Control (Salma)
+    # yang men-stamp OBSOLETE secara eksplisit dari tab Obsolete/Superseded.
+    if upd.get("approval_status") == "controlled":
+        new_rev_no = int(drawing.get("rev_no") or 0)
+        if new_rev_no > 0:
+            revs = drawing.get("revisions") or []
+            target = None
+            for r in reversed(revs):
+                if (r.get("type") == "ecn_revision"
+                        and ((r.get("snapshot") or {}).get("approval_status") == "controlled")
+                        and not r.get("obsolete_status")):
+                    target = r
+                    break
+            if target:
+                await db.drawings.update_one(
+                    {"id": drawing_id},
+                    {"$set": {
+                        "revisions.$[e].obsolete_status": "pending",
+                        "revisions.$[e].superseded_by_rev": new_rev_no,
+                        "revisions.$[e].superseded_at": _now_iso(),
+                    }},
+                    array_filters=[{"e.id": target["id"]}],
+                )
+
     await log_action(current, "drawing_stamp_controlled", "drawings", drawing_id,
                      {"drawing_no": drawing.get("drawing_no"), "target": target,
                       "fully_controlled": upd.get("approval_status") == "controlled"})
@@ -3761,9 +3788,18 @@ async def _revision_snapshot_bytes(drawing_id: str, rev_id: str, which: str = "m
         raise HTTPException(status_code=404, detail="File versi lama tidak tersedia untuk revisi ini")
     try:
         stream = await _fs().open_download_stream(ObjectId(fid))
-        return await stream.read()
+        data = await stream.read()
     except Exception:
         raise HTTPException(status_code=404, detail="File versi lama tidak ditemukan di penyimpanan")
+    # Cap OBSOLETE hanya setelah Document Control (Salma) men-stamp-nya secara eksplisit.
+    if rev.get("obsolete_status") == "stamped":
+        try:
+            from utils.pdf_stamper import apply_obsolete
+            if data[:5].startswith(b"%PDF"):
+                data = apply_obsolete(data)
+        except Exception:
+            pass
+    return data
 
 
 @router.get("/drawings/{drawing_id}/revisions/{rev_id}/page-meta")
@@ -3817,6 +3853,97 @@ async def revision_snapshot_download(drawing_id: str, rev_id: str, which: str = 
     fname = f"{drawing_id}_rev-{rev_id[:8]}_{which}.pdf"
     return StreamingResponse(io.BytesIO(raw), media_type="application/pdf",
                              headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+def _obsolete_rows_from_drawing(d: dict, statuses: set) -> list:
+    rows = []
+    for r in (d.get("revisions") or []):
+        st = r.get("obsolete_status")
+        if st in statuses:
+            snap = r.get("snapshot") or {}
+            rows.append({
+                "drawing_id": d.get("id"),
+                "drawing_no": snap.get("drawing_no") or d.get("drawing_no"),
+                "title": d.get("title") or d.get("project_name") or "",
+                "so_no": d.get("so_no"),
+                "customer_name": d.get("customer_name"),
+                "rev_id": r.get("id"),
+                "rev_no": r.get("rev_no"),
+                "ecn_no": r.get("ecn_no"),
+                "obsolete_status": st,
+                "superseded_by_rev": r.get("superseded_by_rev"),
+                "superseded_at": r.get("superseded_at"),
+                "obsoleted_at": r.get("obsoleted_at"),
+                "obsolete_stamp": r.get("obsolete_stamp"),
+                "current_rev_no": d.get("rev_no"),
+            })
+    return rows
+
+
+@router.get("/drawings/obsolete-list")
+async def list_obsolete_drawings(status: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Daftar Rev lama yang sudah digantikan:
+    - status 'pending'  → menunggu Document Control (Salma) men-stamp OBSOLETE
+    - status 'stamped'  → sudah di-cap OBSOLETE (resmi obsolete, view-only)
+    Tanpa filter → keduanya (untuk tab Obsolete / Superseded)."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    wanted = {status} if status in ("pending", "stamped") else {"pending", "stamped"}
+    q = {"revisions.obsolete_status": {"$in": list(wanted)}, "deleted_at": {"$exists": False}}
+    proj = {"_id": 0, "id": 1, "drawing_no": 1, "title": 1, "project_name": 1,
+            "so_no": 1, "customer_name": 1, "rev_no": 1, "revisions": 1}
+    rows = []
+    async for d in db.drawings.find(q, proj):
+        rows.extend(_obsolete_rows_from_drawing(d, wanted))
+    rows.sort(key=lambda r: (r.get("obsoleted_at") or r.get("superseded_at") or ""), reverse=True)
+    pending_count = sum(1 for r in rows if r["obsolete_status"] == "pending")
+    stamped_count = sum(1 for r in rows if r["obsolete_status"] == "stamped")
+    return {"items": rows, "total": len(rows), "pending_count": pending_count, "stamped_count": stamped_count}
+
+
+class ObsoleteStampIn(BaseModel):
+    notes: str = ""
+
+
+@router.post("/drawings/{drawing_id}/revisions/{rev_id}/stamp-obsolete")
+async def stamp_revision_obsolete(
+    drawing_id: str, rev_id: str,
+    payload: ObsoleteStampIn = None,
+    current: dict = Depends(get_current_user),
+):
+    """Document Control (Salma) / Admin men-stamp OBSOLETE pada Rev lama (manual, tidak otomatis).
+    Setelah di-stamp: Rev lama resmi OBSOLETE (cap merah muncul di PDF, view-only)."""
+    if not (is_doc_control(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Document Control atau Admin yang boleh stamp OBSOLETE")
+    d = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}}, {"_id": 0, "revisions": 1, "drawing_no": 1})
+    if not d:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    rev = next((r for r in (d.get("revisions") or []) if r.get("id") == rev_id), None)
+    if not rev:
+        raise HTTPException(status_code=404, detail="Riwayat revisi tidak ditemukan")
+    if rev.get("obsolete_status") not in ("pending", "stamped"):
+        raise HTTPException(status_code=400, detail="Revisi ini bukan kandidat obsolete (hanya Rev lama yang sudah digantikan)")
+    now = _now_iso()
+    stamp = {
+        "name": current.get("name") or current.get("username"),
+        "user_id": current.get("id"),
+        "username": current.get("username"),
+        "role": current.get("role"),
+        "at": now,
+        "notes": (payload.notes if payload else "") or "",
+    }
+    await db.drawings.update_one(
+        {"id": drawing_id},
+        {"$set": {
+            "revisions.$[e].obsolete_status": "stamped",
+            "revisions.$[e].obsolete_stamp": stamp,
+            "revisions.$[e].obsoleted_at": now,
+        }},
+        array_filters=[{"e.id": rev_id}],
+    )
+    await log_action(current, "drawing_stamp_obsolete", "drawings", drawing_id,
+                     {"drawing_no": d.get("drawing_no"), "rev_no": rev.get("rev_no")})
+    return {"success": True, "obsolete_status": "stamped", "obsoleted_at": now, "stamp": stamp}
 
 
 async def _sig_png_by_user(uid: str, name: str = None):
