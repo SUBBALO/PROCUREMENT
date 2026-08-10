@@ -11,6 +11,14 @@ const STAGE_STYLE = {
 const STAGE_ORDER = ["engineering", "doccon", "produksi", "qc", "delivery"];
 const STAGE_HEAD = { engineering: "Engineering", doccon: "DocCon", produksi: "Produksi", qc: "QC Final", delivery: "Delivery" };
 
+const STATUS_PILL = {
+  done: "bg-emerald-100 text-emerald-700 ring-emerald-200",
+  progress: "bg-sky-100 text-sky-700 ring-sky-200",
+  waiting: "bg-amber-100 text-amber-700 ring-amber-200",
+  revision: "bg-rose-100 text-rose-700 ring-rose-200",
+  pending: "bg-slate-100 text-slate-600 ring-slate-200",
+};
+
 function fmtDate(s) {
   if (!s) return "";
   try { return new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "2-digit" }); }
@@ -23,7 +31,7 @@ function StageCell({ st }) {
     <td className="px-2 py-1.5 align-top border-l border-slate-100">
       <div className={`inline-flex items-center gap-1 text-[11px] font-semibold ${style.text}`}>
         <span className={`w-2 h-2 rounded-full ${style.dot} shrink-0`} />
-        {style.label}{st?.progress ? <span className="font-mono text-slate-500">·{st.progress}</span> : null}
+        {style.label}
       </div>
       {st?.date ? <div className="text-[10px] text-slate-400 leading-tight">{fmtDate(st.date)}</div> : null}
     </td>
@@ -89,14 +97,15 @@ export default function SoProgressTracker() {
               {STAGE_ORDER.map((k) => (
                 <th key={k} className="px-2 py-2 text-left font-bold border-l border-slate-200">{STAGE_HEAD[k]}</th>
               ))}
+              <th className="px-2 py-2 text-left font-bold border-l border-slate-200">Status Saat Ini</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading && (
-              <tr><td colSpan={7} className="p-8 text-center text-slate-400 text-sm">Memuat progress SO…</td></tr>
+              <tr><td colSpan={8} className="p-8 text-center text-slate-400 text-sm">Memuat progress SO…</td></tr>
             )}
             {!loading && items.length === 0 && (
-              <tr><td colSpan={7} className="p-8 text-center text-slate-400 text-sm">Tidak ada SO dalam workflow.</td></tr>
+              <tr><td colSpan={8} className="p-8 text-center text-slate-400 text-sm">Tidak ada SO dalam workflow.</td></tr>
             )}
             {!loading && items.map((so) => {
               const m = stageMap(so);
@@ -107,7 +116,6 @@ export default function SoProgressTracker() {
                   <td className="px-3 py-1.5 align-top">
                     <div className="flex items-center gap-1.5">
                       <span className="font-mono font-bold text-slate-900 text-[13px]">{so.so_no}</span>
-                      <span className="text-[9px] uppercase tracking-wide font-bold px-1.5 py-0.5 bg-slate-800 text-white">{so.current_stage}</span>
                     </div>
                     <div className="text-[11px] text-slate-600 truncate max-w-[220px]" title={`${so.customer || ""} ${so.description || ""}`}>
                       {so.customer || "-"}{so.description ? ` · ${so.description}` : ""}
@@ -121,6 +129,11 @@ export default function SoProgressTracker() {
                     ) : <span className="text-[11px] text-slate-300">—</span>}
                   </td>
                   {STAGE_ORDER.map((k) => (<StageCell key={k} st={m[k]} />))}
+                  <td className="px-2 py-1.5 align-top border-l border-slate-100" data-testid={`so-progress-status-${so.so_no}`}>
+                    <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ring-1 ${STATUS_PILL[so.status_kind] || STATUS_PILL.pending}`}>
+                      {so.status_now || so.current_stage}
+                    </span>
+                  </td>
                 </tr>
               );
             })}

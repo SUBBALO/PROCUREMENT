@@ -24,12 +24,17 @@ const fmtDate = (iso) => {
   }
 };
 
-const isPastDue = (iso) => {
-  if (!iso) return false;
+// Info deadline: sisa hari & level alarm (past / soon <=2 hari / ok)
+const deadlineInfo = (iso) => {
+  if (!iso) return { days: null, level: "none" };
   const d = new Date(String(iso).slice(0, 10));
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return d < today;
+  const days = Math.round((d - today) / 86400000);
+  let level = "ok";
+  if (days < 0) level = "past";
+  else if (days <= 2) level = "soon";
+  return { days, level };
 };
 
 const STATUS_STYLE = {
@@ -53,7 +58,6 @@ function StageCell({ stage, isCurrent }) {
       <div className="flex flex-col items-center gap-0.5">
         <span className={`inline-block w-3 h-3 rounded-full ${s.dot}`} />
         <span className={`text-[0.7rem] font-semibold ${s.text}`}>{s.label}</span>
-        {stage?.progress ? <span className="text-[0.62rem] text-slate-500 tabular-nums leading-none">{stage.progress}</span> : null}
       </div>
     </td>
   );
@@ -64,6 +68,7 @@ export default function TvSoProgressPage() {
   const [updatedAt, setUpdatedAt] = useState(null);
   const [now, setNow] = useState(new Date());
   const [error, setError] = useState(false);
+  const [view, setView] = useState("active"); // 'active' | 'deadline'
   const scrollRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -111,6 +116,23 @@ export default function TvSoProgressPage() {
 
   const doneCount = items.filter((s) => (s.current_stage || "") === "Delivery" && (s.stages || []).every((x) => x.status === "done")).length;
 
+  // SO mendekati / lewat deadline (level past atau soon <=2 hari), diurut paling mendesak
+  const deadlineItems = items
+    .filter((s) => ["past", "soon"].includes(deadlineInfo(s.deadline).level))
+    .sort((a, b) => (deadlineInfo(a.deadline).days ?? 9999) - (deadlineInfo(b.deadline).days ?? 9999));
+
+  // Rotasi halaman tiap 20 detik: SO Aktif <-> SO Mendekati Deadline
+  useEffect(() => {
+    const t = setInterval(() => setView((v) => (v === "active" ? "deadline" : "active")), 20000);
+    return () => clearInterval(t);
+  }, []);
+  // reset scroll ke atas saat ganti halaman
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [view]);
+
+  const displayItems = view === "deadline" ? deadlineItems : items;
+
   return (
     <div className="fixed inset-0 bg-slate-950 text-slate-100 flex flex-col overflow-hidden" style={{ fontFamily: "Figtree, sans-serif" }} data-testid="tv-so-progress">
       {/* Header */}
@@ -132,16 +154,22 @@ export default function TvSoProgressPage() {
         </div>
       </header>
 
-      {/* Legend + stats */}
+      {/* View tabs (rotasi) + Legend + stats */}
       <div className="flex items-center justify-between px-8 py-2.5 bg-slate-900/60 border-b border-white/5 text-sm">
-        <div className="flex items-center gap-6">
-          <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded-full bg-emerald-400" /> Selesai</span>
-          <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded-full bg-amber-400 animate-pulse" /> Proses</span>
-          <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded-full bg-slate-600" /> Menunggu</span>
-          <span className="flex items-center gap-2 text-rose-400"><span className="w-3.5 h-3.5 rounded-sm bg-rose-500" /> Deadline lewat</span>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setView("active")} className={`px-3 py-1 rounded-md font-bold uppercase tracking-wide text-xs transition-colors ${view === "active" ? "bg-indigo-600 text-white" : "bg-white/5 text-slate-400"}`} data-testid="tv-tab-active">
+            SO Aktif ({items.length})
+          </button>
+          <button onClick={() => setView("deadline")} className={`px-3 py-1 rounded-md font-bold uppercase tracking-wide text-xs transition-colors ${view === "deadline" ? "bg-rose-600 text-white" : "bg-white/5 text-slate-400"}`} data-testid="tv-tab-deadline">
+            Mendekati Deadline ({deadlineItems.length})
+          </button>
+          <span className="hidden xl:flex items-center gap-4 ml-3 text-slate-400">
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-400" /> Selesai</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-400 animate-pulse" /> Proses</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-slate-600" /> Menunggu</span>
+          </span>
         </div>
         <div className="flex items-center gap-6 text-slate-300">
-          <span>Total SO: <b className="text-white tabular-nums">{items.length}</b></span>
           <span>Delivery selesai: <b className="text-emerald-400 tabular-nums">{doneCount}</b></span>
           <span className="text-slate-500">Update: {updatedAt ? updatedAt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "…"}</span>
           {error && <span className="text-rose-400" data-testid="tv-error">● Koneksi terputus</span>}
@@ -163,14 +191,22 @@ export default function TvSoProgressPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {items.length === 0 ? (
-              <tr><td colSpan={9} className="text-center py-24 text-slate-500 text-2xl">Belum ada data Sales Order</td></tr>
-            ) : items.map((so) => {
-              const past = isPastDue(so.deadline);
+            {displayItems.length === 0 ? (
+              <tr><td colSpan={9} className="text-center py-24 text-slate-500 text-2xl">
+                {view === "deadline" ? "Tidak ada SO yang mendekati / lewat deadline 🎉" : "Belum ada data Sales Order"}
+              </td></tr>
+            ) : displayItems.map((so) => {
+              const dl = deadlineInfo(so.deadline);
               const allDone = (so.stages || []).every((x) => x.status === "done");
               const stStyle = STATUS_STYLE[so.status_kind] || STATUS_STYLE.pending;
+              const alarmCls = !allDone && dl.level === "past" ? "tv-alarm-past" : (!allDone && dl.level === "soon" ? "tv-alarm-soon" : (allDone ? "bg-emerald-950/30" : "hover:bg-white/5"));
+              const dlBadge = dl.level === "past"
+                ? { cls: "bg-rose-500/25 text-rose-200 ring-1 ring-rose-500/50", txt: `LEWAT ${Math.abs(dl.days)} hr` }
+                : dl.level === "soon"
+                  ? { cls: "bg-amber-500/25 text-amber-200 ring-1 ring-amber-500/50", txt: dl.days === 0 ? "HARI INI" : `H-${dl.days}` }
+                  : { cls: "bg-slate-700/50 text-slate-200", txt: fmtDate(so.deadline) };
               return (
-                <tr key={so.so_no} className={`${allDone ? "bg-emerald-950/30" : "hover:bg-white/5"} transition-colors`} data-testid={`tv-row-${so.so_no}`}>
+                <tr key={so.so_no} className={`${alarmCls} transition-colors`} data-testid={`tv-row-${so.so_no}`}>
                   <td className="px-4 py-2">
                     <div className="text-xl font-black text-white tabular-nums leading-tight" style={{ fontFamily: "Chivo, sans-serif" }}>{so.so_no}</div>
                   </td>
@@ -179,9 +215,10 @@ export default function TvSoProgressPage() {
                     {so.description ? <div className="text-xs text-slate-400 truncate max-w-[20vw]">{so.description}</div> : null}
                   </td>
                   <td className="px-2 py-2">
-                    <span className={`inline-block px-2 py-1 rounded text-sm font-bold tabular-nums ${past ? "bg-rose-500/20 text-rose-300 ring-1 ring-rose-500/40" : "bg-slate-700/50 text-slate-200"}`}>
-                      {fmtDate(so.deadline)}
-                    </span>
+                    <div className={`inline-flex flex-col items-start gap-0.5 px-2 py-1 rounded ${dlBadge.cls}`}>
+                      <span className="text-[11px] font-bold tabular-nums leading-none">{fmtDate(so.deadline)}</span>
+                      {dl.level !== "ok" && dl.level !== "none" && <span className="text-[10px] font-black uppercase tracking-wide leading-none">{dlBadge.txt}</span>}
+                    </div>
                   </td>
                   {STAGES.map((s) => {
                     const stage = (so.stages || []).find((x) => x.key === s.key) || { key: s.key, status: "pending" };

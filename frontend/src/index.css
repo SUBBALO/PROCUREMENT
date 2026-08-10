@@ -126,3 +126,9 @@ html.reduce-motion .animate-spin {
 /* Sembunyikan scrollbar untuk papan TV */
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
+
+/* Alarm deadline papan TV */
+@keyframes tvAlarmPast { 0%,100% { background-color: rgba(244,63,94,0.10); } 50% { background-color: rgba(244,63,94,0.30); } }
+@keyframes tvAlarmSoon { 0%,100% { background-color: rgba(245,158,11,0.08); } 50% { background-color: rgba(245,158,11,0.22); } }
+.tv-alarm-past { animation: tvAlarmPast 1.1s ease-in-out infinite; }
+.tv-alarm-soon { animation: tvAlarmSoon 1.5s ease-in-out infinite; }
