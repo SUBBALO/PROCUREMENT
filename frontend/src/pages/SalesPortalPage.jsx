@@ -32,18 +32,6 @@ export default function SalesPortalPage() {
       badgeCount: pendingApproval,
     },
     {
-      key: "drawing-requests",
-      label: "Drawing Request Form",
-      stats: "MKS-F-ENG-001",
-      description:
-        "Buat request drawing ke Engineering (New Order / Repeat Order). Track status request, dan TTD drawing MKS setelah selesai.",
-      icon: ClipboardText,
-      href: "/sales/drawing-requests",
-      accent: "from-emerald-500 via-green-500 to-teal-500",
-      accentText: "text-emerald-400",
-      badgeCount: pendingDrawings,
-    },
-    {
       key: "inquiry", label: "Inquiry Costing", stats: "Ke Engineering",
       description: "Kirim permintaan costing harga ke Engineering, upload drawing & dokumen, review hasilnya.",
       icon: Storefront, href: "/sales/inquiries",
@@ -62,16 +50,28 @@ export default function SalesPortalPage() {
       accent: "from-emerald-600 via-teal-500 to-green-500", accentText: "text-emerald-400",
     },
     {
-      key: "customers", label: "Master Customer", stats: "Data Customer",
-      description: "Kelola master data customer: nama, alamat, PIC. Autocomplete saat buat quotation.",
-      icon: Users, href: "/sales/customers",
-      accent: "from-sky-500 via-blue-500 to-indigo-500", accentText: "text-sky-400",
+      key: "drawing-requests",
+      label: "Drawing Request Form",
+      stats: "MKS-F-ENG-001",
+      description:
+        "Buat request drawing ke Engineering (New Order / Repeat Order). Track status request, dan TTD drawing MKS setelah selesai.",
+      icon: ClipboardText,
+      href: "/sales/drawing-requests",
+      accent: "from-emerald-500 via-green-500 to-teal-500",
+      accentText: "text-emerald-400",
+      badgeCount: pendingDrawings,
     },
     {
       key: "bom-view", label: "BOM (View Only)", stats: "Bahan Baku · Reference",
       description: "Lihat BOM yang sudah di-approve Engineering — sebagai referensi untuk quotation & follow-up produksi. Sales HANYA VIEW, tidak bisa edit isi BOM.",
       icon: ClipboardText, href: "/bom",
       accent: "from-emerald-500 via-teal-500 to-cyan-500", accentText: "text-emerald-400",
+    },
+    {
+      key: "customers", label: "Master List Customer", stats: "Data Customer",
+      description: "Kelola master data customer: nama, alamat, PIC. Autocomplete saat buat quotation.",
+      icon: Users, href: "/sales/customers",
+      accent: "from-sky-500 via-blue-500 to-indigo-500", accentText: "text-sky-400",
     },
   ];
 
