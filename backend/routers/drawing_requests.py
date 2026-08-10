@@ -136,8 +136,7 @@ def _stage(status, date="", pic="", extra=None):
     return s
 
 
-@router.get("/dashboard/so-progress")
-async def dashboard_so_progress(q: str = "", limit: int = 60, current: dict = Depends(get_current_user)):
+async def _compute_so_progress(q: str = "", limit: int = 60):
     """Progress tiap SO berbasis TAHAP PROSES (Engineering -> DocCon -> Produksi -> QC -> Delivery).
     Departemen kondisional (mis. Purchasing) tidak dijadikan tahap. Fokus SO yang punya drawing."""
     # SO yang punya drawing (workflow aktif)
@@ -152,7 +151,9 @@ async def dashboard_so_progress(q: str = "", limit: int = 60, current: dict = De
     # Batch data per so_no
     drawings = await db.drawings.find(
         {"so_no": {"$in": so_nos}, "deleted_at": {"$exists": False}},
-        {"_id": 0, "so_no": 1, "approval_status": 1, "approvals": 1, "updated_at": 1, "drawing_no": 1, "item_name": 1, "item_qty": 1},
+        {"_id": 0, "so_no": 1, "approval_status": 1, "approvals": 1, "updated_at": 1, "drawing_no": 1,
+         "item_name": 1, "item_qty": 1, "file_id": 1, "revision_request": 1,
+         "revision_opened_at": 1, "revision_approved_at": 1, "is_revision": 1},
     ).to_list(length=5000)
     deliveries = await db.deliveries.find({"so_no": {"$in": so_nos}}, {"_id": 0, "so_no": 1, "delivery_date": 1}).to_list(length=5000)
     # Deadline kerjaan (target due date) diambil dari DRF terkait SO
@@ -241,21 +242,94 @@ async def dashboard_so_progress(q: str = "", limit: int = 60, current: dict = De
         ]
         # tahap aktif = stage pertama yang belum done
         current_stage = next((s["label"] for s in stages if s["status"] != "done"), "Delivery")
+
+        # ---- Status detail "apa yang sedang terjadi" (dibaca dari sistem) ----
+        def _in_rev(d):
+            if d.get("revision_request"):
+                return True
+            if d.get("revision_opened_at") and not d.get("revision_approved_at"):
+                return True
+            return False
+        draft_n = sum(1 for d in dws if (d.get("approval_status") or "draft") == "draft")
+        peh_n = sum(1 for d in dws if (d.get("approval_status") or "") == "pending_eng_head")
+        pqc_n = sum(1 for d in dws if (d.get("approval_status") or "") == "pending_qc")
+        rev_n = sum(1 for d in dws if _in_rev(d))
+        nofile_n = sum(1 for d in dws if not d.get("file_id"))
+
+        if current_stage == "Engineering":
+            if total == 0:
+                status_now, status_kind = "Menunggu Drawing (DRF)", "pending"
+            elif rev_n > 0:
+                status_now, status_kind = f"Revisi Drawing ({rev_n}/{total})", "revision"
+            elif peh_n > 0:
+                status_now, status_kind = f"Menunggu Approval Eng Leader ({peh_n}/{total})", "waiting"
+            elif pqc_n > 0:
+                status_now, status_kind = f"Menunggu Verifikasi QC Drawing ({pqc_n}/{total})", "waiting"
+            elif draft_n > 0 or nofile_n > 0:
+                status_now, status_kind = f"Gambar Drawing ({approved}/{total} selesai)", "progress"
+            else:
+                status_now, status_kind = f"Engineering proses ({approved}/{total})", "progress"
+        elif current_stage == "DocCon":
+            status_now, status_kind = f"Menunggu Stamp Document Control ({controlled}/{total})", "waiting"
+        elif current_stage == "Produksi":
+            status_now, status_kind = "Menunggu / Proses Produksi", "pending"
+        elif current_stage == "QC":
+            status_now = "Inspeksi QC berjalan" if qcs else "Menunggu QC Final"
+            status_kind = "progress" if qcs else "pending"
+        elif current_stage == "Delivery":
+            if all(s["status"] == "done" for s in stages[:4]):
+                status_now, status_kind = "Siap Kirim — Menunggu Pengiriman", "waiting"
+            else:
+                status_now, status_kind = "Menunggu Pengiriman", "pending"
+        else:
+            status_now, status_kind = "Selesai — Terkirim", "done"
+        if all(s["status"] == "done" for s in stages):
+            status_now, status_kind = "Selesai — Terkirim", "done"
+
         # Deadline kerjaan produksi (due date paling awal dari DRF terkait)
         _dls = [r.get("expected_due_date") for r in drf_by.get(sono, []) if r.get("expected_due_date")]
         deadline = min(_dls) if _dls else ""
+        # Waktu update terbaru (untuk pengurutan papan monitoring)
+        _ups = [last_appr]
+        for d in dws:
+            _ups.append(d.get("updated_at") or "")
+        for r in isss:
+            _ups.append(r.get("issue_date") or r.get("created_at") or "")
+        for qq in qcs:
+            _ups.append(qq.get("inspected_at") or qq.get("created_at") or "")
+        for dd in dels:
+            _ups.append(dd.get("delivery_date") or "")
+        _ups.append(so.get("so_date") or "")
+        last_update = max([u for u in _ups if u], default="")
         out.append({
             "so_no": sono,
             "customer": so.get("customer", ""),
             "description": so.get("description", ""),
             "so_date": so.get("so_date", ""),
             "deadline": deadline,
+            "last_update": last_update,
             "drawings_total": total,
             "drawings_approved": approved,
             "current_stage": current_stage,
+            "status_now": status_now,
+            "status_kind": status_kind,
             "stages": stages,
         })
+    # Urutkan berdasarkan update terbaru (paling baru di atas)
+    out.sort(key=lambda x: x.get("last_update") or "", reverse=True)
     return {"items": out, "count": len(out)}
+
+
+@router.get("/dashboard/so-progress")
+async def dashboard_so_progress(q: str = "", limit: int = 60, current: dict = Depends(get_current_user)):
+    return await _compute_so_progress(q, limit)
+
+
+@router.get("/public/so-progress")
+async def public_so_progress(q: str = "", limit: int = 80):
+    """Endpoint PUBLIK (tanpa login) untuk papan progress SO di Smart TV.
+    Read-only; hanya mengembalikan status tahapan proses per SO (tanpa data finansial)."""
+    return await _compute_so_progress(q, limit)
 
 
 def _clean_drf_items(raw) -> list:

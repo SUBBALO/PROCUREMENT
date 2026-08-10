@@ -7,6 +7,7 @@ import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import InputTransactionPage from "./pages/InputTransactionPage";
 import MasterListPage from "./pages/MasterListPage";
+import TvSoProgressPage from "./pages/TvSoProgressPage";
 import SalesOrderPage from "./pages/SalesOrderPage";
 import MasterItemsPage from "./pages/MasterItemsPage";
 import KPIReportPage from "./pages/KPIReportPage";
@@ -172,6 +173,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/tv/so-progress" element={<TvSoProgressPage />} />
       <Route path="/" element={<ProtectedRoute><LandingPage /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
       <Route path="/purchasing" element={<ProtectedRoute><PurchasingPortalPage /></ProtectedRoute>} />

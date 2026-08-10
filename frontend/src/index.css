@@ -122,3 +122,7 @@ html.reduce-motion .animate-spin {
     animation-duration: 0.7s !important;
     animation-iteration-count: infinite !important;
 }
+
+/* Sembunyikan scrollbar untuk papan TV */
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
