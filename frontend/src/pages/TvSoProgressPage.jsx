@@ -25,6 +25,20 @@ const fmtDate = (iso) => {
   }
 };
 
+// Tanggal + jam update terakhir (mis. "05 Feb 2026 · 14:30")
+const fmtDateTime = (iso) => {
+  if (!iso) return null;
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    const tgl = d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+    const jam = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+    return `${tgl} · ${jam}`;
+  } catch {
+    return null;
+  }
+};
+
 // Info deadline: sisa hari & level alarm (past / soon <=2 hari / ok)
 const deadlineInfo = (iso) => {
   if (!iso) return { days: null, level: "none" };
@@ -256,6 +270,11 @@ export default function TvSoProgressPage() {
                       {so.status_kind === "revision" && <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" />}
                       {so.status_now || so.current_stage}
                     </span>
+                    {fmtDateTime(so.last_update) && (
+                      <div className="mt-1 text-[0.72rem] text-slate-400 tabular-nums" data-testid={`tv-updated-${so.so_no}`}>
+                        Update terakhir: {fmtDateTime(so.last_update)}
+                      </div>
+                    )}
                   </td>
                 </tr>
               );
