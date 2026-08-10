@@ -8,6 +8,8 @@ import { ArrowsOut, ArrowsIn } from "@phosphor-icons/react";
  */
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const PAGE_SIZE = 8;          // maksimal SO per halaman di layar TV
+const PAGE_ROTATE_MS = 12000; // ganti halaman tiap 12 detik
 const STAGES = [
   { key: "engineering", label: "Engineering" },
   { key: "doccon", label: "DocCon" },
@@ -84,6 +86,7 @@ export default function TvSoProgressPage() {
   const [now, setNow] = useState(new Date());
   const [error, setError] = useState(false);
   const [isFs, setIsFs] = useState(false);
+  const [page, setPage] = useState(0);
   const scrollRef = useRef(null);
 
   const toggleFullscreen = () => {
@@ -126,23 +129,6 @@ export default function TvSoProgressPage() {
     return () => clearInterval(t);
   }, []);
 
-  // auto-scroll berkala: turun ~1 layar tiap 6 detik, balik ke atas saat mentok bawah
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const t = setInterval(() => {
-      if (el.scrollHeight <= el.clientHeight + 8) return; // muat 1 layar → tak perlu scroll
-      const max = el.scrollHeight - el.clientHeight;
-      const next = el.scrollTop + el.clientHeight * 0.9;
-      if (next >= max - 4) {
-        el.scrollTo({ top: 0, behavior: "smooth" });
-      } else {
-        el.scrollTo({ top: next, behavior: "smooth" });
-      }
-    }, 6000);
-    return () => clearInterval(t);
-  }, [items.length]);
-
   const doneCount = items.filter((s) => (s.current_stage || "") === "Delivery" && (s.stages || []).every((x) => x.status === "done")).length;
 
   // Peringkat urgensi: lewat deadline (0) → mendekati <=2 hari (1) → lainnya (2).
@@ -158,7 +144,7 @@ export default function TvSoProgressPage() {
 
   // Satu list: SO mendekati/lewat deadline diurutkan paling atas (paling mendesak dulu),
   // sisanya urut update terbaru.
-  const displayItems = [...items].sort((a, b) => {
+  const sortedItems = [...items].sort((a, b) => {
     const ra = urgencyRank(a);
     const rb = urgencyRank(b);
     if (ra !== rb) return ra - rb;
@@ -168,6 +154,24 @@ export default function TvSoProgressPage() {
     return String(b.last_update || "").localeCompare(String(a.last_update || ""));
   });
 
+  // Bagi ke beberapa halaman & rotasi otomatis bila SO banyak.
+  // Jumlah per halaman dibuat merata agar tidak ada halaman yang isinya cuma 1 baris.
+  const pageCount = Math.max(1, Math.ceil(sortedItems.length / PAGE_SIZE));
+  const perPage = Math.ceil(sortedItems.length / pageCount);
+  const safePage = page % pageCount;
+  const displayItems = sortedItems.slice(safePage * perPage, safePage * perPage + perPage);
+
+  // Rotasi halaman tiap 12 detik (hanya jika lebih dari 1 halaman)
+  useEffect(() => {
+    if (pageCount <= 1) {
+      setPage(0);
+      return;
+    }
+    const t = setInterval(() => setPage((p) => (p + 1) % pageCount), PAGE_ROTATE_MS);
+    return () => clearInterval(t);
+  }, [pageCount]);
+
+
   return (
     <div className="fixed inset-0 bg-slate-950 text-slate-100 flex flex-col overflow-hidden" style={{ fontFamily: "Figtree, sans-serif" }} data-testid="tv-so-progress">
       {/* Header */}
@@ -176,7 +180,7 @@ export default function TvSoProgressPage() {
           <div className="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center text-2xl font-black" style={{ fontFamily: "Chivo, sans-serif" }}>SO</div>
           <div>
             <h1 className="text-3xl font-black tracking-tight leading-none" style={{ fontFamily: "Chivo, sans-serif" }}>MONITORING PROGRESS SALES ORDER</h1>
-            <p className="text-slate-400 text-sm mt-1">PT. Mitra Karya Sarana · Live Production Board · urut update terbaru</p>
+            <p className="text-slate-400 text-sm mt-1">PT. Mitra Karya Sarana · Live Production Board · deadline terdekat di atas</p>
           </div>
         </div>
         <div className="flex items-center gap-5">
@@ -218,6 +222,16 @@ export default function TvSoProgressPage() {
           </span>
         </div>
         <div className="flex items-center gap-6 text-slate-300">
+          {pageCount > 1 && (
+            <span className="flex items-center gap-1.5 text-indigo-300 font-semibold" data-testid="tv-page-indicator">
+              Halaman {safePage + 1}/{pageCount}
+              <span className="flex gap-1 ml-1">
+                {Array.from({ length: pageCount }).map((_, i) => (
+                  <span key={i} className={`w-2 h-2 rounded-full transition-colors ${i === safePage ? "bg-indigo-400" : "bg-slate-600"}`} />
+                ))}
+              </span>
+            </span>
+          )}
           <span>Delivery selesai: <b className="text-emerald-400 tabular-nums">{doneCount}</b></span>
           <span className="text-slate-500">Update: {updatedAt ? updatedAt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "…"}</span>
           {error && <span className="text-rose-400" data-testid="tv-error">● Koneksi terputus</span>}
@@ -225,7 +239,7 @@ export default function TvSoProgressPage() {
       </div>
 
       {/* Table */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide">
+      <div ref={scrollRef} className="flex-1 overflow-hidden">
         <table className="w-full border-collapse">
           <thead className="sticky top-0 z-10 bg-slate-900 text-slate-300 text-[0.95rem] uppercase tracking-wider">
             <tr className="border-b-2 border-white/10">
