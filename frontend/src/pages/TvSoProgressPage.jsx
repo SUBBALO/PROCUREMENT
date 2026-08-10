@@ -9,7 +9,7 @@ import { ArrowsOut, ArrowsIn } from "@phosphor-icons/react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const PAGE_SIZE = 8;          // baris SO per halaman di layar TV
-const PAGE_ROTATE_MS = 10000; // ganti halaman tiap 10 detik
+const PAGE_ROTATE_MS = 60000; // ganti halaman tiap 1 menit
 const STAGES = [
   { key: "engineering", label: "Engineering" },
   { key: "doccon", label: "DocCon" },
