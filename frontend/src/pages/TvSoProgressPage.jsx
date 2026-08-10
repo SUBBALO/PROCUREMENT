@@ -83,7 +83,6 @@ export default function TvSoProgressPage() {
   const [updatedAt, setUpdatedAt] = useState(null);
   const [now, setNow] = useState(new Date());
   const [error, setError] = useState(false);
-  const [view, setView] = useState("active"); // 'active' | 'deadline'
   const [isFs, setIsFs] = useState(false);
   const scrollRef = useRef(null);
 
@@ -146,22 +145,28 @@ export default function TvSoProgressPage() {
 
   const doneCount = items.filter((s) => (s.current_stage || "") === "Delivery" && (s.stages || []).every((x) => x.status === "done")).length;
 
-  // SO mendekati / lewat deadline (level past atau soon <=2 hari), diurut paling mendesak
-  const deadlineItems = items
-    .filter((s) => ["past", "soon"].includes(deadlineInfo(s.deadline).level))
-    .sort((a, b) => (deadlineInfo(a.deadline).days ?? 9999) - (deadlineInfo(b.deadline).days ?? 9999));
+  // Peringkat urgensi: lewat deadline (0) → mendekati <=2 hari (1) → lainnya (2).
+  // SO yang sudah selesai (semua tahap done) tidak dianggap urgent.
+  const urgencyRank = (so) => {
+    const allDone = (so.stages || []).every((x) => x.status === "done");
+    if (allDone) return 2;
+    const lvl = deadlineInfo(so.deadline).level;
+    return lvl === "past" ? 0 : lvl === "soon" ? 1 : 2;
+  };
 
-  // Rotasi halaman tiap 20 detik: SO Aktif <-> SO Mendekati Deadline
-  useEffect(() => {
-    const t = setInterval(() => setView((v) => (v === "active" ? "deadline" : "active")), 20000);
-    return () => clearInterval(t);
-  }, []);
-  // reset scroll ke atas saat ganti halaman
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [view]);
+  const deadlineCount = items.filter((s) => urgencyRank(s) < 2).length;
 
-  const displayItems = view === "deadline" ? deadlineItems : items;
+  // Satu list: SO mendekati/lewat deadline diurutkan paling atas (paling mendesak dulu),
+  // sisanya urut update terbaru.
+  const displayItems = [...items].sort((a, b) => {
+    const ra = urgencyRank(a);
+    const rb = urgencyRank(b);
+    if (ra !== rb) return ra - rb;
+    if (ra < 2) {
+      return (deadlineInfo(a.deadline).days ?? 9999) - (deadlineInfo(b.deadline).days ?? 9999);
+    }
+    return String(b.last_update || "").localeCompare(String(a.last_update || ""));
+  });
 
   return (
     <div className="fixed inset-0 bg-slate-950 text-slate-100 flex flex-col overflow-hidden" style={{ fontFamily: "Figtree, sans-serif" }} data-testid="tv-so-progress">
@@ -195,15 +200,17 @@ export default function TvSoProgressPage() {
         </div>
       </header>
 
-      {/* View tabs (rotasi) + Legend + stats */}
+      {/* Legend + stats */}
       <div className="flex items-center justify-between px-8 py-2.5 bg-slate-900/60 border-b border-white/5 text-sm">
-        <div className="flex items-center gap-3">
-          <button onClick={() => setView("active")} className={`px-3 py-1 rounded-md font-bold uppercase tracking-wide text-xs transition-colors ${view === "active" ? "bg-indigo-600 text-white" : "bg-white/5 text-slate-400"}`} data-testid="tv-tab-active">
+        <div className="flex items-center gap-4">
+          <span className="px-3 py-1 rounded-md font-bold uppercase tracking-wide text-xs bg-indigo-600 text-white" data-testid="tv-total-so">
             SO Aktif ({items.length})
-          </button>
-          <button onClick={() => setView("deadline")} className={`px-3 py-1 rounded-md font-bold uppercase tracking-wide text-xs transition-colors ${view === "deadline" ? "bg-rose-600 text-white" : "bg-white/5 text-slate-400"}`} data-testid="tv-tab-deadline">
-            Mendekati Deadline ({deadlineItems.length})
-          </button>
+          </span>
+          {deadlineCount > 0 && (
+            <span className="px-3 py-1 rounded-md font-bold uppercase tracking-wide text-xs bg-rose-600 text-white flex items-center gap-1.5" data-testid="tv-deadline-count">
+              <span className="w-2 h-2 rounded-full bg-white animate-pulse" /> Mendekati Deadline ({deadlineCount})
+            </span>
+          )}
           <span className="hidden xl:flex items-center gap-4 ml-3 text-slate-400">
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-400" /> Selesai</span>
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-400 animate-pulse" /> Proses</span>
@@ -234,7 +241,7 @@ export default function TvSoProgressPage() {
           <tbody className="divide-y divide-white/5">
             {displayItems.length === 0 ? (
               <tr><td colSpan={9} className="text-center py-24 text-slate-500 text-2xl">
-                {view === "deadline" ? "Tidak ada SO yang mendekati / lewat deadline 🎉" : "Belum ada data Sales Order"}
+                Belum ada data Sales Order
               </td></tr>
             ) : displayItems.map((so) => {
               const dl = deadlineInfo(so.deadline);
