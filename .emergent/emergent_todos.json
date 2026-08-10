@@ -1,22 +1,34 @@
 [
   {
-    "content": "Rapikan deskripsi kartu agar tinggi seragam",
+    "content": "Backend: fix status pending_sales -> 'Menunggu Verifikasi Sales' (bug)",
     "status": "completed"
   },
   {
-    "content": "Badge notifikasi jumlah pekerjaan menunggu di kartu portal (Purchasing/Store/DocControl)",
+    "content": "Backend: dua deadline (drawing & delivery) + active-by-stage + PIC per tahap di _compute_so_progress",
     "status": "completed"
   },
   {
-    "content": "Backend: decouple drawing/BOM, sign-prepared, set-ready, submit-review guard, by-so fields, Leader queue include pending BOM (VERIFIED via curl end-to-end)",
+    "content": "Backend: tambah field delivery_due_date di DRF model create/update",
     "status": "completed"
   },
   {
-    "content": "Frontend: BOM action bar (TTD/Siap Submit), Work Group panel BOM checkbox terpisah, Leader review BOM row + approve/revise, queue BOM badge",
+    "content": "Frontend DRF form: tambah input 'Deadline Pengiriman' (samping 'Deadline Drawing')",
     "status": "completed"
   },
   {
-    "content": "Verifikasi: testing agent (portal 100%, backend guards) + curl end-to-end BOM workflow + queue; data test direvert",
+    "content": "TV: 8 baris/halaman fixed, rotasi 10 detik",
+    "status": "completed"
+  },
+  {
+    "content": "TV: kotak Overdue (ketiga) + kedip pakai kedua deadline",
+    "status": "completed"
+  },
+  {
+    "content": "TV: kolom Deadline jadi 2 sub-kolom (Drawing/Delivery) + PIC + logo + font kecil",
+    "status": "completed"
+  },
+  {
+    "content": "Verifikasi: compile FE, restart BE, curl, screenshot, tes 2 deadline chain",
     "status": "completed"
   }
 ]

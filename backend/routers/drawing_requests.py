@@ -124,7 +124,8 @@ class DrawingRequestCreate(BaseModel):
     unit: str = "pcs"
     material: str = "TBA"
     items: List[dict] = []   # [{name, qty, unit, material}] — tabel item DRF (ganti qty/unit/material tunggal)
-    expected_due_date: Optional[str] = ""
+    expected_due_date: Optional[str] = ""  # Deadline Drawing (target selesai gambar)
+    delivery_due_date: Optional[str] = ""  # Deadline Pengiriman barang
     notes: str = ""
     referenced_drawings: List[str] = []  # array drawing_ids untuk repeat order
 
@@ -157,8 +158,8 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
     # DRF untuk semua SO di universe → fallback header + due date + engineer
     drfs = await db.drawing_requests.find(
         {"so_no": {"$in": universe}, "deleted_at": {"$exists": False}},
-        {"_id": 0, "so_no": 1, "expected_due_date": 1, "customer_name": 1, "customer": 1,
-         "project_name": 1, "notes": 1, "date": 1, "created_at": 1, "assigned_engineer_name": 1},
+        {"_id": 0, "so_no": 1, "expected_due_date": 1, "delivery_due_date": 1, "customer_name": 1, "customer": 1,
+         "project_name": 1, "notes": 1, "date": 1, "created_at": 1, "assigned_engineer_name": 1, "requested_by": 1},
     ).to_list(length=5000) if universe else []
     drf_latest = {}
     for r in drfs:
@@ -290,6 +291,7 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
         draft_n = sum(1 for d in dws if (d.get("approval_status") or "draft") == "draft")
         peh_n = sum(1 for d in dws if (d.get("approval_status") or "") == "pending_eng_head")
         pqc_n = sum(1 for d in dws if (d.get("approval_status") or "") == "pending_qc")
+        psl_n = sum(1 for d in dws if (d.get("approval_status") or "") == "pending_sales")
         rev_n = sum(1 for d in dws if _in_rev(d))
         nofile_n = sum(1 for d in dws if not d.get("file_id"))
 
@@ -302,6 +304,8 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
                 status_now, status_kind = f"Menunggu Approval Eng Leader ({peh_n}/{total})", "waiting"
             elif pqc_n > 0:
                 status_now, status_kind = f"Menunggu Verifikasi QC Drawing ({pqc_n}/{total})", "waiting"
+            elif psl_n > 0:
+                status_now, status_kind = f"Menunggu Verifikasi Sales ({psl_n}/{total})", "waiting"
             elif draft_n > 0 or nofile_n > 0:
                 status_now, status_kind = f"Gambar Drawing ({approved}/{total} selesai)", "progress"
             else:
@@ -323,9 +327,43 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
         if all(s["status"] == "done" for s in stages):
             status_now, status_kind = "Selesai — Terkirim", "done"
 
-        # Deadline kerjaan produksi (due date paling awal dari DRF terkait)
-        _dls = [r.get("expected_due_date") for r in drf_by.get(sono, []) if r.get("expected_due_date")]
-        deadline = min(_dls) if _dls else ""
+        # ---- PIC sesuai tahap/konteks status ----
+        _drf = drf_latest.get(sono) or {}
+        eng_name = _drf.get("assigned_engineer_name") or ""
+        sales_name = ((_drf.get("requested_by") or {}).get("name")
+                      or (_drf.get("requested_by") or {}).get("username") or "")
+        qc_name = ""
+        for qq in qcs:
+            qc_name = qq.get("inspector_name") or qq.get("inspected_by") or qq.get("inspector") or ""
+            if qc_name:
+                break
+        if status_kind == "done":
+            pic = ""
+        elif "Verifikasi Sales" in status_now:
+            pic = sales_name or "Sales"
+        elif "QC" in status_now or current_stage == "QC":
+            pic = qc_name or "QC"
+        elif "Document Control" in status_now or current_stage == "DocCon":
+            pic = "Document Control"
+        elif current_stage == "Produksi":
+            pic = "Produksi"
+        elif current_stage == "Delivery":
+            pic = "Store / Pengiriman"
+        else:
+            pic = eng_name  # tahap Engineering (gambar/approval/revisi)
+
+        # ---- Dua deadline: Drawing (expected_due_date) & Pengiriman (delivery_due_date) ----
+        _dl_draw = [r.get("expected_due_date") for r in drf_by.get(sono, []) if r.get("expected_due_date")]
+        deadline_drawing = min(_dl_draw) if _dl_draw else ""
+        _dl_del = [r.get("delivery_due_date") for r in drf_by.get(sono, []) if r.get("delivery_due_date")]
+        deadline_delivery = min(_dl_del) if _dl_del else ""
+        # Deadline aktif sesuai tahap: Engineering/DocCon -> Drawing; selebihnya -> Pengiriman
+        if current_stage in ("Engineering", "DocCon"):
+            deadline = deadline_drawing or deadline_delivery
+            deadline_kind = "drawing" if deadline_drawing else ("delivery" if deadline_delivery else "")
+        else:
+            deadline = deadline_delivery or deadline_drawing
+            deadline_kind = "delivery" if deadline_delivery else ("drawing" if deadline_drawing else "")
         # Waktu update terbaru (untuk pengurutan papan monitoring)
         _ups = [last_appr]
         for d in dws:
@@ -343,8 +381,12 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
             "customer": so.get("customer", ""),
             "description": so.get("description", ""),
             "engineer": (drf_latest.get(sono) or {}).get("assigned_engineer_name") or "",
+            "pic": pic,
             "so_date": so.get("so_date", ""),
             "deadline": deadline,
+            "deadline_drawing": deadline_drawing,
+            "deadline_delivery": deadline_delivery,
+            "deadline_kind": deadline_kind,
             "last_update": last_update,
             "drawings_total": total,
             "drawings_approved": approved,
@@ -425,6 +467,7 @@ async def create_drawing_request(
         "material": payload.material or "TBA",
         "items": clean_items,
         "expected_due_date": payload.expected_due_date or "",
+        "delivery_due_date": payload.delivery_due_date or "",
         "notes": payload.notes,
         "referenced_drawings": payload.referenced_drawings or [],
         "attached_files": [],

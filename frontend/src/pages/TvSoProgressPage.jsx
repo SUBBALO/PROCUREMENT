@@ -8,8 +8,8 @@ import { ArrowsOut, ArrowsIn } from "@phosphor-icons/react";
  */
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const PAGE_SIZE = 8;          // maksimal SO per halaman di layar TV
-const PAGE_ROTATE_MS = 12000; // ganti halaman tiap 12 detik
+const PAGE_SIZE = 8;          // baris SO per halaman di layar TV
+const PAGE_ROTATE_MS = 10000; // ganti halaman tiap 10 detik
 const STAGES = [
   { key: "engineering", label: "Engineering" },
   { key: "doccon", label: "DocCon" },
@@ -24,6 +24,16 @@ const fmtDate = (iso) => {
     return new Date(iso).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
   } catch {
     return String(iso).slice(0, 10);
+  }
+};
+
+// Format ringkas untuk 2 kolom deadline (mis. "02 Agu")
+const fmtDateShort = (iso) => {
+  if (!iso) return "-";
+  try {
+    return new Date(iso).toLocaleDateString("id-ID", { day: "2-digit", month: "short" });
+  } catch {
+    return String(iso).slice(5, 10);
   }
 };
 
@@ -54,6 +64,16 @@ const deadlineInfo = (iso) => {
   return { days, level };
 };
 
+// Ambil level terparah dari 2 deadline (Drawing & Pengiriman) untuk alarm/kedip.
+const LEVEL_RANK = { none: 0, ok: 1, soon: 2, past: 3 };
+const worseLevel = (a, b) => (LEVEL_RANK[a] >= LEVEL_RANK[b] ? a : b);
+const isAllDone = (so) => (so.stages || []).every((x) => x.status === "done");
+// Level gabungan SO: terparah antara deadline drawing & pengiriman (0 bila sudah selesai).
+const soLevel = (so) => {
+  if (isAllDone(so)) return "ok";
+  return worseLevel(deadlineInfo(so.deadline_drawing).level, deadlineInfo(so.deadline_delivery).level);
+};
+
 const STATUS_STYLE = {
   done: "bg-emerald-500/20 text-emerald-300 ring-emerald-500/40",
   progress: "bg-sky-500/20 text-sky-300 ring-sky-500/40",
@@ -71,14 +91,35 @@ function StageCell({ stage, isCurrent }) {
   };
   const s = map[st] || map.pending;
   return (
-    <td className={`px-1.5 py-2 text-center ${isCurrent ? "bg-white/5" : ""}`} data-testid={`tv-stage-${stage?.key}`}>
+    <td className={`px-1.5 py-1.5 text-center ${isCurrent ? "bg-white/5" : ""}`} data-testid={`tv-stage-${stage?.key}`}>
       <div className="flex flex-col items-center gap-0.5">
-        <span className={`inline-block w-3 h-3 rounded-full ${s.dot}`} />
-        <span className={`text-[0.7rem] font-semibold ${s.text}`}>{s.label}</span>
+        <span className={`inline-block w-2.5 h-2.5 rounded-full ${s.dot}`} />
+        <span className={`text-[0.6rem] font-semibold ${s.text}`}>{s.label}</span>
       </div>
     </td>
   );
 }
+
+// Satu badge deadline (dipakai untuk sub-kolom Drawing & Delivery).
+// active = deadline yang relevan dgn tahap berjalan (diberi garis tepi indigo).
+function DeadlineMini({ iso, active }) {
+  if (!iso) return <div className="flex items-center justify-center text-slate-600 text-[10px] py-1">-</div>;
+  const dl = deadlineInfo(iso);
+  const cls = dl.level === "past"
+    ? "bg-rose-500/25 text-rose-200 ring-1 ring-rose-500/50 tv-alarm-badge"
+    : dl.level === "soon"
+      ? "bg-amber-500/25 text-amber-200 ring-1 ring-amber-500/50"
+      : "bg-slate-700/40 text-slate-300";
+  const tag = dl.level === "past" ? `LEWAT ${Math.abs(dl.days)}h`
+    : dl.level === "soon" ? (dl.days === 0 ? "HARI INI" : `H-${dl.days}`) : "";
+  return (
+    <div className={`flex flex-col items-center gap-0.5 px-1 py-1 rounded ${cls} ${active ? "outline outline-1 outline-indigo-400/70" : ""}`}>
+      <span className="text-[10px] font-bold tabular-nums leading-none">{fmtDateShort(iso)}</span>
+      {tag && <span className="text-[8px] font-black uppercase leading-none">{tag}</span>}
+    </div>
+  );
+}
+
 
 export default function TvSoProgressPage() {
   const [items, setItems] = useState([]);
@@ -143,11 +184,19 @@ export default function TvSoProgressPage() {
   const urgencyRank = (so) => {
     const allDone = (so.stages || []).every((x) => x.status === "done");
     if (allDone) return 2;
-    const lvl = deadlineInfo(so.deadline).level;
+    const lvl = soLevel(so);
     return lvl === "past" ? 0 : lvl === "soon" ? 1 : 2;
   };
 
-  const deadlineCount = items.filter((s) => urgencyRank(s) < 2).length;
+  const soonCount = items.filter((s) => soLevel(s) === "soon").length;
+  const overdueCount = items.filter((s) => soLevel(s) === "past").length;
+
+  // Sisa hari untuk tiebreak: ambil yang paling dekat dari 2 deadline
+  const soDays = (so) => {
+    const ds = [deadlineInfo(so.deadline_drawing).days, deadlineInfo(so.deadline_delivery).days]
+      .filter((x) => x !== null && x !== undefined);
+    return ds.length ? Math.min(...ds) : 9999;
+  };
 
   // Satu list: SO mendekati/lewat deadline diurutkan paling atas (paling mendesak dulu),
   // sisanya urut update terbaru.
@@ -155,20 +204,16 @@ export default function TvSoProgressPage() {
     const ra = urgencyRank(a);
     const rb = urgencyRank(b);
     if (ra !== rb) return ra - rb;
-    if (ra < 2) {
-      return (deadlineInfo(a.deadline).days ?? 9999) - (deadlineInfo(b.deadline).days ?? 9999);
-    }
+    if (ra < 2) return soDays(a) - soDays(b);
     return String(b.last_update || "").localeCompare(String(a.last_update || ""));
   });
 
-  // Bagi ke beberapa halaman & rotasi otomatis bila SO banyak.
-  // Jumlah per halaman dibuat merata agar tidak ada halaman yang isinya cuma 1 baris.
+  // Bagi ke beberapa halaman, tepat 8 baris/halaman, rotasi otomatis.
   const pageCount = Math.max(1, Math.ceil(sortedItems.length / PAGE_SIZE));
-  const perPage = Math.ceil(sortedItems.length / pageCount);
   const safePage = page % pageCount;
-  const displayItems = sortedItems.slice(safePage * perPage, safePage * perPage + perPage);
+  const displayItems = sortedItems.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
-  // Rotasi halaman tiap 12 detik (hanya jika lebih dari 1 halaman)
+  // Rotasi halaman (hanya jika lebih dari 1 halaman)
   useEffect(() => {
     if (pageCount <= 1) {
       setPage(0);
@@ -182,34 +227,34 @@ export default function TvSoProgressPage() {
   return (
     <div className="fixed inset-0 bg-slate-950 text-slate-100 flex flex-col overflow-hidden" style={{ fontFamily: "Figtree, sans-serif", zoom }} data-testid="tv-so-progress">
       {/* Header */}
-      <header className="flex items-center justify-between px-8 py-4 bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950 border-b border-white/10">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center text-2xl font-black" style={{ fontFamily: "Chivo, sans-serif" }}>SO</div>
+      <header className="flex items-center justify-between px-8 py-3 bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950 border-b border-white/10">
+        <div className="flex items-center gap-3">
+          <img src="/assets/logo-mks.png" alt="MKS" className="w-10 h-10 object-contain shrink-0" onError={(e) => { e.target.style.display = "none"; }} />
           <div>
-            <h1 className="text-3xl font-black tracking-tight leading-none" style={{ fontFamily: "Chivo, sans-serif" }}>MONITORING PROGRESS SALES ORDER</h1>
-            <p className="text-slate-400 text-sm mt-1">PT. Mitra Karya Sarana · Live Production Board · deadline terdekat di atas</p>
+            <h1 className="text-2xl font-black tracking-tight leading-none" style={{ fontFamily: "Chivo, sans-serif" }}>MONITORING PROGRESS SALES ORDER</h1>
+            <p className="text-slate-400 text-xs mt-0.5">PT. Mitra Karya Sarana · Live Production Board · deadline terdekat di atas</p>
           </div>
         </div>
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-4">
           <div className="flex items-center rounded-lg bg-white/5 border border-white/10 overflow-hidden" data-testid="tv-zoom-controls">
-            <button onClick={() => zoomBy(-0.05)} className="px-2.5 py-2 text-slate-200 hover:bg-white/15 transition-colors text-sm font-bold" data-testid="tv-zoom-out" title="Perkecil">A−</button>
+            <button onClick={() => zoomBy(-0.05)} className="px-2.5 py-1.5 text-slate-200 hover:bg-white/15 transition-colors text-sm font-bold" data-testid="tv-zoom-out" title="Perkecil">A−</button>
             <span className="px-1.5 text-[11px] text-slate-400 tabular-nums select-none">{Math.round(zoom * 100)}%</span>
-            <button onClick={() => zoomBy(0.05)} className="px-2.5 py-2 text-slate-200 hover:bg-white/15 transition-colors text-sm font-bold" data-testid="tv-zoom-in" title="Perbesar">A+</button>
+            <button onClick={() => zoomBy(0.05)} className="px-2.5 py-1.5 text-slate-200 hover:bg-white/15 transition-colors text-sm font-bold" data-testid="tv-zoom-in" title="Perbesar">A+</button>
           </div>
           <button
             onClick={toggleFullscreen}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/15 text-slate-200 border border-white/10 transition-colors"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-200 border border-white/10 transition-colors"
             data-testid="tv-fullscreen-btn"
             title={isFs ? "Keluar layar penuh" : "Layar penuh (Smart TV)"}
           >
-            {isFs ? <ArrowsIn size={20} weight="bold" /> : <ArrowsOut size={20} weight="bold" />}
+            {isFs ? <ArrowsIn size={18} weight="bold" /> : <ArrowsOut size={18} weight="bold" />}
             <span className="text-sm font-semibold hidden sm:inline">{isFs ? "Keluar" : "Layar Penuh"}</span>
           </button>
           <div className="text-right">
-            <div className="text-4xl font-black tabular-nums leading-none" style={{ fontFamily: "Chivo, sans-serif" }}>
+            <div className="text-3xl font-black tabular-nums leading-none" style={{ fontFamily: "Chivo, sans-serif" }}>
               {now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </div>
-            <div className="text-slate-400 text-sm mt-1">
+            <div className="text-slate-400 text-xs mt-0.5">
               {now.toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
             </div>
           </div>
@@ -217,23 +262,28 @@ export default function TvSoProgressPage() {
       </header>
 
       {/* Legend + stats */}
-      <div className="flex items-center justify-between px-8 py-2.5 bg-slate-900/60 border-b border-white/5 text-sm">
-        <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between px-8 py-2 bg-slate-900/60 border-b border-white/5 text-sm">
+        <div className="flex items-center gap-3">
           <span className="px-3 py-1 rounded-md font-bold uppercase tracking-wide text-xs bg-indigo-600 text-white" data-testid="tv-total-so">
             SO Aktif ({items.length})
           </span>
-          {deadlineCount > 0 && (
-            <span className="px-3 py-1 rounded-md font-bold uppercase tracking-wide text-xs bg-rose-600 text-white flex items-center gap-1.5" data-testid="tv-deadline-count">
-              <span className="w-2 h-2 rounded-full bg-white animate-pulse" /> Mendekati Deadline ({deadlineCount})
+          {soonCount > 0 && (
+            <span className="px-3 py-1 rounded-md font-bold uppercase tracking-wide text-xs bg-amber-500 text-slate-900 flex items-center gap-1.5" data-testid="tv-deadline-count">
+              <span className="w-2 h-2 rounded-full bg-slate-900 animate-pulse" /> Mendekati Deadline ({soonCount})
             </span>
           )}
-          <span className="hidden xl:flex items-center gap-4 ml-3 text-slate-400">
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-400" /> Selesai</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-400 animate-pulse" /> Proses</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-slate-600" /> Menunggu</span>
+          {overdueCount > 0 && (
+            <span className="px-3 py-1 rounded-md font-bold uppercase tracking-wide text-xs bg-rose-600 text-white flex items-center gap-1.5 tv-alarm-badge" data-testid="tv-overdue-count">
+              <span className="w-2 h-2 rounded-full bg-white animate-pulse" /> Melewati / Overdue ({overdueCount})
+            </span>
+          )}
+          <span className="hidden xl:flex items-center gap-4 ml-2 text-slate-400">
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-400" /> Selesai</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" /> Proses</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-slate-600" /> Menunggu</span>
           </span>
         </div>
-        <div className="flex items-center gap-6 text-slate-300">
+        <div className="flex items-center gap-5 text-slate-300 text-xs">
           {pageCount > 1 && (
             <span className="flex items-center gap-1.5 text-indigo-300 font-semibold" data-testid="tv-page-indicator">
               Halaman {safePage + 1}/{pageCount}
@@ -253,15 +303,20 @@ export default function TvSoProgressPage() {
       {/* Table */}
       <div ref={scrollRef} className="flex-1 overflow-hidden">
         <table className="w-full border-collapse">
-          <thead className="sticky top-0 z-10 bg-slate-900 text-slate-300 text-[0.95rem] uppercase tracking-wider">
+          <thead className="sticky top-0 z-10 bg-slate-900 text-slate-300 text-[0.72rem] uppercase tracking-wider">
             <tr className="border-b-2 border-white/10">
-              <th className="px-4 py-2.5 text-left w-[11%]">No. SO</th>
-              <th className="px-3 py-2.5 text-left w-[18%]">Customer</th>
-              <th className="px-2 py-2.5 text-left w-[9%]">Deadline</th>
+              <th className="px-4 py-2 text-left w-[9%]">No. SO</th>
+              <th className="px-3 py-2 text-left w-[16%]">Customer</th>
+              <th className="px-2 py-1.5 text-center w-[12%]">
+                <div>Deadline</div>
+                <div className="grid grid-cols-2 gap-1 text-[0.58rem] text-slate-500 mt-0.5 normal-case font-semibold">
+                  <span>Drawing</span><span>Delivery</span>
+                </div>
+              </th>
               {STAGES.map((s) => (
-                <th key={s.key} className="px-1.5 py-2.5 text-center w-[6%]">{s.label}</th>
+                <th key={s.key} className="px-1.5 py-2 text-center w-[6%]">{s.label}</th>
               ))}
-              <th className="px-3 py-2.5 text-left w-[24%]">Status Saat Ini</th>
+              <th className="px-3 py-2 text-left w-[27%]">Status Saat Ini</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
@@ -270,44 +325,40 @@ export default function TvSoProgressPage() {
                 Belum ada data Sales Order
               </td></tr>
             ) : displayItems.map((so) => {
-              const dl = deadlineInfo(so.deadline);
-              const allDone = (so.stages || []).every((x) => x.status === "done");
+              const rowLvl = soLevel(so);                 // gabungan 2 deadline → kedip baris
+              const allDone = isAllDone(so);
               const stStyle = STATUS_STYLE[so.status_kind] || STATUS_STYLE.pending;
-              const alarmCls = !allDone && dl.level === "past" ? "tv-alarm-past" : (!allDone && dl.level === "soon" ? "tv-alarm-soon" : (allDone ? "bg-emerald-950/30" : "hover:bg-white/5"));
-              const dlBadge = dl.level === "past"
-                ? { cls: "bg-rose-500/25 text-rose-200 ring-1 ring-rose-500/50", txt: `LEWAT ${Math.abs(dl.days)} hr` }
-                : dl.level === "soon"
-                  ? { cls: "bg-amber-500/25 text-amber-200 ring-1 ring-amber-500/50", txt: dl.days === 0 ? "HARI INI" : `H-${dl.days}` }
-                  : { cls: "bg-slate-700/50 text-slate-200", txt: fmtDate(so.deadline) };
+              const alarmCls = !allDone && rowLvl === "past" ? "tv-alarm-past" : (!allDone && rowLvl === "soon" ? "tv-alarm-soon" : (allDone ? "bg-emerald-950/30" : "hover:bg-white/5"));
               return (
                 <tr key={so.so_no} className={`${alarmCls} transition-colors`} data-testid={`tv-row-${so.so_no}`}>
-                  <td className="px-4 py-2">
-                    <div className="text-xl font-black text-white tabular-nums leading-tight" style={{ fontFamily: "Chivo, sans-serif" }}>{so.so_no}</div>
+                  <td className="px-4 py-1.5">
+                    <div className="text-lg font-black text-white tabular-nums leading-tight" style={{ fontFamily: "Chivo, sans-serif" }}>{so.so_no}</div>
                   </td>
-                  <td className="px-3 py-2">
-                    <div className="text-lg font-semibold text-slate-100 truncate max-w-[20vw]">{so.customer || "-"}</div>
-                    {so.description ? <div className="text-xs text-slate-400 truncate max-w-[20vw]">{so.description}</div> : null}
+                  <td className="px-3 py-1.5">
+                    <div className="text-sm font-semibold text-slate-100 truncate max-w-[18vw]">{so.customer || "-"}</div>
+                    {so.description ? <div className="text-[11px] text-slate-400 truncate max-w-[18vw]">{so.description}</div> : null}
                   </td>
-                  <td className="px-2 py-2">
-                    <div className={`inline-flex flex-col items-start gap-0.5 px-2 py-1 rounded ${dlBadge.cls}`}>
-                      <span className="text-[11px] font-bold tabular-nums leading-none">{fmtDate(so.deadline)}</span>
-                      {dl.level !== "ok" && dl.level !== "none" && <span className="text-[10px] font-black uppercase tracking-wide leading-none">{dlBadge.txt}</span>}
+                  <td className="px-2 py-1.5">
+                    <div className="grid grid-cols-2 gap-1" data-testid={`tv-deadline-${so.so_no}`}>
+                      <DeadlineMini iso={so.deadline_drawing} active={so.deadline_kind === "drawing"} />
+                      <DeadlineMini iso={so.deadline_delivery} active={so.deadline_kind === "delivery"} />
                     </div>
                   </td>
                   {STAGES.map((s) => {
                     const stage = (so.stages || []).find((x) => x.key === s.key) || { key: s.key, status: "pending" };
                     return <StageCell key={s.key} stage={stage} isCurrent={so.current_stage === s.label} />;
                   })}
-                  <td className="px-3 py-2" data-testid={`tv-status-${so.so_no}`}>
-                    <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-base font-bold ring-1 ${stStyle}`}>
+                  <td className="px-3 py-1.5" data-testid={`tv-status-${so.so_no}`}>
+                    <span className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-lg text-sm font-bold ring-1 ${stStyle}`}>
                       {so.status_kind === "revision" && <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" />}
                       {so.status_now || so.current_stage}
                     </span>
-                    {fmtDateTime(so.last_update) && (
-                      <div className="mt-1 text-[0.72rem] text-slate-400 tabular-nums" data-testid={`tv-updated-${so.so_no}`}>
-                        Update terakhir: {fmtDateTime(so.last_update)}
-                      </div>
-                    )}
+                    <div className="mt-1 flex items-center gap-2 flex-wrap">
+                      {so.pic ? <span className="text-[10px] text-slate-300" data-testid={`tv-pic-${so.so_no}`}><span className="text-slate-500">PIC:</span> <b className="text-slate-200">{so.pic}</b></span> : null}
+                      {fmtDateTime(so.last_update) && (
+                        <span className="text-[10px] text-slate-500 tabular-nums" data-testid={`tv-updated-${so.so_no}`}>· {fmtDateTime(so.last_update)}</span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );

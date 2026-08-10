@@ -132,3 +132,7 @@ html.reduce-motion .animate-spin {
 @keyframes tvAlarmSoon { 0%,100% { background-color: rgba(245,158,11,0.08); } 50% { background-color: rgba(245,158,11,0.22); } }
 .tv-alarm-past { animation: tvAlarmPast 1.1s ease-in-out infinite; }
 .tv-alarm-soon { animation: tvAlarmSoon 1.5s ease-in-out infinite; }
+
+/* Kedip badge/kotak overdue (opacity, tanpa ubah warna latar baris) */
+@keyframes tvBadgeBlink { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+.tv-alarm-badge { animation: tvBadgeBlink 1s ease-in-out infinite; }
