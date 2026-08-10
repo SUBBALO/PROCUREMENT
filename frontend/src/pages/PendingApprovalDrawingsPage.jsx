@@ -22,6 +22,14 @@ const ROLE_STAGE_MAP = {
   sales: "sales",
 };
 
+// Tahap TTD ditentukan dari STATUS drawing itu sendiri (bukan sekadar role).
+// Ini penting untuk Admin/Super Admin yang inbox-nya lintas-tahap (emergency override).
+const STATUS_TO_STAGE = {
+  pending_eng_head: "eng_head",
+  pending_qc: "qc",
+  pending_sales: "sales",
+};
+
 /**
  * PendingApprovalDrawingsPage — halaman approver (Eng Head / QC / Sales) dengan 2 tab:
  *  - "Perlu TTD Saya": drawing menunggu TTD digital → preview (baca-saja) + TTD/Reject.
@@ -77,7 +85,10 @@ export default function PendingApprovalDrawingsPage() {
     : items;
   const pag = usePagination(filtered, 20);
 
-  const stage = ROLE_STAGE_MAP[user?.role];
+  const roleStage = ROLE_STAGE_MAP[user?.role];
+  // Tahap TTD per-drawing: utamakan status drawing, fallback ke pemetaan role.
+  // Mendukung Admin/Super Admin (inbox lintas-tahap) sekaligus approver biasa.
+  const stageOf = (d) => STATUS_TO_STAGE[d?.approval_status] || roleStage || null;
   const roleLabel = {
     eng_head: "Engineering Head",
     eng_leader: "Engineering Head",
@@ -244,7 +255,7 @@ export default function PendingApprovalDrawingsPage() {
                           </button>
                           <button
                             onClick={() => setSigDrawing(d)}
-                            disabled={!stage}
+                            disabled={!stageOf(d)}
                             className="inline-flex items-center px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase gap-0.5 disabled:opacity-50"
                             data-testid={`pending-approve-${d.drawing_no}`}
                           >
@@ -271,10 +282,10 @@ export default function PendingApprovalDrawingsPage() {
 
       {tab === "history" && <SignatureHistoryPanel user={user} />}
 
-      {sigDrawing && stage && (
+      {sigDrawing && stageOf(sigDrawing) && (
         <SignaturePlacementModal
           drawing={sigDrawing}
-          stage={stage}
+          stage={stageOf(sigDrawing)}
           onDone={() => { setSigDrawing(null); load(); }}
           onClose={() => setSigDrawing(null)}
         />
@@ -295,10 +306,10 @@ export default function PendingApprovalDrawingsPage() {
           onClose={() => setPreview(null)}
         />
       )}
-      {rejectDrawing && stage && (
+      {rejectDrawing && stageOf(rejectDrawing) && (
         <RejectDrawingModal
           drawing={rejectDrawing}
-          stage={stage}
+          stage={stageOf(rejectDrawing)}
           onDone={() => { setRejectDrawing(null); load(); }}
           onClose={() => setRejectDrawing(null)}
         />
