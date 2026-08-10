@@ -139,13 +139,55 @@ def _stage(status, date="", pic="", extra=None):
 async def _compute_so_progress(q: str = "", limit: int = 60):
     """Progress tiap SO berbasis TAHAP PROSES (Engineering -> DocCon -> Produksi -> QC -> Delivery).
     Departemen kondisional (mis. Purchasing) tidak dijadikan tahap. Fokus SO yang punya drawing."""
-    # SO yang punya drawing (workflow aktif)
-    dwg_so = [s for s in await db.drawings.distinct("so_no") if s]
-    so_filter = {"so_no": {"$in": dwg_so}} if dwg_so else {"id": "__none__"}
+    # ---- Kumpulkan daftar SO dari SUMBER YANG SAMA dengan SO Tracker ----
+    # SO Tracker (routers/so_tracker.py) bersumber dari drawing_requests berstatus
+    # accepted/in_progress/completed. Board lama HANYA membaca sales_orders, sehingga
+    # SO yang belum punya record sales_orders tidak muncul. Kini disamakan: gabungan
+    # SO dari drawings (ada gambar) DAN drawing_requests (masuk workflow Engineering).
+    TRACKER_STATUSES = ["accepted", "in_progress", "completed"]
+    dwg_so = set(s for s in await db.drawings.distinct("so_no") if s)
+    drf_so = set(s for s in await db.drawing_requests.distinct(
+        "so_no", {"status": {"$in": TRACKER_STATUSES}, "deleted_at": {"$exists": False}}) if s)
+    universe = list(dwg_so | drf_so)
+
+    # sales_orders yang ADA → dipakai untuk header (customer/desc/tanggal) bila tersedia
+    so_docs = await db.sales_orders.find({"so_no": {"$in": universe}}, {"_id": 0}).to_list(length=5000) if universe else []
+    so_map = {s.get("so_no"): s for s in so_docs if s.get("so_no")}
+
+    # DRF untuk semua SO di universe → fallback header + due date + engineer
+    drfs = await db.drawing_requests.find(
+        {"so_no": {"$in": universe}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "so_no": 1, "expected_due_date": 1, "customer_name": 1, "customer": 1,
+         "project_name": 1, "notes": 1, "date": 1, "created_at": 1, "assigned_engineer_name": 1},
+    ).to_list(length=5000) if universe else []
+    drf_latest = {}
+    for r in drfs:
+        sn = r.get("so_no")
+        if not sn:
+            continue
+        if sn not in drf_latest or (r.get("created_at") or "") >= (drf_latest[sn].get("created_at") or ""):
+            drf_latest[sn] = r
+
+    def _so_header(sn):
+        s = so_map.get(sn)
+        if s:
+            return s
+        d = drf_latest.get(sn, {})
+        return {
+            "so_no": sn,
+            "customer": (d.get("customer_name") or d.get("customer") or "").strip(),
+            "description": (d.get("project_name") or d.get("notes") or "").strip(),
+            "so_date": (d.get("date") or (d.get("created_at") or "")[:10] or ""),
+        }
+
+    sos = [_so_header(sn) for sn in universe]
     if q and q.strip():
-        rx = {"$regex": q.strip(), "$options": "i"}
-        so_filter = {"$or": [{"so_no": rx}, {"customer": rx}, {"description": rx}]}
-    sos = await db.sales_orders.find(so_filter, {"_id": 0}).sort("so_date", -1).to_list(length=max(1, min(limit, 200)))
+        ql = q.strip().lower()
+        sos = [s for s in sos if ql in (s.get("so_no") or "").lower()
+               or ql in (s.get("customer") or "").lower()
+               or ql in (s.get("description") or "").lower()]
+    sos.sort(key=lambda s: (s.get("so_date") or ""), reverse=True)
+    sos = sos[:max(1, min(limit, 200))]
     so_nos = [s.get("so_no") for s in sos if s.get("so_no")]
 
     # Batch data per so_no
@@ -156,11 +198,6 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
          "revision_opened_at": 1, "revision_approved_at": 1, "is_revision": 1},
     ).to_list(length=5000)
     deliveries = await db.deliveries.find({"so_no": {"$in": so_nos}}, {"_id": 0, "so_no": 1, "delivery_date": 1}).to_list(length=5000)
-    # Deadline kerjaan (target due date) diambil dari DRF terkait SO
-    drfs = await db.drawing_requests.find(
-        {"so_no": {"$in": so_nos}, "deleted_at": {"$exists": False}},
-        {"_id": 0, "so_no": 1, "expected_due_date": 1},
-    ).to_list(length=5000)
     issuances = await db.store_issuances.find({"so_no": {"$in": so_nos}}, {"_id": 0, "so_no": 1, "issue_date": 1, "created_at": 1}).to_list(length=5000)
     qc_insp = await db.qc_inspections.find({"so_no": {"$in": so_nos}, "deleted_at": {"$exists": False}}, {"_id": 0, "so_no": 1, "status": 1, "inspected_at": 1, "created_at": 1}).to_list(length=5000)
 
@@ -305,6 +342,7 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
             "so_no": sono,
             "customer": so.get("customer", ""),
             "description": so.get("description", ""),
+            "engineer": (drf_latest.get(sono) or {}).get("assigned_engineer_name") or "",
             "so_date": so.get("so_date", ""),
             "deadline": deadline,
             "last_update": last_update,
