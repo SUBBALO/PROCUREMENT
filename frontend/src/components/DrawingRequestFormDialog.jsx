@@ -512,7 +512,7 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
                         <b className="font-mono">{s.so_no}</b> · {s.customer} · {s.description}
                       </button>
                     ))}
-                    {soMatches.length === 0 && <div className="p-3 text-center text-xs text-slate-400">Tidak ada SO cocok. <a href="/orders/so" target="_blank" rel="noreferrer" className="text-rose-700 underline">Buat SO baru →</a></div>}
+                    {soMatches.length === 0 && <div className="p-3 text-center text-xs text-slate-400">Tidak ada SO cocok. <a href="/sales/sales-orders" target="_blank" rel="noreferrer" className="text-rose-700 underline">Buat SO baru →</a></div>}
                   </div>
                 )}
               </>
