@@ -583,8 +583,14 @@ async def bulk_direct_create(payload: dict, current: dict = Depends(require_writ
             raise HTTPException(status_code=400, detail="Nama Supplier wajib pada setiap baris")
         if not r.get("item_name") or not str(r.get("item_name")).strip():
             raise HTTPException(status_code=400, detail="Nama Barang wajib pada setiap baris")
-        if r.get("masuk_stok") is None:
-            raise HTTPException(status_code=400, detail="Checklist Masuk Stok wajib diisi (ya/tidak)")
+        # 3 mode: "stock" (masuk stok + incoming log), "log" (incoming log saja),
+        # "none" (tidak masuk stok & TIDAK ada incoming log — hanya catatan transaksi).
+        sm = r.get("stock_mode")
+        if sm is None:  # backward-compat dgn field lama masuk_stok (bool)
+            mv = r.get("masuk_stok")
+            sm = None if mv is None else ("stock" if mv else "log")
+        if sm not in ("stock", "log", "none"):
+            raise HTTPException(status_code=400, detail="Pilihan Masuk Stok wajib diisi (Ya / Log / Tidak)")
         qty = float(r.get("qty") or 0)
         if qty <= 0:
             raise HTTPException(status_code=400, detail="Qty harus > 0")
@@ -592,7 +598,8 @@ async def bulk_direct_create(payload: dict, current: dict = Depends(require_writ
         total_price = float(r.get("total_price") or (qty * unit_price))
         invoice_date = r.get("invoice_date") or now[:10]
         tx_id = str(uuid.uuid4())
-        add_stock = bool(r.get("masuk_stok"))
+        add_stock = (sm == "stock")
+        make_receipt = (sm != "none")
         tx_doc = {
             "id": tx_id,
             "invoice_date": invoice_date,
@@ -618,7 +625,8 @@ async def bulk_direct_create(payload: dict, current: dict = Depends(require_writ
             "post_to_store": False,                # bypass store approval
             "source": "bulk-direct",               # marker for audit
             "batch_id": batch_id,                  # group all rows of this upload
-            "should_stock": add_stock,             # Purchasing's decision: masuk stok or log-only
+            "should_stock": add_stock,             # Purchasing's decision: masuk stok atau tidak
+            "stock_mode": sm,                      # stock | log | none
             "created_at": now,
             "updated_at": now,
         }
@@ -627,6 +635,10 @@ async def bulk_direct_create(payload: dict, current: dict = Depends(require_writ
         tx_doc["consumable_request_id"] = r.get("consumable_request_id") or None
         tx_doc["consumable_request_item_id"] = r.get("consumable_request_item_id") or None
         tx_docs.append(tx_doc)
+
+        # "none" → tidak membuat store_receipt sama sekali (tanpa incoming log)
+        if not make_receipt:
+            continue
 
         receipt_docs.append({
             "id": str(uuid.uuid4()),

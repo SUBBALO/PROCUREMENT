@@ -25,7 +25,7 @@ const emptyRow = () => ({
   currency: "IDR",
   exchange_rate: 1,
   invoice_no: "",
-  masuk_stok: null, // null = belum diisi (wajib pilih ya/tidak)
+  stock_mode: "none", // default "Tidak" (tanpa stok & tanpa incoming log). Opsi: stock | log | none
   consumable_request_id: null,
   consumable_request_item_id: null,
   _cgr_desc: "",     // display source description
@@ -95,7 +95,7 @@ export default function BulkTransaksiPage() {
   };
 
   const rowValid = (r) =>
-    r.vendor_name?.trim() && r.item_name?.trim() && Number(r.qty) > 0 && r.masuk_stok !== null;
+    r.vendor_name?.trim() && r.item_name?.trim() && Number(r.qty) > 0 && !!r.stock_mode;
 
   const draftRows = rows.filter((r) => !r._saved);
   const validCount = draftRows.filter(rowValid).length;
@@ -121,7 +121,7 @@ export default function BulkTransaksiPage() {
         currency: r.currency || "IDR",
         exchange_rate: Number(r.exchange_rate) || 1,
         invoice_no: r.invoice_no,
-        masuk_stok: !!r.masuk_stok,
+        stock_mode: r.stock_mode || "none",
         consumable_request_id: r.consumable_request_id || null,
         consumable_request_item_id: r.consumable_request_item_id || null,
       })) };
@@ -266,10 +266,10 @@ export default function BulkTransaksiPage() {
                   <td className="p-1"><Input disabled={true} data-testid={`cell-total-${i}`} className={`${inputCls} text-right bg-slate-50`} value={r.total_price ? Number(r.total_price).toLocaleString("id-ID") : ""} readOnly /></td>
                   <td className="p-1"><Input disabled={r._saved} data-testid={`cell-invoice-${i}`} className={inputCls} value={r.invoice_no} onChange={(e) => setRow(i, { invoice_no: e.target.value })} onKeyDown={(e) => onKeyDown(e, i, "invoice")} placeholder="—" /></td>
                   <td className="p-1 text-center">
-                    <select disabled={r._saved} data-testid={`cell-stok-${i}`} className={inputCls} value={r.masuk_stok === null ? "" : r.masuk_stok ? "yes" : "no"} onChange={(e) => setRow(i, { masuk_stok: e.target.value === "yes" ? true : e.target.value === "no" ? false : null })} onKeyDown={(e) => onKeyDown(e, i, "stok")} title="Ya = masuk stok gudang + Incoming Good report · Tidak = hanya Incoming Good report (barang tetap tercatat, cuma tidak nambah stok)">
-                      <option value="">Pilih…</option>
-                      <option value="yes">✓ Ya, Masuk Stok</option>
-                      <option value="no">✎ Log Only (Incoming Good saja)</option>
+                    <select disabled={r._saved} data-testid={`cell-stok-${i}`} className={inputCls} value={r.stock_mode || "none"} onChange={(e) => setRow(i, { stock_mode: e.target.value })} onKeyDown={(e) => onKeyDown(e, i, "stok")} title="Tidak = tanpa stok & tanpa Incoming Good (tetap masuk Master List Transaksi) · Log Only = Incoming Good saja tanpa nambah stok · Ya = masuk stok gudang + Incoming Good">
+                      <option value="none">✕ Tidak (tanpa stok & log)</option>
+                      <option value="stock">✓ Ya, Masuk Stok</option>
+                      <option value="log">✎ Log Only (Incoming Good saja)</option>
                     </select>
                   </td>
                   <td className="p-1 text-center">

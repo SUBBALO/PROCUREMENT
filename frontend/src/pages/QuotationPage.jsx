@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { toast } from "sonner";
 import { FileText, ArrowLeft, Plus, Trash, CircleNotch, MagnifyingGlass, MicrosoftExcelLogo, X, PencilSimple, Eye } from "@phosphor-icons/react";
 import { SortDropdown, sortItems, cmpStr, cmpDateStr, cmpNum } from "../components/SortDropdown";
+import AddCustomerDialog from "../components/AddCustomerDialog";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 
 const QUO_SORT_OPTS = [
@@ -392,6 +393,8 @@ export default function QuotationPage() {
 function CreateQuotationDialog({ onClose, onCreated, prefill = null }) {
   const [customerName, setCustomerName] = useState(prefill?.customer_name || "");
   const [customerAddress, setCustomerAddress] = useState(prefill?.customer_address || "");
+  const [showAddCust, setShowAddCust] = useState(false);
+  const [autoSubmit, setAutoSubmit] = useState(false);
   const [attention, setAttention] = useState(prefill?.attention || "");
   const [cc, setCc] = useState("");
   const [quotationNoOverride, setQuotationNoOverride] = useState("");
@@ -490,6 +493,17 @@ function CreateQuotationDialog({ onClose, onCreated, prefill = null }) {
 
   const submit = async () => {
     if (!customerName.trim()) return toast.error("Customer wajib diisi");
+    // Wajib ada di Master Customer — kalau belum, popup input lengkap dulu
+    try {
+      const resp = await api.get("/customers", { params: { q: customerName.trim() } });
+      const list = resp.data?.items || resp.data || [];
+      const exists = list.some((c) => (c.name || c.customer_name || "").trim().toLowerCase() === customerName.trim().toLowerCase());
+      if (!exists) {
+        toast.info("Customer belum terdaftar — lengkapi data Master Customer dulu");
+        setShowAddCust(true);
+        return;
+      }
+    } catch (_) { /* kalau cek gagal, lanjutkan saja agar tidak memblok */ }
     setSaving(true);
     try {
       const { data } = await api.post("/quotations", {
@@ -512,6 +526,12 @@ function CreateQuotationDialog({ onClose, onCreated, prefill = null }) {
       toast.error(e.response?.data?.detail || "Gagal simpan");
     } finally { setSaving(false); }
   };
+
+  // Lanjutkan simpan Quotation otomatis setelah customer baru ditambahkan ke Master
+  useEffect(() => {
+    if (autoSubmit) { setAutoSubmit(false); submit(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSubmit]);
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
@@ -671,6 +691,18 @@ function CreateQuotationDialog({ onClose, onCreated, prefill = null }) {
           <Button data-testid="quo-save" onClick={submit} disabled={saving} className="rounded-none bg-amber-600 hover:bg-amber-700 text-white">{saving ? "Menyimpan..." : "Simpan Quotation"}</Button>
         </DialogFooter>
       </DialogContent>
+
+      <AddCustomerDialog
+        open={showAddCust}
+        initialName={customerName}
+        onClose={() => setShowAddCust(false)}
+        onSaved={(c) => {
+          setCustomerName(c.name);
+          if (c.address) setCustomerAddress(c.address);
+          setShowAddCust(false);
+          setAutoSubmit(true);
+        }}
+      />
     </Dialog>
   );
 }

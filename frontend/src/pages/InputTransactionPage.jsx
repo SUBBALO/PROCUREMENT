@@ -235,169 +235,165 @@ export default function InputTransactionPage() {
   };
 
   return (
-    <form onSubmit={onSubmit} className="space-y-6" data-testid="input-transaction-form">
+    <form onSubmit={onSubmit} className="space-y-3" data-testid="input-transaction-form">
       <BackLink />
-      <div className="flex items-end justify-between gap-4 flex-wrap">
+      {/* ===== Title + Toolbar ===== */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
             Input Transaksi Pembelian
           </h1>
           <p className="text-sm text-slate-500 mt-1">Isi header sekali, lalu tambah item ke bawah. Tekan <kbd className="px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-700 text-[10px] rounded">Enter</kbd> untuk lompat kolom berikutnya; Enter di kolom terakhir akan menambah baris baru.</p>
-          <div className="mt-2 flex items-center gap-2 flex-wrap">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".jpg,.jpeg,.png,.webp,.pdf"
-              onChange={onParsePO}
-              className="hidden"
-              data-testid="po-upload-input"
-            />
-            <Button
-              type="button"
-              data-testid="parse-po-btn"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={parsing}
-              variant="outline"
-              size="sm"
-              className="rounded-none h-8 border-sky-300 text-sky-700 hover:bg-sky-50 text-xs uppercase tracking-[0.1em] font-semibold"
-            >
-              <Sparkle size={14} weight="fill" className="mr-1.5 text-sky-600" />
-              {parsing ? "Membaca PO..." : "Auto-Read PO (JPG/PDF)"}
-            </Button>
-            <Button
-              type="button"
-              data-testid="input-cgr-picker-btn"
-              onClick={async () => {
-                try {
-                  const { data } = await api.get("/consumable-requests/open-items");
-                  setCgrOpenItems(data || []);
-                  setShowCgrPicker(true);
-                } catch { toast.error("Gagal muat consumable request"); }
-              }}
-              variant="outline"
-              size="sm"
-              className="rounded-none h-8 border-teal-300 text-teal-700 hover:bg-teal-50 text-xs uppercase tracking-[0.1em] font-semibold"
-            >
-              <ClipboardText size={14} weight="bold" className="mr-1.5" />
-              Tarik dari Consumable Request
-            </Button>
-            <Button
-              type="button"
-              data-testid="input-bom-picker-btn"
-              onClick={async () => {
-                try {
-                  const { data } = await api.get("/bom/purchase/open-items", { params: { limit: 500 } });
-                  setBomOpenItems(data || []);
-                  setShowBomPicker(true);
-                } catch { toast.error("Gagal muat item BOM"); }
-              }}
-              variant="outline"
-              size="sm"
-              className="rounded-none h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-50 text-xs uppercase tracking-[0.1em] font-semibold"
-            >
-              <ClipboardText size={14} weight="bold" className="mr-1.5" />
-              Tarik dari BOM
-            </Button>
-            <Button
-              type="button"
-              data-testid="input-do-picker-btn"
-              onClick={async () => {
-                try {
-                  const { data } = await api.get("/store/receipts/pending-po");
-                  setPendingReceipts(data || []);
-                  setShowDoPicker(true);
-                } catch { toast.error("Gagal muat DO belum PO"); }
-              }}
-              variant="outline"
-              size="sm"
-              className="rounded-none h-8 border-amber-300 text-amber-700 hover:bg-amber-50 text-xs uppercase tracking-[0.1em] font-semibold"
-            >
-              <Truck size={14} weight="bold" className="mr-1.5" />
-              Tarik DO Belum PO
-            </Button>
-            <span className="text-[10px] text-slate-500">Auto-read PO via AI / Tarik dari Consumable Request / Tarik DO yang barangnya sudah masuk store</span>
-          </div>
         </div>
-        <div className="text-right">
-          <div className="text-[11px] uppercase tracking-[0.15em] font-bold text-slate-500">Grand Total ({header.currency})</div>
-          <div className="text-2xl font-semibold tabular-nums text-sky-700" data-testid="grand-total" style={{ fontFamily: "Chivo, sans-serif" }}>
-            {currSymbol} {grandTotal.toLocaleString("id-ID", { maximumFractionDigits: 2 })}
-          </div>
-          {header.currency !== "IDR" && (
-            <div className="text-xs text-slate-500 tabular-nums mt-1" data-testid="grand-total-idr">
-              ≈ Rp {grandTotalIDR.toLocaleString("id-ID", { maximumFractionDigits: 0 })}
-            </div>
-          )}
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp,.pdf"
+            onChange={onParsePO}
+            className="hidden"
+            data-testid="po-upload-input"
+          />
+          <Button
+            type="button"
+            data-testid="parse-po-btn"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={parsing}
+            variant="outline"
+            size="sm"
+            className="rounded-none h-8 border-sky-300 text-sky-700 hover:bg-sky-50 text-xs uppercase tracking-[0.1em] font-semibold"
+          >
+            <Sparkle size={14} weight="fill" className="mr-1.5 text-sky-600" />
+            {parsing ? "Membaca PO..." : "Auto-Read PO"}
+          </Button>
+          <Button
+            type="button"
+            data-testid="input-cgr-picker-btn"
+            onClick={async () => {
+              try {
+                const { data } = await api.get("/consumable-requests/open-items");
+                setCgrOpenItems(data || []);
+                setShowCgrPicker(true);
+              } catch { toast.error("Gagal muat consumable request"); }
+            }}
+            variant="outline"
+            size="sm"
+            className="rounded-none h-8 border-teal-300 text-teal-700 hover:bg-teal-50 text-xs uppercase tracking-[0.1em] font-semibold"
+          >
+            <ClipboardText size={14} weight="bold" className="mr-1.5" />
+            Consumable
+          </Button>
+          <Button
+            type="button"
+            data-testid="input-bom-picker-btn"
+            onClick={async () => {
+              try {
+                const { data } = await api.get("/bom/purchase/open-items", { params: { limit: 500 } });
+                setBomOpenItems(data || []);
+                setShowBomPicker(true);
+              } catch { toast.error("Gagal muat item BOM"); }
+            }}
+            variant="outline"
+            size="sm"
+            className="rounded-none h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-50 text-xs uppercase tracking-[0.1em] font-semibold"
+          >
+            <ClipboardText size={14} weight="bold" className="mr-1.5" />
+            BOM
+          </Button>
+          <Button
+            type="button"
+            data-testid="input-do-picker-btn"
+            onClick={async () => {
+              try {
+                const { data } = await api.get("/store/receipts/pending-po");
+                setPendingReceipts(data || []);
+                setShowDoPicker(true);
+              } catch { toast.error("Gagal muat DO belum PO"); }
+            }}
+            variant="outline"
+            size="sm"
+            className="rounded-none h-8 border-amber-300 text-amber-700 hover:bg-amber-50 text-xs uppercase tracking-[0.1em] font-semibold"
+          >
+            <Truck size={14} weight="bold" className="mr-1.5" />
+            DO Belum PO
+          </Button>
         </div>
       </div>
 
-      <Card className="rounded-none border-slate-200 shadow-none p-6 bg-white">
-        <h3 className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500 mb-4">Info Invoice & Mata Uang</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <Label className="text-xs font-semibold text-slate-600 mb-1 block">Tanggal Invoice *</Label>
-            <Input type="date" data-testid="input-invoice-date" required className={inputCls} value={header.invoice_date} onChange={(e) => setH("invoice_date", e.target.value)} />
-          </div>
-          <div>
-            <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nomor Invoice</Label>
-            <Input data-testid="input-invoice-no" className={inputCls} value={header.invoice_no} onChange={(e) => setH("invoice_no", e.target.value)} placeholder="mis. 00123/MM/GOGO/01/2026" />
-          </div>
-          <div>
-            <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nama Toko / Vendor *</Label>
-            <Input data-testid="input-vendor" required list="vendors-list" autoComplete="off" className={inputCls} value={header.vendor_name} onChange={(e) => setH("vendor_name", e.target.value)} onKeyDown={(e) => tryAutocomplete(e, vendors, (v) => setH("vendor_name", v))} placeholder="mis. Wiratama Sukses, PT" />
-          </div>
-          <div>
-            <Label className="text-xs font-semibold text-slate-600 mb-1 block">Nomor PO</Label>
-            <Input data-testid="input-po-no" className={inputCls} value={header.po_no} onChange={(e) => setH("po_no", e.target.value)} placeholder="mis. 9488" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+      {/* ===== PO Header — 2 kolom ala Accurate ===== */}
+      <Card className="rounded-none border-slate-200 shadow-none bg-white overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-2">
+          {/* KIRI — Vendor */}
+          <div className="p-4 lg:border-r border-slate-200 space-y-3">
+            <h3 className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500">Vendor / Supplier</h3>
             <div>
-              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Tanggal PO</Label>
-              <Input type="date" data-testid="input-po-date" className={inputCls} value={header.po_date} onChange={(e) => setH("po_date", e.target.value)} />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Plan Delivery <span className="text-slate-400 font-normal normal-case">(estimasi)</span></Label>
-              <Input type="date" data-testid="input-plan-delivery-date" className={inputCls} value={header.plan_delivery_date || ""} onChange={(e) => setH("plan_delivery_date", e.target.value)} />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Tanggal Terima</Label>
-              <Input type="date" data-testid="input-receive-date" className={inputCls} value={header.receive_date} onChange={(e) => setH("receive_date", e.target.value)} />
+              <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Nama Toko / Vendor *</Label>
+              <Input data-testid="input-vendor" required list="vendors-list" autoComplete="off" className={`${inputCls} h-9`} value={header.vendor_name} onChange={(e) => setH("vendor_name", e.target.value)} onKeyDown={(e) => tryAutocomplete(e, vendors, (v) => setH("vendor_name", v))} placeholder="mis. Wiratama Sukses, PT" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 md:col-span-1">
-            <div>
-              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Mata Uang *</Label>
-              <select
-                data-testid="input-currency"
-                value={header.currency}
-                onChange={(e) => setH("currency", e.target.value)}
-                className="h-9 w-full border border-slate-300 rounded-none px-2 text-sm bg-white focus:ring-2 focus:ring-sky-600 focus:outline-none"
-              >
-                {CURRENCIES.map((c) => (<option key={c}>{c}</option>))}
-              </select>
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-600 mb-1 block">
-                Exchange Rate {header.currency !== "IDR" && <span className="text-red-600">*</span>}
-              </Label>
-              <Input
-                type="number"
-                step="any"
-                min="0"
-                data-testid="input-exchange-rate"
-                disabled={header.currency === "IDR"}
-                className={`${inputCls} tabular-nums text-right ${header.currency === "IDR" ? "bg-slate-50 text-slate-400" : ""}`}
-                value={header.exchange_rate}
-                onChange={(e) => setH("exchange_rate", e.target.value)}
-                placeholder={header.currency === "IDR" ? "1" : "mis. 12000"}
-              />
+
+          {/* KANAN — Info Dokumen PO / Invoice / Mata Uang */}
+          <div className="p-4 bg-slate-50/60 space-y-2">
+            <h3 className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500 mb-1">Info Dokumen & Mata Uang</h3>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+              <div>
+                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Nomor PO</Label>
+                <Input data-testid="input-po-no" className={inputCls} value={header.po_no} onChange={(e) => setH("po_no", e.target.value)} placeholder="mis. 9488" />
+              </div>
+              <div>
+                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Tanggal PO</Label>
+                <Input type="date" data-testid="input-po-date" className={inputCls} value={header.po_date} onChange={(e) => setH("po_date", e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Nomor Invoice</Label>
+                <Input data-testid="input-invoice-no" className={inputCls} value={header.invoice_no} onChange={(e) => setH("invoice_no", e.target.value)} placeholder="mis. 00123/MM/GOGO/01/2026" />
+              </div>
+              <div>
+                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Tanggal Invoice *</Label>
+                <Input type="date" data-testid="input-invoice-date" required className={inputCls} value={header.invoice_date} onChange={(e) => setH("invoice_date", e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Tanggal Terima</Label>
+                <Input type="date" data-testid="input-receive-date" className={inputCls} value={header.receive_date} onChange={(e) => setH("receive_date", e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Plan Delivery <span className="text-slate-400 font-normal normal-case">(estimasi)</span></Label>
+                <Input type="date" data-testid="input-plan-delivery-date" className={inputCls} value={header.plan_delivery_date || ""} onChange={(e) => setH("plan_delivery_date", e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Mata Uang *</Label>
+                <select
+                  data-testid="input-currency"
+                  value={header.currency}
+                  onChange={(e) => setH("currency", e.target.value)}
+                  className="h-8 w-full border border-slate-300 rounded-none px-2 text-sm bg-white focus:ring-2 focus:ring-sky-600 focus:outline-none"
+                >
+                  {CURRENCIES.map((c) => (<option key={c}>{c}</option>))}
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">
+                  Exchange Rate {header.currency !== "IDR" && <span className="text-red-600">*</span>}
+                </Label>
+                <Input
+                  type="number"
+                  step="any"
+                  min="0"
+                  data-testid="input-exchange-rate"
+                  disabled={header.currency === "IDR"}
+                  className={`${inputCls} tabular-nums text-right ${header.currency === "IDR" ? "bg-slate-50 text-slate-400" : ""}`}
+                  value={header.exchange_rate}
+                  onChange={(e) => setH("exchange_rate", e.target.value)}
+                  placeholder={header.currency === "IDR" ? "1" : "mis. 12000"}
+                />
+              </div>
             </div>
           </div>
         </div>
       </Card>
 
       <Card className="rounded-none border-slate-200 shadow-none bg-white">
-        <div className="flex items-center justify-between p-4 border-b border-slate-200">
+        <div className="flex items-center justify-between p-3 border-b border-slate-200">
           <h3 className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500">Item Barang</h3>
           <Button type="button" data-testid="add-item-btn" onClick={addRow} variant="outline" size="sm" className="rounded-none h-8 border-slate-300 text-xs uppercase tracking-[0.1em] font-semibold">
             <Plus size={14} weight="bold" className="mr-1.5" /> Tambah Item
@@ -488,28 +484,29 @@ export default function InputTransactionPage() {
                 );
               })}
             </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-slate-900 bg-slate-50">
-                <td colSpan={6} className="p-3 text-right text-xs uppercase tracking-[0.1em] font-bold text-slate-600">
-                  Grand Total ({header.currency})
-                </td>
-                <td className="p-3 text-right tabular-nums font-bold text-slate-900 text-base">{currSymbol} {grandTotal.toLocaleString("id-ID", { maximumFractionDigits: 2 })}</td>
-                <td colSpan={3}></td>
-              </tr>
-              {header.currency !== "IDR" && (
-                <tr className="bg-slate-50">
-                  <td colSpan={6} className="p-3 text-right text-[11px] uppercase tracking-[0.1em] font-semibold text-slate-500">
-                    ≈ IDR (rate {Number(header.exchange_rate).toLocaleString("id-ID")})
-                  </td>
-                  <td className="p-3 text-right tabular-nums font-semibold text-sky-700 text-sm" data-testid="grand-total-idr-footer">Rp {grandTotalIDR.toLocaleString("id-ID", { maximumFractionDigits: 0 })}</td>
-                  <td colSpan={3}></td>
-                </tr>
-              )}
-            </tfoot>
           </table>
         </div>
       </Card>
 
+      {/* ===== Totals kanan-bawah ala Accurate ===== */}
+      <div className="flex justify-end">
+        <div className="w-full sm:w-80 border border-slate-200 bg-white">
+          <div className="flex items-center justify-between px-4 py-2.5 border-b-2 border-slate-900 bg-slate-50">
+            <span className="text-xs uppercase tracking-[0.12em] font-bold text-slate-600">Grand Total ({header.currency})</span>
+            <span className="text-lg font-bold tabular-nums text-slate-900" data-testid="grand-total" style={{ fontFamily: "Chivo, sans-serif" }}>
+              {currSymbol} {grandTotal.toLocaleString("id-ID", { maximumFractionDigits: 2 })}
+            </span>
+          </div>
+          {header.currency !== "IDR" && (
+            <div className="flex items-center justify-between px-4 py-2 bg-white">
+              <span className="text-[11px] uppercase tracking-[0.1em] font-semibold text-slate-500">≈ IDR (rate {Number(header.exchange_rate).toLocaleString("id-ID")})</span>
+              <span className="text-sm font-semibold tabular-nums text-sky-700" data-testid="grand-total-idr">Rp {grandTotalIDR.toLocaleString("id-ID", { maximumFractionDigits: 0 })}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ===== Catatan Transaksi — paling bawah ===== */}
       <Card className="rounded-none border-slate-200 shadow-none p-4 bg-white">
         <label className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500 block mb-2">
           Catatan Transaksi <span className="normal-case font-normal text-slate-400">(opsional — berlaku untuk semua item pembelian ini)</span>

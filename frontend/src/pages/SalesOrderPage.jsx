@@ -16,6 +16,7 @@ import { SortDropdown, sortItems, cmpStr, cmpDateStr } from "../components/SortD
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import DrawingRequestFormDialog from "../components/DrawingRequestFormDialog";
+import AddCustomerDialog from "../components/AddCustomerDialog";
 
 const SO_SORT_OPTS = [
   { value: "created_desc", label: "Tanggal Buat: Baru → Lama", sort: (a, b) => cmpDateStr(b.created_at, a.created_at) },
@@ -284,6 +285,14 @@ function SalesOrderFormDialog({ mode, so, fromQuotation, canSeePrice, currentUse
       : [{ name: "", qty: 1, unit: "pcs", price: 0 }]
   );
   const [saving, setSaving] = useState(false);
+  const [showAddCust, setShowAddCust] = useState(false);
+  const [autoSave, setAutoSave] = useState(false);
+
+  // Lanjutkan simpan SO otomatis setelah customer baru ditambahkan ke Master
+  useEffect(() => {
+    if (autoSave) { setAutoSave(false); save(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSave]);
 
   useEffect(() => {
     api.get("/customers", { params: { limit: 1000 } }).then(({ data }) => setCustomers(data.items || data || [])).catch(() => {});
@@ -323,6 +332,15 @@ function SalesOrderFormDialog({ mode, so, fromQuotation, canSeePrice, currentUse
   const save = async () => {
     if (!soNoValid) return toast.error("Nomor SO wajib 6 digit diawali '00' (mis. 005251)");
     if (!customer.trim()) return toast.error("Customer wajib diisi");
+    // Wajib ada di Master Customer — kalau belum, munculkan popup input lengkap dulu
+    const custExists = (customers || []).some(
+      (c) => (c.name || c.customer_name || "").trim().toLowerCase() === customer.trim().toLowerCase()
+    );
+    if (!custExists) {
+      toast.info("Customer belum terdaftar — lengkapi data Master Customer dulu");
+      setShowAddCust(true);
+      return;
+    }
     const cleanItems = items.filter((it) => (it.name || "").trim());
     if (cleanItems.length === 0) return toast.error("Minimal 1 item dengan nama diisi");
     setSaving(true);
@@ -450,6 +468,19 @@ function SalesOrderFormDialog({ mode, so, fromQuotation, canSeePrice, currentUse
           </Button>
         </div>
       </div>
+
+      <AddCustomerDialog
+        open={showAddCust}
+        initialName={customer}
+        onClose={() => setShowAddCust(false)}
+        onSaved={(c) => {
+          setCustomers((prev) => [...(prev || []), c]);
+          setCustomer(c.name);
+          if (c.address) setCustomerAddress(c.address);
+          setShowAddCust(false);
+          setAutoSave(true); // lanjutkan simpan SO otomatis
+        }}
+      />
     </div>
   );
 }

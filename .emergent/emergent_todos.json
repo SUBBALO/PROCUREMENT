@@ -1,34 +1,26 @@
 [
   {
-    "content": "Backend: fix status pending_sales -> 'Menunggu Verifikasi Sales' (bug)",
+    "content": "Redesign header InputTransactionPage jadi 2 kolom ala PO Accurate",
     "status": "completed"
   },
   {
-    "content": "Backend: dua deadline (drawing & delivery) + active-by-stage + PIC per tahap di _compute_so_progress",
+    "content": "Pertahankan toolbar aksi (Auto-Read PO, Tarik Consumable/BOM/DO)",
     "status": "completed"
   },
   {
-    "content": "Backend: tambah field delivery_due_date di DRF model create/update",
+    "content": "Pertahankan tabel item + semua fitur & kolom",
     "status": "completed"
   },
   {
-    "content": "Frontend DRF form: tambah input 'Deadline Pengiriman' (samping 'Deadline Drawing')",
+    "content": "Grand Total panel kanan-bawah + hapus duplikasi tfoot",
     "status": "completed"
   },
   {
-    "content": "TV: 8 baris/halaman fixed, rotasi 10 detik",
+    "content": "Pindahkan Catatan Transaksi ke paling bawah",
     "status": "completed"
   },
   {
-    "content": "TV: kotak Overdue (ketiga) + kedip pakai kedua deadline",
-    "status": "completed"
-  },
-  {
-    "content": "TV: kolom Deadline jadi 2 sub-kolom (Drawing/Delivery) + PIC + logo + font kecil",
-    "status": "completed"
-  },
-  {
-    "content": "Verifikasi: compile FE, restart BE, curl, screenshot, tes 2 deadline chain",
+    "content": "Compile + screenshot verify",
     "status": "completed"
   }
 ]
