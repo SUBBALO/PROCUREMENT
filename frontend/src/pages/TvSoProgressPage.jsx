@@ -87,7 +87,14 @@ export default function TvSoProgressPage() {
   const [error, setError] = useState(false);
   const [isFs, setIsFs] = useState(false);
   const [page, setPage] = useState(0);
+  const [zoom, setZoom] = useState(() => {
+    const v = parseFloat(localStorage.getItem("tvZoom") || "0.8");
+    return isNaN(v) ? 0.8 : Math.min(1.3, Math.max(0.5, v));
+  });
   const scrollRef = useRef(null);
+
+  useEffect(() => { localStorage.setItem("tvZoom", String(zoom)); }, [zoom]);
+  const zoomBy = (d) => setZoom((z) => Math.min(1.3, Math.max(0.5, Math.round((z + d) * 100) / 100)));
 
   const toggleFullscreen = () => {
     const el = document.documentElement;
@@ -173,7 +180,7 @@ export default function TvSoProgressPage() {
 
 
   return (
-    <div className="fixed inset-0 bg-slate-950 text-slate-100 flex flex-col overflow-hidden" style={{ fontFamily: "Figtree, sans-serif" }} data-testid="tv-so-progress">
+    <div className="fixed inset-0 bg-slate-950 text-slate-100 flex flex-col overflow-hidden" style={{ fontFamily: "Figtree, sans-serif", zoom }} data-testid="tv-so-progress">
       {/* Header */}
       <header className="flex items-center justify-between px-8 py-4 bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950 border-b border-white/10">
         <div className="flex items-center gap-4">
@@ -184,6 +191,11 @@ export default function TvSoProgressPage() {
           </div>
         </div>
         <div className="flex items-center gap-5">
+          <div className="flex items-center rounded-lg bg-white/5 border border-white/10 overflow-hidden" data-testid="tv-zoom-controls">
+            <button onClick={() => zoomBy(-0.05)} className="px-2.5 py-2 text-slate-200 hover:bg-white/15 transition-colors text-sm font-bold" data-testid="tv-zoom-out" title="Perkecil">A−</button>
+            <span className="px-1.5 text-[11px] text-slate-400 tabular-nums select-none">{Math.round(zoom * 100)}%</span>
+            <button onClick={() => zoomBy(0.05)} className="px-2.5 py-2 text-slate-200 hover:bg-white/15 transition-colors text-sm font-bold" data-testid="tv-zoom-in" title="Perbesar">A+</button>
+          </div>
           <button
             onClick={toggleFullscreen}
             className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/15 text-slate-200 border border-white/10 transition-colors"
