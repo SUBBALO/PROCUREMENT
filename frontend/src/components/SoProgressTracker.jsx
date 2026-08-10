@@ -38,6 +38,18 @@ function StageCell({ st }) {
   );
 }
 
+// Satu tanggal deadline (Drawing / Delivery) dengan warna peringatan.
+function DlItem({ iso, delivered }) {
+  if (!iso) return <span className="text-[11px] text-slate-300">—</span>;
+  const d = new Date(iso); d.setHours(0, 0, 0, 0);
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  const days = Math.ceil((d - now) / 86400000);
+  const past = !delivered && days < 0;
+  const soon = !delivered && days >= 0 && days <= 2;
+  const cls = past ? "text-rose-600 font-bold" : soon ? "text-amber-600 font-bold" : "text-slate-700";
+  return <span className={`text-[11px] ${cls}`} title={iso}>{fmtDate(iso)}{past ? " ⚠" : ""}</span>;
+}
+
 export default function SoProgressTracker() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -93,7 +105,12 @@ export default function SoProgressTracker() {
           <thead className="sticky top-0 z-10 bg-slate-100 text-slate-600">
             <tr className="text-[10px] uppercase tracking-wider">
               <th className="px-3 py-2 text-left font-bold">SO / Customer</th>
-              <th className="px-2 py-2 text-left font-bold border-l border-slate-200">Deadline</th>
+              <th className="px-2 py-2 text-left font-bold border-l border-slate-200">
+                Deadline
+                <div className="grid grid-cols-2 gap-2 text-[9px] text-slate-400 normal-case font-semibold mt-0.5">
+                  <span>Drawing</span><span>Delivery</span>
+                </div>
+              </th>
               {STAGE_ORDER.map((k) => (
                 <th key={k} className="px-2 py-2 text-left font-bold border-l border-slate-200">{STAGE_HEAD[k]}</th>
               ))}
@@ -121,12 +138,11 @@ export default function SoProgressTracker() {
                       {so.customer || "-"}{so.description ? ` · ${so.description}` : ""}
                     </div>
                   </td>
-                  <td className="px-2 py-1.5 align-top border-l border-slate-100">
-                    {so.deadline ? (
-                      <span className={`text-[11px] font-semibold ${overdue ? "text-rose-600" : "text-slate-700"}`}>
-                        {fmtDate(so.deadline)}{overdue ? " ⚠" : ""}
-                      </span>
-                    ) : <span className="text-[11px] text-slate-300">—</span>}
+                  <td className="px-2 py-1.5 align-top border-l border-slate-100" data-testid={`so-progress-deadline-${so.so_no}`}>
+                    <div className="grid grid-cols-2 gap-2">
+                      <DlItem iso={so.deadline_drawing} delivered={delivered} />
+                      <DlItem iso={so.deadline_delivery} delivered={delivered} />
+                    </div>
                   </td>
                   {STAGE_ORDER.map((k) => (<StageCell key={k} st={m[k]} />))}
                   <td className="px-2 py-1.5 align-top border-l border-slate-100" data-testid={`so-progress-status-${so.so_no}`}>
