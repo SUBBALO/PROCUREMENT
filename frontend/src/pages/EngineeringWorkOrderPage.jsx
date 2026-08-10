@@ -205,6 +205,11 @@ function DrfItemPicker({ drawing, onSaved, editable }) {
             </div>
           </div>
 
+          {/* Section A2: Riwayat Versi File Drawing (Version Control) */}
+          {drawing.file_id && (
+            <FileVersionHistory drawingId={drawing.id} refreshKey={`${drawing.file_id}-${drawing.file_rev_index ?? 0}`} />
+          )}
+
           {/* Section B: TTD Prepared By — SIMPAN saja (submit ke Eng Leader dari Work Group) */}
           {isDraft && (
             <div className={`border ${preparedSigned ? "border-emerald-500" : "border-sky-500"}`}>
@@ -722,3 +727,85 @@ function StatusBadge({ status }) {
 }
 
 /* ---------------- BomReferenceSection dihapus — BOM kini tab di Work Group ---------------- */
+
+
+/* ---------------- File Version History (Version Control Drawing) ----------------
+   Menampilkan semua versi PDF drawing: Rev 0 → Rev A → Rev B ... Versi terbaru = live.
+   Tiap versi bisa dilihat/diunduh. */
+function FileVersionHistory({ drawingId, refreshKey }) {
+  const [items, setItems] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [open, setOpen] = React.useState(false);
+  const apiUrl = process.env.REACT_APP_BACKEND_URL;
+
+  React.useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    api.get(`/drawings/${drawingId}/versions`)
+      .then(({ data }) => { if (alive) setItems(data.items || []); })
+      .catch(() => { if (alive) setItems([]); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [drawingId, refreshKey]);
+
+  const fmt = (s) => { try { return s ? new Date(s).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }) : "-"; } catch { return s || "-"; } };
+  const hasHistory = items.length > 1;
+
+  return (
+    <div className="border border-slate-300" data-testid="file-version-history">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full px-3 py-1.5 bg-slate-700 text-white flex items-center justify-between gap-2 text-[12px] uppercase tracking-widest font-bold"
+        data-testid="file-version-toggle"
+      >
+        <span className="flex items-center gap-2"><Archive size={14} weight="bold" /> Riwayat Versi File Drawing</span>
+        <span className="flex items-center gap-2 normal-case tracking-normal text-[11px] font-semibold">
+          {items[0] ? <span className="px-1.5 py-0.5 bg-white/20">{items[0].rev_label} (aktif)</span> : null}
+          {hasHistory && <span className="px-1.5 py-0.5 bg-amber-500 text-slate-900">{items.length} versi</span>}
+          <span>{open ? "▲" : "▼"}</span>
+        </span>
+      </button>
+      {open && (
+        <div className="p-3 bg-slate-50">
+          {loading && <div className="text-xs text-slate-400 italic">Memuat riwayat versi...</div>}
+          {!loading && items.length === 0 && <div className="text-xs text-slate-400 italic">Belum ada file.</div>}
+          {!loading && items.length === 1 && (
+            <div className="text-[11px] text-slate-500 mb-2">Baru ada 1 versi. Setiap kali PDF di-upload ulang, versi lama otomatis diarsipkan di sini.</div>
+          )}
+          <div className="divide-y divide-slate-200">
+            {items.map((v) => (
+              <div key={v.file_id} className="flex flex-wrap items-center gap-3 py-2" data-testid={`file-version-${v.rev_index}`}>
+                <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${v.is_current ? "bg-emerald-600 text-white" : "bg-slate-300 text-slate-700"}`}>
+                  {v.rev_label}{v.is_current ? " · aktif" : ""}
+                </span>
+                <div className="flex-1 min-w-[180px]">
+                  <div className="text-xs font-semibold text-slate-800 truncate max-w-[280px]">{v.filename || "drawing.pdf"}</div>
+                  <div className="text-[10px] text-slate-500">{fmt(v.uploaded_at)} · oleh {v.uploaded_by || "-"}{v.note ? ` · ${v.note}` : ""}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.open(`${apiUrl}/api/drawings/${drawingId}/versions/${v.file_id}/download`, "_blank", "noopener")}
+                    className="inline-flex items-center gap-1 px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-bold uppercase"
+                    data-testid={`file-version-view-${v.rev_index}`}
+                  >
+                    <Eye size={12} weight="bold" /> Lihat
+                  </button>
+                  <a
+                    href={`${apiUrl}/api/drawings/${drawingId}/versions/${v.file_id}/download`}
+                    target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1 px-2 py-1 border border-slate-400 text-slate-700 hover:bg-slate-200 text-[10px] font-bold uppercase"
+                    data-testid={`file-version-download-${v.rev_index}`}
+                  >
+                    <DownloadSimple size={12} weight="bold" /> Unduh
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

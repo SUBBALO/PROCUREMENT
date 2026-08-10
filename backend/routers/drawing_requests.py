@@ -1283,6 +1283,113 @@ async def accept_and_assign_drf(
     return _clean(out)
 
 
+class ReassignIn(BaseModel):
+    assigned_engineer_id: str
+    assigned_engineer_name: Optional[str] = ""
+    reason: str = ""
+
+
+@router.post("/drawing-requests/{drf_id}/reassign")
+async def reassign_drf(
+    drf_id: str,
+    payload: ReassignIn,
+    current: dict = Depends(get_current_user),
+):
+    """Pindah tugas DRF ke engineer lain (mis. engineer semula berhalangan).
+    - Wewenang: Engineering Leader/Admin ATAU engineer yang sedang ditugaskan (handover sendiri).
+    - Nama engineer di DRF diperbarui.
+    - Nama pada DOKUMEN drawing yang BELUM ditandatangani (approval_status draft) ikut
+      berubah otomatis: prepared_by + assigned_to → engineer baru.
+    - Drawing yang SUDAH ada TTD tidak diubah 'Prepared By'-nya (arsip TTD dijaga),
+      namun kepemilikan (assigned_to) tetap dipindah agar bisa dilanjutkan.
+    - Riwayat pemindahan (reassign_history) disimpan lengkap dengan alasan.
+    """
+    doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="DRF tidak ditemukan")
+
+    old_id = doc.get("assigned_engineer_id")
+    is_assignee = old_id and current.get("id") == old_id
+    if not (is_eng_head(current) or is_admin_like(current) or is_assignee):
+        raise HTTPException(status_code=403, detail="Hanya Engineering Leader/Admin atau engineer yang ditugaskan yang boleh memindahkan tugas ini")
+    if not old_id:
+        raise HTTPException(status_code=400, detail="DRF belum pernah di-assign. Gunakan Accept & Assign dulu.")
+    if doc.get("status") not in ("accepted", "in_progress"):
+        raise HTTPException(status_code=400, detail=f"DRF status = {doc.get('status')} — hanya bisa dipindah saat 'accepted' atau 'in_progress'")
+
+    eng = await db.users.find_one({"id": payload.assigned_engineer_id})
+    if not eng:
+        raise HTTPException(status_code=404, detail="Engineer tujuan tidak ditemukan")
+    if not is_engineering(eng):
+        raise HTTPException(status_code=400, detail="User tujuan bukan Engineering")
+    if eng["id"] == old_id:
+        raise HTTPException(status_code=400, detail="Engineer tujuan sama dengan yang ditugaskan sekarang")
+
+    new_name = (payload.assigned_engineer_name or eng.get("name") or eng.get("username") or "").strip()
+    old_name = doc.get("assigned_engineer_name") or ""
+    now = _now_iso()
+
+    hist = list(doc.get("reassign_history") or [])
+    hist.append({
+        "from_id": old_id,
+        "from_name": old_name,
+        "to_id": eng["id"],
+        "to_name": new_name,
+        "by": current.get("name") or current.get("username"),
+        "by_id": current.get("id"),
+        "reason": (payload.reason or "").strip(),
+        "at": now,
+    })
+
+    await db.drawing_requests.update_one(
+        {"id": drf_id},
+        {"$set": {
+            "assigned_engineer_id": eng["id"],
+            "assigned_engineer_name": new_name,
+            "reassigned_at": now,
+            "reassigned_by": current.get("name") or current.get("username"),
+            "reassign_reason": (payload.reason or "").strip(),
+            "reassign_history": hist,
+            "updated_at": now,
+        }},
+    )
+
+    # --- Propagasi ke drawing yang di-generate dari DRF ini ---
+    linked_q = {"from_drf_id": drf_id, "deleted_at": {"$exists": False}}
+    # 1) Semua drawing: pindahkan kepemilikan/edit-rights
+    await db.drawings.update_many(
+        linked_q,
+        {"$set": {"assigned_to_user_id": eng["id"], "assigned_to_name": new_name, "updated_at": now}},
+    )
+    # 2) Drawing yang BELUM di-TTD (draft): nama 'Prepared By' pada dokumen ikut berubah
+    unsigned_q = {**linked_q, "$or": [
+        {"approval_status": {"$in": [None, "", "draft"]}},
+        {"approval_status": {"$exists": False}},
+    ]}
+    name_updated = await db.drawings.count_documents(unsigned_q)
+    if name_updated:
+        await db.drawings.update_many(unsigned_q, {"$set": {"prepared_by": new_name, "updated_at": now}})
+    total_linked = await db.drawings.count_documents(linked_q)
+    kept_signed = max(0, total_linked - name_updated)
+
+    await log_action(current, "drf_reassign", "drawing_requests", drf_id, {
+        "form_no": doc.get("form_no"),
+        "from": old_name, "to": new_name,
+        "reason": (payload.reason or "").strip(),
+        "drawings_name_updated": name_updated, "drawings_kept_signed": kept_signed,
+    })
+
+    out = await db.drawing_requests.find_one({"id": drf_id}, {"_id": 0})
+    return {
+        "success": True,
+        "drf": _clean(out),
+        "drawings_name_updated": name_updated,
+        "drawings_kept_signed": kept_signed,
+        "message": f"Tugas dipindah ke {new_name}. {name_updated} drawing diperbarui namanya" + (f", {kept_signed} drawing ber-TTD dipertahankan" if kept_signed else ""),
+    }
+
+
+
 @router.post("/drawing-requests/{drf_id}/start-work")
 async def start_work_drf(drf_id: str, current: dict = Depends(get_current_user)):
     """Eng staff (yang di-assign) KLIK TERIMA → mulai kerja.

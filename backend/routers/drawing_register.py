@@ -122,6 +122,24 @@ def _fs() -> AsyncIOMotorGridFSBucket:
     return _gridfs
 
 
+def _rev_label(idx: int) -> str:
+    """Version label ala engineering: 0 -> 'Rev 0', 1 -> 'Rev A', 2 -> 'Rev B', ...
+    Setelah Z lanjut ke AA, AB, ... (jarang terjadi tapi aman)."""
+    try:
+        idx = int(idx)
+    except Exception:
+        idx = 0
+    if idx <= 0:
+        return "Rev 0"
+    n = idx  # 1 -> A
+    letters = ""
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        letters = chr(65 + rem) + letters
+    return f"Rev {letters}"
+
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -1099,6 +1117,9 @@ async def delete_drawing(drawing_id: str, current: dict = Depends(get_current_us
     for f in (existing.get("cad_files") or []):
         if f.get("file_id"):
             fids.append(f["file_id"])
+    for v in (existing.get("file_versions") or []):
+        if v.get("file_id"):
+            fids.append(v["file_id"])
     for fid in fids:
         try:
             await _fs().delete(ObjectId(fid))
@@ -1392,6 +1413,7 @@ async def verify_pdf(
 async def upload_drawing_pdf(
     drawing_id: str,
     force: bool = Form(False),
+    rev_note: str = Form(""),
     file: UploadFile = File(...),
     current: dict = Depends(get_current_user),
 ):
@@ -1442,25 +1464,46 @@ async def upload_drawing_pdf(
             "candidates": cands,
         })
 
-    # Replace old file if any — TAPI jangan hapus bila file lama masih jadi history revisi
-    if existing.get("file_id") and not _file_in_revisions(existing, existing["file_id"]):
-        try:
-            await _fs().delete(ObjectId(existing["file_id"]))
-        except Exception:
-            pass
-
+    # === VERSION CONTROL ===
+    # Jangan hapus file lama — arsipkan sebagai versi (history). File lama tetap bisa
+    # dilihat/diunduh. File revisi markup (revision_files) tetap ditangani terpisah.
     fs = _fs()
+    user_name = current.get("username") or current.get("name")
+    now = _now_iso()
+
+    versions = list(existing.get("file_versions") or [])
+    old_index = int(existing.get("file_rev_index") or 0)
+    if existing.get("file_id"):
+        # Arsipkan file live saat ini ke daftar versi (kecuali sudah tercatat sebagai file revisi legacy)
+        versions.append({
+            "version_index": old_index,
+            "rev_label": existing.get("file_rev_label") or _rev_label(old_index),
+            "file_id": existing["file_id"],
+            "filename": existing.get("filename") or "",
+            "uploaded_at": existing.get("file_uploaded_at") or existing.get("updated_at") or "",
+            "uploaded_by": existing.get("file_uploaded_by") or "",
+            "archived_at": now,
+            "archived_by": user_name,
+            "note": existing.get("file_rev_note") or "",
+        })
+        new_index = old_index + 1
+    else:
+        new_index = 0
+
     file_id = await fs.upload_from_stream(
         file.filename, content,
         metadata={"content_type": "application/pdf", "drawing_id": drawing_id},
     )
 
-    user_name = current.get("username") or current.get("name")
     update = {
         "file_id": str(file_id),
         "filename": file.filename,
         "file_uploaded_at": _now_iso(),
         "file_uploaded_by": user_name,
+        "file_rev_index": new_index,
+        "file_rev_label": _rev_label(new_index),
+        "file_rev_note": (rev_note or "").strip(),
+        "file_versions": versions,
         "pdf_match_status": "verified" if check["match"] else "warning",
         "pdf_match_note": check["note"],
         "pdf_extracted_candidates": check["extracted_candidates"],
@@ -1492,7 +1535,88 @@ async def upload_drawing_pdf(
         "filename": file.filename,
         "status": update.get("status") or prev_status,
         "status_auto_promoted": prev_status.lower() == "draft",
+        "rev_label": update["file_rev_label"],
+        "rev_index": new_index,
+        "versions_count": len(versions),
     }
+
+
+@router.get("/drawings/{drawing_id}/versions")
+async def list_drawing_versions(drawing_id: str, current: dict = Depends(get_current_user)):
+    """Riwayat versi file drawing (version control). Versi terbaru = file live sekarang."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    d = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    items = []
+    if d.get("file_id"):
+        items.append({
+            "file_id": d["file_id"],
+            "rev_label": d.get("file_rev_label") or _rev_label(d.get("file_rev_index") or 0),
+            "rev_index": int(d.get("file_rev_index") or 0),
+            "filename": d.get("filename") or "",
+            "uploaded_at": d.get("file_uploaded_at") or "",
+            "uploaded_by": d.get("file_uploaded_by") or "",
+            "note": d.get("file_rev_note") or "",
+            "is_current": True,
+        })
+    for v in (d.get("file_versions") or []):
+        items.append({
+            "file_id": v.get("file_id"),
+            "rev_label": v.get("rev_label") or _rev_label(v.get("version_index") or 0),
+            "rev_index": int(v.get("version_index") or 0),
+            "filename": v.get("filename") or "",
+            "uploaded_at": v.get("uploaded_at") or "",
+            "uploaded_by": v.get("uploaded_by") or "",
+            "note": v.get("note") or "",
+            "archived_at": v.get("archived_at") or "",
+            "archived_by": v.get("archived_by") or "",
+            "is_current": False,
+        })
+    # Terbaru dulu
+    items.sort(key=lambda x: x.get("rev_index", 0), reverse=True)
+    return {
+        "drawing_id": drawing_id,
+        "drawing_no": d.get("drawing_no"),
+        "current_rev": d.get("file_rev_label") or (_rev_label(d.get("file_rev_index") or 0) if d.get("file_id") else None),
+        "count": len(items),
+        "items": items,
+    }
+
+
+@router.get("/drawings/{drawing_id}/versions/{file_id}/download")
+async def download_drawing_version(drawing_id: str, file_id: str, current: dict = Depends(get_current_user)):
+    """Unduh salah satu versi file drawing (versi lama maupun live)."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    d = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
+    # Validasi file_id memang milik drawing ini (live atau salah satu versi arsip)
+    valid_ids = set()
+    fname = "drawing.pdf"
+    if d.get("file_id"):
+        valid_ids.add(d["file_id"])
+        if d["file_id"] == file_id:
+            fname = d.get("filename") or fname
+    for v in (d.get("file_versions") or []):
+        if v.get("file_id"):
+            valid_ids.add(v["file_id"])
+            if v["file_id"] == file_id:
+                fname = v.get("filename") or fname
+    if file_id not in valid_ids:
+        raise HTTPException(status_code=404, detail="Versi file tidak ditemukan untuk drawing ini")
+    try:
+        stream = await _fs().open_download_stream(ObjectId(file_id))
+        data = await stream.read()
+    except Exception:
+        raise HTTPException(status_code=404, detail="File versi tidak tersedia di storage")
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{fname}"'},
+    )
 
 
 class RenameDrawingIn(BaseModel):

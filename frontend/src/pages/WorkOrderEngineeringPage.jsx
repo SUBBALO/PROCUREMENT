@@ -248,9 +248,9 @@ export default function WorkOrderEngineeringPage() {
                             <button onClick={() => navigate(`/engineering/drf/${d.id}`)} className="inline-flex items-center px-2 py-1 bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-bold uppercase gap-0.5" data-testid={`wo-open-${d.form_no}`}>
                               <Eye size={11} weight="bold" /> Buka Work Group <ArrowRight size={11} />
                             </button>
-                            {isLeader && (
-                              <button onClick={() => setAssignDrf(d)} className="inline-flex items-center px-2 py-1 bg-sky-600 hover:bg-sky-700 text-white text-[10px] font-bold uppercase gap-0.5" title="Ganti engineer" data-testid={`wo-reassign-${d.form_no}`}>
-                                <UserPlus size={11} weight="bold" /> Ubah
+                            {(isLeader || d.assigned_engineer_id === user?.id) && (
+                              <button onClick={() => setAssignDrf(d)} className="inline-flex items-center px-2 py-1 bg-sky-600 hover:bg-sky-700 text-white text-[10px] font-bold uppercase gap-0.5" title="Pindah tugas ke engineer lain" data-testid={`wo-reassign-${d.form_no}`}>
+                                <ArrowsClockwise size={11} weight="bold" /> Pindah Tugas
                               </button>
                             )}
                           </>
@@ -379,10 +379,13 @@ function TabBtn({ active, onClick, icon: Icon, label, count, testid }) {
   );
 }
 
-/* Accept + Assign engineer (Riski). Bisa tunjuk diri sendiri → langsung ke Work Group. */
+/* Accept + Assign engineer (Riski). Bisa tunjuk diri sendiri → langsung ke Work Group.
+   Mode PINDAH TUGAS aktif bila DRF sudah ter-assign & bukan status 'submitted'. */
 function AssignEngineerDialog({ drf, currentUserId, onClose, onAssigned }) {
+  const isReassign = !!drf.assigned_engineer_id && drf.status !== "submitted";
   const [engineers, setEngineers] = useState([]);
-  const [selected, setSelected] = useState(drf.assigned_engineer_id || "");
+  const [selected, setSelected] = useState(isReassign ? "" : (drf.assigned_engineer_id || ""));
+  const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -393,31 +396,50 @@ function AssignEngineerDialog({ drf, currentUserId, onClose, onAssigned }) {
 
   const submit = async () => {
     if (!selected) return toast.error("Pilih engineer dulu");
+    if (isReassign && !reason.trim()) return toast.error("Alasan pindah tugas wajib diisi");
     setBusy(true);
     try {
-      await api.post(`/drawing-requests/${drf.id}/accept-assign`, { assigned_engineer_id: selected });
       const name = engineers.find((e) => e.id === selected)?.name || "engineer";
-      toast.success(`✓ DRF diterima & ditugaskan ke ${name}`);
+      if (isReassign) {
+        const { data } = await api.post(`/drawing-requests/${drf.id}/reassign`, {
+          assigned_engineer_id: selected,
+          reason: reason.trim(),
+        });
+        toast.success(data?.message || `✓ Tugas dipindah ke ${name}`);
+      } else {
+        await api.post(`/drawing-requests/${drf.id}/accept-assign`, { assigned_engineer_id: selected });
+        toast.success(`✓ DRF diterima & ditugaskan ke ${name}`);
+      }
       onAssigned?.(drf.id, selected, selected === currentUserId);
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Gagal assign");
+      toast.error(e.response?.data?.detail || "Gagal memproses");
     } finally { setBusy(false); }
   };
+
+  const headerCls = isReassign ? "bg-sky-700" : "bg-emerald-700";
+  const btnCls = isReassign ? "bg-sky-700 hover:bg-sky-800" : "bg-emerald-700 hover:bg-emerald-800";
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4" data-testid="assign-dialog">
       <Card className="rounded-none border-slate-300 w-full max-w-md bg-white">
-        <div className="px-4 py-3 bg-emerald-700 text-white">
-          <div className="text-[10px] uppercase tracking-widest opacity-80">Accept & Assign Engineer</div>
+        <div className={`px-4 py-3 text-white ${headerCls}`}>
+          <div className="text-[10px] uppercase tracking-widest opacity-80">{isReassign ? "Pindah Tugas Engineer" : "Accept & Assign Engineer"}</div>
           <div className="font-mono font-bold">{drf.form_no}</div>
           <div className="text-[11px] opacity-90">SO {drf.so_no} · {drf.customer_name || "-"} · {drf.request_type === "new_order" ? "New Order" : "Repeat Order"}</div>
         </div>
         <div className="p-4 space-y-3">
-          <div className="text-sm text-slate-600">Tunjuk <b>siapa</b> yang mengerjakan. Detail drawing/BOM diisi oleh engineer. (Boleh tunjuk diri sendiri.)</div>
-          <div className="max-h-60 overflow-y-auto border border-slate-200 divide-y">
+          {isReassign ? (
+            <div className="text-sm text-slate-600">
+              Sedang ditugaskan ke <b className="text-slate-900">{drf.assigned_engineer_name || "-"}</b>. Pilih engineer pengganti.
+              <div className="mt-1 text-[11px] text-sky-700 bg-sky-50 border border-sky-200 px-2 py-1">Nama pada dokumen drawing yang belum di-TTD akan berubah otomatis ke engineer baru.</div>
+            </div>
+          ) : (
+            <div className="text-sm text-slate-600">Tunjuk <b>siapa</b> yang mengerjakan. Detail drawing/BOM diisi oleh engineer. (Boleh tunjuk diri sendiri.)</div>
+          )}
+          <div className="max-h-52 overflow-y-auto border border-slate-200 divide-y">
             {engineers.length === 0 && <div className="p-3 text-xs text-slate-400 italic">Tidak ada user Engineering. Buat user role eng_staff di Admin.</div>}
-            {engineers.map((e) => (
-              <label key={e.id} className={`flex items-center gap-2 p-2.5 cursor-pointer hover:bg-emerald-50 ${selected === e.id ? "bg-emerald-100" : ""}`} data-testid={`assign-eng-${e.username}`}>
+            {engineers.filter((e) => !(isReassign && e.id === drf.assigned_engineer_id)).map((e) => (
+              <label key={e.id} className={`flex items-center gap-2 p-2.5 cursor-pointer hover:bg-sky-50 ${selected === e.id ? "bg-sky-100" : ""}`} data-testid={`assign-eng-${e.username}`}>
                 <input type="radio" name="eng" checked={selected === e.id} onChange={() => setSelected(e.id)} />
                 <div>
                   <div className="text-sm font-semibold text-slate-800">{e.name || e.username}{e.id === currentUserId ? " (Saya)" : ""}</div>
@@ -426,10 +448,23 @@ function AssignEngineerDialog({ drf, currentUserId, onClose, onAssigned }) {
               </label>
             ))}
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          {isReassign && (
+            <div>
+              <label className="text-[11px] uppercase tracking-widest font-bold text-slate-500 block mb-1">Alasan Pindah Tugas *</label>
+              <textarea
+                data-testid="reassign-reason"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                className="w-full min-h-[64px] border border-slate-300 focus:border-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-600 text-sm px-3 py-2 rounded-none"
+                placeholder="mis. Trisna cuti besok, target selesai H+1 — dialihkan ke engineer lain"
+              />
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-1">
             <Button variant="outline" onClick={onClose} className="rounded-none">Batal</Button>
-            <Button onClick={submit} disabled={busy || !selected} className="rounded-none bg-emerald-700 hover:bg-emerald-800 text-white disabled:opacity-40" data-testid="assign-submit">
-              <CheckCircle size={14} weight="bold" className="mr-1" /> {busy ? "..." : "Accept & Assign"}
+            <Button onClick={submit} disabled={busy || !selected} className={`rounded-none text-white disabled:opacity-40 ${btnCls}`} data-testid="assign-submit">
+              {isReassign ? <ArrowsClockwise size={14} weight="bold" className="mr-1" /> : <CheckCircle size={14} weight="bold" className="mr-1" />}
+              {busy ? "..." : (isReassign ? "Pindah Tugas" : "Accept & Assign")}
             </Button>
           </div>
         </div>

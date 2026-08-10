@@ -1,26 +1,18 @@
 [
   {
-    "content": "Redesign header InputTransactionPage jadi 2 kolom ala PO Accurate",
+    "content": "REASSIGN — selesai & terverifikasi (backend+frontend+test+revert)",
     "status": "completed"
   },
   {
-    "content": "Pertahankan toolbar aksi (Auto-Read PO, Tarik Consumable/BOM/DO)",
+    "content": "VERSION CONTROL — Backend: arsip versi lama saat re-upload + endpoint list/download versi + rev label",
     "status": "completed"
   },
   {
-    "content": "Pertahankan tabel item + semua fitur & kolom",
+    "content": "VERSION CONTROL — Frontend: panel Riwayat Versi File di Work Order drawing",
     "status": "completed"
   },
   {
-    "content": "Grand Total panel kanan-bawah + hapus duplikasi tfoot",
-    "status": "completed"
-  },
-  {
-    "content": "Pindahkan Catatan Transaksi ke paling bawah",
-    "status": "completed"
-  },
-  {
-    "content": "Compile + screenshot verify",
+    "content": "VERSION CONTROL — Test end-to-end (Rev 0->A, download versi lama, cleanup)",
     "status": "completed"
   }
 ]
