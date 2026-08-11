@@ -276,7 +276,7 @@ def _render_trf_pdf(doc: dict, prep_role: str = "") -> io.BytesIO:
         [_p(f"<u>{prep_name}</u>", sig_name), _p("<u>Yully</u>", sig_name), _p("<u>Asiong</u>", sig_name)],
         [_p(prep_role, sig_role), _p("Finance", sig_role), _p("MD", sig_role)],
         [_p(f"Submit: {submit_dt}" if submit_dt else "", sig_dt), _p("", sig_dt), _p("", sig_dt)],
-    ], colWidths=[52 * mm, 52 * mm, 52 * mm])
+    ], colWidths=[40 * mm, 40 * mm, 40 * mm])
     sign.hAlign = "LEFT"
     sign.setStyle(TableStyle([
         ("ALIGN", (0, 0), (-1, -1), "LEFT"),
