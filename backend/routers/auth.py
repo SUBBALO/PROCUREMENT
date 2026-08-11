@@ -131,6 +131,7 @@ async def login(payload: LoginRequest, response: Response):
         "name": user.get("name", ""),
         "role": user["role"],
         "perms": user.get("perms", []),
+        "access": user.get("access") or {},
         "is_super_admin": (user.get("username") or "").lower().strip() == SUPER_ADMIN_USERNAME,
         "must_change_password": must_change,
         "ui_prefs": user.get("ui_prefs") or {"reduce_motion": True},
@@ -163,6 +164,7 @@ VALID_ROLES = (
     "qc",  # Quality Control — Material Incoming Inspection (MII)
     "doc_control",  # Document Control (Salma) — Digital stamp & controlled document distribution
     "produksi",  # Produksi/Production — lihat BOM & drawing (preview-only, tanpa harga/costing)
+    "hrd",  # HRD — akses portal HRD (menu/kartu diatur granular via `access`)
 )
 
 
@@ -174,6 +176,7 @@ async def me(current: dict = Depends(get_current_user)):
         "name": current.get("name", ""),
         "role": current["role"],
         "perms": current.get("perms", []),
+        "access": current.get("access") or {},
         "is_super_admin": (current.get("username") or "").lower().strip() == SUPER_ADMIN_USERNAME,
         "must_change_password": bool(current.get("must_change_password")),
         "ui_prefs": current.get("ui_prefs") or {"reduce_motion": True},
@@ -253,6 +256,8 @@ def _sanitize_user(u: dict) -> dict:
         "role": u.get("role", "staff"),
         "active": u.get("active", True),
         "perms": u.get("perms", []),
+        "access": u.get("access") or {},
+        "must_change_password": bool(u.get("must_change_password")),
         "created_at": u.get("created_at", ""),
     }
 
@@ -282,6 +287,8 @@ async def create_user(payload: UserCreate, current: dict = Depends(require_super
         "role": role,
         "active": True,
         "perms": payload.perms or [],
+        "access": payload.access or {},
+        "must_change_password": bool(payload.must_change_password),
         "created_at": _now_iso(),
     }
     await db.users.insert_one(user_doc.copy())
@@ -312,6 +319,9 @@ async def update_user(user_id: str, payload: UserUpdate, current: dict = Depends
     if payload.perms is not None:
         updates["perms"] = list(payload.perms)
         changed["perms"] = list(payload.perms)
+    if payload.access is not None:
+        updates["access"] = dict(payload.access)
+        changed["access"] = "updated"
     if payload.password:
         if len(payload.password) < 6:
             raise HTTPException(status_code=400, detail="Password minimal 6 karakter")

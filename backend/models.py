@@ -15,6 +15,8 @@ class UserCreate(BaseModel):
     name: Optional[str] = ""
     role: Optional[str] = "staff"  # 'admin' | 'staff' | 'store' | 'finance'
     perms: Optional[List[str]] = None
+    access: Optional[dict] = None
+    must_change_password: Optional[bool] = None
 
 
 class UserUpdate(BaseModel):
@@ -23,6 +25,7 @@ class UserUpdate(BaseModel):
     active: Optional[bool] = None
     password: Optional[str] = None
     perms: Optional[List[str]] = None
+    access: Optional[dict] = None
 
 
 class UserOut(BaseModel):
