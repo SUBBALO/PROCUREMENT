@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import api from "../lib/api";
+import { processResizableTables } from "../lib/tableResize";
 import { Button } from "./ui/button";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
@@ -240,6 +241,31 @@ export default function AppShell({ children }) {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   const location = useLocation();
+  const mainRef = useRef(null);
+
+  // Excel-like resizable table columns — pasang grip di semua tabel dalam <main>.
+  useEffect(() => {
+    const root = mainRef.current;
+    if (!root) return;
+    let raf = 0;
+    let t = 0;
+    const run = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => processResizableTables(root));
+    };
+    run();
+    const obs = new MutationObserver(() => {
+      clearTimeout(t);
+      t = setTimeout(run, 150);
+    });
+    obs.observe(root, { childList: true, subtree: true });
+    return () => {
+      obs.disconnect();
+      cancelAnimationFrame(raf);
+      clearTimeout(t);
+    };
+  }, [location.pathname]);
+
   const onLogout = async () => {
     await logout();
     toast.success("Berhasil keluar");
@@ -587,7 +613,7 @@ export default function AppShell({ children }) {
       </header>
       )}
 
-      <main className="flex-1 px-6 py-6 max-w-[1600px] w-full mx-auto">{children}</main>
+      <main ref={mainRef} className="flex-1 px-6 py-6 max-w-[1600px] w-full mx-auto">{children}</main>
 
       {!isEmbed && (
       <footer className="border-t border-slate-200 bg-white px-6 py-3 text-[11px] text-slate-400 uppercase tracking-[0.15em]">
