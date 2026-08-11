@@ -45,6 +45,7 @@ import QCPage from "./pages/QCPage";
 import QCPortalPage from "./pages/QCPortalPage";
 import EcnTtdQueuePage from "./pages/EcnTtdQueuePage";
 import ProductionPortalPage from "./pages/ProductionPortalPage";
+import ProductionNewSoPage from "./pages/ProductionNewSoPage";
 import MaterialCostingPage from "./pages/MaterialCostingPage";
 import MasterDrawingPage from "./pages/MasterDrawingPage";import EngineeringMasterListPage from "./pages/EngineeringMasterListPage";
 import BomEntryGridPage from "./pages/BomEntryGridPage";
@@ -212,6 +213,7 @@ function AppRoutes() {
       <Route path="/qc" element={<ProtectedRoute><QCPortalPage /></ProtectedRoute>} />
       <Route path="/ecn-ttd" element={<ProtectedRoute><EcnTtdQueuePage /></ProtectedRoute>} />
       <Route path="/produksi" element={<ProtectedRoute><ProductionPortalPage /></ProtectedRoute>} />
+      <Route path="/produksi/new-so" element={<ProtectedRoute><ProductionNewSoPage /></ProtectedRoute>} />
       <Route path="/qc/mii" element={<ProtectedRoute><QCPage /></ProtectedRoute>} />
       <Route path="/qc/inspections/:id" element={<ProtectedRoute><QCPage /></ProtectedRoute>} />
       <Route path="/engineering/material-costing" element={<ProtectedRoute><MaterialCostingPage /></ProtectedRoute>} />

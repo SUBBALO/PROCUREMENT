@@ -114,6 +114,35 @@ async def _gather_notifications(user: dict) -> dict:
         except Exception:
             pass
 
+    # ------------- SO Baru untuk Produksi (belum di-acknowledge) -------------
+    if role_prod or admin_like:
+        try:
+            new_sos = await db.sales_orders.find(
+                {"deleted_at": {"$exists": False}, "prod_ack": {"$ne": True}},
+                {"_id": 0, "id": 1, "so_no": 1, "customer": 1, "so_date": 1, "created_at": 1, "description": 1},
+            ).sort("created_at", -1).limit(50).to_list(length=50)
+            if new_sos:
+                so_items = []
+                for so in new_sos:
+                    so_items.append({
+                        "id": so.get("id"),
+                        "title": f"SO {so.get('so_no', '') or '-'} · {so.get('customer', '') or '-'}",
+                        "detail": so.get("description", "") or "SO baru — siapkan produksi",
+                        "sub": f"Tanggal {so.get('so_date') or (so.get('created_at') or '')[:10]}",
+                        "link": "/produksi/new-so",
+                        "kind": "prod_new_so",
+                        "created_at": so.get("created_at"),
+                    })
+                categories.append({
+                    "key": "prod_new_so",
+                    "label": "SO Baru — perlu disiapkan Produksi",
+                    "count": len(so_items),
+                    "severity": "info",
+                    "items": so_items,
+                })
+        except Exception:
+            pass
+
     if can_approve:
         try:
             pending_store = await db.store_requests.find({"status": "pending"}, {"_id": 0}).sort("created_at", -1).limit(20).to_list(length=20)

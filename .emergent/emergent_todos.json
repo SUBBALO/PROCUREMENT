@@ -1,30 +1,38 @@
 [
   {
-    "content": "Backend: add `access` field to UserCreate/UserUpdate models",
+    "content": "Phase 6.1: Backend production router (GET new-so, POST ack/unack)",
     "status": "completed"
   },
   {
-    "content": "Backend: persist & return `access` in auth (login, /auth/me, sanitize, create, update)",
+    "content": "Phase 6.1: Register production router in server.py",
     "status": "completed"
   },
   {
-    "content": "Backend: add GET /permissions/registry endpoint (super_admin)",
+    "content": "Phase 6.1: Add 'SO Baru' notification category for production",
     "status": "completed"
   },
   {
-    "content": "Backend: centralized permission-enforcement middleware in server.py",
+    "content": "Phase 6.1: Frontend ProductionNewSoPage + portal card + route",
     "status": "completed"
   },
   {
-    "content": "Frontend: build compact AccessMatrix component",
+    "content": "Phase 6.1: Test (curl new-so/ack + screenshot page)",
     "status": "completed"
   },
   {
-    "content": "Frontend: wire AccessMatrix into EditUserDialog + widen dialog + load/save access",
-    "status": "completed"
+    "content": "Phase 6.2: Work Order/SPK auto from stamped drawing + BOM",
+    "status": "pending"
   },
   {
-    "content": "Test backend (syntax, restart, curl enforcement) + frontend (esbuild, screenshot)",
-    "status": "completed"
+    "content": "Phase 6.3: Production tracking (simple status; detail pending user)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 6.4: QC Final + dimension report upload",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 6.5: Store Gate Pass + DO (Surat Jalan) after QC OK",
+    "status": "pending"
   }
 ]

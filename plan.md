@@ -30,7 +30,21 @@ Confirmed decisions:
 - Frontend esbuild compile clean; screenshot shows dense Accurate-style matrix ✅
 - Temp test users (zz_perm_tester, zz_enf) removed
 
-## Phase 4: Compact "Accurate-style" UI (Status: COMPLETED)
+## Phase 6: Production→QC→Delivery Module (Status: IN PROGRESS — phased)
+Confirmed flow after Doc Control stamp (per PT MKS flowchart):
+Sales SO → (Produksi lihat SO awal + notif) → Engineering stamp drawing + BOM → **Work Order/SPK** → Produksi kerjakan (tracking) → **QC Final** (OK → upload dimension report) → **Store buat Gate Pass + DO (Surat Jalan)** → kirim → selesai.
+User decisions: full end-to-end; WO auto from stamped drawing+BOM (a) + Produksi dapat SO lebih awal (notif "SO baru"); tracking detail masih dibahas (buat simpel dulu); QC final OK→upload dimension report; setelah OK ke Store buat gatepass+DO.
+
+### Phase 6.1 — Produksi lihat SO baru + notifikasi (Status: COMPLETED)
+- backend/routers/production.py: GET /production/new-so (scope unack/all, +has_drawing/has_bom flags, unack_count), POST ack, POST unack. Registered in server.py.
+- notifications.py: kategori "SO Baru — perlu disiapkan Produksi" untuk role produksi + admin_like.
+- Frontend: ProductionPortalPage card "SO Masuk (Baru)" (badge unack_count) + ProductionNewSoPage (/produksi/new-so) tabel compact + ack/unack. Route added.
+- Verified: curl (300 items, unack 1729→1728 on ack→restored) + screenshots (portal card + page). Notif bell includes category.
+
+### Phase 6.2 — Work Order / SPK (auto dari drawing ter-stamp + BOM) (Status: NOT STARTED)
+### Phase 6.3 — Production tracking (status simpel; detail nunggu diskusi user) (Status: NOT STARTED)
+### Phase 6.4 — QC Final (OK → upload dimension report) (Status: NOT STARTED)
+### Phase 6.5 — Store Gate Pass + DO (Surat Jalan) setelah QC OK (Status: NOT STARTED)
 - Redesigned Input Transaksi Pembelian to dense Accurate look. User approved.
 - Applied GLOBAL compact density layer scoped to `<main>` (`.erp-dense` in index.css) → all authenticated pages/forms/tables match Input Transaksi sizing. Verified Store/Master List/Input.
 - Incoming Goods: compacted title + 2 shortcut cards (slim horizontal tiles) + filter card → data table now sits near top. Verified via screenshot.

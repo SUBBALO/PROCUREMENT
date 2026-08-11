@@ -91,6 +91,9 @@ api_router.include_router(kpi_router.router)
 from routers import nonconformance as nonconformance_router  # noqa: E402
 api_router.include_router(nonconformance_router.router)
 
+from routers import production as production_router  # noqa: E402
+api_router.include_router(production_router.router)
+
 
 @api_router.get("/")
 async def root():

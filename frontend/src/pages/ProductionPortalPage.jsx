@@ -1,18 +1,34 @@
 import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
 import api from "../lib/api";
-import { Signature, FileText, Factory, WarningCircle } from "@phosphor-icons/react";
+import { Signature, FileText, Factory, WarningCircle, ClipboardText } from "@phosphor-icons/react";
 
 export default function ProductionPortalPage() {
   const [pendingTtd, setPendingTtd] = useState(0);
+  const [newSo, setNewSo] = useState(0);
 
   useEffect(() => {
     api.get("/drawings/ecn-pending-ttd")
       .then(({ data }) => setPendingTtd((data.items || []).length))
       .catch(() => setPendingTtd(0));
+    api.get("/production/new-so?scope=unack")
+      .then(({ data }) => setNewSo(data.unack_count || 0))
+      .catch(() => setNewSo(0));
   }, []);
 
   const CARDS = [
+    {
+      key: "new-so",
+      label: "SO Masuk (Baru)",
+      stats: "Sales Order baru · siapkan produksi",
+      description:
+        "Daftar Sale Order yang baru dibuat Sales. Produksi bisa lihat lebih awal (walau drawing belum di-stamp), cek status drawing/BOM, lalu tandai sudah disiapkan.",
+      icon: ClipboardText,
+      href: "/produksi/new-so",
+      accent: "from-emerald-500 via-teal-500 to-cyan-500",
+      accentText: "text-emerald-400",
+      badgeCount: newSo,
+    },
     {
       key: "ecn-ttd",
       label: "Menunggu TTD Saya",
