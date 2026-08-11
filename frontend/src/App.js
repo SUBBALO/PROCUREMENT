@@ -7,7 +7,6 @@ import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import InputTransactionPage from "./pages/InputTransactionPage";
 import TransferRequestPage from "./pages/TransferRequestPage";
-import HrdPortalPage from "./pages/HrdPortalPage";
 import MasterListPage from "./pages/MasterListPage";
 import TvSoProgressPage from "./pages/TvSoProgressPage";
 import SalesOrderPage from "./pages/SalesOrderPage";
@@ -168,13 +167,6 @@ function ProtectedRoute({ children, storeRoleTo = "/store/stock", blockStore = f
   if (user.role === "purchasing" && location.pathname.startsWith("/admin")) {
     return <Navigate to="/" replace />;
   }
-  // HRD role: ONLY /hrd accessible outside `/` (+ universal pages)
-  if (user.role === "hrd") {
-    if (!isUniversalPage && !location.pathname.startsWith("/hrd")) {
-      return <Navigate to="/hrd" replace />;
-    }
-    return <AppShell>{children}</AppShell>;
-  }
   return <AppShell>{children}</AppShell>;
 }
 
@@ -196,7 +188,6 @@ function AppRoutes() {
       <Route path="/input" element={<ProtectedRoute><InputTransactionPage /></ProtectedRoute>} />
       <Route path="/purchasing/bulk" element={<ProtectedRoute><BulkTransaksiPage /></ProtectedRoute>} />
       <Route path="/transfer-request" element={<ProtectedRoute><TransferRequestPage /></ProtectedRoute>} />
-      <Route path="/hrd" element={<ProtectedRoute><HrdPortalPage /></ProtectedRoute>} />
       <Route path="/master" element={<ProtectedRoute><MasterListPage /></ProtectedRoute>} />
       <Route path="/items" element={<ProtectedRoute><MasterItemsPage /></ProtectedRoute>} />
       <Route path="/kpi" element={<ProtectedRoute><KPIReportPage /></ProtectedRoute>} />

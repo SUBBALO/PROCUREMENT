@@ -1,12 +1,12 @@
-# Rencana Implementasi Transfer Request Form (CRF‑TT) + HRD Payroll (untuk dipindah ke HRIS)
+# Rencana Implementasi Transfer Request Form (CRF‑TT) + HRIS (Payroll/HR)
 
-> Dokumen plan ini awalnya fokus TRF. Saat ini ditambah **Phase HRD Payroll** karena modul HRD sudah dibangun di dalam ERP dan akan **di-port** ke proyek terpisah **HRIS**.
+> Dokumen plan ini awalnya fokus TRF. Modul HRD/Payroll sempat dibangun di ERP sebagai tahap persiapan, namun **keputusan final**: HRD menjadi aplikasi terpisah bernama **HRIS (HR Information System)**. Karena itu, **modul HRD sudah dihapus total dari ERP** setelah dibuat **paket port**.
 
 ---
 
 ## 1) Objectives
 
-### A. Transfer Request Form (CRF‑TT)
+### A. Transfer Request Form (CRF‑TT) — ERP
 - Menyediakan fitur **Transfer Request Form (CRF‑TT)** untuk pengajuan pembayaran ke Finance.
 - Mendukung **1 form berisi banyak vendor** dan **banyak baris pembayaran**.
 - **Nomor rekening per baris** (auto-fill dari Master Bank Vendor, tetap bisa diedit).
@@ -18,20 +18,14 @@
   - Master List TRF.
 - Format nomor (reset tiap bulan): `005/CRF-TT/VIII/2026`.
 
-### B. HRD Payroll (di ERP, siap dipindah ke HRIS)
-- Menyediakan **Portal HRD** untuk pengelolaan payroll yang **rahasi**:
+### B. HRIS (HR Information System) — aplikasi terpisah
+- Membangun aplikasi HRIS terpisah (DB/URL/login terpisah dari ERP) yang mencakup:
+  - Payroll/Slip Gaji berbasis upload Excel konsultan;
   - Master Karyawan;
-  - Upload Excel payroll dari konsultan;
-  - Generate PDF slip gaji sesuai format perusahaan;
-  - Blast email slip gaji via Gmail SMTP (App Password) + status terkirim/gagal per karyawan;
-  - Log akses & aktivitas.
-- Keamanan/privasi payroll:
-  - **Granular permission ala Accurate**: View/Create/Edit/Delete/Report per menu HRD.
-  - **Two-tier PIN**:
-    1) **PIN Portal HRD (per user)**: wajib untuk user HRD untuk masuk portal.
-    2) **PIN Gaji (khusus menu gaji)**: diperlukan untuk membuka menu payroll (Karyawan/Slip/Email/Settings) dan dimiliki oleh user gaji (mis. Herliana).
-  - Admin/superadmin **tidak otomatis bisa lihat gaji** tanpa akses HRD + PIN sesuai aturan.
-- Modul HRD dibangun di ERP sebagai tahap persiapan, lalu akan **di-port** ke proyek baru bernama **HRIS (HR Information System)** (DB/URL/login terpisah) setelah user push ke GitHub.
+  - Email blast slip gaji (Gmail SMTP App Password) + status per karyawan;
+  - Log akses/aktivitas;
+  - Roadmap HR: Absensi, Cuti, Kontrak Kerja, Arsip Dokumen Karyawan, Dashboard HR.
+- **Catatan status**: HRIS **belum dibuat sebagai proyek Emergent baru**; yang sudah tersedia adalah **paket port** dari modul payroll yang sudah teruji.
 
 ---
 
@@ -82,119 +76,94 @@
 
 ---
 
-### Phase 4 — HRD Payroll Backend (API + Import Excel + PDF + Email + Security)
+### Phase 4 — HRD Payroll (dibangun dulu di ERP, kemudian dibuat paket port)
+> Phase ini historis: modul payroll HRD sempat dibangun dan diverifikasi, lalu **dipaketkan untuk port** dan **dihapus total dari ERP** karena HRD akan berdiri sebagai HRIS.
 
-**User stories**
-1. HRD dapat menyimpan **Master Karyawan** (nama, NIK, jabatan, email, bank, no rekening).
-2. HRD dapat upload Excel dari konsultan:
-   - Sheet utama: `Daftar Gaji` (informasi summary)
-   - Sheet berikutnya: **per-karyawan** dengan marker `A5 = "SLIP GAJI"`.
-3. Sistem menghasilkan slip gaji dengan rincian:
+**Fitur yang sudah teruji saat masih ada di ERP**
+1. Master Karyawan (nama, NIK, jabatan, email, bank, no rekening).
+2. Upload Excel konsultan:
+   - Sheet per-karyawan dengan marker `A5 = "SLIP GAJI"`.
+3. Slip gaji lengkap:
    - Penghasilan + qty
    - Pengurangan + qty/unit
    - Box rate (Perhari, Lembur/Jam, T. Kehadiran)
    - Terbilang
-   - Pembulatan (Take Home Pay) diambil dari Excel
-4. Slip bisa dicetak PDF dan dikirim email massal via Gmail SMTP.
-5. Status kirim per karyawan: `belum/terkirim/gagal` + error message.
+   - Pembulatan/Take Home Pay diambil dari Excel
+4. PDF slip sesuai template (rapi, lengkap), footer sistem (timestamp WIB + printed_by) dan **tanpa tanda tangan basah**.
+5. Gmail SMTP blast + status `belum/terkirim/gagal` + error.
 6. Keamanan:
-   - Portal HRD wajib PIN portal per-user.
-   - Menu gaji wajib PIN gaji (khusus).
-   - Permission granular ala Accurate per menu HRD.
-7. Portal HRD punya log akses (buka portal, PIN salah, set/reset PIN, import, blast).
+   - Permission granular ala Accurate per menu (View/Create/Edit/Delete/Report)
+   - Two-tier PIN:
+     - PIN Portal (per-user)
+     - PIN Gaji (khusus menu gaji)
+7. Log akses: buka portal, PIN salah, set/reset PIN, import, blast.
 
-**Langkah teknis (Backend)**
-- Router: `backend/routers/hrd.py`
-  - Gate & security:
-    - `GET /api/hrd/my-access`
-    - `POST /api/hrd/portal-pin/set`
-    - `POST /api/hrd/portal-pin/verify` → `portal_token`
-    - `POST /api/hrd/set-pin` (PIN Gaji) → bisa oleh gaji user (Herliana) / super admin
-    - `POST /api/hrd/verify-pin` → `gaji_token`
-    - Semua endpoint gaji memakai permission + PIN gaji header `x-hrd-gaji`.
-  - Employee Master:
-    - `GET/POST/PUT/DELETE /api/hrd/employees`
-  - Payslips:
-    - `GET/POST/PUT/DELETE /api/hrd/payslips`
-    - `POST /api/hrd/payslips/import-excel` → parse sheet per-karyawan `SLIP GAJI`
-    - `GET /api/hrd/payslips/{id}/pdf` → PDF sesuai template (tanpa tanda tangan basah, footer sistem + timestamp WIB + printed_by)
-    - `GET /api/hrd/import-template`
-  - Gmail SMTP:
-    - `GET/POST /api/hrd/settings` (gmail_user, app_password, sender_name)
-    - `POST /api/hrd/blast` (bulk) + status per slip
-  - Logs:
-    - `GET /api/hrd/logs`
-- Auth model update:
-  - `backend/models.py` tambah field user `access` (permission matrix)
-  - `backend/routers/auth.py`:
-    - tambah role `hrd`
-    - include `access` dalam response `login` & `me`
-    - persist `access` pada create/update user.
-- Router registration:
-  - `backend/server.py` include router HRD.
-
-**Status**: ✅ **Selesai & terverifikasi**
-- Import Excel diverifikasi cocok dengan `Gaji Trial.xlsx`.
-- PDF slip diverifikasi sesuai contoh (qty column, rate box, Terbilang, pembulatan, footer sistem).
-- Blast email endpoint siap (uji kirim asli menunggu kredensial Gmail).
+**Status**: ✅ **Selesai & terverifikasi (saat masih di ERP)**
 
 ---
 
-### Phase 5 — HRD Payroll Frontend Portal + Admin Permission Editor
-
-**User stories**
-1. User HRD masuk portal HRD:
-   - Wajib PIN Portal masing-masing.
-2. Menu gaji (Karyawan/Slip/Email/Settings) minta PIN Gaji (Bu Lia).
-3. UI menampilkan kartu sesuai permission:
-   - Data Karyawan
-   - Slip Gaji (upload-first)
-   - Kirim Email
-   - Pengaturan Gmail
-   - Dokumen HRD (placeholder untuk HRIS: Absensi/Cuti/Kontrak/Arsip/Dashboard)
-   - Log Akses
-4. Super Admin dapat mengatur permission HRD user dengan checklist ala Accurate.
-
-**Langkah teknis (Frontend)**
-- Portal:
-  - `frontend/src/pages/HrdPortalPage.jsx`
-    - Portal PIN gate: `portal-pin/set` & `portal-pin/verify`
-    - Gaji PIN dialog: `verify-pin` → `gaji_token`
-    - Header menu: ganti/reset PIN portal, reset PIN gaji (jika berhak), lock gaji, keluar portal
-    - Slip Gaji: upload Excel + list + open PDF
-    - Email: pilih slip + blast + status
-    - Settings: Gmail config (App password disimpan server, tidak pernah ditampilkan)
-    - Dokumen HRD: placeholder cards
-    - Log Akses: table
-- Routing & landing:
-  - `frontend/src/App.js` tambah gating role `hrd` (hanya boleh akses /hrd di luar landing)
-  - `frontend/src/pages/LandingPage.jsx`:
-    - Card HRD tampil untuk role `hrd` atau user yang punya `access.*.view` HRD
-- Admin panel:
-  - `frontend/src/pages/AdminPage.jsx`
-    - tambah role `hrd`
-    - tambah **HRD permission matrix editor** pada Create/Edit user
-    - simpan field `access` ke API `/users` & `/users/{id}`
-
-**Status**: ✅ **Selesai (compile + screenshot verified)**
-
----
-
-### Phase 6 — Verification, Testing, dan Readiness untuk Port ke HRIS
+### Phase 5 — Paket Port HRIS dibuat + Modul HRD dihapus dari ERP
+**Tujuan**
+- Menyiapkan modul payroll sebagai paket port agar bisa dipindahkan ke proyek HRIS baru.
+- Menghapus seluruh jejak HRD dari ERP agar ERP kembali bersih.
 
 **Langkah teknis**
-1. **Testing agent** untuk HRD:
-   - flow portal pin set/verify
-   - gaji pin set/verify
-   - import excel (sample)
-   - list payslips + pdf 200
-   - blast: validasi gagal bila gmail belum di-set; sukses setelah diset (opsional)
-   - permission checks (heri vs herliana)
-2. Cleanup data uji HRD (gunakan prefix khusus / filter username test).
-3. Persiapan port ke HRIS:
-   - User push repo ERP ke GitHub
-   - Start New Task “HRIS” (FastAPI+React+MongoDB) → port folder HRD + auth permission + UI HRD
-   - Pastikan DB HRIS terpisah (koleksi HRIS) dan URL/deploy terpisah.
+1. Buat paket port di:
+   - `/app/hris_module/`
+     - `backend/hrd.py`
+     - `backend/auth_permission_snippets.py`
+     - `frontend/HrdPortalPage.jsx`
+     - `frontend/HrdAccessMatrix.jsx`
+     - `reference/Gaji_Trial.xlsx`
+     - `README_PORT.md` (prompt siap-paste + aturan bisnis)
+2. Hapus modul HRD dari ERP:
+   - Backend:
+     - Hapus `backend/routers/hrd.py`
+     - Hapus registrasi router HRD di `backend/server.py`
+     - Revert perubahan `backend/models.py` (hapus field `access` dari UserCreate/UserUpdate)
+     - Revert perubahan `backend/routers/auth.py` (hapus role `hrd` + pengembalian/persist `access`)
+   - Frontend:
+     - Hapus `frontend/src/pages/HrdPortalPage.jsx`
+     - Hapus route `/hrd` + gating role `hrd` di `frontend/src/App.js`
+     - Hapus kartu HRD di `frontend/src/pages/LandingPage.jsx`
+     - Revert editor permission matrix HRD di `frontend/src/pages/AdminPage.jsx`
+3. Bersihkan database ERP:
+   - Drop koleksi: `hrd_payslips`, `hrd_employees`, `hrd_settings`
+   - Hapus user: `herliana`, `heri`
+   - Unset field `access`, `hrd_pin_hash`, `hrd_pin_updated_at` dari semua user
+   - Hapus log `activity_logs` dengan prefix action `hrd_*`
+4. Verifikasi akhir ERP:
+   - Frontend compile OK
+   - Backend restart OK
+   - `/api/hrd/*` = 404
+   - Landing ERP tampil normal tanpa kartu HRD
+
+**Status**: ✅ **Selesai & terverifikasi**
+
+---
+
+### Phase 6 — HRIS Project Baru (Next)
+**User stories (Payroll MVP di HRIS)**
+1. HRD masuk ke HRIS (login terpisah) dan bisa atur PIN portal per-user.
+2. Menu gaji terkunci PIN Gaji (khusus Bu Lia/Herliana).
+3. Upload Excel konsultan → slip gaji terbentuk otomatis → PDF rapi.
+4. Blast email slip (Gmail SMTP) + status per karyawan.
+5. Log akses/aktivitas tersedia.
+
+**Langkah teknis**
+1. User push ERP repo ke GitHub (sebagai arsip  back-up kode).
+2. Buat proyek Emergent baru: **Start New Task “HRIS”** (FastAPI + React + MongoDB).
+3. Di HRIS:
+   - Pull repo/ambil paket `/app/hris_module/` (copy ke proyek baru).
+   - Ikuti `hris_module/README_PORT.md` untuk:
+     - pasang `backend/routers/hrd.py`
+     - adaptasi auth/models/deps/security sesuai snippet
+     - pasang UI `HrdPortalPage.jsx` + matrix editor
+4. Pastikan:
+   - DB HRIS terpisah dari ERP
+   - URL/deploy HRIS terpisah
+5. Setelah payroll stabil, mulai modul Dokumen HRD:
+   - Absensi, Cuti, Kontrak, Arsip, Dashboard.
 
 **Status**: ⏳ **Next**
 
@@ -202,36 +171,34 @@
 
 ## 3) Next Actions (eksekusi terdekat)
 
-1. Jalankan **testing agent** untuk HRD (Phase 6.1).
-2. Tambahkan screenshot evidence untuk:
-   - PIN Portal gate
-   - Unlock PIN Gaji
-   - Upload Excel + list payslips
-   - PDF preview
-   - Admin permission matrix
-3. Konfirmasi user:
-   - Gmail sender + App Password akan diisi melalui UI Settings saat siap.
-4. Setelah user push ke GitHub:
-   - Buat proyek baru **HRIS** dan port modul HRD.
+1. User **push ERP ke GitHub** (repo penuh tidak masalah; HRD sudah dihapus dari ERP).
+2. Dari Home Emergent: **Start New Task → HRIS**.
+3. Saat task HRIS aktif:
+   - Copy/pull paket `hris_module/` dan jalankan langkah port sesuai `README_PORT.md`.
+4. Setelah HRIS hidup:
+   - Konfigurasi Gmail sender + App Password melalui UI Settings HRIS
+   - Uji kirim slip untuk 1-2 user dulu, lalu blast full.
 
 ---
 
 ## 4) Success Criteria
 
-### TRF
+### TRF (ERP)
 - Menu TRF sesuai format nomor, multi-vendor/multi-line, rule pajak/valas, PDF A4 landscape.
 - E2E verified (save → list → detail → delete, PDF 200).
 
-### HRD Payroll
-- Portal HRD bisa dipakai oleh user HRD (Herliana/Heri) dengan:
-  - PIN Portal per-user wajib.
-  - PIN Gaji khusus untuk menu gaji.
-  - Permission granular ala Accurate berfungsi (view/create/edit/delete/report).
-- Upload Excel dari konsultan menghasilkan payslip akurat sesuai template dan bisa di-PDF-kan.
-- Blast email siap dan menyimpan status per karyawan (uji kirim menunggu kredensial Gmail).
-- Log akses tersedia di portal.
-- Siap dipindahkan ke **HRIS** terpisah (DB/URL/login terpisah) setelah repo dipush.
+### HRIS (terpisah)
+- Payroll MVP berjalan di HRIS:
+  - Upload Excel konsultan menghasilkan payslip akurat dan PDF rapi sesuai template.
+  - PIN Portal per-user wajib; PIN Gaji khusus untuk menu gaji.
+  - Email blast siap + status per karyawan.
+  - Log akses tersedia.
+- ERP tetap bersih:
+  - Tidak ada endpoint `/api/hrd` dan tidak ada menu HRD.
+  - User HRD tidak ada di ERP.
 
 **Catatan status**:
 - ✅ TRF shipped & agent-verified end-to-end di preview; ⏳ menunggu konfirmasi user di environment lokal.
-- ✅ HRD payroll shipped & agent-verified (import Excel + PDF + security + UI); ⏳ testing agent formal + port ke HRIS menunggu push GitHub.
+- ✅ Paket port HRIS tersedia di `/app/hris_module/`.
+- ✅ Modul HRD sudah dihapus total dari ERP; ERP kembali bersih.
+- ⏳ HRIS project baru belum dibuat (menunggu user Start New Task setelah push GitHub).

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import SoProgressTracker from "../components/SoProgressTracker";
 import {
-  Storefront, Wrench, ShoppingBag, Package, ClipboardText, FileText, Factory, ArrowRight, Sparkle, Stamp, WarningCircle, Bank, UsersThree
+  Storefront, Wrench, ShoppingBag, Package, ClipboardText, FileText, Factory, ArrowRight, Sparkle, Stamp, WarningCircle, Bank
 } from "@phosphor-icons/react";
 
 /* -------------------- Department Definitions -------------------- */
@@ -134,20 +134,6 @@ const DEPARTMENTS = [
     stats: "TRF · Vendor Bank · PDF",
     roles: ["admin", "super_admin", "supervisor", "sales", "engineering", "eng_leader", "eng_head", "eng_staff", "purchasing", "finance"],
   },
-  {
-    key: "hrd",
-    label: "HRD",
-    tagline: "Karyawan · Slip Gaji · Kirim Email",
-    description: "Portal HRD terkunci PIN. Kelola data karyawan, buat slip gaji detail, cetak PDF, dan kirim slip via email ke tiap karyawan. Data gaji bersifat rahasia — hanya bisa dibuka dengan PIN HRD.",
-    icon: UsersThree,
-    href: "/hrd",
-    accent: "from-teal-500 via-emerald-500 to-green-500",
-    accentSolid: "bg-teal-600",
-    accentText: "text-teal-600",
-    accentBorder: "border-teal-300",
-    stats: "Karyawan · Slip Gaji · Email",
-    roles: ["super_admin", "hrd"],
-  },
 ];
 
 export default function LandingPage() {
@@ -155,14 +141,8 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const role = user?.role || "";
 
-  // HRD access: super admin, atau punya minimal 1 view menu HRD
-  const hasHrdAccess = !!user?.is_super_admin || Object.values(user?.access || {}).some((m) => m && m.view);
-
   // Filter departments visible to this user
-  const visible = DEPARTMENTS.filter((d) => {
-    if (d.key === "hrd") return d.roles.includes(role) || hasHrdAccess;
-    return d.roles.includes(role);
-  });
+  const visible = DEPARTMENTS.filter((d) => d.roles.includes(role));
 
   const now = new Date();
   const greeting = now.getHours() < 11 ? "Selamat pagi" : now.getHours() < 15 ? "Selamat siang" : now.getHours() < 18 ? "Selamat sore" : "Selamat malam";
