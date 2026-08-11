@@ -3796,9 +3796,15 @@ async def _revision_snapshot_bytes(drawing_id: str, rev_id: str, which: str = "m
     # Cap OBSOLETE hanya setelah Document Control (Salma) men-stamp-nya secara eksplisit.
     if rev.get("obsolete_status") == "stamped":
         try:
-            from utils.pdf_stamper import apply_obsolete
             if data[:5].startswith(b"%PDF"):
-                data = apply_obsolete(data)
+                stamp = rev.get("obsolete_stamp") or {}
+                if stamp.get("x") is not None and stamp.get("y") is not None:
+                    from utils.pdf_stamper import apply_obsolete_at
+                    data = apply_obsolete_at(data, page_index=int(stamp.get("page", -1)),
+                                             x=float(stamp["x"]), y=float(stamp["y"]))
+                else:
+                    from utils.pdf_stamper import apply_obsolete
+                    data = apply_obsolete(data)
         except Exception:
             pass
     return data
@@ -3905,6 +3911,9 @@ async def list_obsolete_drawings(status: Optional[str] = None, current: dict = D
 
 class ObsoleteStampIn(BaseModel):
     notes: str = ""
+    page: int = -1      # halaman yang dipilih (-1 = semua halaman)
+    x: Optional[float] = None  # posisi relatif 0..1 (klik user)
+    y: Optional[float] = None
 
 
 @router.post("/drawings/{drawing_id}/revisions/{rev_id}/stamp-obsolete")
@@ -3933,6 +3942,9 @@ async def stamp_revision_obsolete(
         "role": current.get("role"),
         "at": now,
         "notes": (payload.notes if payload else "") or "",
+        "page": (payload.page if payload else -1),
+        "x": (payload.x if payload else None),
+        "y": (payload.y if payload else None),
     }
     await db.drawings.update_one(
         {"id": drawing_id},

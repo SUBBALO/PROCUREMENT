@@ -1,6 +1,6 @@
 import React from "react";
 import DeptPortal from "../components/DeptPortal";
-import { Plus, ListDashes, Package, ChartBar, Truck, ChartLineUp, Lightning } from "@phosphor-icons/react";
+import { Plus, ListDashes, Package, ChartBar, Truck, ChartLineUp, Lightning, Bank } from "@phosphor-icons/react";
 import { useNotifCount } from "../lib/useNotifCount";
 
 export default function PurchasingPortalPage() {
@@ -26,6 +26,12 @@ export default function PurchasingPortalPage() {
       description: "Daftar lengkap transaksi pembelian, filter, edit, export Excel.",
       icon: ListDashes, href: "/master",
       accent: "from-emerald-500 via-teal-500 to-cyan-500", accentText: "text-emerald-400",
+    },
+    {
+      key: "transfer-request", label: "Transfer Request Form", stats: "CRF-TT · Pengajuan ke Finance",
+      description: "Ajukan pembayaran ke Finance. Multi-vendor & multi-baris, auto-isi rekening dari Master Bank, PPh & valas fleksibel, cetak PDF.",
+      icon: Bank, href: "/purchasing/transfer-request",
+      accent: "from-sky-500 via-cyan-500 to-blue-500", accentText: "text-sky-400",
     },
     {
       key: "master-items", label: "Master Items (Harga)", stats: "Item · Vendor · Price",

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import api from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -9,6 +10,7 @@ import { MagnifyingGlass, ArrowClockwise, Eye, Paperclip, Stamp, Archive, CheckS
 import BackLink from "../components/BackLink";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import PdfPreviewModal from "../components/PdfPreviewModal";
+import PdfStampCanvas from "../components/PdfStampCanvas";
 
 const DC_ROLES = ["doc_control", "document_control", "admin", "super_admin"];
 const apiUrl = process.env.REACT_APP_BACKEND_URL;
@@ -23,7 +25,8 @@ const apiUrl = process.env.REACT_APP_BACKEND_URL;
 export default function ControlledDrawingDatabasePage({ embedded = false }) {
   const { user } = useAuth();
   const isDocCon = DC_ROLES.includes(user?.role);
-  const [tab, setTab] = useState("controlled");
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState(searchParams.get("tab") === "obsolete" ? "obsolete" : "controlled");
   const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-indigo-600 text-sm";
 
   // Controlled list
@@ -74,9 +77,9 @@ export default function ControlledDrawingDatabasePage({ embedded = false }) {
   const obsFiltered = (obs.items || []).filter((r) => !q.trim() || [r.drawing_no, r.so_no, r.customer_name, r.ecn_no].some((v) => (v || "").toLowerCase().includes(q.toLowerCase())));
   const obsPag = usePagination(obsFiltered, 20);
 
-  const doStampObsolete = async (row, notes) => {
+  const doStampObsolete = async (row, payload) => {
     try {
-      await api.post(`/drawings/${row.drawing_id}/revisions/${row.rev_id}/stamp-obsolete`, { notes: notes || "" });
+      await api.post(`/drawings/${row.drawing_id}/revisions/${row.rev_id}/stamp-obsolete`, payload);
       toast.success(`✓ ${row.drawing_no} Rev ${row.rev_no} di-stamp OBSOLETE`);
       setStampTarget(null);
       loadObsolete();
@@ -321,54 +324,88 @@ export default function ControlledDrawingDatabasePage({ embedded = false }) {
       {stampTarget && (
         <StampObsoleteDialog
           row={stampTarget}
+          apiUrl={apiUrl}
           onCancel={() => setStampTarget(null)}
-          onConfirm={(notes) => doStampObsolete(stampTarget, notes)}
+          onConfirm={(payload) => doStampObsolete(stampTarget, payload)}
         />
       )}
     </div>
   );
 }
 
-function StampObsoleteDialog({ row, onCancel, onConfirm }) {
+function StampObsoleteDialog({ row, apiUrl, onCancel, onConfirm }) {
   const [notes, setNotes] = useState("");
+  const [pos, setPos] = useState(null); // { page, xRel, yRel }
+  const [allPages, setAllPages] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const metaUrl = `/drawings/${row.drawing_id}/revisions/${row.rev_id}/page-meta`;
+  const imgUrlBuilder = (n) => `${apiUrl}/api/drawings/${row.drawing_id}/revisions/${row.rev_id}/page-image?page=${n}&scale=2`;
+
+  const marker = (
+    <div className="border-[2.5px] border-rose-600 bg-white/70 px-3 py-1.5 shadow-lg" style={{ width: 150 }}>
+      <div className="text-rose-700 font-black text-center tracking-widest" style={{ fontSize: 18 }}>OBSOLETE</div>
+    </div>
+  );
+
+  const submit = async () => {
+    if (!pos) { toast.error("Klik posisi cap OBSOLETE di halaman PDF dulu"); return; }
+    setBusy(true);
+    await onConfirm({
+      notes,
+      page: allPages ? -1 : pos.page,
+      x: pos.xRel,
+      y: pos.yRel,
+    });
+    setBusy(false);
+  };
+
   return (
-    <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4" data-testid="stamp-obsolete-dialog">
-      <Card className="rounded-none border-slate-300 w-full max-w-md bg-white">
-        <div className="px-4 py-3 bg-rose-700 text-white flex items-center gap-2">
-          <Stamp size={16} weight="fill" />
+    <div className="fixed inset-0 z-[70] bg-slate-900/90 flex flex-col" data-testid="stamp-obsolete-dialog">
+      {/* Header */}
+      <div className="px-4 py-3 bg-rose-700 text-white flex items-center justify-between gap-3 shrink-0">
+        <div className="flex items-center gap-2">
+          <Stamp size={18} weight="fill" />
           <div>
             <div className="text-[10px] uppercase tracking-widest opacity-80">Stamp OBSOLETE — Document Control</div>
-            <div className="font-mono font-bold">{row.drawing_no} · Rev {row.rev_no ?? 0}</div>
+            <div className="font-mono font-bold">{row.drawing_no} · Rev {row.rev_no ?? 0} (digantikan Rev {row.superseded_by_rev ?? "-"})</div>
           </div>
         </div>
-        <div className="p-4 space-y-3">
-          <div className="text-sm text-slate-600">
-            Rev {row.rev_no ?? 0} sudah digantikan oleh <b>Rev {row.superseded_by_rev ?? "-"}</b>. Setelah di-stamp, Rev ini resmi <b className="text-rose-700">OBSOLETE</b> — PDF diberi cap merah dan view-only (tidak boleh dipakai produksi).
-          </div>
-          <div>
-            <label className="text-[11px] uppercase tracking-widest font-bold text-slate-500 block mb-1">Catatan (opsional)</label>
-            <textarea
-              data-testid="stamp-obsolete-notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="w-full min-h-[60px] border border-slate-300 focus:border-rose-600 focus:outline-none focus:ring-1 focus:ring-rose-600 text-sm px-3 py-2 rounded-none"
-              placeholder="mis. Superseded per ECN-2026-014"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-1">
-            <Button variant="outline" onClick={onCancel} className="rounded-none">Batal</Button>
-            <Button
-              onClick={async () => { setBusy(true); await onConfirm(notes); setBusy(false); }}
-              disabled={busy}
-              className="rounded-none bg-rose-700 hover:bg-rose-800 text-white disabled:opacity-40"
-              data-testid="stamp-obsolete-confirm"
-            >
-              <Stamp size={14} weight="bold" className="mr-1" /> {busy ? "..." : "Stamp OBSOLETE"}
-            </Button>
-          </div>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[11px] font-semibold bg-white/10 px-2 py-1 cursor-pointer">
+            <input type="checkbox" checked={allPages} onChange={(e) => setAllPages(e.target.checked)} data-testid="obsolete-allpages" />
+            Terapkan ke semua halaman
+          </label>
+          <input
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Catatan (opsional)"
+            data-testid="stamp-obsolete-notes"
+            className="h-8 w-56 px-2 text-xs text-slate-800 rounded-none"
+          />
+          <Button variant="outline" onClick={onCancel} className="rounded-none h-8 bg-white/10 border-white/40 text-white hover:bg-white/20">Batal</Button>
+          <Button onClick={submit} disabled={busy || !pos} className="rounded-none h-8 bg-white text-rose-700 hover:bg-rose-50 font-bold disabled:opacity-40" data-testid="stamp-obsolete-confirm">
+            <Stamp size={14} weight="bold" className="mr-1" /> {busy ? "..." : "Stamp OBSOLETE"}
+          </Button>
         </div>
-      </Card>
+      </div>
+      {/* Instruksi */}
+      <div className="px-4 py-1.5 bg-rose-900/60 text-rose-100 text-[11px] shrink-0">
+        {pos ? `Posisi dipilih di halaman ${pos.page + 1}. Geser/klik lagi untuk ubah, lalu tekan "Stamp OBSOLETE".` : "Klik titik pada halaman PDF untuk menaruh cap OBSOLETE (seperti stamp Controlled)."}
+      </div>
+      {/* Canvas */}
+      <div className="flex-1 overflow-y-auto p-4">
+        <PdfStampCanvas
+          drawingId={row.drawing_id}
+          metaUrl={metaUrl}
+          imgUrlBuilder={imgUrlBuilder}
+          pos={pos}
+          allPages={allPages}
+          onPick={(page, xRel, yRel) => setPos({ page, xRel, yRel })}
+          markerNode={marker}
+          accent="#e11d48"
+        />
+      </div>
     </div>
   );
 }

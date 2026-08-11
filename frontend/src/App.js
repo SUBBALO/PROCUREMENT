@@ -6,6 +6,7 @@ import AppShell from "./components/AppShell";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import InputTransactionPage from "./pages/InputTransactionPage";
+import TransferRequestPage from "./pages/TransferRequestPage";
 import MasterListPage from "./pages/MasterListPage";
 import TvSoProgressPage from "./pages/TvSoProgressPage";
 import SalesOrderPage from "./pages/SalesOrderPage";
@@ -186,6 +187,7 @@ function AppRoutes() {
       <Route path="/sales/customers" element={<ProtectedRoute><CustomerMasterPage /></ProtectedRoute>} />
       <Route path="/input" element={<ProtectedRoute><InputTransactionPage /></ProtectedRoute>} />
       <Route path="/purchasing/bulk" element={<ProtectedRoute><BulkTransaksiPage /></ProtectedRoute>} />
+      <Route path="/purchasing/transfer-request" element={<ProtectedRoute><TransferRequestPage /></ProtectedRoute>} />
       <Route path="/master" element={<ProtectedRoute><MasterListPage /></ProtectedRoute>} />
       <Route path="/items" element={<ProtectedRoute><MasterItemsPage /></ProtectedRoute>} />
       <Route path="/kpi" element={<ProtectedRoute><KPIReportPage /></ProtectedRoute>} />

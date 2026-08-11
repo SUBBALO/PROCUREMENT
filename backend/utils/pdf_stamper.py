@@ -477,3 +477,36 @@ def apply_obsolete(pdf_bytes: bytes, text: str = "OBSOLETE") -> bytes:
     doc.save(out, deflate=True)
     doc.close()
     return out.getvalue()
+
+
+def _draw_obsolete_stamp_at(page: "fitz.Page", xrel: float, yrel: float, text: str = "OBSOLETE") -> None:
+    """Cap OBSOLETE berbentuk kotak merah pada posisi (relatif) yang dipilih user —
+    mirip stamp Controlled (bukan watermark penuh halaman)."""
+    pw, ph = page.rect.width, page.rect.height
+    w = pw * 0.22
+    h = w * 0.34
+    cx = max(w / 2, min(pw - w / 2, xrel * pw))
+    cy = max(h / 2, min(ph - h / 2, yrel * ph))
+    rect = fitz.Rect(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2)
+    red = (0.80, 0.12, 0.12)
+    # kotak + garis tepi ganda
+    page.draw_rect(rect, color=red, width=2.2)
+    page.draw_rect(rect + (3, 3, -3, -3), color=red, width=0.8)
+    # teks OBSOLETE di tengah
+    fs = h * 0.42
+    tw = fitz.TextWriter(page.rect, color=red)
+    tlen = len(text) * fs * 0.58
+    tw.append(fitz.Point(cx - tlen / 2, cy + fs * 0.35), text, fontsize=fs, font=fitz.Font("hebo"))
+    tw.write_text(page)
+
+
+def apply_obsolete_at(pdf_bytes: bytes, page_index=None, x: float = 0.5, y: float = 0.5, text: str = "OBSOLETE") -> bytes:
+    """Overlay cap OBSOLETE berposisi. page_index None/<0 = semua halaman."""
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    for i, page in enumerate(doc):
+        if page_index is None or page_index < 0 or page_index == i:
+            _draw_obsolete_stamp_at(page, x, y, text)
+    out = io.BytesIO()
+    doc.save(out, deflate=True)
+    doc.close()
+    return out.getvalue()

@@ -39,6 +39,7 @@ from routers import drawing_requests as drawing_requests_router
 from routers import so_tracker as so_tracker_router
 from routers import controlled_documents as controlled_documents_router
 from routers import ecn as ecn_router
+from routers import transfer_requests as transfer_requests_router
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -71,6 +72,7 @@ api_router.include_router(drawing_requests_router.router)
 api_router.include_router(so_tracker_router.router)
 api_router.include_router(controlled_documents_router.router)
 api_router.include_router(ecn_router.router)
+api_router.include_router(transfer_requests_router.router)
 
 
 # SO Requests — Engineering asks Sales/Admin to create SO

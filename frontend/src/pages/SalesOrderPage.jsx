@@ -57,6 +57,9 @@ export default function SalesOrderPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [selected, setSelected] = useState(() => new Set()); // bulk-select SO ids (admin)
+  const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const sortedList = useMemo(() => sortItems(list, sortBy, SO_SORT_OPTS), [list, sortBy]);
   const filteredList = useMemo(
@@ -86,6 +89,20 @@ export default function SalesOrderPage() {
   const doDelete = async () => {
     try { await api.delete(`/sales-orders/${del.id}`); toast.success("SO dihapus"); setDel(null); load(); }
     catch (e) { toast.error(e.response?.data?.detail || "Gagal hapus"); }
+  };
+
+  const doBulkDelete = async () => {
+    setBulkBusy(true);
+    try {
+      const ids = Array.from(selected);
+      const { data } = await api.post(`/sales-orders/bulk-delete`, { ids });
+      toast.success(`${data?.deleted ?? ids.length} SO dihapus`);
+      setSelected(new Set());
+      setBulkConfirm(false);
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal hapus massal");
+    } finally { setBulkBusy(false); }
   };
 
   const doImport = async () => {
@@ -124,6 +141,11 @@ export default function SalesOrderPage() {
               <Plus size={14} weight="bold" className="mr-1.5" /> Buat Sales Order
             </Button>
           )}
+          {canDelete && selected.size > 0 && (
+            <Button data-testid="so-bulk-delete-btn" onClick={() => setBulkConfirm(true)} variant="outline" className="rounded-none h-9 border-red-300 text-red-600 hover:bg-red-50 text-xs uppercase tracking-[0.1em] font-semibold">
+              <Trash size={14} weight="bold" className="mr-1.5" /> Hapus Terpilih ({selected.size})
+            </Button>
+          )}
         </div>
       </div>
 
@@ -142,6 +164,21 @@ export default function SalesOrderPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-[10px] uppercase tracking-[0.1em] font-bold text-slate-500">
+                {canDelete && (
+                  <th className="px-2 py-1.5 w-8 text-center">
+                    <input
+                      type="checkbox"
+                      data-testid="so-select-all"
+                      checked={pag.pagedData.length > 0 && pag.pagedData.every((s) => selected.has(s.id))}
+                      onChange={(e) => {
+                        const next = new Set(selected);
+                        if (e.target.checked) pag.pagedData.forEach((s) => next.add(s.id));
+                        else pag.pagedData.forEach((s) => next.delete(s.id));
+                        setSelected(next);
+                      }}
+                    />
+                  </th>
+                )}
                 <th className="text-left px-2 py-1.5">Tanggal</th>
                 <th className="text-left px-2 py-1.5">Nomor SO</th>
                 <th className="text-left px-2 py-1.5">Customer</th>
@@ -152,8 +189,8 @@ export default function SalesOrderPage() {
               </tr>
             </thead>
             <tbody data-testid="so-table">
-              {loading && (<tr><td colSpan={canSeePrice ? 7 : 6} className="p-6 text-center text-slate-400">Memuat...</td></tr>)}
-              {!loading && filteredList.length === 0 && (<tr><td colSpan={canSeePrice ? 7 : 6} className="p-6 text-center text-slate-400">Belum ada SO.</td></tr>)}
+              {loading && (<tr><td colSpan={(canSeePrice ? 7 : 6) + (canDelete ? 1 : 0)} className="p-6 text-center text-slate-400">Memuat...</td></tr>)}
+              {!loading && filteredList.length === 0 && (<tr><td colSpan={(canSeePrice ? 7 : 6) + (canDelete ? 1 : 0)} className="p-6 text-center text-slate-400">Belum ada SO.</td></tr>)}
               {pag.pagedData.map((s) => {
                 const st = DR_STATUS[s.drawing_request_status] || DR_STATUS.belum_drawing_request;
                 const StIcon = st.icon;
@@ -166,6 +203,20 @@ export default function SalesOrderPage() {
                     onClick={() => setDetail(s)}
                     title="Klik untuk lihat detail SO"
                   >
+                    {canDelete && (
+                      <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          data-testid={`so-select-${s.so_no}`}
+                          checked={selected.has(s.id)}
+                          onChange={(e) => {
+                            const next = new Set(selected);
+                            if (e.target.checked) next.add(s.id); else next.delete(s.id);
+                            setSelected(next);
+                          }}
+                        />
+                      </td>
+                    )}
                     <td className="px-2 py-1.5 whitespace-nowrap text-slate-600">{formatDateID(s.so_date)}</td>
                     <td className="px-2 py-1.5 font-mono text-xs font-semibold text-slate-900">{s.so_no}</td>
                     <td className="px-2 py-1.5">{s.customer || "-"}</td>
@@ -194,6 +245,26 @@ export default function SalesOrderPage() {
         </div>
         <PaginationBar {...pag} label="SO" testIdPrefix="so-pag" />
       </Card>
+
+      {bulkConfirm && (
+        <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4" data-testid="so-bulk-confirm">
+          <Card className="rounded-none border-slate-300 w-full max-w-md bg-white">
+            <div className="px-4 py-3 bg-red-700 text-white flex items-center gap-2">
+              <Trash size={16} weight="fill" />
+              <span className="font-bold uppercase text-sm tracking-widest">Hapus {selected.size} Sales Order</span>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-sm text-slate-600">Anda akan menghapus <b>{selected.size}</b> Sales Order sekaligus. Tindakan ini hanya untuk Admin dan tidak bisa dibatalkan dari sini.</p>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setBulkConfirm(false)} className="rounded-none">Batal</Button>
+                <Button onClick={doBulkDelete} disabled={bulkBusy} className="rounded-none bg-red-700 hover:bg-red-800 text-white disabled:opacity-40" data-testid="so-bulk-confirm-btn">
+                  <Trash size={14} weight="bold" className="mr-1" /> {bulkBusy ? "Menghapus..." : `Hapus ${selected.size} SO`}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {dlg && (
         <SalesOrderFormDialog

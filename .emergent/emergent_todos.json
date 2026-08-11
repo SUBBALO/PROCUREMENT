@@ -1,18 +1,22 @@
 [
   {
-    "content": "Inquiry: format nomor 001/MKS/I/VII/2026 + preview nomor otomatis di dialog Buat Inquiry",
+    "content": "Register transfer_requests router in server.py + restart + curl test endpoints",
     "status": "completed"
   },
   {
-    "content": "SO: kolom minimalis + klik baris buka popup (hapus tombol aksi/preview) + aksi pindah ke popup",
+    "content": "Explore patterns: PurchasingPortalPage.jsx, App.js routing, existing autocomplete component",
     "status": "completed"
   },
   {
-    "content": "SO: hapus hanya admin (frontend hide + backend 403 utk role lain, single & bulk delete)",
+    "content": "Build TransferRequestPage.jsx (Buat TRF tab + Master List tab)",
     "status": "completed"
   },
   {
-    "content": "DocCon: Kartu 'Perlu Stamp OBSOLETE' + Stamp OBSOLETE berposisi (masih pending)",
-    "status": "pending"
+    "content": "Add Transfer Request Form card to Purchasing Portal + route in App.js",
+    "status": "completed"
+  },
+  {
+    "content": "Compile (esbuild) + screenshot + full E2E verification",
+    "status": "completed"
   }
 ]

@@ -1,128 +1,133 @@
-# Rencana Perbaikan Work Order (Work Group + Work Order) — BOM di Level SO (Support Multi‑Part) + TTD Prepared + Partial Submit
+# Rencana Implementasi Transfer Request Form (CRF‑TT) — Purchasing → Finance (Multi‑Vendor, Multi‑Line, PDF)
 
 ## 1) Objectives
-- Pusatkan konsep **BOM di level SO/Work Group**: engineer bekerja per-SO pada halaman **Work Group** (`/engineering/drf/:drfId`) dengan 2 tab: **Drawing & Upload** dan **BOM**.
-- **Tab BOM** di Work Group menampilkan **grid BOM editable (embedded)** + **tombol Simpan saja** (tanpa Submit BOM).
-- Dukung realita operasional: **1 SO dapat memiliki beberapa BOM (Part)** → **sub-tab BOM Part 1/Part 2 + Tambah BOM** dengan penomoran **`-P{n}`**.
-- Perjelas alur TTD:
-  - **TTD Prepared By** dilakukan **per-drawing** dan hanya **Simpan** (status drawing tetap `draft`).
-  - **Submit ke Eng Leader** dipindah ke **Work Group (bawah)** dengan **checkbox** (bisa **partial submit**) dan **BOM ikut tersubmit**.
-- Buat UI **minimalis & compact** untuk **dua halaman** (Work Group dan Work Order per-drawing): header tipis, tabel rapat, padding kecil, kontrol jelas.
-- Pastikan perubahan tervalidasi dengan **testing_agent_v3** karena user melaporkan mismatch (jangan klaim “sudah berubah” tanpa verifikasi route/role/data).
+- Menyediakan fitur **Transfer Request Form (CRF‑TT)** di modul Purchasing untuk pengajuan pembayaran ke Finance.
+- Mendukung **1 form berisi banyak vendor** dan **banyak baris pembayaran**.
+- **Nomor rekening berada per baris** pembayaran (auto-fill dari Master Bank Vendor, tetap bisa diedit).
+- Pajak **fleksibel per baris**:
+  - user menentukan apakah kena pajak;
+  - user mengisi sendiri persentase PPh.
+- Mendukung pembayaran **valas** dengan **rate** dan **fee bank**.
+- Output minimal scope:
+  - Buat form;
+  - Cetak PDF;
+  - Master List TRF pada tab sebelah.
+- Format nomor (reset tiap bulan):
+  - `005/CRF-TT/VIII/2026`
+  - kode form `CRF-TT`
+  - bulan Romawi, tahun 4 digit.
 
 ## 2) Implementation Steps
 
-### Phase 1 — Core Flow POC (wajib): “BOM tab di Work Group = grid embedded + Simpan saja”
-**User stories (POC)**
-1. Engineer membuka Work Group dan melihat 2 tab: **Drawing & Upload** dan **BOM** untuk 1 SO.
-2. Engineer mengisi item BOM langsung di tab BOM tanpa pindah halaman.
-3. Engineer hanya melihat tombol **Simpan** di tab BOM (tidak ada Submit BOM).
-4. Engineer kembali ke daftar drawing di tab Drawing tanpa kehilangan konteks.
-5. Engineer memahami BOM ini shared di level SO (ditampilkan di UI).
+### Phase 1 — Backend API + PDF (MVP)
+**User stories (MVP)**
+1. Purchasing dapat membuat TRF dengan beberapa baris pembayaran.
+2. Saat mengetik vendor, sistem menampilkan rekomendasi rekening bank vendor yang sudah pernah tersimpan.
+3. Sistem menghasilkan nomor TRF otomatis sesuai format.
+4. Purchasing dapat mencetak TRF menjadi PDF.
 
 **Langkah teknis**
-- Refactor `frontend/src/pages/BomEntryGridPage.jsx`:
-  - Ekstrak & export `WorkOrderView({ bomId, embedded })`.
-  - Mode `embedded=true`:
-    - Sembunyikan header besar + tombol back internal halaman BOM.
-    - Pertahankan grid, save, status lock/read-only, panel revision yang relevan.
-- Ubah `frontend/src/pages/EngineeringDrfWorkPage.jsx`:
-  - Tambah Tabs level grup: `Drawing & Upload` (default) dan `BOM`.
-  - Di tab `BOM`, render `WorkOrderView` (embedded) menggunakan BOM SO.
-  - Fallback state: jika BOM belum ada → pesan “Generate minimal 1 drawing dulu”.
+- Backend: `backend/routers/transfer_requests.py`
+  - Master Bank Vendor:
+    - `GET /api/vendor-banks?q=&limit=`
+    - `POST /api/vendor-banks` (upsert by vendor_name)
+  - Transfer Requests:
+    - `GET /api/transfer-requests/next-no` (preview nomor tanpa increment)
+    - `GET /api/transfer-requests` (list, search by form/vendor/notes)
+    - `POST /api/transfer-requests` (create + compute per line + auto-upsert vendor bank)
+    - `GET /api/transfer-requests/{id}` (detail)
+    - `DELETE /api/transfer-requests/{id}` (admin only, soft delete)
+    - `GET /api/transfer-requests/{id}/pdf` (ReportLab landscape A4)
+  - Perhitungan per baris (sesuai keputusan):
+    - `base_idr = amount * rate`
+    - `pph_amount = taxed ? base_idr * (pph_percent/100) : 0`
+    - `net_transfer = base_idr - pph_amount + fee`
+- Registrasi router:
+  - Tambah import dan `include_router` di `backend/server.py`.
 
-**Checkpoint POC**
-- `/engineering/drf/:drfId` → tab BOM tampil grid dan dapat simpan.
-- Tidak ada tombol submit BOM di tab BOM.
-- Data BOM tersimpan dan muncul saat reload.
+**Checkpoint MVP**
+- Endpoint preview nomor mengembalikan format benar.
+- Create TRF menghasilkan perhitungan benar dan menyimpan data.
+- Master bank vendor tersimpan/ter-update otomatis dari data baris pembayaran.
+- PDF endpoint menghasilkan dokumen valid.
 
-**Status**: ✅ **Selesai** (embedded BOM di Work Group sudah berjalan dan tervalidasi).
+**Status**: ✅ **Selesai** (backend + PDF + endpoints terverifikasi via curl)
 
 ---
 
-### Phase 2 — V1 App Development: Restruktur & Minimalis (Work Group + Work Order)
-**User stories (V1)**
-1. Work Group tampil ringkas: header tipis, info penting saja, tabel compact.
-2. Daftar drawing jelas dan cepat untuk buka per-drawing Work Order.
-3. BOM tidak lagi terasa “BOM per drawing” (BOM ditempatkan di tab grup).
-4. Alur TTD per-drawing tidak membingungkan dan tidak kebesaran.
-
-**Langkah teknis**
-- `frontend/src/pages/EngineeringWorkOrderPage.jsx` (per-drawing):
-  - Hapus konsep BOM tab/kolom BOM di halaman per-drawing.
-  - Hilangkan elemen BOM yang mengganggu:
-    - ✅ hapus **kolom “BOM Link”**.
-    - ✅ hilangkan tombol **“Isi Data BOM”** pada attachments (gunakan `hideBomLink`).
-  - Kompakkan layout (padding/font/button ringkas) dan copy menegaskan BOM ada di Work Group.
-- `frontend/src/pages/EngineeringDrfWorkPage.jsx` (Work Group):
-  - Kompakkan header/tabel.
-  - Chip daftar drawing: hanya **MKS** dan **Cust Dwg** (Nesting/Extra di panel dokumen bawah).
-
-**Akhiri Phase 2 dengan**
-- `yarn build` frontend.
-- Jalankan `testing_agent_v3`.
-
-**Status**: ✅ **Selesai** (UI minimalis/compact di dua halaman sudah diterapkan dan diverifikasi).
-
----
-
-### Phase 3 — Hardening + UX Polish: Multi‑Part BOM + TTD Prepared + Partial Submit
+### Phase 2 — Frontend Page + Purchasing Portal Integration
 **User stories**
-1. SO dapat memiliki **BOM Part 1/Part 2** (dst) bila diperlukan.
-2. Nomor BOM part tambahan memakai suffix **`-P2`, `-P3`, ...**.
-3. Di setiap BOM part, section **Nomor Drawing Terdaftar** menampilkan **semua drawing pada SO**.
-4. Engineer TTD Prepared per-drawing (save-only) dengan pemilihan lokasi stamp digital.
-5. Submit ke Eng Leader dilakukan dari Work Group dengan checkbox (partial), **BOM ikut tersubmit**.
+1. Purchasing masuk menu Purchasing Portal dan melihat kartu **Transfer Request Form**.
+2. Di halaman TRF terdapat 2 tab:
+   - **Buat TRF**: input multi baris dengan vendor autocomplete + auto-fill rekening; pajak per baris; valas rate+fee; total transfer terlihat.
+   - **Master List TRF**: daftar TRF, dapat klik untuk detail dan cetak PDF.
+3. Admin dapat menghapus TRF dari detail modal.
 
 **Langkah teknis**
-- Backend (`backend/routers/bom.py`):
-  - ✅ `GET /api/bom/by-so?so_no=...` untuk daftar BOM per SO.
-  - ✅ `POST /api/bom/add-part` untuk membuat BOM part baru (suffix `-P{n}`), mewarisi metadata part‑1.
-- Frontend Work Group (`frontend/src/pages/EngineeringDrfWorkPage.jsx`):
-  - ✅ Tab BOM berisi sub-tab: **BOM Part 1 / BOM Part 2 / + Tambah BOM**.
-  - ✅ Klik part → render embedded grid BOM untuk part tersebut.
-- Frontend BOM embedded (`frontend/src/pages/BomEntryGridPage.jsx`):
-  - ✅ Fetch drawings by SO dan tampilkan **SEMUA drawing SO** pada “Nomor Drawing Terdaftar”.
-- Backend TTD Prepared (`backend/routers/drawing_register.py`):
-  - ✅ `POST /api/drawings/{id}/sign-prepared` menyimpan prepared_signature, status tetap `draft`.
-  - ✅ `submit-for-approval` fallback menggunakan posisi prepared_signature bila submit tanpa placement.
-  - ✅ Relaksasi: **TTD Prepared tidak wajib kategori**; kategori tetap wajib saat submit.
-- Frontend Signature modal (`frontend/src/components/SignaturePlacementModal.jsx`):
-  - ✅ Stage `prepared` → panggil endpoint `sign-prepared`, tombol menjadi “Simpan TTD”.
-  - ✅ Mendukung multi-halaman via `placements` (boleh sign lebih dari 1 halaman bila perlu).
-- Frontend per-drawing upload UX (`frontend/src/pages/MasterDrawingPage.jsx` + `EngineeringWorkOrderPage.jsx`):
-  - ✅ Setelah upload PDF MKS sukses, **auto-open** modal pemilihan titik TTD (opsional per kebutuhan user).
-  - ✅ `suppressWorkCatPopup` untuk menghindari popup kategori mengganggu saat engineer langsung memilih titik TTD.
-- Partial submit (`frontend/src/pages/EngineeringDrfWorkPage.jsx`):
-  - ✅ Panel **Submit ke Eng Leader** di bawah (checkbox, select all, submit terpilih).
-  - ✅ Panel menampilkan BOM yang akan ikut tersubmit (**BOM IKUT TER‑SUBMIT KE ENG LEADER**).
+- Frontend page:
+  - Tambah `frontend/src/pages/TransferRequestPage.jsx`.
+  - Implementasi 2 tab:
+    - **Buat TRF**:
+      - Header: Next No (preview), tanggal, ditujukan (Finance).
+      - Line editor:
+        - vendor autocomplete memanggil `GET /vendor-banks` dan on select mengisi bank fields.
+        - currency dropdown: **IDR, SGD, USD**.
+        - rate disabled saat IDR.
+        - toggle pajak + input persen.
+        - computed preview: base IDR, PPh, fee, nilai transfer.
+      - Aksi: Simpan / Simpan & Cetak PDF.
+    - **Master List TRF**:
+      - Search, list table.
+      - Click row open detail modal.
+      - Detail modal: breakdown baris, tombol cetak PDF, tombol hapus (admin only).
+- Route:
+  - `frontend/src/App.js`: tambahkan route protected `"/purchasing/transfer-request"`.
+- Portal card:
+  - `frontend/src/pages/PurchasingPortalPage.jsx`: tambahkan card **Transfer Request Form** menuju route tersebut.
 
-**Status**: ✅ **Selesai** (multi‑part BOM + TTD Prepared + partial submit + BOM included sudah berjalan).
+**Checkpoint**
+- Halaman dapat diakses dari Purchasing Portal.
+- Simpan menghasilkan TRF baru, muncul di Master List.
+- Cetak PDF membuka PDF di tab baru.
+- Hapus TRF hanya terlihat untuk admin/super_admin.
+
+**Status**: ✅ **Selesai** (render + compile + UI flow + PDF open verified)
+
+---
+
+### Phase 3 — Hardening + E2E Verification + Cleanup
+**User stories**
+1. Perhitungan valas + pajak sesuai formula dan tampil konsisten di UI serta PDF.
+2. Data uji tidak mengotori database.
+
+**Langkah teknis**
+- E2E test (UI):
+  - Buat TRF (pajak aktif) → cek total → masuk Master List → buka detail → delete.
+  - Validasi PDF endpoint mengembalikan HTTP 200.
+- Cleanup:
+  - Hapus data TRF dan vendor bank uji.
+  - Reset counter `crf:YYYY-MM` pada lingkungan preview agar user mulai dari 001.
+
+**Status**: ✅ **Selesai** (E2E save/list/detail/delete + PDF OK, cleanup DB done)
 
 ## 3) Next Actions (eksekusi terdekat)
-1. **Monitor real usage**: pastikan user melihat perubahan di route yang benar:
-   - Work Group: `/engineering/drf/:drfId`
-   - Work Order per-drawing: `/engineering/work-order/:drawingId`
-2. (Opsional UX lanjutan) Tambah indikator ringkas di daftar drawing:
-   - “PDF OK”, “TTD OK”, “Kategori OK”, “Siap Submit” agar engineer cepat pilih partial submit.
-3. (Opsional) Aturan bisnis BOM multi-part:
-   - Jika diperlukan, tambahkan penjelasan “kapan perlu Part 2” + guard agar tidak membuat part berlebihan.
+1. **User confirmation di local deployment**:
+   - `git pull origin main`
+   - restart backend + rebuild frontend (`yarn build`) sesuai prosedur user.
+2. (Opsional) Penyempurnaan kecil UX:
+   - default rate saat pilih USD/SGD (optional, jika ada referensi kurs harian).
+   - validasi UI: warning jika vendor kosong tapi rekening terisi.
+   - opsi duplikasi baris (copy row) untuk pembayaran mirip.
+3. (Opsional) Penguatan Master Bank Vendor:
+   - jika nanti dibutuhkan, tambahkan halaman khusus untuk edit banyak rekening per vendor.
 
 ## 4) Success Criteria
-- **Work Group** (`/engineering/drf/:drfId`) memiliki 2 tab: **Drawing & Upload** dan **BOM**.
-- Tab **BOM**:
-  - Menampilkan **grid BOM embedded** (editable) dan hanya ada **Simpan**.
-  - Mendukung **multi-part BOM** via sub-tab Part 1/Part 2 + **Tambah BOM** (suffix `-P{n}`).
-  - “Nomor Drawing Terdaftar” menampilkan **semua drawing pada SO**.
-- **Work Order per-drawing** (`/engineering/work-order/:drawingId`):
-  - Tidak menampilkan kolom/tombol yang berhubungan dengan BOM (BOM ada di Work Group).
-  - Setelah upload PDF, engineer dapat langsung memilih lokasi stamp digital dan **Simpan TTD Prepared**.
-  - Modal TTD mendukung **multi-halaman** (boleh sign halaman tertentu saja).
-- **Submit ke Eng Leader**:
-  - Dilakukan di **Work Group** dengan **checkbox** (partial submit).
-  - Panel menegaskan **BOM ikut tersubmit**.
-- **Verifikasi**:
-  - `testing_agent_v3` (Iterasi 34) ✅ backend 5/5, frontend 11/11.
-  - Direct curl ✅ sign-prepared (dengan/tanpa kategori), submit fallback placement.
-  - Screenshot ✅ Work Group + BOM tab + Work Order.
-  - Cleanup ✅ 0 user `qa_`, artefak uji dibersihkan.
+- Menu Purchasing memiliki akses mudah ke TRF melalui kartu portal.
+- Format nomor TRF sesuai: `NNN/CRF-TT/{ROMAN_MONTH}/{YYYY}` dengan reset bulanan.
+- Satu TRF mendukung multi-vendor dan multi-line; rekening per baris.
+- Pajak fleksibel per baris (toggle + persen), valas support (currency/rate/fee).
+- Master Bank Vendor auto-terbentuk/ter-update dari input form.
+- PDF dapat dicetak/dibuka dari detail.
+- E2E verified (save → list → detail → delete, PDF 200) dan data uji dibersihkan.
+
+**Catatan status**: ✅ shipped & agent-verified end-to-end di preview; ⏳ menunggu konfirmasi user pada environment lokal.
