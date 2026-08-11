@@ -124,13 +124,13 @@ export default function SalesPage() {
 
   const backLink = isEngOnly ? "/engineering" : "/";
   const backLabel = isEngOnly ? "Kembali ke Engineering Portal" : "Kembali ke Portal";
-  const HeaderIcon = isEngOnly ? Wrench : Storefront;
-  const headerTitle = isEngOnly ? "Engineering — Costing Requests" : "Departemen Sales";
+  const HeaderIcon = isEngOnly ? Wrench : FileText;
+  const headerTitle = isEngOnly ? "Engineering — Costing Requests" : "Inquiry Costing";
   const headerSubtitle = isEngOnly
     ? (isEngStaff
         ? "Job yang ditugaskan ke Anda oleh Engineering Head"
         : "Terima request dari Sales · Assign ke Engineer · Upload hasil costing")
-    : "Inquiry Costing";
+    : "FORMAT: INQ-001/MKS/VIII/2026 · RESET COUNTER TIAP BULAN";
   const headerIconCls = isEngOnly ? "text-amber-600" : "text-rose-600";
 
   // Default range: tgl 1 bulan ini → hari ini
