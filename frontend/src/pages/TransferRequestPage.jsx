@@ -363,7 +363,7 @@ function CreateTrf({ onSaved, editDoc, onDone }) {
                     </td>
                     <td className="px-1.5 py-1.5 border-r border-slate-100">
                       <div className="flex gap-1">
-                        <Select value={l.currency} onValueChange={(v) => setLine(i, { currency: v, rate: v === "IDR" ? 1 : l.rate })}>
+                        <Select value={l.currency} onValueChange={(v) => setLine(i, { currency: v, rate: v === "IDR" ? 1 : l.rate, fee: v === "IDR" ? 0 : l.fee })}>
                           <SelectTrigger data-testid={`trf-currency-${i}`} className="rounded-none h-8 text-xs w-[64px] px-2"><SelectValue /></SelectTrigger>
                           <SelectContent className="rounded-none">
                             {CURRENCIES.map((cur) => <SelectItem key={cur} value={cur}>{cur}</SelectItem>)}
@@ -383,7 +383,7 @@ function CreateTrf({ onSaved, editDoc, onDone }) {
                       {l.taxed && <div className="text-[10px] text-red-600 text-right mt-0.5 font-mono">-{fmt(c.pph_amount)}</div>}
                     </td>
                     <td className="px-1.5 py-1.5 border-r border-slate-100">
-                      <Input data-testid={`trf-fee-${i}`} type="number" value={l.fee} onChange={(e) => setLine(i, { fee: e.target.value })} className={`${cellInput} text-right`} placeholder="0" />
+                      <Input data-testid={`trf-fee-${i}`} type="number" value={l.fee} disabled={!isForeign} onChange={(e) => setLine(i, { fee: e.target.value })} className={`${cellInput} text-right disabled:bg-slate-100 disabled:text-slate-400`} placeholder={isForeign ? "0" : "—"} title={isForeign ? "" : "Fee hanya untuk transfer valas (SGD/USD)"} />
                     </td>
                     <td className="px-2 py-2 text-right border-r border-slate-100">
                       <span data-testid={`trf-net-${i}`} className="font-mono font-bold text-emerald-700 text-xs">IDR {fmt(c.net_transfer)}</span>

@@ -103,6 +103,11 @@ class TrfIn(BaseModel):
 def _compute_line(ln: dict) -> dict:
     amount = float(ln.get("amount") or 0)
     rate = float(ln.get("rate") or 1) or 1
+    # Fee hanya untuk transfer valas (non-IDR). IDR selalu tanpa fee & rate 1.
+    if (ln.get("currency") or "IDR") == "IDR":
+        rate = 1.0
+        ln["rate"] = 1.0
+        ln["fee"] = 0.0
     fee = float(ln.get("fee") or 0)
     base_idr = amount * rate
     pph_amount = (base_idr * float(ln.get("pph_percent") or 0) / 100.0) if ln.get("taxed") else 0.0
