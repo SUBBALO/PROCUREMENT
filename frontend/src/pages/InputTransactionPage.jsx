@@ -15,7 +15,8 @@ const DEFAULT_RATES = { IDR: 1, SGD: 12000, USD: 16000 };
 
 const emptyItem = () => ({ project_no: "", category: "", item_name: "", qty: 1, unit: "Ea", unit_price: 0, notes: "", post_to_store: false, should_stock: true });
 
-const inputCls = "h-8 rounded-none border-slate-300 focus:ring-2 focus:ring-sky-600 text-sm";
+const inputCls = "h-7 rounded-none border-slate-300 focus:ring-2 focus:ring-sky-600 text-[12px] px-2";
+const rowSelectCls = "h-7 w-full border border-slate-300 rounded-none px-1.5 text-[12px] bg-white focus:ring-2 focus:ring-sky-600 focus:outline-none";
 
 export default function InputTransactionPage() {
   const today = new Date().toISOString().slice(0, 10);
@@ -235,15 +236,15 @@ export default function InputTransactionPage() {
   };
 
   return (
-    <form onSubmit={onSubmit} className="space-y-3" data-testid="input-transaction-form">
+    <form onSubmit={onSubmit} className="space-y-2" data-testid="input-transaction-form">
       <BackLink />
       {/* ===== Title + Toolbar ===== */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
+          <h1 className="text-lg font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
             Input Transaksi Pembelian
           </h1>
-          <p className="text-sm text-slate-500 mt-1">Isi header sekali, lalu tambah item ke bawah. Tekan <kbd className="px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-700 text-[10px] rounded">Enter</kbd> untuk lompat kolom berikutnya; Enter di kolom terakhir akan menambah baris baru.</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">Isi header sekali, lalu tambah item ke bawah. Tekan <kbd className="px-1 py-0.5 border border-slate-300 bg-slate-50 text-slate-700 text-[10px] rounded">Enter</kbd> untuk lompat kolom; Enter di kolom terakhir menambah baris.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
           <input
@@ -324,55 +325,55 @@ export default function InputTransactionPage() {
       <Card className="rounded-none border-slate-200 shadow-none bg-white overflow-hidden">
         <div className="grid grid-cols-1 lg:grid-cols-2">
           {/* KIRI — Vendor */}
-          <div className="p-4 lg:border-r border-slate-200 space-y-3">
-            <h3 className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500">Vendor / Supplier</h3>
+          <div className="p-3 lg:border-r border-slate-200 space-y-2">
+            <h3 className="text-[11px] uppercase tracking-[0.15em] font-bold text-slate-500">Vendor / Supplier</h3>
             <div>
-              <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Nama Toko / Vendor *</Label>
-              <Input data-testid="input-vendor" required list="vendors-list" autoComplete="off" className={`${inputCls} h-9`} value={header.vendor_name} onChange={(e) => setH("vendor_name", e.target.value)} onKeyDown={(e) => tryAutocomplete(e, vendors, (v) => setH("vendor_name", v))} placeholder="mis. Wiratama Sukses, PT" />
+              <Label className="text-[11px] font-medium text-slate-600 mb-0.5 block">Nama Toko / Vendor *</Label>
+              <Input data-testid="input-vendor" required list="vendors-list" autoComplete="off" className={`${inputCls} h-8`} value={header.vendor_name} onChange={(e) => setH("vendor_name", e.target.value)} onKeyDown={(e) => tryAutocomplete(e, vendors, (v) => setH("vendor_name", v))} placeholder="mis. Wiratama Sukses, PT" />
             </div>
           </div>
 
           {/* KANAN — Info Dokumen PO / Invoice / Mata Uang */}
-          <div className="p-4 bg-slate-50/60 space-y-2">
-            <h3 className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500 mb-1">Info Dokumen & Mata Uang</h3>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+          <div className="p-3 bg-slate-50/60 space-y-1.5">
+            <h3 className="text-[11px] uppercase tracking-[0.15em] font-bold text-slate-500 mb-1">Info Dokumen & Mata Uang</h3>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-3 gap-y-1.5">
               <div>
-                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Nomor PO</Label>
+                <Label className="text-[11px] font-medium text-slate-600 mb-0.5 block">Nomor PO</Label>
                 <Input data-testid="input-po-no" className={inputCls} value={header.po_no} onChange={(e) => setH("po_no", e.target.value)} placeholder="mis. 9488" />
               </div>
               <div>
-                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Tanggal PO</Label>
+                <Label className="text-[11px] font-medium text-slate-600 mb-0.5 block">Tanggal PO</Label>
                 <Input type="date" data-testid="input-po-date" className={inputCls} value={header.po_date} onChange={(e) => setH("po_date", e.target.value)} />
               </div>
               <div>
-                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Nomor Invoice</Label>
+                <Label className="text-[11px] font-medium text-slate-600 mb-0.5 block">Nomor Invoice</Label>
                 <Input data-testid="input-invoice-no" className={inputCls} value={header.invoice_no} onChange={(e) => setH("invoice_no", e.target.value)} placeholder="mis. 00123/MM/GOGO/01/2026" />
               </div>
               <div>
-                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Tanggal Invoice *</Label>
+                <Label className="text-[11px] font-medium text-slate-600 mb-0.5 block">Tanggal Invoice *</Label>
                 <Input type="date" data-testid="input-invoice-date" required className={inputCls} value={header.invoice_date} onChange={(e) => setH("invoice_date", e.target.value)} />
               </div>
               <div>
-                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Tanggal Terima</Label>
+                <Label className="text-[11px] font-medium text-slate-600 mb-0.5 block">Tanggal Terima</Label>
                 <Input type="date" data-testid="input-receive-date" className={inputCls} value={header.receive_date} onChange={(e) => setH("receive_date", e.target.value)} />
               </div>
               <div>
-                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Plan Delivery <span className="text-slate-400 font-normal normal-case">(estimasi)</span></Label>
+                <Label className="text-[11px] font-medium text-slate-600 mb-0.5 block">Plan Delivery <span className="text-slate-400 font-normal normal-case">(estimasi)</span></Label>
                 <Input type="date" data-testid="input-plan-delivery-date" className={inputCls} value={header.plan_delivery_date || ""} onChange={(e) => setH("plan_delivery_date", e.target.value)} />
               </div>
               <div>
-                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">Mata Uang *</Label>
+                <Label className="text-[11px] font-medium text-slate-600 mb-0.5 block">Mata Uang *</Label>
                 <select
                   data-testid="input-currency"
                   value={header.currency}
                   onChange={(e) => setH("currency", e.target.value)}
-                  className="h-8 w-full border border-slate-300 rounded-none px-2 text-sm bg-white focus:ring-2 focus:ring-sky-600 focus:outline-none"
+                  className="h-7 w-full border border-slate-300 rounded-none px-2 text-[12px] bg-white focus:ring-2 focus:ring-sky-600 focus:outline-none"
                 >
                   {CURRENCIES.map((c) => (<option key={c}>{c}</option>))}
                 </select>
               </div>
               <div>
-                <Label className="text-xs font-semibold text-slate-600 mb-0.5 block">
+                <Label className="text-[11px] font-medium text-slate-600 mb-0.5 block">
                   Exchange Rate {header.currency !== "IDR" && <span className="text-red-600">*</span>}
                 </Label>
                 <Input
@@ -393,68 +394,68 @@ export default function InputTransactionPage() {
       </Card>
 
       <Card className="rounded-none border-slate-200 shadow-none bg-white">
-        <div className="flex items-center justify-between p-3 border-b border-slate-200">
-          <h3 className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500">Item Barang</h3>
-          <Button type="button" data-testid="add-item-btn" onClick={addRow} variant="outline" size="sm" className="rounded-none h-8 border-slate-300 text-xs uppercase tracking-[0.1em] font-semibold">
-            <Plus size={14} weight="bold" className="mr-1.5" /> Tambah Item
+        <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-200">
+          <h3 className="text-[11px] uppercase tracking-[0.15em] font-bold text-slate-500">Item Barang</h3>
+          <Button type="button" data-testid="add-item-btn" onClick={addRow} variant="outline" size="sm" className="rounded-none h-7 border-slate-300 text-[11px] uppercase tracking-[0.1em] font-semibold">
+            <Plus size={13} weight="bold" className="mr-1" /> Tambah Item
           </Button>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse [&_td]:py-1 [&_th]:py-1.5">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr className="text-xs uppercase tracking-[0.1em] font-bold text-slate-500">
-                <th className="text-left p-3 w-10">#</th>
-                <th className="text-left p-3 w-40">Item <span className="text-slate-400 normal-case tracking-normal font-normal">(Kategori)</span></th>
-                <th className="text-left p-3 min-w-[240px]">Description <span className="text-slate-400 normal-case tracking-normal font-normal">(Nama Barang)</span></th>
-                <th className="text-right p-3 w-24">Qty</th>
-                <th className="text-left p-3 w-28">Unit</th>
-                <th className="text-right p-3 w-36">Unit Price</th>
-                <th className="text-right p-3 w-36">Total Price</th>
-                <th className="text-left p-3 w-32">Nomor SO</th>
-                <th className="text-center p-3 w-36" title="Tentukan tujuan barang: tidak ke Store, masuk stok gudang, atau hanya log Incoming Good">Ke Store</th>
-                <th className="text-center p-3 w-14"></th>
+          <table className="w-full text-[12px] border-collapse [&_td]:px-1.5 [&_td]:py-0.5 [&_th]:px-2 [&_th]:py-1">
+            <thead className="bg-slate-100 border-b border-slate-200">
+              <tr className="text-[10px] uppercase tracking-[0.08em] font-bold text-slate-600">
+                <th className="text-left w-8">#</th>
+                <th className="text-left w-36">Item <span className="text-slate-400 normal-case tracking-normal font-normal">(Kategori)</span></th>
+                <th className="text-left min-w-[220px]">Description <span className="text-slate-400 normal-case tracking-normal font-normal">(Nama Barang)</span></th>
+                <th className="text-right w-20">Qty</th>
+                <th className="text-left w-24">Unit</th>
+                <th className="text-right w-32">Unit Price</th>
+                <th className="text-right w-32">Total</th>
+                <th className="text-left w-28">Nomor SO</th>
+                <th className="text-center w-32" title="Tentukan tujuan barang: tidak ke Store, masuk stok gudang, atau hanya log Incoming Good">Ke Store</th>
+                <th className="text-center w-10"></th>
               </tr>
             </thead>
             <tbody data-testid="items-table">
               {items.map((it, i) => {
                 const total = (Number(it.qty) || 0) * (Number(it.unit_price) || 0);
                 return (
-                  <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="p-2 text-slate-400 tabular-nums">{i + 1}</td>
-                    <td className="p-2">
-                      <Input data-testid={`item-category-${i}`} list="categories-list" autoComplete="off" className={inputCls} value={it.category} onChange={(e) => setItem(i, "category", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, categories, (v) => setItem(i, "category", v))) return; onRowKeyDown(e, i, "item-category"); }} placeholder="mis. Direct Material" />
+                  <tr key={i} className="border-b border-slate-100 hover:bg-sky-50/40">
+                    <td className="text-slate-400 tabular-nums text-center">{i + 1}</td>
+                    <td>
+                      <Input data-testid={`item-category-${i}`} list="categories-list" autoComplete="off" className={inputCls} value={it.category} onChange={(e) => setItem(i, "category", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, categories, (v) => setItem(i, "category", v))) return; onRowKeyDown(e, i, "item-category"); }} placeholder="Direct Material" />
                     </td>
-                    <td className="p-2">
+                    <td>
                       <Input data-testid={`item-name-${i}`} list="items-list" autoComplete="off" className={inputCls} value={it.item_name} onChange={(e) => setItem(i, "item_name", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, itemsMaster.map((x) => x.item_name), (v) => setItem(i, "item_name", v))) return; onRowKeyDown(e, i, "item-name"); }} placeholder="mis. NUT BAUT M14 X 2.0" />
                     </td>
-                    <td className="p-2">
+                    <td>
                       <Input data-testid={`item-qty-${i}`} type="number" step="any" min="0" className={`${inputCls} text-right tabular-nums`} value={it.qty} onChange={(e) => setItem(i, "qty", e.target.value)} onKeyDown={(e) => onRowKeyDown(e, i, "item-qty")} />
                     </td>
-                    <td className="p-2">
+                    <td>
                       <select
                         data-testid={`item-unit-${i}`}
                         value={it.unit}
                         onChange={(e) => setItem(i, "unit", e.target.value)}
-                        className="h-9 w-full border border-slate-300 rounded-none px-2 text-sm bg-white focus:ring-2 focus:ring-sky-600 focus:outline-none"
+                        className={rowSelectCls}
                       >
                         {UNIT_OPTIONS.map((u) => (
                           <option key={u}>{u}</option>
                         ))}
                       </select>
                     </td>
-                    <td className="p-2">
+                    <td>
                       <Input data-testid={`item-price-${i}`} type="number" step="any" min="0" className={`${inputCls} text-right tabular-nums`} value={it.unit_price} onChange={(e) => setItem(i, "unit_price", e.target.value)} onKeyDown={(e) => onRowKeyDown(e, i, "item-price")} />
                     </td>
-                    <td className="p-2 text-right tabular-nums font-semibold text-slate-900" data-testid={`item-total-${i}`}>
+                    <td className="text-right tabular-nums font-semibold text-slate-900 whitespace-nowrap" data-testid={`item-total-${i}`}>
                       {currSymbol} {total.toLocaleString("id-ID", { maximumFractionDigits: 2 })}
                     </td>
-                    <td className="p-2">
-                      <Input data-testid={`item-so-${i}`} list="so-list" autoComplete="off" className={inputCls} value={it.project_no} onChange={(e) => setItem(i, "project_no", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, sos.map((s) => s.so_no), (v) => setItem(i, "project_no", v))) return; onRowKeyDown(e, i, "item-so"); }} placeholder="mis. 4413" />
+                    <td>
+                      <Input data-testid={`item-so-${i}`} list="so-list" autoComplete="off" className={inputCls} value={it.project_no} onChange={(e) => setItem(i, "project_no", e.target.value)} onKeyDown={(e) => { if (tryAutocomplete(e, sos.map((s) => s.so_no), (v) => setItem(i, "project_no", v))) return; onRowKeyDown(e, i, "item-so"); }} placeholder="4413" />
                     </td>
-                    <td className="p-2 text-center">
+                    <td className="text-center">
                       <select
                         data-testid={`item-store-mode-${i}`}
-                        className="h-9 w-full border border-slate-300 rounded-none px-1 text-xs bg-white focus:ring-2 focus:ring-sky-600 focus:outline-none font-semibold uppercase tracking-[0.05em]"
+                        className="h-7 w-full border border-slate-300 rounded-none px-1 text-[11px] bg-white focus:ring-2 focus:ring-sky-600 focus:outline-none font-semibold uppercase tracking-[0.03em]"
                         value={!it.post_to_store ? "none" : (it.should_stock ? "stock" : "log")}
                         onChange={(e) => {
                           const v = e.target.value;
@@ -469,15 +470,15 @@ export default function InputTransactionPage() {
                         <option value="log">✎ Log Only</option>
                       </select>
                     </td>
-                    <td className="p-2 text-center">
+                    <td className="text-center">
                       <button
                         type="button"
                         data-testid={`remove-item-${i}`}
                         onClick={() => removeRow(i)}
                         disabled={items.length === 1}
-                        className="p-1.5 text-slate-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="p-1 text-slate-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed"
                       >
-                        <Trash size={16} weight="bold" />
+                        <Trash size={14} weight="bold" />
                       </button>
                     </td>
                   </tr>
@@ -488,49 +489,47 @@ export default function InputTransactionPage() {
         </div>
       </Card>
 
-      {/* ===== Totals kanan-bawah ala Accurate ===== */}
-      <div className="flex justify-end">
-        <div className="w-full sm:w-80 border border-slate-200 bg-white">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b-2 border-slate-900 bg-slate-50">
-            <span className="text-xs uppercase tracking-[0.12em] font-bold text-slate-600">Grand Total ({header.currency})</span>
-            <span className="text-lg font-bold tabular-nums text-slate-900" data-testid="grand-total" style={{ fontFamily: "Chivo, sans-serif" }}>
+      {/* ===== Footer ala Accurate: Catatan (kiri) + Grand Total (kanan) ===== */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
+        <Card className="rounded-none border-slate-200 shadow-none p-2.5 bg-white lg:col-span-2">
+          <label className="text-[11px] uppercase tracking-[0.15em] font-bold text-slate-500 block mb-1">
+            Catatan Transaksi <span className="normal-case font-normal text-slate-400">(opsional — berlaku untuk semua item pembelian ini)</span>
+          </label>
+          <textarea
+            data-testid="input-transaction-notes"
+            className="w-full min-h-[52px] border border-slate-300 focus:border-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-600 text-[12px] px-2.5 py-1.5 rounded-none"
+            value={header.notes || ""}
+            onChange={(e) => setH("notes", e.target.value)}
+            placeholder="Catatan tambahan untuk transaksi ini (contoh: barang urgent, pengiriman split, dsb.)"
+          />
+        </Card>
+        <div className="border border-slate-200 bg-white">
+          <div className="flex items-center justify-between px-3 py-2 border-b-2 border-slate-900 bg-slate-50">
+            <span className="text-[11px] uppercase tracking-[0.1em] font-bold text-slate-600">Grand Total ({header.currency})</span>
+            <span className="text-base font-bold tabular-nums text-slate-900" data-testid="grand-total" style={{ fontFamily: "Chivo, sans-serif" }}>
               {currSymbol} {grandTotal.toLocaleString("id-ID", { maximumFractionDigits: 2 })}
             </span>
           </div>
           {header.currency !== "IDR" && (
-            <div className="flex items-center justify-between px-4 py-2 bg-white">
-              <span className="text-[11px] uppercase tracking-[0.1em] font-semibold text-slate-500">≈ IDR (rate {Number(header.exchange_rate).toLocaleString("id-ID")})</span>
-              <span className="text-sm font-semibold tabular-nums text-sky-700" data-testid="grand-total-idr">Rp {grandTotalIDR.toLocaleString("id-ID", { maximumFractionDigits: 0 })}</span>
+            <div className="flex items-center justify-between px-3 py-1.5 bg-white">
+              <span className="text-[10px] uppercase tracking-[0.08em] font-semibold text-slate-500">≈ IDR (rate {Number(header.exchange_rate).toLocaleString("id-ID")})</span>
+              <span className="text-[12px] font-semibold tabular-nums text-sky-700" data-testid="grand-total-idr">Rp {grandTotalIDR.toLocaleString("id-ID", { maximumFractionDigits: 0 })}</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* ===== Catatan Transaksi — paling bawah ===== */}
-      <Card className="rounded-none border-slate-200 shadow-none p-4 bg-white">
-        <label className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500 block mb-2">
-          Catatan Transaksi <span className="normal-case font-normal text-slate-400">(opsional — berlaku untuk semua item pembelian ini)</span>
-        </label>
-        <textarea
-          data-testid="input-transaction-notes"
-          className="w-full min-h-[70px] border border-slate-300 focus:border-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-600 text-sm px-3 py-2 rounded-none"
-          value={header.notes || ""}
-          onChange={(e) => setH("notes", e.target.value)}
-          placeholder="Catatan tambahan untuk transaksi ini (contoh: barang urgent, pengiriman split, dsb.)"
-        />
-      </Card>
-
-      <div className="flex items-center justify-between gap-3 sticky bottom-0 bg-white border-t border-slate-200 p-4 -mx-6">
-        <button type="button" onClick={scrollTop} className="text-xs text-slate-500 hover:text-slate-900 uppercase tracking-[0.1em] font-semibold flex items-center gap-1">
-          <ArrowUp size={14} weight="bold" /> Kembali ke atas
+      <div className="flex items-center justify-between gap-3 sticky bottom-0 bg-white border-t border-slate-200 px-4 py-2.5 -mx-6">
+        <button type="button" onClick={scrollTop} className="text-[11px] text-slate-500 hover:text-slate-900 uppercase tracking-[0.1em] font-semibold flex items-center gap-1">
+          <ArrowUp size={13} weight="bold" /> Kembali ke atas
         </button>
         <Button
           type="submit"
           data-testid="submit-transaction-btn"
           disabled={submitting}
-          className="h-11 rounded-none bg-slate-900 hover:bg-slate-800 text-white font-semibold uppercase tracking-[0.1em] text-xs px-8 active:scale-[0.98]"
+          className="h-9 rounded-none bg-slate-900 hover:bg-slate-800 text-white font-semibold uppercase tracking-[0.1em] text-[11px] px-7 active:scale-[0.98]"
         >
-          <FloppyDisk size={16} weight="bold" className="mr-2" />
+          <FloppyDisk size={15} weight="bold" className="mr-2" />
           {submitting ? "Menyimpan..." : "Simpan Transaksi"}
         </Button>
       </div>

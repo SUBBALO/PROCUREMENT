@@ -547,7 +547,7 @@ export default function AppShell({ children }) {
       </header>
       )}
 
-      <main className="flex-1 px-6 py-6 max-w-[1600px] w-full mx-auto">{children}</main>
+      <main className="erp-dense flex-1 px-6 py-6 max-w-[1600px] w-full mx-auto">{children}</main>
 
       {!isEmbed && (
       <footer className="border-t border-slate-200 bg-white px-6 py-3 text-[11px] text-slate-400 uppercase tracking-[0.15em]">

@@ -29,3 +29,8 @@ Confirmed decisions:
 - Legacy non-regression: user without `access` unaffected (404/422 not 403) ✅
 - Frontend esbuild compile clean; screenshot shows dense Accurate-style matrix ✅
 - Temp test users (zz_perm_tester, zz_enf) removed
+
+## Phase 4: Compact "Accurate-style" UI (Status: COMPLETED)
+- Redesigned Input Transaksi Pembelian to dense Accurate look (small inputs h-7/12px, tight table rows, 4-col header, footer notes+total side-by-side). Tampilan-only; all fields/handlers/data-testids/pickers preserved. User approved.
+- Applied GLOBAL compact density layer scoped to `<main>` (`.erp-dense` in index.css) so ALL authenticated pages/forms/tables match the Input Transaksi sizing at once. Header/nav/Login/TV untouched. Element-scoped selectors override Tailwind height utilities without !important.
+- Verified via screenshots: Input Transaksi, Store Stock, Master List (Purchasing) all consistently dense, no breakage, no console errors.

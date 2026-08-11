@@ -136,3 +136,37 @@ html.reduce-motion .animate-spin {
 /* Kedip badge/kotak overdue (opacity, tanpa ubah warna latar baris) */
 @keyframes tvBadgeBlink { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
 .tv-alarm-badge { animation: tvBadgeBlink 1s ease-in-out infinite; }
+
+/* ============================================================
+   ERP COMPACT DENSITY LAYER (scoped to app content <main>)
+   Menyeragamkan ukuran input/form/tabel agar padat ala
+   "Input Transaksi Pembelian". Header/nav/login/TV tidak terpengaruh.
+   Selektor berbasis elemen (.erp-dense input) unggul specificity
+   atas utility Tailwind (.h-10) sehingga menimpa tanpa !important.
+   ============================================================ */
+.erp-dense input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+.erp-dense select {
+  height: 1.75rem;
+  min-height: 1.75rem;
+  font-size: 0.75rem;
+  line-height: 1.1rem;
+  padding-top: 0.1rem;
+  padding-bottom: 0.1rem;
+}
+.erp-dense textarea {
+  font-size: 0.75rem;
+  line-height: 1.15rem;
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
+}
+/* Placeholder juga ikut kecil */
+.erp-dense input::placeholder,
+.erp-dense textarea::placeholder { font-size: 0.75rem; }
+
+/* Tabel: baris lebih rapat + font sedikit lebih kecil */
+.erp-dense table { font-size: 0.78rem; }
+.erp-dense th { padding-top: 0.3rem; padding-bottom: 0.3rem; }
+.erp-dense td { padding-top: 0.2rem; padding-bottom: 0.2rem; }
+
+/* Label form sedikit lebih ringkas (tidak mengubah heading section) */
+.erp-dense label { font-size: 0.72rem; }
