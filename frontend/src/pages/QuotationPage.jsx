@@ -395,6 +395,8 @@ function CreateQuotationDialog({ onClose, onCreated, prefill = null }) {
   const [customerAddress, setCustomerAddress] = useState(prefill?.customer_address || "");
   const [showAddCust, setShowAddCust] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
+  const [customerConfirmed, setCustomerConfirmed] = useState(!!prefill?.customer_name); // true bila customer sudah dari Master / inquiry
+  const [registerThenSave, setRegisterThenSave] = useState(false); // true bila dialog dibuka dari tombol Simpan (auto-lanjut simpan)
   const [attention, setAttention] = useState(prefill?.attention || "");
   const [cc, setCc] = useState("");
   const [quotationNoOverride, setQuotationNoOverride] = useState("");
@@ -477,6 +479,7 @@ function CreateQuotationDialog({ onClose, onCreated, prefill = null }) {
     setInquiryId(inq.id);
     setInquiryNo(inq.inquiry_no);
     setCustomerName(inq.customer_name || "");
+    setCustomerConfirmed(!!(inq.customer_name || "").trim());
     // prefill items if any
     if ((inq.items || []).length && !items.some((it) => it.description.trim())) {
       setItems(inq.items.map((it, i) => ({
@@ -500,6 +503,7 @@ function CreateQuotationDialog({ onClose, onCreated, prefill = null }) {
       const exists = list.some((c) => (c.name || c.customer_name || "").trim().toLowerCase() === customerName.trim().toLowerCase());
       if (!exists) {
         toast.info("Customer belum terdaftar — lengkapi data Master Customer dulu");
+        setRegisterThenSave(true);
         setShowAddCust(true);
         return;
       }
@@ -602,13 +606,16 @@ function CreateQuotationDialog({ onClose, onCreated, prefill = null }) {
             <Label className="text-xs font-semibold text-slate-600 mb-1 block">Customer * <span className="normal-case font-normal text-slate-400">(dari Master Customer)</span></Label>
             <CustomerAutocompleteInput
               value={customerName}
-              onType={(v) => setCustomerName(v)}
+              confirmed={customerConfirmed}
+              onType={(v) => { setCustomerName(v); setCustomerConfirmed(false); }}
               onPick={(c) => {
                 setCustomerName(c.name || "");
                 if (c.address) setCustomerAddress(c.address);
                 if (c.pic) setAttention(c.pic);
+                setCustomerConfirmed(true);
                 toast.success(`Customer "${c.name}" terhubung ke Master Customer`);
               }}
+              onRegister={() => { setRegisterThenSave(false); setShowAddCust(true); }}
             />
           </div>
           <div><Label className="text-xs font-semibold text-slate-600 mb-1 block">Alamat Customer</Label><Input className={inputCls} value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} placeholder="Batam, Kepulauan Riau" /></div>
@@ -699,8 +706,13 @@ function CreateQuotationDialog({ onClose, onCreated, prefill = null }) {
         onSaved={(c) => {
           setCustomerName(c.name);
           if (c.address) setCustomerAddress(c.address);
+          if (c.pic) setAttention(c.pic);
+          setCustomerConfirmed(true);
           setShowAddCust(false);
-          setAutoSubmit(true);
+          toast.success(`Customer "${c.name}" terdaftar & terpilih`);
+          // Kalau dialog dibuka dari tombol Simpan → lanjutkan simpan otomatis.
+          // Kalau dari tombol inline "Daftarkan" → cukup pilih, biar user lengkapi item/harga dulu.
+          if (registerThenSave) { setRegisterThenSave(false); setAutoSubmit(true); }
         }}
       />
     </Dialog>
@@ -953,7 +965,7 @@ function QuotationDetailDialog({ id, onClose, onChanged }) {
 }
 
 
-function CustomerAutocompleteInput({ value, onType, onPick, placeholder = "Ketik nama customer (mis. PT. SPM Oil & Gas)" }) {
+function CustomerAutocompleteInput({ value, onType, onPick, onRegister, confirmed, placeholder = "Ketik nama customer (mis. PT. SPM Oil & Gas)" }) {
   const [suggestions, setSuggestions] = useState([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -971,11 +983,16 @@ function CustomerAutocompleteInput({ value, onType, onPick, placeholder = "Ketik
     return () => clearTimeout(t);
   }, [value, open]);
 
+  const trimmed = (value || "").trim();
+  const exactMatch = suggestions.find((c) => (c.name || "").toLowerCase() === trimmed.toLowerCase());
+  // Belum terdaftar: user sudah mengetik, tidak sedang loading, tidak ada yang sama persis, belum dikonfirmasi
+  const notFound = trimmed.length >= 2 && !loading && !exactMatch && !confirmed;
+
   return (
     <div className="relative">
       <Input
         data-testid="quo-customer"
-        className={inputCls}
+        className={`${inputCls} ${confirmed ? "border-emerald-500 bg-emerald-50" : notFound ? "border-amber-500" : ""}`}
         value={value}
         autoComplete="off"
         onChange={(e) => { onType(e.target.value); setOpen(true); }}
@@ -983,6 +1000,7 @@ function CustomerAutocompleteInput({ value, onType, onPick, placeholder = "Ketik
         onBlur={() => setTimeout(() => setOpen(false), 200)}
         placeholder={placeholder}
       />
+      {confirmed && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-emerald-600 text-[11px] font-bold pointer-events-none">✓ terkonfirmasi</span>}
       {open && (
         <div className="absolute top-full left-0 right-0 mt-0.5 bg-white border border-slate-300 shadow-md max-h-56 overflow-y-auto z-30" data-testid="quo-customer-suggestions">
           <div className="px-2 py-1 bg-slate-50 text-[10px] uppercase tracking-[0.1em] font-bold text-slate-500 border-b border-slate-200 flex items-center justify-between">
@@ -991,7 +1009,7 @@ function CustomerAutocompleteInput({ value, onType, onPick, placeholder = "Ketik
           </div>
           {!loading && suggestions.length === 0 ? (
             <div className="px-2 py-2 text-xs text-slate-400 italic">
-              Tidak ada customer cocok. Ketik nama lalu lanjut — customer baru akan otomatis tersimpan saat quotation dibuat.
+              Tidak ada customer cocok. Klik "Daftarkan Customer Baru" di bawah untuk mengisi data lengkap.
             </div>
           ) : (
             suggestions.map((c) => (
@@ -1007,6 +1025,21 @@ function CustomerAutocompleteInput({ value, onType, onPick, placeholder = "Ketik
               </button>
             ))
           )}
+        </div>
+      )}
+      {notFound && (
+        <div className="mt-1 p-2 bg-amber-50 border border-amber-300 flex items-center justify-between gap-2" data-testid="quo-cust-not-found">
+          <div className="text-[11px] text-amber-800">
+            <b>&quot;{trimmed}&quot;</b> belum terdaftar di Master Customer.
+          </div>
+          <button
+            type="button"
+            onMouseDown={(e) => { e.preventDefault(); onRegister?.(); }}
+            className="text-[10px] uppercase tracking-widest font-bold px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white whitespace-nowrap"
+            data-testid="quo-cust-register-btn"
+          >
+            + Daftarkan Customer Baru
+          </button>
         </div>
       )}
     </div>

@@ -1,18 +1,10 @@
 [
   {
-    "content": "Fix label DRF 'completed' -> 'Selesai · Drawing Approved' (hapus 'Butuh TTD Sales')",
+    "content": "Quotation: samakan dgn Inquiry — nama customer belum terdaftar munculkan tombol '+ Daftarkan Customer Baru' (inline) + buka form isi data lengkap → simpan Master → auto-pilih",
     "status": "completed"
   },
   {
-    "content": "Fix super_admin pending-my-approval: exclude 'approved' (approved = urusan DocCon stamp, bukan TTD)",
-    "status": "completed"
-  },
-  {
-    "content": "Verifikasi lintas-role (super_admin/doc_control/sales) + notifikasi konsisten dgn workflow",
-    "status": "completed"
-  },
-  {
-    "content": "DocCon: Kartu 'Perlu Stamp OBSOLETE' + Stamp berposisi (masih pending dari sebelumnya)",
+    "content": "DocCon: Kartu 'Perlu Stamp OBSOLETE' + Stamp OBSOLETE berposisi (masih pending dari sebelumnya)",
     "status": "pending"
   }
 ]
