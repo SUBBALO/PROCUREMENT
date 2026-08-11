@@ -138,14 +138,22 @@ html.reduce-motion .animate-spin {
 .tv-alarm-badge { animation: tvBadgeBlink 1s ease-in-out infinite; }
 
 /* ============================================================
-   ERP COMPACT DENSITY LAYER (scoped to app content <main>)
+   ERP COMPACT DENSITY LAYER — dikendalikan toggle body.density-compact
    Menyeragamkan ukuran input/form/tabel agar padat ala
-   "Input Transaksi Pembelian". Header/nav/login/TV tidak terpengaruh.
-   Selektor berbasis elemen (.erp-dense input) unggul specificity
-   atas utility Tailwind (.h-10) sehingga menimpa tanpa !important.
+   "Input Transaksi Pembelian". Berlaku untuk konten halaman (<main>)
+   DAN dialog/popover/menu (di-render via portal di <body>).
+   Header/nav/login/TV tidak terpengaruh. Bila class dilepas -> tampilan lega.
    ============================================================ */
-.erp-dense input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
-.erp-dense select {
+
+/* ---- Form controls (input & select) ---- */
+body.density-compact main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+body.density-compact main select,
+body.density-compact [role="dialog"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+body.density-compact [role="dialog"] select,
+body.density-compact [role="alertdialog"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+body.density-compact [role="alertdialog"] select,
+body.density-compact [data-radix-popper-content-wrapper] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+body.density-compact [data-radix-popper-content-wrapper] select {
   height: 1.75rem;
   min-height: 1.75rem;
   font-size: 0.75rem;
@@ -153,26 +161,69 @@ html.reduce-motion .animate-spin {
   padding-top: 0.1rem;
   padding-bottom: 0.1rem;
 }
-.erp-dense textarea {
+
+/* ---- Textarea ---- */
+body.density-compact main textarea,
+body.density-compact [role="dialog"] textarea,
+body.density-compact [role="alertdialog"] textarea {
   font-size: 0.75rem;
   line-height: 1.15rem;
   padding-top: 0.3rem;
   padding-bottom: 0.3rem;
 }
-/* Placeholder juga ikut kecil */
-.erp-dense input::placeholder,
-.erp-dense textarea::placeholder { font-size: 0.75rem; }
+body.density-compact main input::placeholder,
+body.density-compact main textarea::placeholder,
+body.density-compact [role="dialog"] input::placeholder,
+body.density-compact [role="dialog"] textarea::placeholder { font-size: 0.75rem; }
 
-/* Tabel: baris lebih rapat + font sedikit lebih kecil */
-.erp-dense table { font-size: 0.78rem; }
-.erp-dense th { padding-top: 0.3rem; padding-bottom: 0.3rem; }
-.erp-dense td { padding-top: 0.2rem; padding-bottom: 0.2rem; }
+/* ---- Tabel: baris lebih rapat + font sedikit lebih kecil ---- */
+body.density-compact main table,
+body.density-compact [role="dialog"] table { font-size: 0.78rem; }
+body.density-compact main th,
+body.density-compact [role="dialog"] th { padding-top: 0.3rem; padding-bottom: 0.3rem; }
+body.density-compact main td,
+body.density-compact [role="dialog"] td { padding-top: 0.2rem; padding-bottom: 0.2rem; }
 
-/* Label form sedikit lebih ringkas (tidak mengubah heading section) */
-.erp-dense label { font-size: 0.72rem; }
+/* ---- Label form ---- */
+body.density-compact main label,
+body.density-compact [role="dialog"] label,
+body.density-compact [role="alertdialog"] label { font-size: 0.72rem; }
 
-/* Judul halaman & subjudul ikut compact (berlaku semua halaman dalam app) */
-.erp-dense h1 { font-size: 1.2rem; line-height: 1.6rem; }
-.erp-dense h1 + p { font-size: 0.72rem; line-height: 1rem; margin-top: 0.15rem; }
-/* Heading section besar (text-xl/2xl pada h2) dirapatkan; label kecil (h3 uppercase) tidak diubah */
-.erp-dense h2 { font-size: 1rem; line-height: 1.35rem; }
+/* ---- Judul & subjudul halaman ---- */
+body.density-compact main h1 { font-size: 1.2rem; line-height: 1.6rem; }
+body.density-compact main h1 + p { font-size: 0.72rem; line-height: 1rem; margin-top: 0.15rem; }
+body.density-compact main h2 { font-size: 1rem; line-height: 1.35rem; }
+
+/* ---- Padding dialog/popover diringkas ---- */
+body.density-compact [role="dialog"],
+body.density-compact [role="alertdialog"] { padding: 1rem; gap: 0.6rem; }
+
+/* ============================================================
+   TOMBOL RINGKAS — tombol aksi di dalam tabel diperkecil
+   (mis. "Buka Work Group", "Pindah Tugas") agar hemat ruang.
+   ============================================================ */
+body.density-compact main table button {
+  font-size: 0.66rem;
+  line-height: 1.05;
+  padding: 0.2rem 0.45rem;
+  min-height: 0;
+  height: auto;
+}
+
+/* ============================================================
+   BEKUKAN HEADER TABEL — thead tetap terlihat saat scroll.
+   Wrapper tabel diberi tinggi maks + scroll internal (pakai :has),
+   header menempel di atas wrapper.
+   ============================================================ */
+body.density-compact main .overflow-x-auto:has(table),
+body.density-compact main .overflow-auto:has(table),
+body.density-compact main .overflow-y-auto:has(table) {
+  max-height: calc(100vh - 12rem);
+  overflow: auto;
+}
+body.density-compact main table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background-color: #f1f5f9;
+}

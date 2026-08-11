@@ -12,7 +12,7 @@ import PdfPreviewModal from "./PdfPreviewModal";
 import {
   ChartBar, Plus, MagnifyingGlass, SignOut, Package, ChartLineUp, ShieldStar, Warehouse, ArrowDown, ArrowUp,
   ClipboardText, CaretDown, ShoppingCart, Storefront, Truck, ClockCounterClockwise, Bell, HardDrives, UploadSimple,
-  Lightning, LightningSlash,
+  Lightning, LightningSlash, Rows,
 } from "@phosphor-icons/react";
 
 /* Mode Cepat — matikan animasi/transisi (reduce-motion) agar akses terasa instan.
@@ -60,6 +60,45 @@ function FastModeToggle() {
     >
       {fast ? <Lightning size={14} weight="fill" /> : <LightningSlash size={14} weight="bold" />}
       {fast ? "Cepat" : "Animasi"}
+    </button>
+  );
+}
+
+/* Mode Kepadatan — beralih tampilan Padat (compact) / Lega (comfortable).
+   Menyetel class `density-compact` pada <body> sehingga berlaku untuk konten
+   halaman DAN dialog/popover (portal). Preferensi disimpan di localStorage. */
+function DensityToggle() {
+  const [compact, setCompact] = useState(() => {
+    try {
+      const v = localStorage.getItem("mks_density_compact");
+      return v === null ? true : v === "1";
+    } catch { return true; }
+  });
+
+  useEffect(() => {
+    try {
+      document.body.classList.toggle("density-compact", compact);
+      localStorage.setItem("mks_density_compact", compact ? "1" : "0");
+    } catch { /* noop */ }
+  }, [compact]);
+
+  const toggle = () => {
+    const n = !compact;
+    setCompact(n);
+    toast.success(n ? "Tampilan Padat aktif" : "Tampilan Lega aktif");
+  };
+
+  return (
+    <button
+      onClick={toggle}
+      title={compact ? "Tampilan PADAT — klik untuk Lega" : "Tampilan LEGA — klik untuk Padat"}
+      className={`flex items-center gap-1 px-2 h-8 text-[10px] uppercase tracking-[0.1em] font-bold border transition-colors ${
+        compact ? "border-sky-500 text-sky-700 bg-sky-50 hover:bg-sky-100" : "border-slate-300 text-slate-600 hover:bg-slate-50"
+      }`}
+      data-testid="density-toggle"
+    >
+      <Rows size={14} weight="bold" />
+      {compact ? "Padat" : "Lega"}
     </button>
   );
 }
@@ -521,6 +560,7 @@ export default function AppShell({ children }) {
               </div>
               <div className="text-[10px] uppercase tracking-[0.15em] text-slate-400">{user?.role}</div>
             </div>
+            <DensityToggle />
             <FastModeToggle />
             <NavLink
               to="/profile/signature"
@@ -547,7 +587,7 @@ export default function AppShell({ children }) {
       </header>
       )}
 
-      <main className="erp-dense flex-1 px-6 py-6 max-w-[1600px] w-full mx-auto">{children}</main>
+      <main className="flex-1 px-6 py-6 max-w-[1600px] w-full mx-auto">{children}</main>
 
       {!isEmbed && (
       <footer className="border-t border-slate-200 bg-white px-6 py-3 text-[11px] text-slate-400 uppercase tracking-[0.15em]">
