@@ -180,13 +180,14 @@ def _render_trf_pdf(doc: dict, prep_role: str = "") -> io.BytesIO:
     # --- Header: boxed company (top-left) | title (center) | TFR No + Date (right) ---
     comp_box = Table([["PT. MITRA KARYA SARANA"]])
     comp_box.setStyle(TableStyle([
-        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
+        ("BOX", (0, 0), (-1, -1), 0.7, colors.black),
         ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("FONTSIZE", (0, 0), (-1, -1), 6.5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
     ]))
     comp_box.hAlign = "LEFT"
+    comp_box.vAlign = "TOP"
     title_st = ParagraphStyle("title", parent=styles["Title"], fontSize=16, alignment=1, spaceAfter=0)
     meta_st = ParagraphStyle("meta", parent=styles["Normal"], fontSize=8, alignment=2)
     header = Table([[
@@ -194,7 +195,7 @@ def _render_trf_pdf(doc: dict, prep_role: str = "") -> io.BytesIO:
         Paragraph("TRANSFER REQUEST FORM", title_st),
         Paragraph(f"TFR No. <b>{doc.get('form_no','')}</b><br/>Date: {_fmt_date(doc.get('date',''))}", meta_st),
     ]], colWidths=[82 * mm, 110 * mm, 82 * mm])
-    header.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    header.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 0)]))
     elems.append(header)
     elems.append(Spacer(1, 10))
 
