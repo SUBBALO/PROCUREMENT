@@ -1,10 +1,18 @@
 [
   {
-    "content": "Quotation: samakan dgn Inquiry — nama customer belum terdaftar munculkan tombol '+ Daftarkan Customer Baru' (inline) + buka form isi data lengkap → simpan Master → auto-pilih",
+    "content": "Fix Quotation BUKA: user is not defined (useAuth di QuotationDetailDialog) + Lock icon import (Illegal constructor)",
     "status": "completed"
   },
   {
-    "content": "DocCon: Kartu 'Perlu Stamp OBSOLETE' + Stamp OBSOLETE berposisi (masih pending dari sebelumnya)",
+    "content": "Inquiry: tombol atas -> halaman sebelumnya (navigate(-1)) bukan portal",
+    "status": "completed"
+  },
+  {
+    "content": "Inquiry: hapus Ringkasan Quotation (redundan dgn menu Quotation)",
+    "status": "completed"
+  },
+  {
+    "content": "DocCon: Kartu 'Perlu Stamp OBSOLETE' + Stamp OBSOLETE berposisi (masih pending)",
     "status": "pending"
   }
 ]

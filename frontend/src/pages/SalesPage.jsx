@@ -95,6 +95,7 @@ export default function SalesPage() {
   const [openInquiry, setOpenInquiry] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const isEngInquiryContext = location.pathname === "/engineering/inquiries";
   const inqTabs = useInquiryTabs();
   // Deep-link: /engineering/inquiries?open=<inquiryId> → langsung buka detail item yang dituju
@@ -129,7 +130,7 @@ export default function SalesPage() {
     ? (isEngStaff
         ? "Job yang ditugaskan ke Anda oleh Engineering Head"
         : "Terima request dari Sales · Assign ke Engineer · Upload hasil costing")
-    : "Inquiry Costing · Quotation · Order Status";
+    : "Inquiry Costing";
   const headerIconCls = isEngOnly ? "text-amber-600" : "text-rose-600";
 
   // Default range: tgl 1 bulan ini → hari ini
@@ -263,9 +264,14 @@ export default function SalesPage() {
 
   return (
     <div className="max-w-[1400px] mx-auto p-6 space-y-5">
-      <Link to={backLink} className="inline-flex items-center gap-2 px-3 h-9 text-xs uppercase tracking-[0.1em] font-bold text-slate-800 bg-white border-2 border-slate-400 shadow-sm hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors duration-150 active:translate-y-[1px]" data-testid="sales-back-btn">
-        <ArrowLeft size={16} weight="bold" /> {backLabel}
-      </Link>
+      <button
+        type="button"
+        onClick={() => { if (window.history.length > 1) navigate(-1); else navigate(backLink); }}
+        className="inline-flex items-center gap-2 px-3 h-9 text-xs uppercase tracking-[0.1em] font-bold text-slate-800 bg-white border-2 border-slate-400 shadow-sm hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors duration-150 active:translate-y-[1px]"
+        data-testid="sales-back-btn"
+      >
+        <ArrowLeft size={16} weight="bold" /> Kembali
+      </button>
 
       {isEngInquiryContext && <PageTabNav tabs={inqTabs} />}
 
@@ -308,68 +314,6 @@ export default function SalesPage() {
           <StatCard label="Minta Revisi" value={stats.inquiries?.by_status?.revision_requested} accent="red" testid="stat-inq-revision" active={statusFilter === "revision_requested"} onClick={() => setStatusFilter(statusFilter === "revision_requested" ? "" : "revision_requested")} />
           <StatCard label="Closed" value={stats.inquiries?.by_status?.closed} accent="slate" testid="stat-inq-closed" active={statusFilter === "closed"} onClick={() => setStatusFilter(statusFilter === "closed" ? "" : "closed")} />
         </div>
-      )}
-
-      {/* Quotation stats (auto-updated by date range) — only visible for Sales/Admin */}
-      {stats && !isEngOnly && (
-        <Card className="rounded-none border-slate-200 shadow-none p-4 bg-white">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-[11px] uppercase tracking-[0.2em] font-bold text-slate-500">Ringkasan Quotation (Sales Dept)</div>
-            <a href="/sales/quotations" className="text-xs text-sky-700 hover:underline font-semibold">Buka Quotation →</a>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-            {/* Total */}
-            <div className="border border-sky-200 bg-sky-50 p-2.5">
-              <div className="text-[10px] uppercase tracking-[0.15em] font-bold text-sky-700">Total Quotation</div>
-              <div className="mt-0.5 text-xl font-bold text-sky-900 tabular-nums">{stats.quotations?.total ?? 0}</div>
-              <div className="mt-1 text-[11px] text-sky-800">
-                {Object.entries(stats.quotations?.values_by_status || {}).reduce((all, [, byCur]) => {
-                  Object.entries(byCur).forEach(([cur, v]) => { all[cur] = (all[cur] || 0) + v; });
-                  return all;
-                }, {}) && (
-                  Object.entries(Object.entries(stats.quotations?.values_by_status || {}).reduce((all, [, byCur]) => {
-                    Object.entries(byCur).forEach(([cur, v]) => { all[cur] = (all[cur] || 0) + v; });
-                    return all;
-                  }, {})).map(([cur, v]) => (
-                    <div key={cur} className="tabular-nums">{cur} {v.toLocaleString("id-ID")}</div>
-                  ))
-                )}
-              </div>
-            </div>
-            {/* Per-status */}
-            {["on_bidding", "confirm_order", "cancel"].map((st) => {
-              const cnt = stats.quotations?.by_status?.[st] || 0;
-              const pts = stats.quotations?.unique_pts_by_status?.[st] || 0;
-              const vals = stats.quotations?.values_by_status?.[st] || {};
-              const meta = {
-                on_bidding: { label: "On Bidding", cls: "border-amber-300 bg-amber-50 text-amber-900", sub: "text-amber-800", head: "text-amber-700" },
-                confirm_order: { label: "Confirm Order", cls: "border-emerald-300 bg-emerald-50 text-emerald-900", sub: "text-emerald-800", head: "text-emerald-700" },
-                cancel: { label: "Cancel", cls: "border-red-300 bg-red-50 text-red-900", sub: "text-red-800", head: "text-red-700" },
-              }[st];
-              return (
-                <div key={st} className={`border p-2.5 ${meta.cls}`} data-testid={`quo-stat-${st}`}>
-                  <div className={`text-[10px] uppercase tracking-[0.15em] font-bold ${meta.head}`}>{meta.label}</div>
-                  <div className="mt-0.5 flex items-baseline gap-2">
-                    <span className="text-xl font-bold tabular-nums">{cnt}</span>
-                    <span className={`text-[10px] uppercase tracking-[0.05em] ${meta.sub}`}>Quotation</span>
-                  </div>
-                  <div className={`mt-1 text-[11px] ${meta.sub}`}>
-                    <span className="font-semibold">{pts}</span> perusahaan
-                  </div>
-                  <div className={`mt-1 text-[11px] ${meta.sub}`}>
-                    {Object.entries(vals).length === 0 ? (
-                      <span className="italic opacity-60">Belum ada nilai</span>
-                    ) : (
-                      Object.entries(vals).map(([cur, v]) => (
-                        <div key={cur} className="tabular-nums">{cur} {v.toLocaleString("id-ID")}</div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
       )}
 
       {/* Filter indicator */}

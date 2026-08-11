@@ -8,7 +8,7 @@ import { Label } from "../components/ui/label";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { toast } from "sonner";
-import { FileText, ArrowLeft, Plus, Trash, CircleNotch, MagnifyingGlass, MicrosoftExcelLogo, X, PencilSimple, Eye } from "@phosphor-icons/react";
+import { FileText, ArrowLeft, Plus, Trash, CircleNotch, MagnifyingGlass, MicrosoftExcelLogo, X, PencilSimple, Eye, Lock } from "@phosphor-icons/react";
 import { SortDropdown, sortItems, cmpStr, cmpDateStr, cmpNum } from "../components/SortDropdown";
 import AddCustomerDialog from "../components/AddCustomerDialog";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
@@ -722,6 +722,7 @@ function CreateQuotationDialog({ onClose, onCreated, prefill = null }) {
 
 function QuotationDetailDialog({ id, onClose, onChanged }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [d, setD] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
