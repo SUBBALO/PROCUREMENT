@@ -376,10 +376,25 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
             _ups.append(dd.get("delivery_date") or "")
         _ups.append(so.get("so_date") or "")
         last_update = max([u for u in _ups if u], default="")
+        # Ringkasan nama item (dari drawings SO ini) → biar TV tahu ini project apa
+        _item_names = []
+        _seen = set()
+        for d in dws:
+            nm = (d.get("item_name") or "").strip()
+            if nm and nm.lower() not in _seen:
+                _seen.add(nm.lower())
+                _item_names.append(nm)
+        item_summary = ", ".join(_item_names[:3])
+        if len(_item_names) > 3:
+            item_summary += f" +{len(_item_names) - 3} lainnya"
+        # Fallback ke project_name/description bila drawing belum punya item_name
+        if not item_summary:
+            item_summary = (so.get("description") or "").strip()
         out.append({
             "so_no": sono,
             "customer": so.get("customer", ""),
             "description": so.get("description", ""),
+            "item_summary": item_summary,
             "engineer": (drf_latest.get(sono) or {}).get("assigned_engineer_name") or "",
             "pic": pic,
             "so_date": so.get("so_date", ""),

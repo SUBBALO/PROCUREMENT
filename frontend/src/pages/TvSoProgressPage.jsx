@@ -68,10 +68,17 @@ const deadlineInfo = (iso) => {
 const LEVEL_RANK = { none: 0, ok: 1, soon: 2, past: 3 };
 const worseLevel = (a, b) => (LEVEL_RANK[a] >= LEVEL_RANK[b] ? a : b);
 const isAllDone = (so) => (so.stages || []).every((x) => x.status === "done");
+// Drawing dianggap selesai bila tahap Engineering sudah "done".
+const isDrawingDone = (so) => {
+  const eng = (so.stages || []).find((x) => x.key === "engineering");
+  return (eng?.status || "") === "done";
+};
 // Level gabungan SO: terparah antara deadline drawing & pengiriman (0 bila sudah selesai).
+// Bila drawing SUDAH selesai → deadline drawing tidak lagi memicu alarm (fokus ke Delivery).
 const soLevel = (so) => {
   if (isAllDone(so)) return "ok";
-  return worseLevel(deadlineInfo(so.deadline_drawing).level, deadlineInfo(so.deadline_delivery).level);
+  const drawingLvl = isDrawingDone(so) ? "none" : deadlineInfo(so.deadline_drawing).level;
+  return worseLevel(drawingLvl, deadlineInfo(so.deadline_delivery).level);
 };
 
 const STATUS_STYLE = {
@@ -102,7 +109,16 @@ function StageCell({ stage, isCurrent }) {
 
 // Satu badge deadline (dipakai untuk sub-kolom Drawing & Delivery).
 // active = deadline yang relevan dgn tahap berjalan (diberi garis tepi indigo).
-function DeadlineMini({ iso, active }) {
+// done   = tahap sudah selesai → tampil hijau "Selesai" (bukan alarm/countdown).
+function DeadlineMini({ iso, active, done }) {
+  if (done) {
+    return (
+      <div className="flex flex-col items-center gap-0.5 px-1 py-1 rounded bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40" data-testid="tv-deadline-done">
+        {iso && <span className="text-[10px] font-bold tabular-nums leading-none">{fmtDateShort(iso)}</span>}
+        <span className="text-[8px] font-black uppercase leading-none">✓ Selesai</span>
+      </div>
+    );
+  }
   if (!iso) return <div className="flex items-center justify-center text-slate-600 text-[10px] py-1">-</div>;
   const dl = deadlineInfo(iso);
   const cls = dl.level === "past"
@@ -336,12 +352,12 @@ export default function TvSoProgressPage() {
                   </td>
                   <td className="px-3 py-1.5">
                     <div className="text-sm font-semibold text-slate-100 truncate max-w-[18vw]">{so.customer || "-"}</div>
-                    {so.description ? <div className="text-[11px] text-slate-400 truncate max-w-[18vw]">{so.description}</div> : null}
+                    {(so.item_summary || so.description) ? <div className="text-[11px] text-slate-400 truncate max-w-[18vw]" data-testid={`tv-item-${so.so_no}`} title={so.item_summary || so.description}>{so.item_summary || so.description}</div> : null}
                   </td>
                   <td className="px-2 py-1.5">
                     <div className="grid grid-cols-2 gap-1" data-testid={`tv-deadline-${so.so_no}`}>
-                      <DeadlineMini iso={so.deadline_drawing} active={so.deadline_kind === "drawing"} />
-                      <DeadlineMini iso={so.deadline_delivery} active={so.deadline_kind === "delivery"} />
+                      <DeadlineMini iso={so.deadline_drawing} active={so.deadline_kind === "drawing"} done={isDrawingDone(so)} />
+                      <DeadlineMini iso={so.deadline_delivery} active={so.deadline_kind === "delivery"} done={isAllDone(so)} />
                     </div>
                   </td>
                   {STAGES.map((s) => {

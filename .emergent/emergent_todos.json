@@ -1,22 +1,14 @@
 [
   {
-    "content": "REASSIGN — selesai & terverifikasi",
+    "content": "TV: nama item di bawah customer (item_summary) + deadline Drawing jadi hijau Selesai saat drawing komplet",
     "status": "completed"
   },
   {
-    "content": "VERSION CONTROL file drawing — selesai & terverifikasi",
-    "status": "completed"
+    "content": "DocCon: Kartu 'Perlu Stamp OBSOLETE' di portal Document Control (pending)",
+    "status": "pending"
   },
   {
-    "content": "OBSOLETE/DOCCON — Backend: auto-mark 'pending' saat rev baru controlled + endpoint list + stamp-obsolete (manual Salma) + cap OBSOLETE di PDF",
-    "status": "completed"
-  },
-  {
-    "content": "OBSOLETE/DOCCON — Frontend: tab Obsolete/Superseded + tombol Stamp OBSOLETE (DocCon) + preview cap",
-    "status": "completed"
-  },
-  {
-    "content": "OBSOLETE/DOCCON — Test end-to-end (auto-mark, manual stamp, cap burned, cleanup)",
-    "status": "completed"
+    "content": "DocCon: Stamp OBSOLETE berposisi (Salma klik titik) seperti stamp Controlled (pending)",
+    "status": "pending"
   }
 ]
