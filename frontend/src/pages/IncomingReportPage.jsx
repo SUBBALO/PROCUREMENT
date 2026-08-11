@@ -121,50 +121,48 @@ export default function IncomingReportPage() {
   const [showPoModal, setShowPoModal] = useState(false);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
             <BackLink />
 <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
+        <h1 className="text-lg font-semibold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>
           Incoming Goods
         </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Input & laporan barang masuk. Pilih cara input di bawah, atau langsung lihat riwayat.
+        <p className="text-[11px] text-slate-500 mt-0.5">
+          Input & laporan barang masuk. Pilih cara input, atau langsung lihat riwayat di bawah.
         </p>
       </div>
 
-      {/* Quick action cards: 2 shortcuts */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {/* Quick action cards: 2 shortcuts (compact) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         <button
           data-testid="ig-open-manual-modal"
           onClick={() => setShowManualModal(true)}
-          className="text-left border-2 border-emerald-300 hover:border-emerald-500 bg-emerald-50 hover:bg-emerald-100 p-4 group transition-all"
+          className="text-left border border-emerald-300 hover:border-emerald-500 bg-emerald-50 hover:bg-emerald-100 px-3 py-2 flex items-center gap-3 transition-colors"
         >
-          <div className="flex items-center gap-3 mb-1">
-            <div className="w-11 h-11 flex items-center justify-center border-2 border-emerald-400 bg-white">
-              <Printer size={22} weight="duotone" className="text-emerald-700" />
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.15em] font-bold text-emerald-700">Card 1</div>
-              <div className="text-lg font-bold text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>Input Manual</div>
-            </div>
+          <div className="w-9 h-9 shrink-0 flex items-center justify-center border border-emerald-400 bg-white">
+            <Printer size={18} weight="duotone" className="text-emerald-700" />
           </div>
-          <div className="text-xs text-slate-600">Untuk barang datang tanpa PO (customer / supplier drop-in). Form terbuka sebagai modal.</div>
+          <div className="min-w-0">
+            <div className="text-sm font-bold text-slate-900 leading-tight" style={{ fontFamily: "Chivo, sans-serif" }}>
+              Input Manual <span className="text-[10px] uppercase tracking-[0.12em] font-bold text-emerald-700 ml-1">Card 1</span>
+            </div>
+            <div className="text-[11px] text-slate-600 leading-tight line-clamp-1">Barang datang tanpa PO (customer / supplier drop-in).</div>
+          </div>
         </button>
         <button
           data-testid="ig-open-po-modal"
           onClick={() => setShowPoModal(true)}
-          className="text-left border-2 border-sky-300 hover:border-sky-500 bg-sky-50 hover:bg-sky-100 p-4 group transition-all"
+          className="text-left border border-sky-300 hover:border-sky-500 bg-sky-50 hover:bg-sky-100 px-3 py-2 flex items-center gap-3 transition-colors"
         >
-          <div className="flex items-center gap-3 mb-1">
-            <div className="w-11 h-11 flex items-center justify-center border-2 border-sky-400 bg-white">
-              <Printer size={22} weight="duotone" className="text-sky-700" />
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.15em] font-bold text-sky-700">Card 2</div>
-              <div className="text-lg font-bold text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>Tarik Data dari PO</div>
-            </div>
+          <div className="w-9 h-9 shrink-0 flex items-center justify-center border border-sky-400 bg-white">
+            <Printer size={18} weight="duotone" className="text-sky-700" />
           </div>
-          <div className="text-xs text-slate-600">Untuk barang yang sudah ada PO di Purchasing. Sistem akan tarik detail otomatis.</div>
+          <div className="min-w-0">
+            <div className="text-sm font-bold text-slate-900 leading-tight" style={{ fontFamily: "Chivo, sans-serif" }}>
+              Tarik Data dari PO <span className="text-[10px] uppercase tracking-[0.12em] font-bold text-sky-700 ml-1">Card 2</span>
+            </div>
+            <div className="text-[11px] text-slate-600 leading-tight line-clamp-1">Barang yang sudah ada PO di Purchasing — detail ditarik otomatis.</div>
+          </div>
         </button>
       </div>
 
@@ -199,8 +197,8 @@ export default function IncomingReportPage() {
         </div>
       )}
 
-      <Card className="rounded-none border-slate-200 shadow-none p-4 bg-white">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+      <Card className="rounded-none border-slate-200 shadow-none p-3 bg-white">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
           <div>
             <Label className="text-xs font-semibold text-slate-600 mb-1 block">Dari Tanggal</Label>
             <Input type="date" data-testid="ig-start-date" className={inputCls} value={filters.start_date} onChange={(e) => setF("start_date", e.target.value)} />

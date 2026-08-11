@@ -13,7 +13,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import {
   UsersThree, Plus, PencilSimple, Trash, Key, ShieldStar, Clock, FunnelSimple, CheckCircle, XCircle, ChatCircleDots,
-  Database, DownloadSimple, UploadSimple, Warning, TrashSimple, ArrowCounterClockwise,
+  Database, DownloadSimple, UploadSimple, Warning, TrashSimple, ArrowCounterClockwise, HardDrives,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
@@ -967,6 +967,64 @@ function BackupTab() {
   const [wipeConfirmOpen, setWipeConfirmOpen] = useState(false);
   const [wiping, setWiping] = useState(false);
 
+  // Versi / build info
+  const [version, setVersion] = useState(null);
+  const [loadingVersion, setLoadingVersion] = useState(true);
+  // Full backup (kode + data)
+  const [fullBacking, setFullBacking] = useState(false);
+  // Restore full backup
+  const [fullFile, setFullFile] = useState(null);
+  const [fullMode, setFullMode] = useState("merge");
+  const [fullPhrase, setFullPhrase] = useState("");
+  const [fullRestoring, setFullRestoring] = useState(false);
+  const [fullResult, setFullResult] = useState(null);
+
+  const loadVersion = useCallback(async () => {
+    setLoadingVersion(true);
+    try {
+      const { data } = await api.get("/admin/backup/version");
+      setVersion(data);
+    } catch { /* silent */ } finally { setLoadingVersion(false); }
+  }, []);
+  useEffect(() => { loadVersion(); }, [loadVersion]);
+
+  const doFullBackup = async () => {
+    setFullBacking(true);
+    try {
+      const res = await api.get("/admin/backup/full-download", { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      a.download = `mks_FULL_${stamp}.tar.gz`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Full Backup (kode + data) berhasil di-download");
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal membuat Full Backup");
+    } finally { setFullBacking(false); }
+  };
+
+  const doFullRestore = async () => {
+    if (!fullFile) return toast.error("Pilih file Full Backup (.tar.gz) terlebih dulu");
+    if (fullPhrase !== "RESTORE-FULL") return toast.error("Ketik 'RESTORE-FULL' persis untuk melanjutkan");
+    setFullRestoring(true);
+    setFullResult(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", fullFile);
+      fd.append("confirm_phrase", fullPhrase);
+      fd.append("mode", fullMode);
+      const { data } = await api.post("/admin/backup/full-restore", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      setFullResult(data);
+      toast.success(`Restore selesai — ${data.data_total} dokumen data, ${data.code_files} file kode`);
+      setFullFile(null); setFullPhrase("");
+      loadSummary();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal restore Full Backup");
+    } finally { setFullRestoring(false); }
+  };
+
   const loadSummary = useCallback(async () => {
     setLoading(true);
     try {
@@ -1028,6 +1086,37 @@ function BackupTab() {
 
   return (
     <div className="space-y-5" data-testid="backup-tab">
+      {/* Versi / Build Info */}
+      <Card className="rounded-none border-slate-200 bg-white p-4" data-testid="backup-version-panel">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-start gap-3">
+            <div className="p-2 border border-slate-300 bg-slate-50 text-slate-700 rounded-none"><Database size={20} weight="duotone" /></div>
+            <div>
+              <div className="text-sm font-bold text-slate-900 mb-0.5">Versi / Build Aplikasi</div>
+              {loadingVersion ? (
+                <div className="text-xs text-slate-400">Memuat info versi…</div>
+              ) : version ? (
+                <div className="text-xs text-slate-600 space-y-0.5">
+                  <div>Commit: <b className="font-mono text-slate-900" data-testid="version-commit">{version.commit}</b> · Branch: <b className="font-mono">{version.branch}</b>
+                    {version.dirty && <span className="ml-2 px-1.5 py-0.5 bg-amber-50 border border-amber-300 text-amber-800 text-[10px] font-semibold uppercase">ada perubahan belum di-commit</span>}
+                  </div>
+                  <div>Tanggal build: <b className="tabular-nums">{version.date && version.date !== "unknown" ? fmtDT(version.date) : "-"}</b></div>
+                  {version.message && <div className="text-slate-500 line-clamp-1">“{version.message}”</div>}
+                  {version.update_available === true && (
+                    <div className="mt-1 px-2 py-1 bg-sky-50 border border-sky-300 text-sky-800 text-[11px] font-semibold inline-block">
+                      Update tersedia dari GitHub ({version.commits_behind} commit baru) — jalankan <span className="font-mono">git pull</span> di server.
+                    </div>
+                  )}
+                  {version.error && <div className="text-[11px] text-slate-400">{version.error}</div>}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-400">Info versi tidak tersedia.</div>
+              )}
+            </div>
+          </div>
+          <Button variant="outline" onClick={loadVersion} disabled={loadingVersion} className="rounded-none text-xs h-8" data-testid="version-refresh-btn">Refresh</Button>
+        </div>
+      </Card>
       {/* Summary */}
       <Card className="rounded-none border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between mb-3">
@@ -1068,7 +1157,66 @@ function BackupTab() {
         </div>
       </Card>
 
-      {/* Full CLI backup runs via /app/scripts/backup_full_cli.sh on the server (out of scope for the UI). */}
+      {/* Full Backup (Kode + Data) */}
+      <Card className="rounded-none border-indigo-200 bg-indigo-50/40 p-4" data-testid="full-backup-card">
+        <div className="flex items-start gap-3">
+          <div className="p-2 border border-indigo-300 bg-white text-indigo-700 rounded-none"><HardDrives size={20} weight="duotone" /></div>
+          <div className="flex-1">
+            <div className="text-sm font-bold text-slate-900 mb-0.5">Full Backup (Kode + Data)</div>
+            <div className="text-xs text-slate-600 mb-3">
+              Sekali klik dapat <b>semuanya</b> dalam satu file <span className="font-mono">.tar.gz</span>: seluruh <b>kode program (tampilan &amp; fitur)</b> + <b>data database</b> + manifest versi.
+              Cocok untuk arsip lengkap / pindah server. <span className="text-slate-500">(node_modules dikecualikan agar ringkas.)</span>
+            </div>
+            <Button data-testid="full-backup-btn" onClick={doFullBackup} disabled={fullBacking} className="rounded-none bg-indigo-600 hover:bg-indigo-700 text-white text-xs uppercase tracking-[0.1em]">
+              <DownloadSimple size={13} weight="bold" className="mr-1" /> {fullBacking ? "Menyiapkan… (bisa beberapa detik)" : "Download Full Backup"}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Restore Full Backup */}
+      <Card className="rounded-none border-violet-200 bg-violet-50/40 p-4" data-testid="full-restore-card">
+        <div className="flex items-start gap-3">
+          <div className="p-2 border border-violet-300 bg-white text-violet-700 rounded-none"><UploadSimple size={20} weight="duotone" /></div>
+          <div className="flex-1 space-y-2">
+            <div className="text-sm font-bold text-slate-900">Restore Full Backup (.tar.gz)</div>
+            <div className="text-xs text-slate-600">
+              Restore dari file Full Backup. <b>Data</b> otomatis masuk ke database (mode <b>merge</b> = aman upsert per ID, <b>replace</b> = hapus lalu insert).
+              <b> Kode</b> diekstrak ke folder <span className="font-mono">/app/_full_restore_&lt;waktu&gt;/</span> di server — <b>tidak</b> menimpa kode berjalan demi keamanan.
+            </div>
+            <div className="grid md:grid-cols-3 gap-2">
+              <div>
+                <Label className="text-[11px] font-semibold text-slate-600 mb-1 block">File Full Backup (.tar.gz)</Label>
+                <input data-testid="full-restore-file" type="file" accept=".gz,.tgz,application/gzip" onChange={(e) => setFullFile(e.target.files?.[0] || null)} className="text-xs file:mr-3 file:py-1.5 file:px-3 file:border-0 file:bg-slate-900 file:text-white file:text-[10px] file:uppercase file:tracking-[0.1em] file:font-semibold file:cursor-pointer" />
+                {fullFile && <div className="mt-1 text-[10px] text-slate-500">{fullFile.name} · {(fullFile.size / (1024 * 1024)).toFixed(2)} MB</div>}
+              </div>
+              <div>
+                <Label className="text-[11px] font-semibold text-slate-600 mb-1 block">Mode Data</Label>
+                <Select value={fullMode} onValueChange={setFullMode}>
+                  <SelectTrigger className={inputCls} data-testid="full-restore-mode"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="merge">merge (upsert per ID — aman)</SelectItem>
+                    <SelectItem value="replace">replace (hapus + insert — destructive)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-[11px] font-semibold text-slate-600 mb-1 block">Ketik <span className="font-mono text-red-600">RESTORE-FULL</span></Label>
+                <Input data-testid="full-restore-phrase" value={fullPhrase} onChange={(e) => setFullPhrase(e.target.value)} className={inputCls} placeholder="RESTORE-FULL" />
+              </div>
+            </div>
+            <Button data-testid="full-restore-btn" onClick={doFullRestore} disabled={fullRestoring || !fullFile || fullPhrase !== "RESTORE-FULL"} className="rounded-none bg-violet-600 hover:bg-violet-700 text-white text-xs uppercase tracking-[0.1em]">
+              <UploadSimple size={13} weight="bold" className="mr-1" /> {fullRestoring ? "Restoring…" : "Restore Full Backup"}
+            </Button>
+            {fullResult && (
+              <div className="mt-2 p-2 border border-violet-200 bg-white text-[11px] text-slate-700" data-testid="full-restore-result">
+                <div className="font-semibold text-violet-800 mb-0.5">Selesai: {fullResult.data_total} dokumen data · {fullResult.code_files} file kode</div>
+                <div className="text-slate-500">Kode diekstrak ke: <span className="font-mono">{fullResult.code_extracted_to}</span></div>
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
 
       {/* Import */}
       <Card className="rounded-none border-sky-200 bg-sky-50/40 p-4">

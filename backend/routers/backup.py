@@ -5,7 +5,11 @@ Restore REPLACES existing data — user must confirm with a specific string.
 """
 import io
 import json
+import os
+import shutil
 import subprocess
+import tarfile
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +24,46 @@ from deps import get_current_user, log_action, require_admin, require_super_admi
 
 
 router = APIRouter(prefix="/admin/backup", tags=["backup"])
+
+# Root kode aplikasi + daftar exclude untuk Full Backup (kode + data)
+_CODE_ROOT = "/app"
+_EXCLUDE_DIRS = {
+    "node_modules", ".git", "__pycache__", "build", "dist", ".ruff_cache",
+    ".emergent", "venv", ".venv", "env", ".pytest_cache", ".mypy_cache",
+    "coverage", "backup", ".cache", ".next",
+}
+_EXCLUDE_SUFFIX = (".pyc", ".pyo", ".log", ".tar.gz", ".tgz")
+
+
+def _find_git_root() -> "Path | None":
+    root = Path(__file__).resolve().parent
+    for _ in range(6):
+        if (root / ".git").exists():
+            return root
+        root = root.parent
+    return None
+
+
+def _git_info() -> dict:
+    """Info git ringkas (commit/branch/tanggal/pesan) untuk manifest & panel versi."""
+    info = {"commit": "unknown", "branch": "unknown", "date": "unknown", "message": "", "dirty": False}
+    root = _find_git_root()
+    if not root:
+        return info
+
+    def _git(*args):
+        try:
+            r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=8)
+            return r.stdout.strip() if r.returncode == 0 else ""
+        except Exception:
+            return ""
+
+    info["commit"] = _git("rev-parse", "--short", "HEAD") or "unknown"
+    info["branch"] = _git("rev-parse", "--abbrev-ref", "HEAD") or "unknown"
+    info["date"] = _git("log", "-1", "--format=%cI") or "unknown"
+    info["message"] = _git("log", "-1", "--format=%s") or ""
+    info["dirty"] = bool(_git("status", "--porcelain"))
+    return info
 
 
 # ---------------- Version / Git Info ----------------
@@ -126,72 +170,177 @@ async def export_backup(current: dict = Depends(require_admin)):
 
 @router.get("/full-download")
 async def download_full_backup(current: dict = Depends(require_super_admin)):
-    """Trigger CLI backup script & stream the resulting tar.gz to admin.
-    Only super_admin can trigger this (contains code + env)."""
-    import subprocess
-    from pathlib import Path
+    """Full Backup — bikin tar.gz berisi KODE (code/) + DATA database (data/) + manifest.
+    Mandiri (tidak butuh script eksternal). Hanya super_admin.
+    """
+    # 1) Kumpulkan data semua collection (sama seperti export JSON)
+    data_payload = {
+        "backup_id": str(uuid.uuid4()),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_by": current.get("name") or current.get("username"),
+        "app": "MKS Management System",
+        "collections": {},
+    }
+    for coll in BACKUP_COLLECTIONS:
+        docs = await db[coll].find({}).to_list(length=None)
+        cleaned = []
+        for d in docs:
+            d.pop("_id", None)
+            cleaned.append(json.loads(json.dumps(d, default=_serialize)))
+        data_payload["collections"][coll] = cleaned
 
-    script = "/app/scripts/backup_full_cli.sh"
-    if not Path(script).exists():
-        raise HTTPException(status_code=500, detail=f"Backup script tidak ditemukan: {script}")
+    manifest = {
+        "app": "MKS Management System",
+        "type": "FULL",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_by": current.get("name") or current.get("username"),
+        "git": _git_info(),
+        "collections": {c: len(v) for c, v in data_payload["collections"].items()},
+        "note": "Berisi kode sumber (code/) + data database (data/). "
+                "Restore data lewat Admin Panel; kode ada di folder code/.",
+    }
 
-    # Run script (blocking, up to 5 min)
+    tmpdir = tempfile.mkdtemp(prefix="mksfull_")
+    tar_path = os.path.join(tmpdir, "full.tar.gz")
+    data_file = os.path.join(tmpdir, "data.json")
+    manifest_file = os.path.join(tmpdir, "manifest.json")
+    with open(data_file, "w", encoding="utf-8") as f:
+        json.dump(data_payload, f, ensure_ascii=False)
+    with open(manifest_file, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+    def _filter(ti: tarfile.TarInfo):
+        parts = ti.name.split("/")
+        for p in parts:
+            if p in _EXCLUDE_DIRS or p.startswith("_full_restore"):
+                return None
+        if ti.name.endswith(_EXCLUDE_SUFFIX):
+            return None
+        return ti
+
     try:
-        proc = subprocess.run(["bash", script], capture_output=True, timeout=300)
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="Backup process timeout (>5 min). Cek disk & Mongo.")
-    if proc.returncode != 0:
-        raise HTTPException(status_code=500, detail=f"Backup script gagal: {proc.stderr.decode()[:300]}")
+        with tarfile.open(tar_path, "w:gz") as tar:
+            tar.add(manifest_file, arcname="manifest.json")
+            tar.add(data_file, arcname="data/mks_data_backup.json")
+            tar.add(_CODE_ROOT, arcname="code", filter=_filter)
+    except Exception as e:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=f"Gagal membuat Full Backup: {str(e)[:200]}")
 
-    # Find the just-created backup file
-    backup_dir = Path("/backup/procurement")
-    files = sorted(backup_dir.glob("mks_FULL_*.tar.gz"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if not files:
-        raise HTTPException(status_code=500, detail="Backup file tidak ditemukan setelah script selesai")
-    latest = files[0]
-
-    await log_action(current, "download_full_backup", "backup", latest.name,
-                     {"size_bytes": latest.stat().st_size})
+    fname = f"mks_FULL_{datetime.now().strftime('%Y%m%d_%H%M%S')}.tar.gz"
+    size = os.path.getsize(tar_path)
+    await log_action(current, "download_full_backup", "backup", fname, {"size_bytes": size})
 
     def iter_file():
-        with open(latest, "rb") as f:
-            while chunk := f.read(64 * 1024):
-                yield chunk
+        try:
+            with open(tar_path, "rb") as f:
+                while chunk := f.read(64 * 1024):
+                    yield chunk
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
     return StreamingResponse(
         iter_file(),
         media_type="application/gzip",
         headers={
-            "Content-Disposition": f'attachment; filename="{latest.name}"',
-            "Content-Length": str(latest.stat().st_size),
+            "Content-Disposition": f'attachment; filename="{fname}"',
+            "Content-Length": str(size),
             "Cache-Control": "no-store",
         },
     )
 
 
-@router.get("/full-list")
-async def list_full_backups(current: dict = Depends(require_super_admin)):
-    """List existing full backup files with size & timestamp."""
-    from pathlib import Path
-    backup_dir = Path("/backup/procurement")
-    if not backup_dir.exists():
-        return {"backups": [], "backup_dir": str(backup_dir), "total_size_mb": 0}
-    items = []
-    total_size = 0
-    for p in sorted(backup_dir.glob("*.tar.gz"), key=lambda x: x.stat().st_mtime, reverse=True):
-        st = p.stat()
-        items.append({
-            "filename": p.name,
-            "size_mb": round(st.st_size / (1024 * 1024), 2),
-            "created_at": datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat(),
-            "type": "FULL" if "FULL" in p.name else "DATA",
-        })
-        total_size += st.st_size
+@router.post("/full-restore")
+async def full_restore(
+    file: UploadFile = File(...),
+    confirm_phrase: str = Form(""),
+    mode: str = Form("merge"),
+    current: dict = Depends(require_super_admin),
+):
+    """Restore Full Backup (.tar.gz).
+    - DATA otomatis di-restore ke database (mode merge/replace).
+    - KODE diekstrak ke folder staging /app/_full_restore_<ts>/ (TIDAK menimpa kode berjalan,
+      demi keamanan). Salin manual / pakai GitHub untuk menerapkan kode.
+    """
+    if confirm_phrase != "RESTORE-FULL":
+        raise HTTPException(status_code=400, detail="Konfirmasi tidak valid. Ketik 'RESTORE-FULL' untuk melanjutkan.")
+    if mode not in ("merge", "replace"):
+        raise HTTPException(status_code=400, detail="mode harus 'merge' atau 'replace'")
+
+    content = await file.read()
+    tmpdir = tempfile.mkdtemp(prefix="mksrestore_")
+    tar_path = os.path.join(tmpdir, "in.tar.gz")
+    with open(tar_path, "wb") as f:
+        f.write(content)
+
+    data_stats: Dict[str, int] = {}
+    code_dir = None
+    code_files = 0
+    try:
+        try:
+            tar = tarfile.open(tar_path, "r:gz")
+        except tarfile.ReadError:
+            raise HTTPException(status_code=400, detail="File bukan .tar.gz Full Backup yang valid")
+        with tar:
+            # 1) Restore DATA
+            data_member = next(
+                (m for m in tar.getmembers() if m.name.endswith("data/mks_data_backup.json")),
+                None,
+            )
+            if data_member:
+                fobj = tar.extractfile(data_member)
+                payload = json.loads(fobj.read().decode("utf-8"))
+                collections = payload.get("collections") or {}
+                for coll_name, docs in collections.items():
+                    if coll_name not in BACKUP_COLLECTIONS or not isinstance(docs, list):
+                        continue
+                    if mode == "replace":
+                        await db[coll_name].delete_many({})
+                    cnt = 0
+                    for d in docs:
+                        if not isinstance(d, dict):
+                            continue
+                        d.pop("_id", None)
+                        if mode == "merge" and d.get("id"):
+                            await db[coll_name].update_one({"id": d["id"]}, {"$set": d}, upsert=True)
+                        else:
+                            await db[coll_name].insert_one(d)
+                        cnt += 1
+                    data_stats[coll_name] = cnt
+
+            # 2) Ekstrak KODE ke staging (aman dari path traversal)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            code_dir = f"/app/_full_restore_{ts}"
+            os.makedirs(code_dir, exist_ok=True)
+            for m in tar.getmembers():
+                if not m.name.startswith("code/"):
+                    continue
+                if m.issym() or m.islnk():
+                    continue
+                if ".." in m.name.split("/"):
+                    continue
+                tar.extract(m, path=code_dir)
+                if m.isfile():
+                    code_files += 1
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    total = sum(data_stats.values())
+    await log_action(current, "full_restore", "backup", "-",
+                     {"mode": mode, "data": data_stats, "code_dir": code_dir, "code_files": code_files})
     return {
-        "backups": items,
-        "backup_dir": str(backup_dir),
-        "total_size_mb": round(total_size / (1024 * 1024), 2),
-        "count": len(items),
+        "success": True,
+        "mode": mode,
+        "data_restored": data_stats,
+        "data_total": total,
+        "code_files": code_files,
+        "code_extracted_to": code_dir,
+        "message": (
+            f"Data ({total} dokumen) berhasil di-restore ke database. "
+            f"Kode ({code_files} file) diekstrak ke '{code_dir}' di server "
+            f"(TIDAK menimpa kode berjalan demi keamanan). Untuk menerapkan kode: salin folder tsb "
+            f"ke aplikasi lalu restart, atau gunakan GitHub."
+        ),
     }
 
 

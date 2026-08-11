@@ -31,6 +31,14 @@ Confirmed decisions:
 - Temp test users (zz_perm_tester, zz_enf) removed
 
 ## Phase 4: Compact "Accurate-style" UI (Status: COMPLETED)
-- Redesigned Input Transaksi Pembelian to dense Accurate look (small inputs h-7/12px, tight table rows, 4-col header, footer notes+total side-by-side). Tampilan-only; all fields/handlers/data-testids/pickers preserved. User approved.
-- Applied GLOBAL compact density layer scoped to `<main>` (`.erp-dense` in index.css) so ALL authenticated pages/forms/tables match the Input Transaksi sizing at once. Header/nav/Login/TV untouched. Element-scoped selectors override Tailwind height utilities without !important.
-- Verified via screenshots: Input Transaksi, Store Stock, Master List (Purchasing) all consistently dense, no breakage, no console errors.
+- Redesigned Input Transaksi Pembelian to dense Accurate look. User approved.
+- Applied GLOBAL compact density layer scoped to `<main>` (`.erp-dense` in index.css) → all authenticated pages/forms/tables match Input Transaksi sizing. Verified Store/Master List/Input.
+- Incoming Goods: compacted title + 2 shortcut cards (slim horizontal tiles) + filter card → data table now sits near top. Verified via screenshot.
+
+## Phase 5: Backup upgrade (Status: COMPLETED)
+- backup.py rewritten self-contained (no missing script dep):
+  - `GET /full-download`: builds tar.gz on the fly = manifest.json + data/mks_data_backup.json + code/ (excludes node_modules/.git/etc). super_admin only. (~3.9MB, 400 entries verified)
+  - `POST /full-restore`: restores DATA to Mongo (merge/replace) + extracts CODE to /app/_full_restore_<ts>/ staging (never overwrites live code). Confirm phrase 'RESTORE-FULL'. Verified (3333 docs + 366 files; bad phrase→400).
+  - `GET /version`: real git info (commit/branch/date/message + update check).
+- AdminPage BackupTab UI: Version/Build panel, "Full Backup (Kode+Data)" download button, "Restore Full Backup" (file + mode + phrase). Verified via screenshot; esbuild clean.
+- Note: Radix dialog inputs (portaled) not covered by `.erp-dense` scope — optional follow-up.
