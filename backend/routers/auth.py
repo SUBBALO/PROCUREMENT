@@ -11,7 +11,7 @@ from pydantic import BaseModel
 import jwt
 
 from db import db
-from deps import _now_iso, get_current_user, log_action, require_admin, require_super_admin, SUPER_ADMIN_USERNAME
+from deps import _now_iso, get_current_user, log_action, require_admin, require_super_admin, SUPER_ADMIN_USERNAME, is_super_admin_user
 from services.soft_delete import NOT_DELETED_FILTER, merged, soft_delete_one
 from security import (
     JWT_ALGORITHM,
@@ -131,9 +131,10 @@ async def login(payload: LoginRequest, response: Response):
         "name": user.get("name", ""),
         "role": user["role"],
         "perms": user.get("perms", []),
-        "is_super_admin": (user.get("username") or "").lower().strip() == SUPER_ADMIN_USERNAME,
+        "is_super_admin": is_super_admin_user(user),
         "must_change_password": must_change,
         "ui_prefs": user.get("ui_prefs") or {"reduce_motion": True},
+        "access": user.get("access") or {},
     }
 
 
@@ -174,9 +175,10 @@ async def me(current: dict = Depends(get_current_user)):
         "name": current.get("name", ""),
         "role": current["role"],
         "perms": current.get("perms", []),
-        "is_super_admin": (current.get("username") or "").lower().strip() == SUPER_ADMIN_USERNAME,
+        "is_super_admin": is_super_admin_user(current),
         "must_change_password": bool(current.get("must_change_password")),
         "ui_prefs": current.get("ui_prefs") or {"reduce_motion": True},
+        "access": current.get("access") or {},
     }
 
 
@@ -253,6 +255,7 @@ def _sanitize_user(u: dict) -> dict:
         "role": u.get("role", "staff"),
         "active": u.get("active", True),
         "perms": u.get("perms", []),
+        "access": u.get("access") or {},
         "must_change_password": bool(u.get("must_change_password")),
         "created_at": u.get("created_at", ""),
     }
@@ -283,6 +286,7 @@ async def create_user(payload: UserCreate, current: dict = Depends(require_super
         "role": role,
         "active": True,
         "perms": payload.perms or [],
+        "access": payload.access or {},
         "created_at": _now_iso(),
     }
     await db.users.insert_one(user_doc.copy())
@@ -313,6 +317,14 @@ async def update_user(user_id: str, payload: UserUpdate, current: dict = Depends
     if payload.perms is not None:
         updates["perms"] = list(payload.perms)
         changed["perms"] = list(payload.perms)
+    if payload.access is not None:
+        # {} = clear matrix (kembali ke perilaku role lama). Simpan hanya node yang punya minimal 1 true.
+        clean = {}
+        for mk, node in (payload.access or {}).items():
+            if isinstance(node, dict) and any(bool(node.get(a)) for a in ("create", "edit", "delete", "report", "view", "list")):
+                clean[mk] = {a: bool(node.get(a)) for a in ("create", "edit", "delete", "report", "view", "list")}
+        updates["access"] = clean
+        changed["access"] = f"{len(clean)} modul diatur" if clean else "dikosongkan (role default)"
     if payload.password:
         if len(payload.password) < 6:
             raise HTTPException(status_code=400, detail="Password minimal 6 karakter")
@@ -367,6 +379,15 @@ async def list_logs(
     cursor = db.activity_logs.find(filt, {"_id": 0}).sort("timestamp", -1).skip((page - 1) * page_size).limit(page_size)
     items = await cursor.to_list(length=page_size)
     return {"total": total, "page": page, "page_size": page_size, "items": items}
+
+
+# ---------------- Permission Registry (Accurate-style granular access) ----------------
+@router.get("/permissions/registry")
+async def permissions_registry(current: dict = Depends(require_super_admin)):
+    """Registry modul/aktivitas + daftar aksi untuk membangun matrix hak akses di Admin Panel.
+    Hanya Super Admin. Frontend memakai ini agar selalu sinkron dengan backend."""
+    from permissions import REGISTRY, ACTIONS, ACTION_LABELS
+    return {"registry": REGISTRY, "actions": ACTIONS, "action_labels": ACTION_LABELS}
 
 
 

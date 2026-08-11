@@ -1,34 +1,30 @@
 [
   {
-    "content": "Backend HRD payroll module (router, PDF template, importer w/ auto-match) — verified",
+    "content": "Backend: add `access` field to UserCreate/UserUpdate models",
     "status": "completed"
   },
   {
-    "content": "Fix super-admin detection in hrd.py (use is_super_admin from deps)",
-    "status": "in_progress"
+    "content": "Backend: persist & return `access` in auth (login, /auth/me, sanitize, create, update)",
+    "status": "completed"
   },
   {
-    "content": "Backend: granular permission model (View/Create/Edit/Delete/Report per HRD menu) + enforce on HRD endpoints; optional PIN",
-    "status": "pending"
+    "content": "Backend: add GET /permissions/registry endpoint (super_admin)",
+    "status": "completed"
   },
   {
-    "content": "Backend: /hrd/my-access + extend user create/update + login/me to carry access",
-    "status": "pending"
+    "content": "Backend: centralized permission-enforcement middleware in server.py",
+    "status": "completed"
   },
   {
-    "content": "Create HRD users herliana (gaji+dokumen) & heri (dokumen only), password hrd123 must-change",
-    "status": "pending"
+    "content": "Frontend: build compact AccessMatrix component",
+    "status": "completed"
   },
   {
-    "content": "Frontend HRD portal: gate by permissions + optional PIN + show cards per access + Dokumen HRD placeholder card",
-    "status": "pending"
+    "content": "Frontend: wire AccessMatrix into EditUserDialog + widen dialog + load/save access",
+    "status": "completed"
   },
   {
-    "content": "Admin UI: HRD permission matrix editor (Super Admin only)",
-    "status": "pending"
-  },
-  {
-    "content": "Compile frontend + screenshots + testing agent",
-    "status": "pending"
+    "content": "Test backend (syntax, restart, curl enforcement) + frontend (esbuild, screenshot)",
+    "status": "completed"
   }
 ]

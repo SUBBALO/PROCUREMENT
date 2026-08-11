@@ -149,6 +149,66 @@ app.include_router(api_router)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Granular Permission Enforcement (Accurate-style) — Centralized Layer
+# ═══════════════════════════════════════════════════════════════════════════
+# Non-regresif: hanya user yang PUNYA `access` matrix (diatur Super Admin) yang
+# di-enforce. Super Admin selalu bypass. User tanpa `access` => perilaku role lama.
+from starlette.responses import JSONResponse  # noqa: E402
+from security import decode_token  # noqa: E402
+from permissions import (  # noqa: E402
+    menu_key_for_path, action_for, is_exempt, check_access,
+)
+from deps import is_super_admin_user  # noqa: E402
+
+
+@app.middleware("http")
+async def enforce_permissions(request, call_next):
+    path = request.url.path
+    method = request.method.upper()
+    # Hanya jaga API; lewati preflight & non-API
+    if method == "OPTIONS" or not path.startswith("/api/"):
+        return await call_next(request)
+    sub_path = path[4:]  # buang '/api'
+    if is_exempt(sub_path):
+        return await call_next(request)
+    menu_key = menu_key_for_path(sub_path)
+    if menu_key is None:
+        # Endpoint tak terpetakan => tidak di-enforce (bebas)
+        return await call_next(request)
+    # Ambil token (cookie atau Bearer). Kalau tidak ada, biarkan endpoint yang balas 401.
+    token = request.cookies.get("access_token")
+    if not token:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth[7:]
+    if not token:
+        return await call_next(request)
+    try:
+        payload = decode_token(token)
+        if payload.get("type") != "access":
+            return await call_next(request)
+        user = await db.users.find_one({"id": payload.get("sub")})
+    except Exception:
+        return await call_next(request)
+    if not user:
+        return await call_next(request)
+    # Super Admin selalu bypass
+    if is_super_admin_user(user):
+        return await call_next(request)
+    access = user.get("access")
+    if not access:
+        # User belum diatur matrix-nya => perilaku role lama (tidak berubah)
+        return await call_next(request)
+    action = action_for(method, sub_path)
+    if not check_access(access, menu_key, action):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": f"Akses ditolak: Anda tidak memiliki izin '{action}' untuk modul ini."},
+        )
+    return await call_next(request)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Iter 22 — Security Headers Middleware (Layer 2)
 # ═══════════════════════════════════════════════════════════════════════════
 @app.middleware("http")

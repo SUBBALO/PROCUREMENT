@@ -15,6 +15,8 @@ class UserCreate(BaseModel):
     name: Optional[str] = ""
     role: Optional[str] = "staff"  # 'admin' | 'staff' | 'store' | 'finance'
     perms: Optional[List[str]] = None
+    # Granular access matrix (Accurate-style): { menu_key: {create,edit,delete,report,view,list} }
+    access: Optional[dict] = None
 
 
 class UserUpdate(BaseModel):
@@ -23,6 +25,8 @@ class UserUpdate(BaseModel):
     active: Optional[bool] = None
     password: Optional[str] = None
     perms: Optional[List[str]] = None
+    # Granular access matrix. {} = clear (kembali ke perilaku role lama); None = jangan ubah.
+    access: Optional[dict] = None
 
 
 class UserOut(BaseModel):

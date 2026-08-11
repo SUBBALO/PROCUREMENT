@@ -18,6 +18,7 @@ import {
 import { toast } from "sonner";
 
 import BackLink from "../components/BackLink";
+import { AccessMatrix } from "../components/AccessMatrix";
 const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-sky-600 text-sm";
 
 const ACTION_LABEL = {
@@ -500,6 +501,9 @@ function CreateUserDialog({ open, onClose, onSaved }) {
 function EditUserDialog({ user, me, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(null);
+  const [accessVal, setAccessVal] = useState({});
+  const [reg, setReg] = useState({ registry: [], actions: [], action_labels: {} });
+  const [showMatrix, setShowMatrix] = useState(false);
   useEffect(() => {
     if (user) {
       const p = user.perms || [];
@@ -510,7 +514,18 @@ function EditUserDialog({ user, me, onClose, onSaved }) {
         view_store_report: p.includes("view_store_report"),
         approve_store_requests: p.includes("approve_store_requests"),
       });
+      setAccessVal(user.access || {});
+      setShowMatrix(Object.keys(user.access || {}).length > 0);
     }
+  }, [user]);
+  useEffect(() => {
+    let alive = true;
+    if (user && reg.registry.length === 0) {
+      api.get("/permissions/registry")
+        .then((r) => { if (alive) setReg(r.data); })
+        .catch(() => {});
+    }
+    return () => { alive = false; };
   }, [user]);
   if (!user || !form) return null;
   const isSelf = user.id === me?.id;
@@ -523,6 +538,7 @@ function EditUserDialog({ user, me, onClose, onSaved }) {
       if (form.approve_store_requests && (form.role === "admin" || form.role === "supervisor")) perms.push("approve_store_requests");
       await api.put(`/users/${user.id}`, {
         name: form.name, role: form.role, active: form.active, perms,
+        access: showMatrix ? (accessVal || {}) : {},
       });
       toast.success("User diperbarui");
       onSaved(); onClose();
@@ -532,7 +548,7 @@ function EditUserDialog({ user, me, onClose, onSaved }) {
   };
   return (
     <Dialog open={!!user} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="rounded-none max-h-[90vh] overflow-y-auto">
+      <DialogContent className="rounded-none max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Edit User: <span className="font-mono">{user.username}</span></DialogTitle>
           <DialogDescription>Ubah nama, role, status, dan izin.</DialogDescription>
@@ -578,6 +594,42 @@ function EditUserDialog({ user, me, onClose, onSaved }) {
                 <input type="checkbox" className="w-4 h-4 accent-emerald-600" checked={!!form.approve_store_requests} onChange={(e) => setForm({ ...form, approve_store_requests: e.target.checked })} />
                 <span className="text-slate-700">Bisa <b>Approve</b> permohonan koreksi Store</span>
               </label>
+            )}
+          </div>
+          {/* Hak Akses Granular (ala Accurate) — opsional; kosong = pakai default role */}
+          <div className="border-t border-slate-200 pt-3">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                  <ShieldStar size={14} className="text-sky-600" /> Hak Akses Granular
+                </Label>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Atur izin per modul (Create/Edit/Delete/Report/View/List). Biarkan <b>kosong</b> untuk memakai izin default sesuai role.
+                </p>
+              </div>
+              <label className="flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  className="w-3.5 h-3.5 accent-sky-600"
+                  checked={showMatrix}
+                  onChange={(e) => setShowMatrix(e.target.checked)}
+                  data-testid="access-matrix-toggle"
+                />
+                Atur manual
+              </label>
+            </div>
+            {showMatrix && (
+              reg.registry.length > 0 ? (
+                <AccessMatrix
+                  registry={reg.registry}
+                  actions={reg.actions}
+                  actionLabels={reg.action_labels}
+                  value={accessVal}
+                  onChange={setAccessVal}
+                />
+              ) : (
+                <p className="text-[11px] text-slate-400 py-2">Memuat daftar modul…</p>
+              )
             )}
           </div>
           {/* Signature upload for THIS user (edit dialog only) */}
