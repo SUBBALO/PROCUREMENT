@@ -1,22 +1,14 @@
 [
   {
-    "content": "Register transfer_requests router in server.py + restart + curl test endpoints",
+    "content": "Backend: add so_no/so_customer/qty/uom to TrfLine, remove SWIFT; rebuild landscape PDF with new columns",
     "status": "completed"
   },
   {
-    "content": "Explore patterns: PurchasingPortalPage.jsx, App.js routing, existing autocomplete component",
+    "content": "Frontend: rebuild Buat TRF as spreadsheet table + SO autocomplete + secondary bank row; update detail modal & master list; remove SWIFT",
     "status": "completed"
   },
   {
-    "content": "Build TransferRequestPage.jsx (Buat TRF tab + Master List tab)",
-    "status": "completed"
-  },
-  {
-    "content": "Add Transfer Request Form card to Purchasing Portal + route in App.js",
-    "status": "completed"
-  },
-  {
-    "content": "Compile (esbuild) + screenshot + full E2E verification",
+    "content": "Compile + screenshot + E2E verify with cleanup",
     "status": "completed"
   }
 ]

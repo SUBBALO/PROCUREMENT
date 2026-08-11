@@ -59,8 +59,12 @@ class TrfLine(BaseModel):
     vendor_name: str = ""
     invoice_no: str = ""
     description: str = ""
+    so_no: str = ""            # nomor Sales Order terkait
+    so_customer: str = ""      # nama customer/PT dari SO
+    qty: float = 1.0
+    uom: str = ""
     currency: str = "IDR"
-    amount: float = 0.0        # nominal / DPP
+    amount: float = 0.0        # Total Price (nominal / DPP)
     rate: float = 1.0          # kurs (untuk valas)
     fee: float = 0.0           # fee bank (transfer LN)
     taxed: bool = False        # kena PPh?
@@ -68,7 +72,6 @@ class TrfLine(BaseModel):
     bank_name: str = ""
     account_no: str = ""
     account_holder: str = ""
-    swift: str = ""
 
 
 class TrfIn(BaseModel):
@@ -166,7 +169,7 @@ async def create_trf(payload: TrfIn, current: dict = Depends(get_current_user)):
             vb = {
                 "vendor_name": vname, "bank_name": d.get("bank_name", ""),
                 "account_no": d.get("account_no", ""), "account_holder": d.get("account_holder", ""),
-                "swift": d.get("swift", ""), "currency": d.get("currency", "IDR"), "updated_at": now,
+                "currency": d.get("currency", "IDR"), "updated_at": now,
             }
             if exist:
                 await db.vendor_banks.update_one({"id": exist["id"]}, {"$set": vb})
@@ -242,37 +245,51 @@ async def trf_pdf(trf_id: str, current: dict = Depends(get_current_user)):
         except Exception:
             return "0.00"
 
-    head = ["No", "Vendor", "Invoice/Uraian", "Cur", "Nominal", "Rate", "PPh%", "PPh", "Fee", "Nilai Transfer (IDR)", "Bank / No. Rek / a.n."]
+    inv_style = ParagraphStyle("inv", parent=small, textColor=colors.HexColor("#dc2626"), fontSize=6.5)
+
+    head = ["No", "Vendor Name", "Description", "SO", "Qty", "UoM", "Total Price", "Rate", "PPh", "Fee", "Amount (IDR)"]
     rows = [head]
     for ln in doc.get("lines", []):
-        bank = f"{ln.get('bank_name','')} / {ln.get('account_no','')} / {ln.get('account_holder','')}"
-        if ln.get("swift"):
-            bank += f" (SWIFT {ln['swift']})"
+        # Vendor cell — nama vendor + bank/rekening di bawah (abu-abu kecil)
+        vlines = [ln.get("vendor_name", "") or "-"]
+        bank_bits = " · ".join([b for b in [ln.get("bank_name", ""), ln.get("account_no", ""), ln.get("account_holder", "")] if b])
+        vcell = [Paragraph(f"<b>{ln.get('vendor_name','') or '-'}</b>", small)]
+        if bank_bits:
+            vcell.append(Paragraph(bank_bits, ParagraphStyle("bk", parent=small, textColor=colors.grey, fontSize=6.5)))
+        # Description cell — uraian + invoice merah
+        dcell = [Paragraph(ln.get("description", "") or "-", small)]
+        if ln.get("invoice_no"):
+            dcell.append(Paragraph(f"Invoice No. {ln.get('invoice_no')}", inv_style))
+        so_txt = ln.get("so_no", "") or ""
+        if ln.get("so_customer"):
+            so_txt = f"{so_txt}/{ln.get('so_customer')}" if so_txt else ln.get("so_customer")
         rows.append([
             str(ln.get("no", "")),
-            Paragraph(ln.get("vendor_name", "") or "-", small),
-            Paragraph((ln.get("invoice_no", "") or "") + ((" — " + ln.get("description", "")) if ln.get("description") else ""), small),
-            ln.get("currency", "IDR"),
-            money(ln.get("amount")),
-            money(ln.get("rate")),
-            (f"{ln.get('pph_percent',0)}%" if ln.get("taxed") else "-"),
-            money(ln.get("pph_amount")),
-            money(ln.get("fee")),
-            money(ln.get("net_transfer")),
-            Paragraph(bank, small),
+            vcell,
+            dcell,
+            Paragraph(so_txt or "-", small),
+            (f"{ln.get('qty')}" if ln.get("qty") not in (None, "") else "-"),
+            ln.get("uom", "") or "-",
+            f"{ln.get('currency','IDR')} {money(ln.get('amount'))}",
+            (f"IDR {money(ln.get('rate'))}"),
+            (Paragraph(f"{ln.get('pph_percent',0)}%<br/>-{money(ln.get('pph_amount'))}", ParagraphStyle("pph", parent=small, alignment=2, fontSize=6.5, textColor=colors.HexColor("#dc2626"))) if ln.get("taxed") else "-"),
+            f"IDR {money(ln.get('fee'))}",
+            f"IDR {money(ln.get('net_transfer'))}",
         ])
-    rows.append(["", "", "", "", "", "", "", "", "TOTAL", money(doc.get("total_transfer")), ""])
-    t = Table(rows, repeatRows=1, colWidths=[10*mm, 45*mm, 55*mm, 12*mm, 28*mm, 16*mm, 12*mm, 24*mm, 20*mm, 34*mm, 55*mm])
+    rows.append(["", "", "", "", "", "", "", "", "", "TOTAL", f"IDR {money(doc.get('total_transfer'))}"])
+    t = Table(rows, repeatRows=1, colWidths=[8*mm, 52*mm, 62*mm, 26*mm, 12*mm, 12*mm, 30*mm, 26*mm, 22*mm, 26*mm, 34*mm])
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
         ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#94a3b8")),
-        ("ALIGN", (4, 1), (9, -1), "RIGHT"),
+        ("ALIGN", (6, 1), (10, -1), "RIGHT"),
         ("ALIGN", (0, 0), (0, -1), "CENTER"),
+        ("ALIGN", (3, 0), (5, -1), "CENTER"),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#fee2e2")),
-        ("FONTNAME", (8, -1), (9, -1), "Helvetica-Bold"),
+        ("FONTNAME", (9, -1), (10, -1), "Helvetica-Bold"),
         ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#f8fafc")]),
     ]))
     elems.append(t)
