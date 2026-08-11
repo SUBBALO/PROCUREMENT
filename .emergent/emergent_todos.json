@@ -1,14 +1,18 @@
 [
   {
-    "content": "TV: nama item di bawah customer (item_summary) + deadline Drawing jadi hijau Selesai saat drawing komplet",
+    "content": "Fix label DRF 'completed' -> 'Selesai · Drawing Approved' (hapus 'Butuh TTD Sales')",
     "status": "completed"
   },
   {
-    "content": "DocCon: Kartu 'Perlu Stamp OBSOLETE' di portal Document Control (pending)",
-    "status": "pending"
+    "content": "Fix super_admin pending-my-approval: exclude 'approved' (approved = urusan DocCon stamp, bukan TTD)",
+    "status": "completed"
   },
   {
-    "content": "DocCon: Stamp OBSOLETE berposisi (Salma klik titik) seperti stamp Controlled (pending)",
+    "content": "Verifikasi lintas-role (super_admin/doc_control/sales) + notifikasi konsisten dgn workflow",
+    "status": "completed"
+  },
+  {
+    "content": "DocCon: Kartu 'Perlu Stamp OBSOLETE' + Stamp berposisi (masih pending dari sebelumnya)",
     "status": "pending"
   }
 ]

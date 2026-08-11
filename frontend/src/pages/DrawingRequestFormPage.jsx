@@ -22,7 +22,7 @@ const STATUS_BADGE = {
   submitted: { label: "Submitted → Eng", cls: "bg-amber-100 text-amber-800 border-amber-500" },
   accepted: { label: "Accepted by Eng", cls: "bg-sky-100 text-sky-800 border-sky-500" },
   in_progress: { label: "Drawing In Progress", cls: "bg-violet-100 text-violet-800 border-violet-500" },
-  completed: { label: "Selesai · Butuh TTD Sales", cls: "bg-emerald-100 text-emerald-800 border-emerald-500 font-bold" },
+  completed: { label: "Selesai · Drawing Approved", cls: "bg-emerald-100 text-emerald-800 border-emerald-500 font-bold" },
   cancelled: { label: "Cancelled", cls: "bg-rose-100 text-rose-800 border-rose-500" },
 };
 

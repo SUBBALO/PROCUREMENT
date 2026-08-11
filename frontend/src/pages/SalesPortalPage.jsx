@@ -5,7 +5,8 @@ import { Storefront, FileText, Users, ClipboardText, PenNib, WarningCircle } fro
 import { useNotifCount } from "../lib/useNotifCount";
 
 export default function SalesPortalPage() {
-  // Total DRF butuh perhatian Sales = DRF completed (butuh TTD) + drawing pending approval Sales
+  // Badge "Review & TTD" = drawing yang masih menunggu TTD Sales (approval_status = pending_sales).
+  // Drawing yang sudah 'approved' TIDAK dihitung (TTD Sales sudah selesai → lanjut ke Document Control).
   const pendingDrawings = useNotifCount("drawing_pending_approval");
   const [pendingApproval, setPendingApproval] = useState(0);
 

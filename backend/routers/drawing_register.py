@@ -3222,8 +3222,10 @@ async def list_pending_my_approval(current: dict = Depends(get_current_user)):
         # Doc Control (Salma) melihat semua yang sudah 'approved' (siap di-stamp)
         my_status = "approved"
     elif is_super_admin_user(current):
-        # Super Admin bisa lihat semua stage (emergency override)
-        my_status = {"$in": ["pending_eng_head", "pending_qc", "pending_sales", "approved"]}
+        # Super Admin bisa lihat semua stage yang MASIH butuh TTD (emergency override).
+        # 'approved' TIDAK termasuk — drawing approved berarti TTD lengkap; itu urusan
+        # stamp Document Control, bukan antrian TTD.
+        my_status = {"$in": ["pending_eng_head", "pending_qc", "pending_sales"]}
     else:
         return {"items": [], "total": 0}
 
