@@ -170,3 +170,9 @@ html.reduce-motion .animate-spin {
 
 /* Label form sedikit lebih ringkas (tidak mengubah heading section) */
 .erp-dense label { font-size: 0.72rem; }
+
+/* Judul halaman & subjudul ikut compact (berlaku semua halaman dalam app) */
+.erp-dense h1 { font-size: 1.2rem; line-height: 1.6rem; }
+.erp-dense h1 + p { font-size: 0.72rem; line-height: 1rem; margin-top: 0.15rem; }
+/* Heading section besar (text-xl/2xl pada h2) dirapatkan; label kecil (h3 uppercase) tidak diubah */
+.erp-dense h2 { font-size: 1rem; line-height: 1.35rem; }
