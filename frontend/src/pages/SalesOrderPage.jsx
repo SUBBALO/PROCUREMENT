@@ -44,6 +44,7 @@ export default function SalesOrderPage() {
   const canSeePrice = ["super_admin", "admin", "finance"].includes(role);
   const canCreate = ["sales", "admin", "super_admin", "finance", "supervisor"].includes(role);
   const canWrite = user && role !== "finance" && role !== "store"; // untuk import excel/hapus (sesuai lama)
+  const canDelete = ["admin", "super_admin"].includes(role); // hapus SO: HANYA admin
 
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -141,63 +142,49 @@ export default function SalesOrderPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-[10px] uppercase tracking-[0.1em] font-bold text-slate-500">
-                <th className="text-left p-3">Tanggal</th>
-                <th className="text-left p-3">Nomor SO</th>
-                <th className="text-left p-3">Customer</th>
-                <th className="text-left p-3">PO Customer</th>
-                <th className="text-left p-3">Item / Deskripsi</th>
-                {canSeePrice && <th className="text-right p-3">Nilai</th>}
-                <th className="text-left p-3">Status Eng</th>
-                <th className="text-center p-3 w-28">Aksi</th>
+                <th className="text-left px-2 py-1.5">Tanggal</th>
+                <th className="text-left px-2 py-1.5">Nomor SO</th>
+                <th className="text-left px-2 py-1.5">Customer</th>
+                <th className="text-left px-2 py-1.5">PO Customer</th>
+                <th className="text-left px-2 py-1.5">Item / Deskripsi</th>
+                {canSeePrice && <th className="text-right px-2 py-1.5">Nilai</th>}
+                <th className="text-left px-2 py-1.5">Status Eng</th>
               </tr>
             </thead>
             <tbody data-testid="so-table">
-              {loading && (<tr><td colSpan={canSeePrice ? 8 : 7} className="p-6 text-center text-slate-400">Memuat...</td></tr>)}
-              {!loading && filteredList.length === 0 && (<tr><td colSpan={canSeePrice ? 8 : 7} className="p-6 text-center text-slate-400">Belum ada SO.</td></tr>)}
+              {loading && (<tr><td colSpan={canSeePrice ? 7 : 6} className="p-6 text-center text-slate-400">Memuat...</td></tr>)}
+              {!loading && filteredList.length === 0 && (<tr><td colSpan={canSeePrice ? 7 : 6} className="p-6 text-center text-slate-400">Belum ada SO.</td></tr>)}
               {pag.pagedData.map((s) => {
                 const st = DR_STATUS[s.drawing_request_status] || DR_STATUS.belum_drawing_request;
                 const StIcon = st.icon;
                 const itemCount = (s.items || []).length;
                 return (
-                  <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50" data-testid={`so-row-${s.so_no}`}>
-                    <td className="p-3 whitespace-nowrap text-slate-600">{formatDateID(s.so_date)}</td>
-                    <td className="p-3 font-mono text-xs font-semibold text-slate-900">{s.so_no}</td>
-                    <td className="p-3">{s.customer || "-"}</td>
-                    <td className="p-3 font-mono text-xs">{s.po_customer_no || <span className="text-slate-300">—</span>}</td>
-                    <td className="p-3 text-slate-600 max-w-[320px]">
+                  <tr
+                    key={s.id}
+                    className="border-b border-slate-100 hover:bg-emerald-50/60 cursor-pointer"
+                    data-testid={`so-row-${s.so_no}`}
+                    onClick={() => setDetail(s)}
+                    title="Klik untuk lihat detail SO"
+                  >
+                    <td className="px-2 py-1.5 whitespace-nowrap text-slate-600">{formatDateID(s.so_date)}</td>
+                    <td className="px-2 py-1.5 font-mono text-xs font-semibold text-slate-900">{s.so_no}</td>
+                    <td className="px-2 py-1.5">{s.customer || "-"}</td>
+                    <td className="px-2 py-1.5 font-mono text-xs">{s.po_customer_no || <span className="text-slate-300">—</span>}</td>
+                    <td className="px-2 py-1.5 text-slate-600 max-w-[320px] truncate">
                       {itemCount > 0
                         ? <span>{itemCount} item · <span className="text-slate-400">{(s.items || []).map((it) => it.name).filter(Boolean).slice(0, 2).join(", ")}{itemCount > 2 ? "…" : ""}</span></span>
                         : (s.description || <span className="text-slate-300">—</span>)}
                     </td>
-                    {canSeePrice && <td className="p-3 text-right tabular-nums font-semibold text-slate-800">{itemCount > 0 ? fmtMoney(s.total_amount, s.currency) : "—"}</td>}
-                    <td className="p-3">
+                    {canSeePrice && <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-slate-800">{itemCount > 0 ? fmtMoney(s.total_amount, s.currency) : "—"}</td>}
+                    <td className="px-2 py-1.5">
                       <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${st.cls}`} data-testid={`so-status-${s.so_no}`}>
                         <StIcon size={11} weight="bold" /> {st.label}
                       </span>
                       {s.drawing_count > 0 && (
-                        <div className="mt-1 text-[10px] text-slate-500" data-testid={`so-dwg-summary-${s.so_no}`} title={(s.drawings || []).map((x) => `${x.drawing_no} (${x.status || "-"})`).join("\n")}>
-                          <span className="font-semibold text-slate-700">{s.drawing_count} drawing</span> · {s.drawing_done}/{s.drawing_count} selesai
-                          <div className="font-mono text-[9px] text-slate-400 truncate max-w-[200px]">
-                            {(s.drawings || []).map((x) => x.drawing_no).filter(Boolean).slice(0, 3).join(", ")}{s.drawing_count > 3 ? "…" : ""}
-                          </div>
-                        </div>
+                        <span className="ml-2 text-[10px] text-slate-500" data-testid={`so-dwg-summary-${s.so_no}`} title={(s.drawings || []).map((x) => `${x.drawing_no} (${x.status || "-"})`).join("\n")}>
+                          {s.drawing_done}/{s.drawing_count} dwg
+                        </span>
                       )}
-                    </td>
-                    <td className="p-3">
-                      <div className="flex justify-center gap-1 flex-wrap">
-                        <button onClick={() => setDetail(s)} className="p-1.5 text-slate-400 hover:text-slate-700" title="Detail" data-testid={`so-detail-${s.so_no}`}><Eye size={14} weight="bold" /></button>
-                        {s.drawing_request_status === "belum_drawing_request" && canCreate && (
-                          <button onClick={() => setDrTarget(s)} className="inline-flex items-center gap-0.5 px-1.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[9px] font-bold uppercase" title="Ajukan Drawing Request ke Engineering" data-testid={`so-ajukan-dr-${s.so_no}`}>
-                            <PaperPlaneTilt size={11} weight="bold" /> Ajukan DR
-                          </button>
-                        )}
-                        {canCreate && (s.items || []).length > 0 && (
-                          <button onClick={() => setDlg({ mode: "edit", so: s })} className="p-1.5 text-slate-400 hover:text-sky-600" title="Edit SO" data-testid={`so-edit-${s.so_no}`}><PencilSimple size={14} weight="bold" /></button>
-                        )}
-                        {canWrite && (
-                          <button onClick={() => setDel(s)} className="p-1.5 text-slate-400 hover:text-red-600" title="Hapus" data-testid={`so-delete-${s.so_no}`}><Trash size={14} weight="bold" /></button>
-                        )}
-                      </div>
                     </td>
                   </tr>
                 );
@@ -220,7 +207,18 @@ export default function SalesOrderPage() {
         />
       )}
 
-      {detail && <SoDetailModal so={detail} canSeePrice={canSeePrice} onClose={() => setDetail(null)} />}
+      {detail && (
+        <SoDetailModal
+          so={detail}
+          canSeePrice={canSeePrice}
+          canCreate={canCreate}
+          canDelete={canDelete}
+          onEdit={() => { const s = detail; setDetail(null); setDlg({ mode: "edit", so: s }); }}
+          onAjukanDR={() => { const s = detail; setDetail(null); setDrTarget(s); }}
+          onDelete={() => { const s = detail; setDetail(null); setDel(s); }}
+          onClose={() => setDetail(null)}
+        />
+      )}
 
       {drTarget && (
         <DrawingRequestFormDialog
@@ -605,9 +603,11 @@ function SalesNamePicker({ value, onChange, options }) {
 }
 
 
-/* SO detail view (respects price visibility) */
-function SoDetailModal({ so, canSeePrice, onClose }) {
+/* SO detail view (respects price visibility) + aksi (Edit / Ajukan DR / Hapus) */
+function SoDetailModal({ so, canSeePrice, canCreate, canDelete, onEdit, onAjukanDR, onDelete, onClose }) {
   const st = DR_STATUS[so.drawing_request_status] || DR_STATUS.belum_drawing_request;
+  const canAjukan = so.drawing_request_status === "belum_drawing_request" && canCreate;
+  const canEdit = canCreate && (so.items || []).length > 0;
   return (
     <div className="fixed inset-0 z-[70] bg-black/60 flex items-start justify-center p-4 overflow-y-auto" data-testid="so-detail-modal">
       <div className="bg-white w-full max-w-2xl my-6 border border-slate-300">
@@ -652,7 +652,24 @@ function SoDetailModal({ so, canSeePrice, onClose }) {
             {!canSeePrice && <div className="mt-1 text-[11px] text-slate-400 flex items-center gap-1"><Lock size={12} /> Harga hanya untuk Super Admin, Admin & Finance.</div>}
           </div>
         </div>
-        <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 text-right">
+        <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            {canAjukan && (
+              <Button onClick={onAjukanDR} className="rounded-none bg-amber-600 hover:bg-amber-700 text-white text-xs uppercase font-bold" data-testid={`so-detail-ajukan-dr-${so.so_no}`}>
+                <PaperPlaneTilt size={14} weight="bold" className="mr-1" /> Ajukan DR
+              </Button>
+            )}
+            {canEdit && (
+              <Button variant="outline" onClick={onEdit} className="rounded-none text-xs uppercase font-bold border-sky-300 text-sky-700 hover:bg-sky-50" data-testid={`so-detail-edit-${so.so_no}`}>
+                <PencilSimple size={14} weight="bold" className="mr-1" /> Edit SO
+              </Button>
+            )}
+            {canDelete && (
+              <Button variant="outline" onClick={onDelete} className="rounded-none text-xs uppercase font-bold border-red-300 text-red-600 hover:bg-red-50" data-testid={`so-detail-delete-${so.so_no}`}>
+                <Trash size={14} weight="bold" className="mr-1" /> Hapus
+              </Button>
+            )}
+          </div>
           <Button variant="outline" onClick={onClose} className="rounded-none">Tutup</Button>
         </div>
       </div>

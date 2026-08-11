@@ -1,14 +1,14 @@
 [
   {
-    "content": "Fix Quotation BUKA: user is not defined (useAuth di QuotationDetailDialog) + Lock icon import (Illegal constructor)",
+    "content": "Inquiry: format nomor 001/MKS/I/VII/2026 + preview nomor otomatis di dialog Buat Inquiry",
     "status": "completed"
   },
   {
-    "content": "Inquiry: tombol atas -> halaman sebelumnya (navigate(-1)) bukan portal",
+    "content": "SO: kolom minimalis + klik baris buka popup (hapus tombol aksi/preview) + aksi pindah ke popup",
     "status": "completed"
   },
   {
-    "content": "Inquiry: hapus Ringkasan Quotation (redundan dgn menu Quotation)",
+    "content": "SO: hapus hanya admin (frontend hide + backend 403 utk role lain, single & bulk delete)",
     "status": "completed"
   },
   {

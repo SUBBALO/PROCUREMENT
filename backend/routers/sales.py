@@ -108,7 +108,18 @@ async def _next_number(counter_kind: str) -> int:
 async def _new_inquiry_no() -> str:
     now = datetime.utcnow()
     seq = await _next_number("inquiry")
-    return f"INQ-{seq:03d}/MKS/{ROMAN[now.month]}/{now.year}"
+    return f"{seq:03d}/MKS/I/{ROMAN[now.month]}/{now.year}"
+
+
+@router.get("/inquiries/next-no")
+async def preview_next_inquiry_no(current: dict = Depends(get_current_user)):
+    """Preview nomor inquiry berikutnya untuk bulan ini TANPA menaikkan counter."""
+    now = datetime.utcnow()
+    key = f"inquiry:{now.year}-{now.month:02d}"
+    doc = await db.counters.find_one({"_id": key})
+    seq = int(doc.get("seq", 0)) + 1 if doc else 1
+    return {"inquiry_no": f"{seq:03d}/MKS/I/{ROMAN[now.month]}/{now.year}"}
+
 
 
 async def _new_quotation_no() -> str:

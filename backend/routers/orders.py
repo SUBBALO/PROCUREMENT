@@ -402,7 +402,10 @@ async def update_so(sid: str, payload: SOCreate, current: dict = Depends(require
 
 
 @router.delete("/sales-orders/{sid}")
-async def delete_so(sid: str, current: dict = Depends(require_write)):
+async def delete_so(sid: str, current: dict = Depends(get_current_user)):
+    # Hapus SO HANYA untuk Admin / Super Admin (role lain dilarang)
+    if current.get("role") not in ("admin", "super_admin") and not current.get("is_super_admin"):
+        raise HTTPException(status_code=403, detail="Hanya Admin yang boleh menghapus Sales Order")
     ok = await soft_delete_one("sales_orders", {"id": sid}, current)
     if not ok:
         raise HTTPException(status_code=404, detail="SO tidak ditemukan")
@@ -415,8 +418,10 @@ class SOBulkDelete(BaseModel):
 
 
 @router.post("/sales-orders/bulk-delete")
-async def bulk_delete_sos(payload: SOBulkDelete, current: dict = Depends(require_write)):
-    """Bulk soft-delete a list of Sales Orders. Sales/admin/supervisor allowed."""
+async def bulk_delete_sos(payload: SOBulkDelete, current: dict = Depends(get_current_user)):
+    """Bulk soft-delete Sales Orders — HANYA Admin / Super Admin."""
+    if current.get("role") not in ("admin", "super_admin") and not current.get("is_super_admin"):
+        raise HTTPException(status_code=403, detail="Hanya Admin yang boleh menghapus Sales Order")
     if not payload.ids:
         raise HTTPException(status_code=400, detail="Tidak ada SO yang dipilih")
     deleted = 0

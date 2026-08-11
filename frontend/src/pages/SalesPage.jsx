@@ -130,7 +130,7 @@ export default function SalesPage() {
     ? (isEngStaff
         ? "Job yang ditugaskan ke Anda oleh Engineering Head"
         : "Terima request dari Sales · Assign ke Engineer · Upload hasil costing")
-    : "FORMAT: INQ-001/MKS/VIII/2026 · RESET COUNTER TIAP BULAN";
+    : "FORMAT: 001/MKS/I/VII/2026 · RESET COUNTER TIAP BULAN";
   const headerIconCls = isEngOnly ? "text-amber-600" : "text-rose-600";
 
   // Default range: tgl 1 bulan ini → hari ini
@@ -371,7 +371,7 @@ export default function SalesPage() {
       <div className="flex items-end gap-3 flex-wrap">
         <div className="flex-1 min-w-[220px] max-w-md">
           <Label className="text-xs font-semibold text-slate-600 mb-1 block">Cari <span className="text-slate-400 font-normal normal-case">(No / Judul / Customer / Project)</span></Label>
-          <Input data-testid="sales-search" className={inputCls} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder="mis. INQ-001 / SPM / Float Ring" />
+          <Input data-testid="sales-search" className={inputCls} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder="mis. 001/MKS/I/VIII/2026 / SPM / Float Ring" />
         </div>
         <div>
           <Label className="text-xs font-semibold text-slate-600 mb-1 block">Sales</Label>
@@ -549,6 +549,17 @@ function CreateInquiryDialog({ onClose, onCreated, initial = null, existingId = 
   );
   const [saving, setSaving] = useState(false);
   const [pendingFiles, setPendingFiles] = useState([]);
+  const [nextNo, setNextNo] = useState(initial?.inquiry_no || "");
+
+  // Preview nomor inquiry yang akan ter-generate (create mode saja; tidak menaikkan counter)
+  useEffect(() => {
+    if (isEdit) return;
+    let alive = true;
+    api.get("/inquiries/next-no")
+      .then(({ data }) => { if (alive) setNextNo(data.inquiry_no || ""); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [isEdit]);
 
   // Search customers with debounce
   useEffect(() => {
@@ -627,6 +638,11 @@ function CreateInquiryDialog({ onClose, onCreated, initial = null, existingId = 
           <DialogTitle>{isEdit ? "Edit Draft Inquiry" : "Buat Inquiry Costing Baru"}</DialogTitle>
           <DialogDescription>Isi detail request costing untuk dikirim ke Engineering. {isEdit ? "Simpan perubahan atau langsung kirim." : "Simpan sebagai draft atau langsung kirim."}</DialogDescription>
         </DialogHeader>
+        <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-300">
+          <span className="text-[11px] uppercase tracking-[0.15em] font-bold text-emerald-700">Nomor Inquiry</span>
+          <span className="font-mono font-bold text-emerald-900 text-sm" data-testid="inq-next-no">{nextNo || "…"}</span>
+          <span className="text-[10px] text-emerald-600 normal-case">{isEdit ? "" : "(otomatis · reset tiap bulan)"}</span>
+        </div>
         <div className="grid gap-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
