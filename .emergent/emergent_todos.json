@@ -1,14 +1,22 @@
 [
   {
-    "content": "Backend: add so_no/so_customer/qty/uom to TrfLine, remove SWIFT; rebuild landscape PDF with new columns",
+    "content": "Fix QTY input not typeable",
     "status": "completed"
   },
   {
-    "content": "Frontend: rebuild Buat TRF as spreadsheet table + SO autocomplete + secondary bank row; update detail modal & master list; remove SWIFT",
+    "content": "Backend PDF: match Book1.pdf + A4 landscape fit + signatures",
     "status": "completed"
   },
   {
-    "content": "Compile + screenshot + E2E verify with cleanup",
+    "content": "Backend: add DELETE /vendor-banks/{id} endpoint",
     "status": "completed"
+  },
+  {
+    "content": "Frontend: add 'Master Bank Vendor' tab (list + add/edit/delete) feeding autocomplete",
+    "status": "in_progress"
+  },
+  {
+    "content": "Compile + screenshot verify",
+    "status": "pending"
   }
 ]

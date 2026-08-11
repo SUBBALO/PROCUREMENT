@@ -45,6 +45,25 @@ def _fmt_no(seq: int) -> str:
     return f"{seq:03d}/CRF-TT/{ROMAN[now.month]}/{now.year}"
 
 
+async def _next_seq_dynamic() -> int:
+    """Nomor form berikutnya = (nomor terbesar yang masih ada bulan ini) + 1.
+    Dengan begini, jika form dihapus, nomornya kembali bisa dipakai (mis. hapus 003 -> berikutnya 003 lagi;
+    hapus semua -> kembali ke 001)."""
+    now = datetime.utcnow()
+    suffix = f"/CRF-TT/{ROMAN[now.month]}/{now.year}"
+    mx = 0
+    cursor = db.transfer_requests.find(dict(NOT_DELETED_FILTER), {"form_no": 1, "_id": 0})
+    async for d in cursor:
+        fn = d.get("form_no", "") or ""
+        if fn.endswith(suffix):
+            try:
+                mx = max(mx, int(fn.split("/")[0]))
+            except Exception:
+                pass
+    return mx + 1
+
+
+
 # ----------------------------- Models -----------------------------
 class VendorBankIn(BaseModel):
     vendor_name: str
@@ -94,6 +113,181 @@ def _compute_line(ln: dict) -> dict:
     return ln
 
 
+ROLE_LABELS = {
+    "super_admin": "Super Admin", "admin": "Admin", "supervisor": "Supervisor",
+    "purchasing": "Purchasing", "sales": "Sales", "finance": "Finance",
+    "doc_control": "Document Control", "eng_leader": "Engineering Leader",
+    "eng_staff": "Engineering", "qc": "QC", "produksi": "Produksi",
+}
+
+
+def _role_label(role: str) -> str:
+    if not role:
+        return ""
+    return ROLE_LABELS.get(role, str(role).replace("_", " ").title())
+
+
+def _is_admin(current: dict) -> bool:
+    return current.get("role") in ("admin", "super_admin") or bool(current.get("is_super_admin"))
+
+
+def _can_manage(current: dict, doc: dict) -> bool:
+    """Admin/Super Admin bisa akses semua. User biasa hanya TRF miliknya sendiri."""
+    if _is_admin(current):
+        return True
+    return doc.get("requested_by") == current.get("id")
+
+
+def _display_prep_role(name: str, role: str) -> str:
+    """Role yang dicetak di form. Khusus Susanto (Super Admin) tampil sebagai 'Purchasing'."""
+    if (name or "").strip().lower() == "susanto":
+        return "Purchasing"
+    return _role_label(role)
+
+
+def _render_trf_pdf(doc: dict, prep_role: str = "") -> io.BytesIO:
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    def _fmt_date(s):
+        try:
+            from datetime import datetime as _dt
+            return _dt.strptime((s or "")[:10], "%Y-%m-%d").strftime("%d-%b-%Y")
+        except Exception:
+            return s or ""
+
+    def money(v):
+        try:
+            return f"{float(v):,.2f}"
+        except Exception:
+            return "0.00"
+
+    buf = io.BytesIO()
+    pdf = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=9 * mm, bottomMargin=12 * mm, leftMargin=10 * mm, rightMargin=10 * mm)
+    styles = getSampleStyleSheet()
+    small = ParagraphStyle("small", parent=styles["Normal"], fontSize=7)
+    inv_style = ParagraphStyle("inv", parent=small, textColor=colors.HexColor("#dc2626"), fontSize=6.5)
+
+    elems = []
+    # --- Header: boxed company (top-left) | title (center) | TFR No + Date (right) ---
+    comp_box = Table([["PT. MITRA KARYA SARANA"]])
+    comp_box.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    comp_box.hAlign = "LEFT"
+    title_st = ParagraphStyle("title", parent=styles["Title"], fontSize=16, alignment=1, spaceAfter=0)
+    meta_st = ParagraphStyle("meta", parent=styles["Normal"], fontSize=8, alignment=2)
+    header = Table([[
+        comp_box,
+        Paragraph("TRANSFER REQUEST FORM", title_st),
+        Paragraph(f"TFR No. <b>{doc.get('form_no','')}</b><br/>Date: {_fmt_date(doc.get('date',''))}", meta_st),
+    ]], colWidths=[82 * mm, 110 * mm, 82 * mm])
+    header.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    elems.append(header)
+    elems.append(Spacer(1, 10))
+
+    # --- Line table ---
+    head = ["No", "Vendor Name", "Description", "SO", "Qty", "UoM", "Total Price", "Rate", "PPh", "Fee", "Amount (IDR)"]
+    rows = [head]
+    for ln in doc.get("lines", []):
+        bank_bits = " · ".join([b for b in [ln.get("bank_name", ""), ln.get("account_no", ""), ln.get("account_holder", "")] if b])
+        vcell = [Paragraph(f"<b>{ln.get('vendor_name','') or '-'}</b>", small)]
+        if bank_bits:
+            vcell.append(Paragraph(bank_bits, ParagraphStyle("bk", parent=small, textColor=colors.grey, fontSize=6.5)))
+        dcell = [Paragraph(ln.get("description", "") or "-", small)]
+        if ln.get("invoice_no"):
+            dcell.append(Paragraph(f"Invoice No. {ln.get('invoice_no')}", inv_style))
+        so_txt = ln.get("so_no", "") or ""
+        if ln.get("so_customer"):
+            so_txt = f"{so_txt}/{ln.get('so_customer')}" if so_txt else ln.get("so_customer")
+        rows.append([
+            str(ln.get("no", "")),
+            vcell,
+            dcell,
+            Paragraph(so_txt or "-", small),
+            (f"{ln.get('qty')}" if ln.get("qty") not in (None, "") else "-"),
+            ln.get("uom", "") or "-",
+            f"{ln.get('currency','IDR')} {money(ln.get('amount'))}",
+            (f"IDR {money(ln.get('rate'))}"),
+            (Paragraph(f"{ln.get('pph_percent',0)}%<br/>-{money(ln.get('pph_amount'))}", ParagraphStyle("pph", parent=small, alignment=2, fontSize=6.5, textColor=colors.HexColor("#dc2626"))) if ln.get("taxed") else "-"),
+            f"IDR {money(ln.get('fee'))}",
+            f"IDR {money(ln.get('net_transfer'))}",
+        ])
+    rows.append(["", "", "", "", "", "", "", "", "", "Total IDR", f"{money(doc.get('total_transfer'))}"])
+    t = Table(rows, repeatRows=1, colWidths=[9 * mm, 44 * mm, 52 * mm, 26 * mm, 12 * mm, 14 * mm, 30 * mm, 22 * mm, 20 * mm, 22 * mm, 23 * mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#64748b")),
+        ("ALIGN", (6, 1), (10, -1), "RIGHT"),
+        ("ALIGN", (0, 0), (0, -1), "CENTER"),
+        ("ALIGN", (3, 0), (5, -1), "CENTER"),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#f1f5f9")),
+        ("FONTNAME", (9, -1), (10, -1), "Helvetica-Bold"),
+    ]))
+    elems.append(t)
+    if doc.get("notes"):
+        elems.append(Spacer(1, 8))
+        elems.append(Paragraph(f"<b>Catatan:</b> {doc['notes']}", small))
+
+    # --- Signatures: rapat ke kiri, garis = underline nama (sepanjang nama, di bawah nama) ---
+    elems.append(Spacer(1, 20))
+    sig_head = ParagraphStyle("sh", parent=small, fontSize=9, alignment=0)
+    sig_name = ParagraphStyle("sn", parent=small, fontSize=9, alignment=0, fontName="Helvetica-Bold")
+    sig_role = ParagraphStyle("sr", parent=small, fontSize=8, alignment=0, textColor=colors.grey)
+
+    def _p(text, st):
+        return Paragraph(text or "", st)
+
+    def _fmt_dt_wib(s):
+        try:
+            from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+            s2 = (s or "").replace("Z", "+00:00")
+            dd = _dt.fromisoformat(s2)
+            if dd.tzinfo is None:
+                dd = dd.replace(tzinfo=_tz.utc)
+            dd = dd.astimezone(_tz(_td(hours=7)))
+            return dd.strftime("%d-%b-%Y %H:%M") + " WIB"
+        except Exception:
+            return ""
+
+    prep_name = doc.get("requested_by_name", "") or ""
+    submit_dt = _fmt_dt_wib(doc.get("created_at", ""))
+    sig_dt = ParagraphStyle("sd", parent=small, fontSize=7, alignment=0, textColor=colors.HexColor("#64748b"))
+    sign = Table([
+        [_p("Prepare By,", sig_head), _p("Checked By,", sig_head), _p("Approved By,", sig_head)],
+        [Spacer(1, 15 * mm), Spacer(1, 15 * mm), Spacer(1, 15 * mm)],
+        [_p(f"<u>{prep_name}</u>", sig_name), _p("<u>Yully</u>", sig_name), _p("<u>Asiong</u>", sig_name)],
+        [_p(prep_role, sig_role), _p("Finance", sig_role), _p("MD", sig_role)],
+        [_p(f"Submit: {submit_dt}" if submit_dt else "", sig_dt), _p("", sig_dt), _p("", sig_dt)],
+    ], colWidths=[52 * mm, 52 * mm, 52 * mm])
+    sign.hAlign = "LEFT"
+    sign.setStyle(TableStyle([
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 1),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+    ]))
+    elems.append(sign)
+
+    pdf.build(elems)
+    buf.seek(0)
+    return buf
+
+
+
 # ------------------------- Master Bank Vendor -------------------------
 @router.get("/vendor-banks")
 async def list_vendor_banks(q: str = "", limit: int = 20, current: dict = Depends(get_current_user)):
@@ -127,13 +321,19 @@ async def upsert_vendor_bank(payload: VendorBankIn, current: dict = Depends(get_
     return out
 
 
+@router.delete("/vendor-banks/{vb_id}")
+async def delete_vendor_bank(vb_id: str, current: dict = Depends(get_current_user)):
+    ok = await soft_delete_one("vendor_banks", {"id": vb_id}, current)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Data rekening tidak ditemukan")
+    await log_action(current, "vendor_bank_delete", "vendor_banks", vb_id, {})
+    return {"success": True}
+
+
 # ------------------------- Transfer Requests -------------------------
 @router.get("/transfer-requests/next-no")
 async def preview_next_trf_no(current: dict = Depends(get_current_user)):
-    now = datetime.utcnow()
-    key = f"crf:{now.year}-{now.month:02d}"
-    doc = await db.counters.find_one({"_id": key})
-    seq = int(doc.get("seq", 0)) + 1 if doc else 1
+    seq = await _next_seq_dynamic()
     return {"form_no": _fmt_no(seq)}
 
 
@@ -154,7 +354,7 @@ async def list_trf(q: str = "", limit: int = 300, current: dict = Depends(get_cu
 async def create_trf(payload: TrfIn, current: dict = Depends(get_current_user)):
     if not payload.lines:
         raise HTTPException(status_code=400, detail="Minimal 1 baris pembayaran")
-    seq = await _next_seq("crf")
+    seq = await _next_seq_dynamic()
     now = _now_iso()
     lines = []
     for i, ln in enumerate(payload.lines, start=1):
@@ -189,6 +389,7 @@ async def create_trf(payload: TrfIn, current: dict = Depends(get_current_user)):
         "status": "diajukan",
         "requested_by": current.get("id"),
         "requested_by_name": current.get("name") or current.get("username"),
+        "requested_by_role": current.get("role", ""),
         "created_at": now,
         "updated_at": now,
     }
@@ -198,11 +399,57 @@ async def create_trf(payload: TrfIn, current: dict = Depends(get_current_user)):
     return doc
 
 
+@router.put("/transfer-requests/{trf_id}")
+async def update_trf(trf_id: str, payload: TrfIn, current: dict = Depends(get_current_user)):
+    existing = await db.transfer_requests.find_one({"id": trf_id, **NOT_DELETED_FILTER})
+    if not existing:
+        raise HTTPException(status_code=404, detail="TRF tidak ditemukan")
+    if not _can_manage(current, existing):
+        raise HTTPException(status_code=403, detail="Anda hanya bisa mengedit TRF milik sendiri")
+    if not payload.lines:
+        raise HTTPException(status_code=400, detail="Minimal 1 baris pembayaran")
+    now = _now_iso()
+    lines = []
+    for i, ln in enumerate(payload.lines, start=1):
+        d = ln.dict()
+        d["no"] = i
+        _compute_line(d)
+        lines.append(d)
+        if d.get("vendor_name") and (d.get("account_no") or d.get("bank_name")):
+            vname = d["vendor_name"].strip()
+            exist = await db.vendor_banks.find_one({"vendor_name": {"$regex": f"^{vname}$", "$options": "i"}, **NOT_DELETED_FILTER})
+            vb = {
+                "vendor_name": vname, "bank_name": d.get("bank_name", ""),
+                "account_no": d.get("account_no", ""), "account_holder": d.get("account_holder", ""),
+                "currency": d.get("currency", "IDR"), "updated_at": now,
+            }
+            if exist:
+                await db.vendor_banks.update_one({"id": exist["id"]}, {"$set": vb})
+            else:
+                vb["id"] = str(uuid.uuid4()); vb["created_at"] = now
+                await db.vendor_banks.insert_one(dict(vb))
+    total_transfer = round(sum(l["net_transfer"] for l in lines), 2)
+    update_fields = {
+        "date": payload.date or existing.get("date"),
+        "notes": payload.notes or "",
+        "lines": lines,
+        "total_transfer": total_transfer,
+        "updated_at": now,
+        "updated_by_name": current.get("name") or current.get("username"),
+    }
+    await db.transfer_requests.update_one({"id": trf_id}, {"$set": update_fields})
+    await log_action(current, "trf_update", "transfer_requests", trf_id, {"form_no": existing.get("form_no"), "total": total_transfer})
+    doc = await db.transfer_requests.find_one({"id": trf_id, **NOT_DELETED_FILTER}, {"_id": 0})
+    return doc
+
+
 @router.get("/transfer-requests/{trf_id}")
 async def get_trf(trf_id: str, current: dict = Depends(get_current_user)):
     doc = await db.transfer_requests.find_one({"id": trf_id, **NOT_DELETED_FILTER}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="TRF tidak ditemukan")
+    if not _can_manage(current, doc):
+        raise HTTPException(status_code=403, detail="TRF ini milik user lain. Hanya pemilik atau Admin yang bisa membuka.")
     return doc
 
 
@@ -221,90 +468,37 @@ async def trf_pdf(trf_id: str, current: dict = Depends(get_current_user)):
     doc = await db.transfer_requests.find_one({"id": trf_id, **NOT_DELETED_FILTER}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="TRF tidak ditemukan")
-
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.units import mm
-    from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-
-    buf = io.BytesIO()
-    pdf = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=14 * mm, bottomMargin=14 * mm, leftMargin=12 * mm, rightMargin=12 * mm)
-    styles = getSampleStyleSheet()
-    h = ParagraphStyle("h", parent=styles["Title"], fontSize=15, spaceAfter=2)
-    sub = ParagraphStyle("sub", parent=styles["Normal"], fontSize=8, textColor=colors.grey)
-    small = ParagraphStyle("small", parent=styles["Normal"], fontSize=7)
-    elems = []
-    elems.append(Paragraph("TRANSFER REQUEST FORM", h))
-    elems.append(Paragraph(f"No: <b>{doc['form_no']}</b> &nbsp;·&nbsp; Tanggal: {doc.get('date','')} &nbsp;·&nbsp; Ditujukan: {doc.get('to_dept','Finance')} &nbsp;·&nbsp; Diajukan: {doc.get('requested_by_name','')}", sub))
-    elems.append(Spacer(1, 8))
-
-    def money(v):
-        try:
-            return f"{float(v):,.2f}"
-        except Exception:
-            return "0.00"
-
-    inv_style = ParagraphStyle("inv", parent=small, textColor=colors.HexColor("#dc2626"), fontSize=6.5)
-
-    head = ["No", "Vendor Name", "Description", "SO", "Qty", "UoM", "Total Price", "Rate", "PPh", "Fee", "Amount (IDR)"]
-    rows = [head]
-    for ln in doc.get("lines", []):
-        # Vendor cell — nama vendor + bank/rekening di bawah (abu-abu kecil)
-        vlines = [ln.get("vendor_name", "") or "-"]
-        bank_bits = " · ".join([b for b in [ln.get("bank_name", ""), ln.get("account_no", ""), ln.get("account_holder", "")] if b])
-        vcell = [Paragraph(f"<b>{ln.get('vendor_name','') or '-'}</b>", small)]
-        if bank_bits:
-            vcell.append(Paragraph(bank_bits, ParagraphStyle("bk", parent=small, textColor=colors.grey, fontSize=6.5)))
-        # Description cell — uraian + invoice merah
-        dcell = [Paragraph(ln.get("description", "") or "-", small)]
-        if ln.get("invoice_no"):
-            dcell.append(Paragraph(f"Invoice No. {ln.get('invoice_no')}", inv_style))
-        so_txt = ln.get("so_no", "") or ""
-        if ln.get("so_customer"):
-            so_txt = f"{so_txt}/{ln.get('so_customer')}" if so_txt else ln.get("so_customer")
-        rows.append([
-            str(ln.get("no", "")),
-            vcell,
-            dcell,
-            Paragraph(so_txt or "-", small),
-            (f"{ln.get('qty')}" if ln.get("qty") not in (None, "") else "-"),
-            ln.get("uom", "") or "-",
-            f"{ln.get('currency','IDR')} {money(ln.get('amount'))}",
-            (f"IDR {money(ln.get('rate'))}"),
-            (Paragraph(f"{ln.get('pph_percent',0)}%<br/>-{money(ln.get('pph_amount'))}", ParagraphStyle("pph", parent=small, alignment=2, fontSize=6.5, textColor=colors.HexColor("#dc2626"))) if ln.get("taxed") else "-"),
-            f"IDR {money(ln.get('fee'))}",
-            f"IDR {money(ln.get('net_transfer'))}",
-        ])
-    rows.append(["", "", "", "", "", "", "", "", "", "TOTAL", f"IDR {money(doc.get('total_transfer'))}"])
-    t = Table(rows, repeatRows=1, colWidths=[8*mm, 52*mm, 62*mm, 26*mm, 12*mm, 12*mm, 30*mm, 26*mm, 22*mm, 26*mm, 34*mm])
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTSIZE", (0, 0), (-1, -1), 7),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#94a3b8")),
-        ("ALIGN", (6, 1), (10, -1), "RIGHT"),
-        ("ALIGN", (0, 0), (0, -1), "CENTER"),
-        ("ALIGN", (3, 0), (5, -1), "CENTER"),
-        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#fee2e2")),
-        ("FONTNAME", (9, -1), (10, -1), "Helvetica-Bold"),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#f8fafc")]),
-    ]))
-    elems.append(t)
-    if doc.get("notes"):
-        elems.append(Spacer(1, 8))
-        elems.append(Paragraph(f"<b>Catatan:</b> {doc['notes']}", small))
-    elems.append(Spacer(1, 24))
-    sign = Table([["Diajukan oleh", "Disetujui", "Finance"],
-                  ["\n\n\n_________________", "\n\n\n_________________", "\n\n\n_________________"],
-                  [doc.get("requested_by_name", ""), "", ""]],
-                 colWidths=[80*mm, 80*mm, 80*mm])
-    sign.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 8), ("ALIGN", (0, 0), (-1, -1), "CENTER")]))
-    elems.append(sign)
-
-    pdf.build(elems)
-    buf.seek(0)
+    if not _can_manage(current, doc):
+        raise HTTPException(status_code=403, detail="TRF ini milik user lain. Hanya pemilik atau Admin yang bisa mencetak.")
+    prep_role = doc.get("requested_by_role") or ""
+    if not prep_role and doc.get("requested_by"):
+        u = await db.users.find_one({"id": doc["requested_by"]})
+        prep_role = (u or {}).get("role", "")
+    buf = _render_trf_pdf(doc, _display_prep_role(doc.get("requested_by_name", ""), prep_role))
     fname = doc["form_no"].replace("/", "_") + ".pdf"
     return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{fname}"'})
+
+
+@router.post("/transfer-requests/preview-pdf")
+async def trf_preview_pdf(payload: TrfIn, current: dict = Depends(get_current_user)):
+    """Render PDF dari data yang belum disimpan (preview sebelum simpan)."""
+    lines = []
+    for i, ln in enumerate(payload.lines, start=1):
+        d = ln.dict()
+        d["no"] = i
+        _compute_line(d)
+        lines.append(d)
+    total = round(sum(l.get("net_transfer", 0) for l in lines), 2)
+    seq = await _next_seq_dynamic()
+    doc = {
+        "form_no": _fmt_no(seq),
+        "date": payload.date or _now_iso()[:10],
+        "to_dept": payload.to_dept or "Finance",
+        "notes": payload.notes or "",
+        "lines": lines,
+        "total_transfer": total,
+        "requested_by_name": current.get("name") or current.get("username"),
+        "created_at": _now_iso(),
+    }
+    buf = _render_trf_pdf(doc, _display_prep_role(current.get("name") or current.get("username"), current.get("role", "")))
+    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": 'inline; filename="TRF_preview.pdf"'})

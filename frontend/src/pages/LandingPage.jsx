@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import SoProgressTracker from "../components/SoProgressTracker";
 import {
-  Storefront, Wrench, ShoppingBag, Package, ClipboardText, FileText, Factory, ArrowRight, Sparkle, Stamp, WarningCircle
+  Storefront, Wrench, ShoppingBag, Package, ClipboardText, FileText, Factory, ArrowRight, Sparkle, Stamp, WarningCircle, Bank
 } from "@phosphor-icons/react";
 
 /* -------------------- Department Definitions -------------------- */
@@ -121,18 +121,18 @@ const DEPARTMENTS = [
     roles: ["admin", "super_admin", "supervisor", "production", "produksi"],
   },
   {
-    key: "nonconformance",
-    label: "Nonconformance (CAR)",
-    tagline: "Corrective Action Report · Semua Dept",
-    description: "Terbitkan & pantau CAR/NC terhadap Drawing maupun objek/proses lain (mis. hasil kerja produksi, barang salah terima). Ditujukan ke dept/user, ditindaklanjuti hingga Closed.",
-    icon: WarningCircle,
-    href: "/nonconformance",
-    accent: "from-rose-500 via-red-500 to-orange-500",
-    accentSolid: "bg-rose-600",
-    accentText: "text-rose-600",
-    accentBorder: "border-rose-300",
-    stats: "CAR · NC · Corrective Action",
-    roles: ["admin", "super_admin", "supervisor", "finance", "sales", "engineering", "eng_leader", "eng_head", "eng_staff", "purchasing", "staff", "qc", "store", "doc_control", "document_control", "production", "produksi"],
+    key: "transfer-request",
+    label: "Transfer / Finance",
+    tagline: "Transfer Request Form · CRF-TT",
+    description: "Ajukan pembayaran ke Finance (CRF-TT). Multi-vendor & multi-baris, auto-isi rekening dari Master Bank Vendor, PPh & valas fleksibel, preview & cetak PDF. Bisa diajukan Sales, Engineering & Purchasing.",
+    icon: Bank,
+    href: "/transfer-request",
+    accent: "from-sky-500 via-cyan-500 to-blue-500",
+    accentSolid: "bg-sky-600",
+    accentText: "text-sky-600",
+    accentBorder: "border-sky-300",
+    stats: "TRF · Vendor Bank · PDF",
+    roles: ["admin", "super_admin", "supervisor", "sales", "engineering", "eng_leader", "eng_head", "eng_staff", "purchasing", "finance"],
   },
 ];
 

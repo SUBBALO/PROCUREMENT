@@ -290,7 +290,11 @@ async def wipe_database(payload: WipeRequest, current: dict = Depends(require_su
         )
 
     stats: Dict[str, int] = {}
+    # Proteksi: koleksi Transfer Request TIDAK PERNAH ikut terhapus (dipakai operasional walau ERP masih testing)
+    PROTECTED = {"transfer_requests", "vendor_banks", "users"}
     for coll in WIPE_COLLECTIONS:
+        if coll in PROTECTED:
+            continue
         res = await db[coll].delete_many({})
         stats[coll] = res.deleted_count
 

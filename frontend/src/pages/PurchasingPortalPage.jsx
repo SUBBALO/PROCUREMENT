@@ -28,12 +28,6 @@ export default function PurchasingPortalPage() {
       accent: "from-emerald-500 via-teal-500 to-cyan-500", accentText: "text-emerald-400",
     },
     {
-      key: "transfer-request", label: "Transfer Request Form", stats: "CRF-TT · Pengajuan ke Finance",
-      description: "Ajukan pembayaran ke Finance. Multi-vendor & multi-baris, auto-isi rekening dari Master Bank, PPh & valas fleksibel, cetak PDF.",
-      icon: Bank, href: "/purchasing/transfer-request",
-      accent: "from-sky-500 via-cyan-500 to-blue-500", accentText: "text-sky-400",
-    },
-    {
       key: "master-items", label: "Master Items (Harga)", stats: "Item · Vendor · Price",
       description: "Rekap item, harga terakhir, vendor, unit standar.",
       icon: Package, href: "/items",

@@ -187,7 +187,7 @@ function AppRoutes() {
       <Route path="/sales/customers" element={<ProtectedRoute><CustomerMasterPage /></ProtectedRoute>} />
       <Route path="/input" element={<ProtectedRoute><InputTransactionPage /></ProtectedRoute>} />
       <Route path="/purchasing/bulk" element={<ProtectedRoute><BulkTransaksiPage /></ProtectedRoute>} />
-      <Route path="/purchasing/transfer-request" element={<ProtectedRoute><TransferRequestPage /></ProtectedRoute>} />
+      <Route path="/transfer-request" element={<ProtectedRoute><TransferRequestPage /></ProtectedRoute>} />
       <Route path="/master" element={<ProtectedRoute><MasterListPage /></ProtectedRoute>} />
       <Route path="/items" element={<ProtectedRoute><MasterItemsPage /></ProtectedRoute>} />
       <Route path="/kpi" element={<ProtectedRoute><KPIReportPage /></ProtectedRoute>} />
