@@ -174,6 +174,7 @@ def _render_trf_pdf(doc: dict, prep_role: str = "") -> io.BytesIO:
     pdf = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=9 * mm, bottomMargin=12 * mm, leftMargin=10 * mm, rightMargin=10 * mm)
     styles = getSampleStyleSheet()
     small = ParagraphStyle("small", parent=styles["Normal"], fontSize=7)
+    small_center = ParagraphStyle("smallc", parent=small, alignment=1)
     inv_style = ParagraphStyle("inv", parent=small, textColor=colors.HexColor("#dc2626"), fontSize=6.5)
 
     elems = []
@@ -217,7 +218,7 @@ def _render_trf_pdf(doc: dict, prep_role: str = "") -> io.BytesIO:
             str(ln.get("no", "")),
             vcell,
             dcell,
-            Paragraph(so_txt or "-", small),
+            Paragraph(so_txt or "-", small_center),
             (f"{ln.get('qty')}" if ln.get("qty") not in (None, "") else "-"),
             ln.get("uom", "") or "-",
             f"{ln.get('currency','IDR')} {money(ln.get('amount'))}",

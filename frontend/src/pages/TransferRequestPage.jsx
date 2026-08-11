@@ -131,7 +131,7 @@ function SoInput({ soNo, soCustomer, onSelect, onChange, testid }) {
         onChange={(e) => { setQ(e.target.value); onChange(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
         placeholder="SO…"
-        className={cellInput}
+        className={`${cellInput} text-center`}
       />
       {open && opts.length > 0 && (
         <div className="absolute z-50 left-0 right-0 mt-1 bg-white border-2 border-slate-300 shadow-lg max-h-56 overflow-y-auto min-w-[240px]">
