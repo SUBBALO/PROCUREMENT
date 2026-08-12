@@ -174,7 +174,24 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
     });
   };
 
+  // Ambil pesan error ramah dari response API (detail bisa string atau array 422 FastAPI)
+  const friendlyErr = (e, fallback) => {
+    const d = e?.response?.data?.detail;
+    if (typeof d === "string") return d;
+    if (Array.isArray(d) && d.length > 0) {
+      const first = d[0];
+      const field = Array.isArray(first?.loc) ? first.loc[first.loc.length - 1] : "";
+      if (field === "request_type") return "Jenis permintaan belum dipilih. Pilih 'New Order' atau 'Repeat Order' dulu.";
+      return `Data belum lengkap/valid${field ? ` (kolom: ${field})` : ""}. Periksa kembali isian formulir.`;
+    }
+    return fallback;
+  };
+
   const _validate = () => {
+    if (type !== "new_order" && type !== "repeat_order") {
+      toast.error("Pilih jenis permintaan dulu: New Order atau Repeat Order");
+      return false;
+    }
     if (!form.so_no) { toast.error("Pilih SO dulu"); return false; }
     if (type === "repeat_order" && !form.ref_so_no) { toast.error("Pilih SO referensi (lama) dulu"); return false; }
     if (!form.po_received_date) { toast.error("Tanggal Terima PO wajib diisi"); return false; }
@@ -230,7 +247,7 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
       toast.success(isEdit ? "✓ DRF disimpan" : `✓ DRF draft dibuat: ${saved.form_no}`);
       onSaved?.();
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Gagal simpan");
+      toast.error(friendlyErr(e, "Gagal simpan"));
     } finally { setSaving(false); }
   };
 
@@ -248,7 +265,7 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
       toast.success(`✓ DRF dikirim ke Engineering${saved?.form_no ? `: ${saved.form_no}` : ""}`);
       onSaved?.();
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Gagal kirim ke Engineering");
+      toast.error(friendlyErr(e, "Gagal kirim ke Engineering"));
     } finally { setSubmitting(false); }
   };
 

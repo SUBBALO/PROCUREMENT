@@ -82,7 +82,7 @@ async def _next_form_no() -> str:
         m = re.match(r"^MKS-F-ENG-001/(\d+)/", d.get("form_no", ""))
         if m:
             try: max_n = max(max_n, int(m.group(1)))
-            except: pass
+            except (TypeError, ValueError): pass
     return f"{prefix}{max_n + 1:03d}{suffix}"
 
 
@@ -109,8 +109,22 @@ def _is_sales(user: dict) -> bool:
 # =========================================================================
 # CRUD
 # =========================================================================
+VALID_REQUEST_TYPES = {"new_order", "repeat_order"}
+
+
+def _require_request_type(value: Optional[str]) -> str:
+    """Validasi jenis permintaan DRF dengan pesan error ramah (bukan 422 teknis)."""
+    v = (value or "").strip()
+    if v not in VALID_REQUEST_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="Jenis permintaan belum dipilih. Silakan pilih 'New Order' atau 'Repeat Order' terlebih dahulu.",
+        )
+    return v
+
+
 class DrawingRequestCreate(BaseModel):
-    request_type: str = Field(..., pattern="^(new_order|repeat_order)$")
+    request_type: Optional[str] = ""  # divalidasi manual via _require_request_type (pesan ramah)
     so_no: str
     ref_so_no: Optional[str] = ""  # untuk repeat order
     ref_so_manual: Optional[bool] = False  # True bila SO lama diinput manual (tidak ada di master)
@@ -457,6 +471,7 @@ async def create_drawing_request(
     """Sales membuat DRF baru (status draft)."""
     if not _is_sales(current):
         raise HTTPException(status_code=403, detail="Hanya Sales yang boleh buat Drawing Request")
+    req_type = _require_request_type(payload.request_type)
     if not payload.so_no.strip():
         raise HTTPException(status_code=400, detail="SO wajib dipilih")
 
@@ -467,7 +482,7 @@ async def create_drawing_request(
     doc = {
         "id": str(uuid.uuid4()),
         "form_no": await _next_form_no(),
-        "request_type": payload.request_type,
+        "request_type": req_type,
         "so_no": payload.so_no.strip(),
         "ref_so_no": (payload.ref_so_no or "").strip(),
         "ref_so_manual": bool(payload.ref_so_manual),
@@ -1077,6 +1092,7 @@ async def update_drawing_request(
         raise HTTPException(status_code=403, detail="Bukan pemilik DRF")
 
     upd = payload.model_dump()
+    upd["request_type"] = _require_request_type(payload.request_type)
     upd["items"] = _clean_drf_items(upd.get("items"))
     if upd["items"]:
         upd["qty_order"] = sum((float(it.get("qty") or 0) for it in upd["items"]))
