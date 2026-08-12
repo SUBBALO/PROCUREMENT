@@ -16,53 +16,16 @@ import {
   Lightning, LightningSlash, Rows,
 } from "@phosphor-icons/react";
 
-/* Mode Cepat — matikan animasi/transisi (reduce-motion) agar akses terasa instan.
-   Preferensi disimpan per-user di server (ikut lintas perangkat) + cache localStorage. */
+/* Mode Cepat sekarang PERMANEN — tombol dihapus atas permintaan user.
+   Animasi/transisi selalu dimatikan (reduce-motion) agar akses selalu instan. */
 function FastModeToggle() {
-  const { user } = useAuth();
-  const [fast, setFast] = useState(() => {
-    try {
-      const v = localStorage.getItem("mks_reduce_motion");
-      return v === null ? true : v === "1";
-    } catch { return true; }
-  });
-
-  // Sumber kebenaran: preferensi server (saat user login/berubah)
-  useEffect(() => {
-    const serverPref = user?.ui_prefs?.reduce_motion;
-    if (typeof serverPref === "boolean") setFast(serverPref);
-  }, [user?.ui_prefs?.reduce_motion]);
-
-  // Terapkan ke <html> + cache localStorage
   useEffect(() => {
     try {
-      document.documentElement.classList.toggle("reduce-motion", fast);
-      localStorage.setItem("mks_reduce_motion", fast ? "1" : "0");
+      document.documentElement.classList.add("reduce-motion");
+      localStorage.setItem("mks_reduce_motion", "1");
     } catch { /* noop */ }
-  }, [fast]);
-
-  const toggle = async () => {
-    const n = !fast;
-    setFast(n);
-    toast.success(n ? "Mode Cepat aktif — animasi dimatikan" : "Animasi diaktifkan kembali");
-    try {
-      await api.put("/auth/ui-preferences", { reduce_motion: n });
-    } catch { /* diamkan — cache lokal tetap jalan */ }
-  };
-
-  return (
-    <button
-      onClick={toggle}
-      title={fast ? "Mode Cepat AKTIF — klik untuk hidupkan animasi" : "Animasi AKTIF — klik untuk Mode Cepat (tanpa animasi)"}
-      className={`flex items-center gap-1 px-2 h-8 text-[10px] uppercase tracking-[0.1em] font-bold border transition-colors ${
-        fast ? "border-amber-500 text-amber-700 bg-amber-50 hover:bg-amber-100" : "border-slate-300 text-slate-600 hover:bg-slate-50"
-      }`}
-      data-testid="fast-mode-toggle"
-    >
-      {fast ? <Lightning size={14} weight="fill" /> : <LightningSlash size={14} weight="bold" />}
-      {fast ? "Cepat" : "Animasi"}
-    </button>
-  );
+  }, []);
+  return null;
 }
 
 /* Mode Kepadatan — beralih tampilan Padat (compact) / Lega (comfortable).
