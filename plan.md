@@ -154,7 +154,7 @@ User request:
   - `GET /temp-transactions` → list semua baris draft (processing/ready/failed).
   - `GET /temp-transactions/photo/{photo_id}` → streaming foto untuk pembanding saat koreksi.
   - `PUT /temp-transactions/{tid}` → edit draft (inline correction).
-  - `POST /temp-transactions/{tid}/commit` → **masuk sistem persis Bulk Transaksi** dengan memanggil `bulk_direct_create()` dari `routers/transactions.py`; setelah commit hapus draft + hapus foto bila sudah orphan.
+  - `POST /temp-transactions/{tid}/commit` → masuk sistem persis Bulk Transaksi (memanggil `bulk_direct_create()`), lalu hapus draft + hapus foto bila orphan.
   - `POST /temp-transactions/{tid}/retry` → ulangi pembacaan AI untuk draft `failed`.
   - `DELETE /temp-transactions/{tid}` → buang draft + hapus foto jika orphan.
 - Keamanan/akses:
@@ -163,42 +163,96 @@ User request:
 ### Phase 9.2 AI / OCR Engine (Status: COMPLETED)
 - SDK: `google-genai` dipasang di backend.
 - Key: `GEMINI_API_KEY` disimpan di `backend/.env` (user punya sendiri).
-- **Penting**: key format baru (termasuk prefix `AQ.`) diperlakukan sebagai **Gemini Developer API**.
-  - Default `GEMINI_MODE=developer`.
-  - Jangan pakai `vertexai=True` untuk key ini (sebelumnya menyebabkan 403 `aiplatform.googleapis.com`).
+- Mode:
+  - Default `GEMINI_MODE=developer` (Gemini Developer API / AI Studio).
+  - Jangan set `vertexai=True` kecuali benar-benar pakai key Vertex (bukan AI Studio).
 - Model default: `gemini-flash-latest`.
-  - Catatan: `gemini-2.5-flash` bisa menghasilkan 404 pada beberapa akun baru, sehingga default diganti ke `gemini-flash-latest`.
-- Prompt memaksa output JSON terstruktur: vendor, date, invoice_no, line_items; dan melarang memasukkan subtotal/ppn/total ke `line_items`.
+- Prompt output JSON terstruktur: vendor, date, invoice_no, line_items; melarang subtotal/ppn/total di `line_items`.
 
 ### Phase 9.3 Frontend (Status: COMPLETED)
 - Halaman baru:
-  - `frontend/src/pages/TempUploadPage.jsx` route `/purchasing/temp-upload`
-    - UI ramah HP: tombol besar Foto Kamera / Pilih Galeri, multi upload, preview grid, submit.
-  - `frontend/src/pages/TempTransactionsPage.jsx` route `/purchasing/temp-transactions`
-    - Tabel mirip Bulk Transaksi + kolom Foto/Status/Aksi.
-    - Edit inline dan auto-save saat blur.
-    - Polling tiap 3 detik saat ada status `processing`.
-    - Dialog foto pembanding.
-    - Commit **per baris** (dengan konfirmasi). Retry AI untuk failed. Draft failed bisa diisi manual → jadi `ready`.
+  - `frontend/src/pages/TempUploadPage.jsx` route `/purchasing/temp-upload` (UI ramah HP, multi upload, preview)
+  - `frontend/src/pages/TempTransactionsPage.jsx` route `/purchasing/temp-transactions` (tabel mirip Bulk Transaksi, edit inline auto-save, polling processing, dialog foto, commit per baris)
 - Navigasi:
   - Menu Purchasing ditambah item: **"Transaksi Sementara (Foto Nota)"**.
   - Finance diblokir dari route baru lewat `blockedForFinance` di `App.js`.
 
 ### Phase 9.4 Verification (Status: COMPLETED)
 - End-to-end terbukti:
-  - 1 foto nota → AI memecah menjadi beberapa baris item (contoh 3 baris) dengan vendor/tanggal/no nota/qty/harga benar.
+  - 1 foto nota → AI memecah menjadi beberapa baris item dengan vendor/tanggal/no nota/qty/harga benar.
   - Commit 1 baris → transaksi tersimpan + stok masuk sesuai pilihan `stock_mode`.
-  - Foto otomatis terhapus setelah semua baris yang memakai foto tersebut sudah commit/discard (orphan cleanup).
-- Screenshot: halaman review + dialog foto + halaman upload (mobile).
-- Test data dibersihkan.
+  - Foto otomatis terhapus setelah semua baris yang memakai foto tersebut sudah commit/discard.
+
+---
+
+## Phase 10: Purchasing — Transaksi Sementara Enhancements + QA Purchasing/Store (Status: COMPLETED)
+Tujuan: mempercepat kerja Purchasing (commit massal) dan merapikan data pembelian (kategori otomatis + normalisasi supplier), serta memastikan tidak ada bug/regresi.
+
+### Phase 10.1 — Alias link upload singkat (Status: COMPLETED)
+- Rute alias: **`/upload`** → sama dengan halaman upload nota (tetap ProtectedRoute, harus login).
+- Rute lama `/purchasing/temp-upload` tetap berjalan.
+
+### Phase 10.2 — Kategori Otomatis (AI) + Kolom Kategori di Draft (Status: COMPLETED)
+- Backend (`temp_transactions.py`):
+  - AI sekarang menebak `category` per line item.
+  - Prompt diberi daftar kategori existing dari DB: `db.transactions.distinct('category')` sebagai preferensi pilihan AI.
+  - Field `category` disimpan di draft dan ikut dikirim saat commit.
+- Commit (`temp_transactions.py` → `_commit_one()`):
+  - `category` diteruskan ke `bulk_direct_create` (default `Uncategorized` jika kosong).
+- Frontend (`TempTransactionsPage.jsx`):
+  - Kolom **Kategori** ditambahkan.
+  - Autocomplete kategori dari `/master/categories` (datalist).
+
+### Phase 10.3 — Commit Semua Sekaligus (Status: COMPLETED)
+- Backend (`temp_transactions.py`):
+  - Endpoint baru: `POST /temp-transactions/commit-batch` body `{ids:[...]}`.
+  - Refactor: helper `_validate_commit_doc()` + `_commit_one()`.
+  - Per-baris gagal dilaporkan tanpa menggagalkan baris lain.
+- Frontend (`TempTransactionsPage.jsx`):
+  - Checkbox per baris yang **ready + valid**.
+  - Select-all.
+  - Tombol **"Masuk Sistem (N Baris)"** muncul bila ada centang.
+
+### Phase 10.4 — Normalisasi Supplier + Auto-Koreksi Vendor Terdaftar (Status: COMPLETED)
+User goal: memudahkan search nama perusahaan (bukan mulai dari "PT").
+- Backend (`temp_transactions.py`):
+  - `_flip_entity_name()`:
+    - contoh: `PT. INTERNATIONAL HARDWARE INDO` → `INTERNATIONAL HARDWARE INDO, PT`
+    - prefix yang didukung: PT/CV/UD/PD/FA/TB
+  - `_resolve_vendor()`:
+    - jika vendor sudah pernah ada di database, auto-koreksi ke penulisan yang sudah terdaftar.
+    - pencocokan memakai `vendor_key` (lowercase, buang tanda baca, buang token badan usaha).
+  - Dipakai di:
+    - hasil AI (vendor_name otomatis dinormalisasi)
+    - PUT edit draft (vendor_name dinormalisasi + dikoreksi)
+
+### Phase 10.5 — BUG FIX (Regresi kritis) bulk-direct insert_many kosong (Status: COMPLETED)
+- Masalah: `insert_many([])` crash bila semua baris `stock_mode='none'`.
+- Perbaikan (`backend/routers/transactions.py`): guard `if tx_docs: insert_many(...)` dan `if receipt_docs: insert_many(...)`.
+
+### Phase 10.6 — QA Automation (Testing Agent) Purchasing + Store (Status: COMPLETED)
+- Report: `/app/test_reports/iteration_43.json`
+- Hasil:
+  - Backend: **100% (22/22)**
+  - Frontend critical page loads: **100% (11/11)**
+- Verifikasi khusus:
+  - Regresi `bulk-direct` all-none fixed ✅
+  - Tombol `Tambah Pengiriman` terlihat dan POST /deliveries by super_admin works ✅
+  - /upload route OK ✅
+  - Stock Opname endpoints OK ✅
+- Cleanup:
+  - Semua data tes `zz_`/`ZZ*` bersih (0 sisa).
+  - **PENTING**: ada 1 draft temp_transactions asli user `susanto` (SKC HAND/ROUND DIES...) yang **harus dijaga** dan **tidak boleh disentuh** saat testing/cleanup.
 
 ---
 
 ## Notes / Current GitHub Safety
 - Perubahan terbaru masih **modified** dan belum di-commit/push.
+- Untracked report QA: `test_reports/iteration_43.json` (boleh di-commit atau di-.gitignore sesuai kebijakan).
 - Disarankan commit bertahap (agar jelas dan mudah rollback):
-  1) `DRF validation ramah`
-  2) `Store role consistency helpers (isAdminLike/canSeeStorePrices) + pemakaian di pages`
-  3) `Stock history icon + Stock Opname (backend+frontend)`
-  4) `Temp Transactions (foto nota + AI) + GEMINI_MODEL default update + menu purchasing`
+  1) `Store role helpers + pemakaian (admin-like consistency)`
+  2) `Stock Opname + Stock history icon` (backend+frontend)
+  3) `Temp Transactions base (upload/review/commit per baris + /upload alias)`
+  4) `Temp Transactions enhancements (kategori + commit-batch + vendor normalization)`
+  5) `Fix bulk-direct insert_many empty regression`
 - Reminder: GitHub hanya backup **kode**; untuk **data** gunakan Full Backup (tar.gz).

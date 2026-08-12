@@ -23,6 +23,9 @@ export default function TempTransactionsPage() {
   const [sos, setSos] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [items, setItems] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
   const pollRef = useRef(null);
   const dirtyRef = useRef(new Set()); // id baris yang sedang diedit (jangan ditimpa polling)
 
@@ -55,6 +58,7 @@ export default function TempTransactionsPage() {
     api.get("/sales-orders").then((r) => setSos((r.data || []).map((s) => s.so_no).filter(Boolean))).catch(() => {});
     api.get("/master/vendors").then((r) => setVendors(r.data || [])).catch(() => {});
     api.get("/master/items").then((r) => setItems((r.data || []).map((it) => it.item_name || it._id).filter(Boolean))).catch(() => {});
+    api.get("/master/categories").then((r) => setCategories(r.data || [])).catch(() => {});
   }, []);
 
   // Poll selama ada foto yang masih dibaca AI
@@ -91,6 +95,7 @@ export default function TempTransactionsPage() {
         po_no: r.po_no || "",
         vendor_name: r.vendor_name || "",
         item_name: r.item_name || "",
+        category: r.category || "",
         qty: Number(r.qty) || 0,
         unit: r.unit || "Ea",
         unit_price: Number(r.unit_price) || 0,
@@ -149,6 +154,39 @@ export default function TempTransactionsPage() {
 
   const readyCount = useMemo(() => rows.filter((r) => r.status === "ready").length, [rows]);
 
+  // ---- Pilih banyak & commit sekaligus ----
+  const selectableIds = useMemo(() => rows.filter((r) => r.status === "ready" && rowValid(r)).map((r) => r.id), [rows]);
+  const toggleSelect = (id) => setSelected((s) => {
+    const nx = new Set(s);
+    if (nx.has(id)) nx.delete(id); else nx.add(id);
+    return nx;
+  });
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
+  const toggleSelectAll = () => setSelected(allSelected ? new Set() : new Set(selectableIds));
+  const selectedValidIds = useMemo(() => selectableIds.filter((id) => selected.has(id)), [selectableIds, selected]);
+
+  const commitBatch = async () => {
+    if (selectedValidIds.length === 0) return toast.error("Centang dulu baris yang mau dimasukkan");
+    if (!window.confirm(`Masukkan ${selectedValidIds.length} baris tercentang ke sistem sekaligus?\nTiap baris masuk sesuai pilihan Masuk Stok masing-masing. Foto ikut terhapus.`)) return;
+    setBulkBusy(true);
+    try {
+      // pastikan koreksi terakhir baris terpilih tersimpan dulu
+      for (const id of selectedValidIds) {
+        const r = rows.find((x) => x.id === id);
+        if (r && dirtyRef.current.has(id)) await saveRow(r);
+      }
+      const { data } = await api.post("/temp-transactions/commit-batch", { ids: selectedValidIds });
+      if (data.committed > 0) toast.success(`✓ ${data.committed} baris masuk sistem`);
+      (data.failed || []).forEach((f) => toast.error(`"${f.item}": ${f.error}`));
+      setSelected(new Set());
+      load(true);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal commit massal");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <BackLink />
@@ -163,6 +201,11 @@ export default function TempTransactionsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {selectedValidIds.length > 0 && (
+            <Button data-testid="commit-batch-btn" onClick={commitBatch} disabled={bulkBusy} className="rounded-none h-9 bg-emerald-600 hover:bg-emerald-700 text-white text-xs uppercase tracking-[0.1em] font-bold">
+              <CheckCircle size={14} weight="bold" className="mr-1.5" /> {bulkBusy ? "Memproses..." : `Masuk Sistem (${selectedValidIds.length} Baris)`}
+            </Button>
+          )}
           <Button data-testid="goto-upload" onClick={() => nav("/purchasing/temp-upload")} className="rounded-none h-9 bg-sky-700 hover:bg-sky-800 text-white text-xs uppercase tracking-[0.1em] font-bold">
             <Camera size={14} weight="bold" className="mr-1.5" /> Upload Foto Nota
           </Button>
@@ -186,12 +229,23 @@ export default function TempTransactionsPage() {
           <table className="w-full text-xs border-collapse">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-[10px] uppercase tracking-[0.05em] font-bold text-slate-500">
+                <th className="p-2 w-8 text-center">
+                  <input
+                    type="checkbox"
+                    data-testid="select-all"
+                    className="w-3.5 h-3.5 accent-emerald-600"
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                    title="Centang semua baris yang siap"
+                  />
+                </th>
                 <th className="p-2 w-14 text-center">Foto</th>
                 <th className="p-2 text-left min-w-[110px]">Tanggal</th>
                 <th className="p-2 text-left min-w-[100px]">SO No</th>
                 <th className="p-2 text-left min-w-[90px]">PO No</th>
                 <th className="p-2 text-left min-w-[150px]">Supplier *</th>
                 <th className="p-2 text-left min-w-[200px]">Nama Barang *</th>
+                <th className="p-2 text-left min-w-[120px]">Kategori</th>
                 <th className="p-2 text-right min-w-[70px]">Qty *</th>
                 <th className="p-2 text-left min-w-[65px]">Unit</th>
                 <th className="p-2 text-right min-w-[100px]">Unit Price</th>
@@ -214,7 +268,18 @@ export default function TempTransactionsPage() {
                 const isFail = r.status === "failed";
                 const disabled = isProc || busyId === r.id;
                 return (
-                  <tr key={r.id} className={`border-b border-slate-100 ${isProc ? "bg-sky-50/50" : isFail ? "bg-red-50/50" : ""}`} data-testid={`temp-row-${r.id}`}>
+                  <tr key={r.id} className={`border-b border-slate-100 ${isProc ? "bg-sky-50/50" : isFail ? "bg-red-50/50" : selected.has(r.id) ? "bg-emerald-50/50" : ""}`} data-testid={`temp-row-${r.id}`}>
+                    <td className="p-1 text-center">
+                      {r.status === "ready" && rowValid(r) ? (
+                        <input
+                          type="checkbox"
+                          data-testid={`select-${r.id}`}
+                          className="w-3.5 h-3.5 accent-emerald-600"
+                          checked={selected.has(r.id)}
+                          onChange={() => toggleSelect(r.id)}
+                        />
+                      ) : null}
+                    </td>
                     <td className="p-1 text-center">
                       <button
                         data-testid={`photo-btn-${r.id}`}
@@ -226,7 +291,7 @@ export default function TempTransactionsPage() {
                       </button>
                     </td>
                     {isProc ? (
-                      <td colSpan={10} className="p-2 text-sky-800 text-xs">
+                      <td colSpan={11} className="p-2 text-sky-800 text-xs">
                         <CircleNotch size={13} weight="bold" className="inline animate-spin mr-1.5" />
                         AI sedang membaca <b>{r.photo_name}</b>...
                       </td>
@@ -242,6 +307,9 @@ export default function TempTransactionsPage() {
                         </td>
                         <td className="p-1"><Input disabled={disabled} list={`tit-${r.id}`} data-testid={`t-item-${r.id}`} className={inputCls} value={r.item_name || ""} onChange={(e) => setRow(r.id, { item_name: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} placeholder="Nama Barang" />
                           <datalist id={`tit-${r.id}`}>{items.slice(0, 500).map((n) => <option key={n} value={n} />)}</datalist>
+                        </td>
+                        <td className="p-1"><Input disabled={disabled} list={`tcat-${r.id}`} data-testid={`t-cat-${r.id}`} className={inputCls} value={r.category || ""} onChange={(e) => setRow(r.id, { category: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} placeholder="Kategori" title="Kategori barang (tebakan AI — bisa dikoreksi)" />
+                          <datalist id={`tcat-${r.id}`}>{categories.slice(0, 200).map((c) => <option key={c} value={c} />)}</datalist>
                         </td>
                         <td className="p-1"><Input disabled={disabled} type="number" step="any" data-testid={`t-qty-${r.id}`} className={`${inputCls} text-right`} value={r.qty ?? ""} onChange={(e) => setRow(r.id, { qty: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} /></td>
                         <td className="p-1">

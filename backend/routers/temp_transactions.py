@@ -15,6 +15,7 @@ Endpoint:
 import asyncio
 import json
 import os
+import re
 import uuid
 from typing import List, Optional
 
@@ -64,7 +65,7 @@ def _gemini():
     return _gemini_client
 
 
-RECEIPT_PROMPT = """Baca foto nota/kwitansi belanja (Indonesia) ini dan ekstrak HANYA yang terlihat jelas.
+RECEIPT_PROMPT_BASE = """Baca foto nota/kwitansi belanja (Indonesia) ini dan ekstrak HANYA yang terlihat jelas.
 Keluarkan satu objek JSON sesuai skema. Jangan mengarang nilai yang tidak ada — pakai null.
 Aturan:
 - vendor: nama toko/supplier di nota (null bila tidak terbaca).
@@ -74,10 +75,20 @@ Aturan:
   qty = jumlah (angka). unit = satuan bila tertulis (pcs/kg/m/ltr dst), selain itu null.
   price = HARGA SATUAN per unit dalam Rupiah sebagai angka polos (contoh 12500, bukan "12.500").
   Bila hanya ada harga total baris tanpa qty, isi qty=1 dan price=harga total baris.
+  category = tebakan kategori barang berdasarkan namanya.{category_hint}
 - JANGAN masukkan baris subtotal, diskon, pajak/PPN, pembulatan, atau TOTAL ke line_items."""
 
 
-def _extract_receipt_sync(image_bytes: bytes, mime_type: str) -> dict:
+def _build_prompt(known_categories: list) -> str:
+    if known_categories:
+        opts = ", ".join(known_categories[:40])
+        hint = f" PILIH dari daftar kategori yang sudah dipakai perusahaan bila cocok: [{opts}]. Bila tidak ada yang cocok, buat kategori singkat yang masuk akal (bhs Indonesia)."
+    else:
+        hint = " Buat kategori singkat yang masuk akal (mis. Direct Material, Consumable, Tools, ATK)."
+    return RECEIPT_PROMPT_BASE.format(category_hint=hint)
+
+
+def _extract_receipt_sync(image_bytes: bytes, mime_type: str, known_categories: list) -> dict:
     """Panggil Gemini vision (sync — dijalankan via asyncio.to_thread)."""
     from google.genai import types
 
@@ -86,6 +97,7 @@ def _extract_receipt_sync(image_bytes: bytes, mime_type: str) -> dict:
         qty: Optional[float] = Field(default=None, description="Jumlah; null bila tak terbaca")
         unit: Optional[str] = Field(default=None, description="Satuan (pcs/kg/m); null bila tak ada")
         price: Optional[float] = Field(default=None, description="Harga satuan Rupiah; null bila tak terbaca")
+        category: Optional[str] = Field(default=None, description="Tebakan kategori barang")
 
     class Receipt(BaseModel):
         vendor: Optional[str] = None
@@ -96,7 +108,7 @@ def _extract_receipt_sync(image_bytes: bytes, mime_type: str) -> dict:
     part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
     resp = _gemini().models.generate_content(
         model=GEMINI_MODEL,
-        contents=[part, RECEIPT_PROMPT],
+        contents=[part, _build_prompt(known_categories)],
         config=types.GenerateContentConfig(
             temperature=0,
             response_mime_type="application/json",
@@ -121,18 +133,67 @@ def _norm_unit(u: Optional[str]) -> str:
     return UNIT_MAP.get(str(u).strip().lower(), "Ea")
 
 
+# ---------------- Normalisasi nama supplier ----------------
+# "PT. INTERNATIONAL HARDWARE INDO" → "INTERNATIONAL HARDWARE INDO, PT"
+# supaya pencarian nama perusahaan gampang (urut abjad nama, bukan "PT").
+ENTITY_PREFIXES = ("PT", "CV", "UD", "PD", "FA", "TB")
+_ENTITY_TOKENS = {"pt", "cv", "ud", "pd", "fa", "tb", "tbk", "persero"}
+
+
+def _flip_entity_name(raw: str) -> str:
+    s = " ".join((raw or "").split()).strip(" .,")
+    if not s:
+        return s
+    up = s.upper()
+    # Sudah format "NAMA, PT" → biarkan
+    for p in ENTITY_PREFIXES:
+        if up.endswith(f", {p}") or up.endswith(f",{p}"):
+            return s
+    for p in ENTITY_PREFIXES:
+        for sep in (". ", " ", "."):
+            pref = f"{p}{sep}"
+            if up.startswith(pref) and len(s) > len(pref):
+                rest = s[len(pref):].strip(" .,")
+                if rest:
+                    return f"{rest}, {p}"
+    return s
+
+
+def _vendor_key(name: str) -> str:
+    """Kunci pembanding: huruf kecil, tanpa tanda baca, tanpa kata badan usaha."""
+    s = re.sub(r"[^a-z0-9 ]", " ", (name or "").lower())
+    return "".join(t for t in s.split() if t not in _ENTITY_TOKENS)
+
+
+async def _resolve_vendor(raw: Optional[str]) -> str:
+    """Balik format PT/CV ke belakang; bila supplier sudah pernah terdaftar
+    (di transaksi manapun), auto-koreksi ke nama persis yang ada di database."""
+    flipped = _flip_entity_name(raw or "")
+    key = _vendor_key(flipped)
+    if not key:
+        return flipped
+    vendors = await db.transactions.distinct("vendor_name")
+    for v in vendors:
+        if v and _vendor_key(v) == key:
+            return v  # sudah terdaftar → pakai penulisan dari database
+    return flipped
+
+
 async def _process_photo(temp_id: str, photo_id: str, mime_type: str):
     """Background: baca foto dengan AI, ubah 1 baris 'processing' jadi N baris item 'ready'."""
     now = _now_iso()
     try:
         stream = await _fs().open_download_stream(ObjectId(photo_id))
         image_bytes = await stream.read()
-        data = await asyncio.to_thread(_extract_receipt_sync, image_bytes, mime_type)
+        # Kategori yang sudah dipakai perusahaan → jadi preferensi tebakan AI
+        cats = await db.transactions.distinct("category")
+        known_categories = sorted({str(c).strip() for c in cats if c and str(c).strip() and str(c).strip() != "Uncategorized"})
+        data = await asyncio.to_thread(_extract_receipt_sync, image_bytes, mime_type, known_categories)
 
         base = await db.temp_transactions.find_one({"id": temp_id})
         if not base:  # sudah dibuang user
             return
-        vendor = (data.get("vendor") or "").strip()
+        vendor = await _resolve_vendor((data.get("vendor") or "").strip())
         date = (data.get("date") or "") or base.get("invoice_date") or now[:10]
         invoice_no = (data.get("invoice_no") or "").strip()
         items = data.get("line_items") or []
@@ -155,6 +216,7 @@ async def _process_photo(temp_id: str, photo_id: str, mime_type: str):
                 "vendor_name": vendor,
                 "invoice_no": invoice_no,
                 "item_name": (it.get("description") or "").strip(),
+                "category": (it.get("category") or "").strip(),
                 "qty": qty,
                 "unit": _norm_unit(it.get("unit")),
                 "unit_price": price,
@@ -223,6 +285,7 @@ async def upload_receipts(
             "po_no": "",
             "vendor_name": "",
             "item_name": "",
+            "category": "",
             "qty": 0,
             "unit": "Ea",
             "unit_price": 0,
@@ -274,6 +337,7 @@ class TempTxUpdate(BaseModel):
     po_no: Optional[str] = None
     vendor_name: Optional[str] = None
     item_name: Optional[str] = None
+    category: Optional[str] = None
     qty: Optional[float] = None
     unit: Optional[str] = None
     unit_price: Optional[float] = None
@@ -292,6 +356,9 @@ async def update_temp_transaction(tid: str, payload: TempTxUpdate, current: dict
     upd = {k: v for k, v in payload.model_dump().items() if v is not None}
     if "stock_mode" in upd and upd["stock_mode"] not in ("stock", "log", "none"):
         raise HTTPException(status_code=400, detail="stock_mode harus stock/log/none")
+    # Nama supplier: balik format PT/CV + auto-koreksi ke nama terdaftar
+    if upd.get("vendor_name"):
+        upd["vendor_name"] = await _resolve_vendor(upd["vendor_name"])
     # qty/harga berubah → hitung ulang total bila total tidak dikirim eksplisit
     if ("qty" in upd or "unit_price" in upd) and "total_price" not in upd:
         q = float(upd.get("qty", doc.get("qty") or 0))
@@ -322,26 +389,27 @@ class CommitBody(BaseModel):
     stock_mode: Optional[str] = None  # override tujuan saat commit (stock/log/none)
 
 
-@router.post("/temp-transactions/{tid}/commit")
-async def commit_temp_transaction(tid: str, payload: CommitBody, current: dict = Depends(require_write)):
-    """Masukkan 1 draft ke sistem — memakai logic yang SAMA dengan Bulk Transaksi
-    (transaksi + incoming/stok sesuai pilihan), lalu draft & foto dihapus."""
-    doc = await db.temp_transactions.find_one({"id": tid})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Draft tidak ditemukan")
-    if doc.get("status") == "processing":
-        raise HTTPException(status_code=400, detail="Masih dibaca AI — tunggu selesai dulu")
-    sm = payload.stock_mode or doc.get("stock_mode") or "none"
-    if sm not in ("stock", "log", "none"):
-        raise HTTPException(status_code=400, detail="Pilih tujuan: Masuk Stok / Log Only / Tidak")
-    if not (doc.get("vendor_name") or "").strip():
-        raise HTTPException(status_code=400, detail="Nama Supplier wajib diisi dulu")
-    if not (doc.get("item_name") or "").strip():
-        raise HTTPException(status_code=400, detail="Nama Barang wajib diisi dulu")
-    if float(doc.get("qty") or 0) <= 0:
-        raise HTTPException(status_code=400, detail="Qty harus > 0")
+class CommitBatchBody(BaseModel):
+    ids: List[str] = Field(default_factory=list)
 
-    # Re-use PERSIS logic bulk-direct (fungsi yang sama dengan tombol Simpan di Bulk Transaksi)
+
+def _validate_commit_doc(doc: dict, sm: str) -> Optional[str]:
+    """Return pesan error bila draft belum layak commit, None bila OK."""
+    if doc.get("status") == "processing":
+        return "Masih dibaca AI — tunggu selesai dulu"
+    if sm not in ("stock", "log", "none"):
+        return "Pilih tujuan: Masuk Stok / Log Only / Tidak"
+    if not (doc.get("vendor_name") or "").strip():
+        return "Nama Supplier wajib diisi dulu"
+    if not (doc.get("item_name") or "").strip():
+        return "Nama Barang wajib diisi dulu"
+    if float(doc.get("qty") or 0) <= 0:
+        return "Qty harus > 0"
+    return None
+
+
+async def _commit_one(doc: dict, sm: str, current: dict) -> dict:
+    """Commit 1 draft memakai logic Bulk Transaksi, lalu hapus draft + foto orphan."""
     from routers.transactions import bulk_direct_create
     row = {
         "invoice_date": doc.get("invoice_date"),
@@ -349,6 +417,7 @@ async def commit_temp_transaction(tid: str, payload: CommitBody, current: dict =
         "po_no": doc.get("po_no") or "",
         "vendor_name": doc.get("vendor_name"),
         "item_name": doc.get("item_name"),
+        "category": (doc.get("category") or "").strip() or "Uncategorized",
         "qty": float(doc.get("qty") or 0),
         "unit": doc.get("unit") or "Ea",
         "unit_price": float(doc.get("unit_price") or 0),
@@ -360,12 +429,56 @@ async def commit_temp_transaction(tid: str, payload: CommitBody, current: dict =
         "notes": f"Dari Transaksi Sementara (foto nota: {doc.get('photo_name', '')})",
     }
     result = await bulk_direct_create({"rows": [row]}, current)
-
     photo_id = doc.get("photo_id") or ""
-    await db.temp_transactions.delete_one({"id": tid})
+    await db.temp_transactions.delete_one({"id": doc["id"]})
     await _delete_photo_if_orphan(photo_id)
+    return result
+
+
+@router.post("/temp-transactions/commit-batch")
+async def commit_batch(payload: CommitBatchBody, current: dict = Depends(require_write)):
+    """Masukkan banyak draft tercentang sekaligus. Tiap baris divalidasi sendiri —
+    yang gagal dilaporkan per baris, yang valid tetap masuk."""
+    if not payload.ids:
+        raise HTTPException(status_code=400, detail="Tidak ada baris dipilih")
+    committed, failed = [], []
+    for tid in payload.ids:
+        doc = await db.temp_transactions.find_one({"id": tid})
+        if not doc:
+            failed.append({"id": tid, "item": "?", "error": "Draft tidak ditemukan"})
+            continue
+        sm = doc.get("stock_mode") or "none"
+        err = _validate_commit_doc(doc, sm)
+        if err:
+            failed.append({"id": tid, "item": doc.get("item_name") or doc.get("photo_name", "?"), "error": err})
+            continue
+        try:
+            await _commit_one(doc, sm, current)
+            committed.append({"id": tid, "item": doc.get("item_name"), "stock_mode": sm})
+        except HTTPException as e:
+            failed.append({"id": tid, "item": doc.get("item_name") or "?", "error": str(e.detail)})
+        except Exception as e:  # noqa: BLE001
+            failed.append({"id": tid, "item": doc.get("item_name") or "?", "error": str(e)[:150]})
+    await log_action(current, "temp_tx_commit_batch", "temp_transaction", "-", {
+        "committed": len(committed), "failed": len(failed),
+    })
+    return {"ok": True, "committed": len(committed), "failed": failed, "items": committed}
+
+
+@router.post("/temp-transactions/{tid}/commit")
+async def commit_temp_transaction(tid: str, payload: CommitBody, current: dict = Depends(require_write)):
+    """Masukkan 1 draft ke sistem — memakai logic yang SAMA dengan Bulk Transaksi
+    (transaksi + incoming/stok sesuai pilihan), lalu draft & foto dihapus."""
+    doc = await db.temp_transactions.find_one({"id": tid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Draft tidak ditemukan")
+    sm = payload.stock_mode or doc.get("stock_mode") or "none"
+    err = _validate_commit_doc(doc, sm)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    result = await _commit_one(doc, sm, current)
     await log_action(current, "temp_tx_commit", "temp_transaction", tid, {
-        "item": row["item_name"], "vendor": row["vendor_name"], "stock_mode": sm,
+        "item": doc.get("item_name"), "vendor": doc.get("vendor_name"), "stock_mode": sm,
     })
     return {"ok": True, "committed": 1, "stock_mode": sm, "tx_ids": result.get("tx_ids", [])}
 

@@ -1,6 +1,6 @@
 import React from "react";
 import DeptPortal from "../components/DeptPortal";
-import { Plus, ListDashes, Package, ChartBar, Truck, ChartLineUp, Lightning, Bank } from "@phosphor-icons/react";
+import { Plus, ListDashes, Package, ChartBar, ChartLineUp, Lightning, Camera } from "@phosphor-icons/react";
 import { useNotifCount } from "../lib/useNotifCount";
 
 export default function PurchasingPortalPage() {
@@ -20,6 +20,12 @@ export default function PurchasingPortalPage() {
       description: "Tabel spreadsheet cepat. Tanggal nota = tanggal terima. Centang Masuk Stok = langsung masuk FIFO tanpa persetujuan Store.",
       icon: Lightning, href: "/purchasing/bulk",
       accent: "from-amber-500 via-orange-500 to-red-500", accentText: "text-amber-400",
+    },
+    {
+      key: "temp-tx", label: "Transaksi Sementara (Foto Nota)", stats: "Upload HP · AI Baca Nota",
+      description: "Foto nota belanja cash dari HP, AI baca otomatis. Cek & koreksi dulu, baru masuk sistem — tidak ada yang auto masuk.",
+      icon: Camera, href: "/purchasing/temp-transactions",
+      accent: "from-teal-500 via-emerald-500 to-green-500", accentText: "text-teal-400",
     },
     {
       key: "master-list", label: "Master List Transaksi", stats: "History · Filter",
@@ -47,5 +53,5 @@ export default function PurchasingPortalPage() {
     },
   ];
 
-  return <DeptPortal deptLabel="Purchasing Department" deptTagline="Input Transaksi · Master · Vendor · Dashboard" accentColor="sky" cards={CARDS} />;
+  return <DeptPortal deptLabel="Purchasing Department" deptTagline="Input Transaksi · Foto Nota · Master · Dashboard" accentColor="sky" cards={CARDS} />;
 }

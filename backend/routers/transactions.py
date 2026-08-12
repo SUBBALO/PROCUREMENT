@@ -668,8 +668,10 @@ async def bulk_direct_create(payload: dict, current: dict = Depends(require_writ
             "created_at": now,
         })
 
-    await db.transactions.insert_many([d.copy() for d in tx_docs])
-    await db.store_receipts.insert_many([d.copy() for d in receipt_docs])
+    if tx_docs:
+        await db.transactions.insert_many([d.copy() for d in tx_docs])
+    if receipt_docs:
+        await db.store_receipts.insert_many([d.copy() for d in receipt_docs])
     # Auto-link each row to its consumable request (if referenced)
     for d in tx_docs:
         if d.get("consumable_request_id") and d.get("consumable_request_item_id"):
