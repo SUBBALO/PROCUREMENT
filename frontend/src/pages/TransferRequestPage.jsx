@@ -40,7 +40,7 @@ const emptyLine = () => ({
   taxed: false, pph_percent: "", bank_name: "", account_no: "", account_holder: "",
 });
 
-const cellInput = "rounded-none h-8 text-xs border border-slate-200 focus-visible:ring-1 focus-visible:ring-sky-400 w-full";
+const cellInput = "rounded-none h-7 text-[11px] border border-slate-200 focus-visible:ring-1 focus-visible:ring-sky-400 w-full min-w-0 px-1.5";
 
 // ------------------- Vendor Autocomplete (auto-fill bank, editable) -------------------
 function VendorInput({ value, onSelectBank, onChange, testid }) {
@@ -269,7 +269,7 @@ function CreateTrf({ onSaved, editDoc, onDone }) {
     if (editId) { onDone && onDone(); } else { reset(); }
   };
 
-  const th = "px-2 py-2 text-[10px] font-bold uppercase tracking-[0.05em] text-white border-r border-slate-600 last:border-0 whitespace-nowrap";
+  const th = "px-1.5 py-1 text-[10px] font-bold uppercase tracking-[0.03em] text-white border-r border-slate-600 last:border-0 whitespace-nowrap";
 
   return (
     <div className="space-y-4">
@@ -334,7 +334,7 @@ function CreateTrf({ onSaved, editDoc, onDone }) {
                 <React.Fragment key={i}>
                   <tr className="border-t border-slate-200 align-top" data-testid={`trf-line-${i}`}>
                     <td className="px-2 py-2 text-center text-xs font-bold text-slate-600 border-r border-slate-100">{i + 1}</td>
-                    <td className="px-1.5 py-1.5 border-r border-slate-100">
+                    <td className="px-1 py-1 border-r border-slate-100">
                       <VendorInput
                         testid={`trf-vendor-${i}`}
                         value={l.vendor_name}
@@ -345,26 +345,26 @@ function CreateTrf({ onSaved, editDoc, onDone }) {
                         })}
                       />
                     </td>
-                    <td className="px-1.5 py-1.5 border-r border-slate-100">
+                    <td className="px-1 py-1 border-r border-slate-100">
                       <Textarea data-testid={`trf-desc-${i}`} value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} rows={3} className="rounded-none text-xs border border-slate-200 focus-visible:ring-1 focus-visible:ring-sky-400 w-full resize-y min-h-[3.5rem]" placeholder="Deskripsi barang/jasa (boleh beberapa baris / tekan Enter)" />
                       <Input data-testid={`trf-invoice-${i}`} value={l.invoice_no} onChange={(e) => setLine(i, { invoice_no: e.target.value })}
                         className="rounded-none h-8 text-xs border border-slate-200 mt-1 text-red-600 placeholder:text-red-300 focus-visible:ring-1 focus-visible:ring-sky-400 w-full" placeholder="Invoice No." />
                     </td>
-                    <td className="px-1.5 py-1.5 border-r border-slate-100">
+                    <td className="px-1 py-1 border-r border-slate-100">
                       <SoInput testid={`trf-so-${i}`} soNo={l.so_no} soCustomer={l.so_customer}
                         onChange={(v) => setLine(i, { so_no: v, so_customer: "" })}
                         onSelect={(so, cust) => setLine(i, { so_no: so, so_customer: cust })} />
                     </td>
-                    <td className="px-1.5 py-1.5 border-r border-slate-100">
+                    <td className="px-1 py-1 border-r border-slate-100">
                       <Input data-testid={`trf-qty-${i}`} type="text" inputMode="decimal" value={l.qty} onChange={(e) => setLine(i, { qty: e.target.value.replace(/[^0-9.,]/g, "") })} className={`${cellInput} text-right`} placeholder="0" />
                     </td>
-                    <td className="px-1.5 py-1.5 border-r border-slate-100">
+                    <td className="px-1 py-1 border-r border-slate-100">
                       <Input data-testid={`trf-uom-${i}`} value={l.uom} onChange={(e) => setLine(i, { uom: e.target.value })} className={cellInput} placeholder="Lot" />
                     </td>
-                    <td className="px-1.5 py-1.5 border-r border-slate-100">
-                      <div className="flex gap-1">
+                    <td className="px-1 py-1 border-r border-slate-100">
+                      <div className="flex gap-0.5">
                         <Select value={l.currency} onValueChange={(v) => setLine(i, { currency: v, rate: v === "IDR" ? 1 : l.rate, fee: v === "IDR" ? 0 : l.fee })}>
-                          <SelectTrigger data-testid={`trf-currency-${i}`} className="rounded-none h-8 text-xs w-[64px] px-2"><SelectValue /></SelectTrigger>
+                          <SelectTrigger data-testid={`trf-currency-${i}`} className="rounded-none h-7 text-[11px] w-[52px] px-1"><SelectValue /></SelectTrigger>
                           <SelectContent className="rounded-none">
                             {CURRENCIES.map((cur) => <SelectItem key={cur} value={cur}>{cur}</SelectItem>)}
                           </SelectContent>
@@ -372,17 +372,17 @@ function CreateTrf({ onSaved, editDoc, onDone }) {
                         <Input data-testid={`trf-amount-${i}`} type="number" value={l.amount} onChange={(e) => setLine(i, { amount: e.target.value })} className={`${cellInput} text-right`} placeholder="0" />
                       </div>
                     </td>
-                    <td className="px-1.5 py-1.5 border-r border-slate-100">
+                    <td className="px-1 py-1 border-r border-slate-100">
                       <Input data-testid={`trf-rate-${i}`} type="number" value={l.rate} disabled={!isForeign} onChange={(e) => setLine(i, { rate: e.target.value })} className={`${cellInput} text-right disabled:bg-slate-100`} placeholder="1" />
                     </td>
-                    <td className="px-1.5 py-1.5 border-r border-slate-100">
-                      <div className="flex items-center gap-1">
-                        <Switch data-testid={`trf-tax-${i}`} checked={l.taxed} onCheckedChange={(v) => setLine(i, { taxed: v })} className="scale-90" />
+                    <td className="px-1 py-1 border-r border-slate-100">
+                      <div className="flex items-center gap-0.5">
+                        <Switch data-testid={`trf-tax-${i}`} checked={l.taxed} onCheckedChange={(v) => setLine(i, { taxed: v })} className="scale-75 shrink-0" />
                         <Input data-testid={`trf-pph-${i}`} type="number" value={l.pph_percent} disabled={!l.taxed} onChange={(e) => setLine(i, { pph_percent: e.target.value })} className={`${cellInput} text-right disabled:bg-slate-100`} placeholder="%" />
                       </div>
                       {l.taxed && <div className="text-[10px] text-red-600 text-right mt-0.5 font-mono">-{fmt(c.pph_amount)}</div>}
                     </td>
-                    <td className="px-1.5 py-1.5 border-r border-slate-100">
+                    <td className="px-1 py-1 border-r border-slate-100">
                       <Input data-testid={`trf-fee-${i}`} type="number" value={l.fee} disabled={!isForeign} onChange={(e) => setLine(i, { fee: e.target.value })} className={`${cellInput} text-right disabled:bg-slate-100 disabled:text-slate-400`} placeholder={isForeign ? "0" : "—"} title={isForeign ? "" : "Fee hanya untuk transfer valas (SGD/USD)"} />
                     </td>
                     <td className="px-2 py-2 text-right border-r border-slate-100">
@@ -402,9 +402,9 @@ function CreateTrf({ onSaved, editDoc, onDone }) {
                     <td colSpan={11} className="px-2 py-1.5">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-bold">Rekening:</span>
-                        <Input data-testid={`trf-bank-${i}`} value={l.bank_name} onChange={(e) => setLine(i, { bank_name: e.target.value })} className="rounded-none h-7 text-xs border border-slate-200 w-40" placeholder="Bank" />
-                        <Input data-testid={`trf-acc-${i}`} value={l.account_no} onChange={(e) => setLine(i, { account_no: e.target.value })} className="rounded-none h-7 text-xs border border-slate-200 w-44" placeholder="No. Rekening" />
-                        <Input data-testid={`trf-holder-${i}`} value={l.account_holder} onChange={(e) => setLine(i, { account_holder: e.target.value })} className="rounded-none h-7 text-xs border border-slate-200 w-56" placeholder="Atas Nama" />
+                        <Input data-testid={`trf-bank-${i}`} value={l.bank_name} onChange={(e) => setLine(i, { bank_name: e.target.value })} className="rounded-none h-7 text-xs border border-slate-200 w-32" placeholder="Bank" />
+                        <Input data-testid={`trf-acc-${i}`} value={l.account_no} onChange={(e) => setLine(i, { account_no: e.target.value })} className="rounded-none h-7 text-xs border border-slate-200 w-36" placeholder="No. Rekening" />
+                        <Input data-testid={`trf-holder-${i}`} value={l.account_holder} onChange={(e) => setLine(i, { account_holder: e.target.value })} className="rounded-none h-7 text-xs border border-slate-200 w-44" placeholder="Atas Nama" />
                       </div>
                     </td>
                   </tr>
