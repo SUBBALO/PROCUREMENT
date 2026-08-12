@@ -335,9 +335,6 @@ async def inquiries_masterlist(
     return {"items": [_clean(d) for d in docs], "total": len(docs)}
 
 
-    return {"items": engineers}
-
-
 @router.get("/inquiries/{inq_id}")
 async def get_inquiry(inq_id: str, current: dict = Depends(get_current_user)):
     d = await db.inquiries.find_one({"id": inq_id})

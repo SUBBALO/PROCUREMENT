@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import api, { formatDateID, downloadXlsx } from "../lib/api";
-import { useAuth } from "../lib/auth";
+import { useAuth, canSeeStorePrices } from "../lib/auth";
 import { tryAutocomplete } from "../lib/autocomplete";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -19,7 +19,7 @@ const emptyRow = () => ({ item_name: "", qty: "", so_number: "", taker_name: "",
 
 export default function StoreIssuePage() {
   const { user } = useAuth();
-  const canSeePrice = user?.role === "admin" || (user?.perms || []).includes("view_store_report");
+  const canSeePrice = canSeeStorePrices(user);
 
   const [rows, setRows] = useState([emptyRow()]);
   const [stock, setStock] = useState([]);

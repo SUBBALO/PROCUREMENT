@@ -50,13 +50,13 @@ class EngineeringPhase1Tester:
                 self.log(f"PASSED - Status: {response.status_code}", "pass")
                 try:
                     return True, response.json()
-                except:
+                except Exception:
                     return True, {}
             else:
                 self.log(f"FAILED - Expected {expected_status}, got {response.status_code}", "fail")
                 try:
                     self.log(f"Response: {response.json()}", "fail")
-                except:
+                except Exception:
                     self.log(f"Response text: {response.text[:200]}", "fail")
                 return False, {}
         

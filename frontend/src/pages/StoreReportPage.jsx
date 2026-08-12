@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import api, { formatRupiah, formatDateID } from "../lib/api";
-import { useAuth } from "../lib/auth";
+import { useAuth, canSeeStorePrices } from "../lib/auth";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -60,7 +60,7 @@ const DATE_PRESETS = [
 
 export default function StoreReportPage() {
   const { user } = useAuth();
-  const canSeePrice = user?.role === "admin" || (user?.perms || []).includes("view_store_report");
+  const canSeePrice = canSeeStorePrices(user);
 
   const [tab, setTab] = useState("out"); // 'out' | 'in'
   const [filters, setFilters] = useState({ q: "", so_number: "", taker: "", start_date: "", end_date: "" });

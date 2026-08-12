@@ -43,3 +43,17 @@ export function AuthProvider({ children }) {
 }
 
 export const useAuth = () => useContext(AuthContext);
+
+// ============= Role helpers (cermin backend deps.py) =============
+// ADMIN_LIKE_ROLES = ("admin", "supervisor", "super_admin")
+export const isAdminLike = (user) =>
+  ["admin", "supervisor", "super_admin"].includes(user?.role);
+
+// Cermin backend can_see_prices(): store → tidak; finance/admin-like → ya;
+// selain itu butuh perm "view_store_report".
+export const canSeeStorePrices = (user) => {
+  if (!user) return false;
+  if (user.role === "store") return false;
+  if (user.role === "finance" || isAdminLike(user)) return true;
+  return (user.perms || []).includes("view_store_report");
+};

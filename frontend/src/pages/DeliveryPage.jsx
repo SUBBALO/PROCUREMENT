@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import api, { formatDateID, downloadXlsx } from "../lib/api";
-import { useAuth } from "../lib/auth";
+import { useAuth, isAdminLike } from "../lib/auth";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -29,7 +29,7 @@ const emptyItem = () => ({ item_name: "", qty: "", unit: "Ea", so_no: "" });
 
 export default function DeliveryPage() {
   const { user } = useAuth();
-  const canWrite = user && (user.role === "admin" || user.role === "store");
+  const canWrite = user && (isAdminLike(user) || user.role === "store");
   const [data, setData] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);

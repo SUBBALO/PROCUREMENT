@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api, { formatDateID, downloadXlsx } from "../lib/api";
-import { useAuth } from "../lib/auth";
+import { useAuth, isAdminLike } from "../lib/auth";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -29,7 +29,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export default function IncomingReportPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = isAdminLike(user);
   const [filters, setFilters] = useState({ start_date: "", end_date: today(), source: "", q: "" });
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);

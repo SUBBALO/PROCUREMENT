@@ -48,13 +48,13 @@ class TestLegacyImportSO6Digit:
                 self.log(f"✅ Passed - Status: {response.status_code}")
                 try:
                     return True, response.json()
-                except:
+                except Exception:
                     return True, {}
             else:
                 self.log(f"❌ Failed - Expected {expected_status}, got {response.status_code}")
                 try:
                     self.log(f"   Response: {response.json()}")
-                except:
+                except Exception:
                     self.log(f"   Response: {response.text[:200]}")
                 return False, {}
 
