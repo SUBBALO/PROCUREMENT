@@ -178,7 +178,7 @@ export default function TempTransactionsPage() {
 
       <div className="flex items-center gap-2 text-[11px] text-slate-500">
         <DeviceMobile size={14} weight="bold" className="text-slate-400" />
-        Upload dari HP: buka <span className="font-mono bg-slate-100 border border-slate-200 px-1.5 py-0.5 select-all">{window.location.origin}/purchasing/temp-upload</span> di browser HP (login seperti biasa).
+        Upload dari HP: buka <span className="font-mono bg-slate-100 border border-slate-200 px-1.5 py-0.5 select-all">{window.location.host}/upload</span> di browser HP (login seperti biasa).
       </div>
 
       <Card className="rounded-none border-slate-200 shadow-none overflow-visible bg-white">

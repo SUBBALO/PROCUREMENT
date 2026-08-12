@@ -158,7 +158,7 @@ function ProtectedRoute({ children, storeRoleTo = "/store/stock", blockStore = f
   }
   // Finance role can't access input/admin/store-write pages
   if (user.role === "finance") {
-    const blockedForFinance = ["/input", "/purchasing/bulk", "/purchasing/temp-upload", "/purchasing/temp-transactions", "/admin", "/store/receive", "/store/manual-receive", "/store/issue", "/store/production-issue"];
+    const blockedForFinance = ["/input", "/purchasing/bulk", "/purchasing/temp-upload", "/purchasing/temp-transactions", "/upload", "/admin", "/store/receive", "/store/manual-receive", "/store/issue", "/store/production-issue"];
     if (blockedForFinance.some((p) => location.pathname.startsWith(p))) {
       return <Navigate to="/" replace />;
     }
@@ -192,6 +192,7 @@ function AppRoutes() {
       <Route path="/input" element={<ProtectedRoute><InputTransactionPage /></ProtectedRoute>} />
       <Route path="/purchasing/bulk" element={<ProtectedRoute><BulkTransaksiPage /></ProtectedRoute>} />
       <Route path="/purchasing/temp-upload" element={<ProtectedRoute><TempUploadPage /></ProtectedRoute>} />
+      <Route path="/upload" element={<ProtectedRoute><TempUploadPage /></ProtectedRoute>} />
       <Route path="/purchasing/temp-transactions" element={<ProtectedRoute><TempTransactionsPage /></ProtectedRoute>} />
       <Route path="/transfer-request" element={<ProtectedRoute><TransferRequestPage /></ProtectedRoute>} />
       <Route path="/master" element={<ProtectedRoute><MasterListPage /></ProtectedRoute>} />
