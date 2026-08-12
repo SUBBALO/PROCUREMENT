@@ -138,10 +138,67 @@ User request: fitur hitung fisik vs sistem + penyesuaian selisih untuk audit gud
 
 ---
 
+## Phase 9: Purchasing — Transaksi Sementara (Foto Nota + AI) (Status: COMPLETED)
+User request:
+- Setiap hari ada nota belanja cash → foto dari HP → sistem auto-baca → masuk **list sementara**.
+- Tabel mirip Bulk Transaksi.
+- **Tidak boleh auto masuk sistem**: harus dicek/koreksi dulu satu per satu → baru commit.
+- Upload lewat HP via link, tapi tetap **harus login**.
+- Foto nota **tidak perlu disimpan** setelah transaksi masuk sistem (boleh dihapus).
+
+### Phase 9.1 Backend (Status: COMPLETED)
+- Router baru: `backend/routers/temp_transactions.py` didaftarkan di `backend/server.py`.
+- Storage foto: GridFS bucket `temp_tx_photos`.
+- Endpoint:
+  - `POST /temp-transactions/upload` (multipart, multi foto) → simpan foto ke GridFS + buat draft baris status `processing` lalu jalankan AI via `BackgroundTasks`.
+  - `GET /temp-transactions` → list semua baris draft (processing/ready/failed).
+  - `GET /temp-transactions/photo/{photo_id}` → streaming foto untuk pembanding saat koreksi.
+  - `PUT /temp-transactions/{tid}` → edit draft (inline correction).
+  - `POST /temp-transactions/{tid}/commit` → **masuk sistem persis Bulk Transaksi** dengan memanggil `bulk_direct_create()` dari `routers/transactions.py`; setelah commit hapus draft + hapus foto bila sudah orphan.
+  - `POST /temp-transactions/{tid}/retry` → ulangi pembacaan AI untuk draft `failed`.
+  - `DELETE /temp-transactions/{tid}` → buang draft + hapus foto jika orphan.
+- Keamanan/akses:
+  - Semua endpoint write memakai `require_write` (Purchasing/admin-like), sehingga Finance/Store/Engineering/Sales tidak bisa write.
+
+### Phase 9.2 AI / OCR Engine (Status: COMPLETED)
+- SDK: `google-genai` dipasang di backend.
+- Key: `GEMINI_API_KEY` disimpan di `backend/.env` (user punya sendiri).
+- **Penting**: key format baru (termasuk prefix `AQ.`) diperlakukan sebagai **Gemini Developer API**.
+  - Default `GEMINI_MODE=developer`.
+  - Jangan pakai `vertexai=True` untuk key ini (sebelumnya menyebabkan 403 `aiplatform.googleapis.com`).
+- Model default: `gemini-flash-latest`.
+  - Catatan: `gemini-2.5-flash` bisa menghasilkan 404 pada beberapa akun baru, sehingga default diganti ke `gemini-flash-latest`.
+- Prompt memaksa output JSON terstruktur: vendor, date, invoice_no, line_items; dan melarang memasukkan subtotal/ppn/total ke `line_items`.
+
+### Phase 9.3 Frontend (Status: COMPLETED)
+- Halaman baru:
+  - `frontend/src/pages/TempUploadPage.jsx` route `/purchasing/temp-upload`
+    - UI ramah HP: tombol besar Foto Kamera / Pilih Galeri, multi upload, preview grid, submit.
+  - `frontend/src/pages/TempTransactionsPage.jsx` route `/purchasing/temp-transactions`
+    - Tabel mirip Bulk Transaksi + kolom Foto/Status/Aksi.
+    - Edit inline dan auto-save saat blur.
+    - Polling tiap 3 detik saat ada status `processing`.
+    - Dialog foto pembanding.
+    - Commit **per baris** (dengan konfirmasi). Retry AI untuk failed. Draft failed bisa diisi manual → jadi `ready`.
+- Navigasi:
+  - Menu Purchasing ditambah item: **"Transaksi Sementara (Foto Nota)"**.
+  - Finance diblokir dari route baru lewat `blockedForFinance` di `App.js`.
+
+### Phase 9.4 Verification (Status: COMPLETED)
+- End-to-end terbukti:
+  - 1 foto nota → AI memecah menjadi beberapa baris item (contoh 3 baris) dengan vendor/tanggal/no nota/qty/harga benar.
+  - Commit 1 baris → transaksi tersimpan + stok masuk sesuai pilihan `stock_mode`.
+  - Foto otomatis terhapus setelah semua baris yang memakai foto tersebut sudah commit/discard (orphan cleanup).
+- Screenshot: halaman review + dialog foto + halaman upload (mobile).
+- Test data dibersihkan.
+
+---
+
 ## Notes / Current GitHub Safety
 - Perubahan terbaru masih **modified** dan belum di-commit/push.
 - Disarankan commit bertahap (agar jelas dan mudah rollback):
   1) `DRF validation ramah`
   2) `Store role consistency helpers (isAdminLike/canSeeStorePrices) + pemakaian di pages`
   3) `Stock history icon + Stock Opname (backend+frontend)`
+  4) `Temp Transactions (foto nota + AI) + GEMINI_MODEL default update + menu purchasing`
 - Reminder: GitHub hanya backup **kode**; untuk **data** gunakan Full Backup (tar.gz).

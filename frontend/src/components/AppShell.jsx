@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import GlobalSearch from "./GlobalSearch";
 import PdfPreviewModal from "./PdfPreviewModal";
 import {
-  ChartBar, Plus, MagnifyingGlass, SignOut, Package, ChartLineUp, ShieldStar, Warehouse, ArrowDown, ArrowUp,
+  ChartBar, Plus, MagnifyingGlass, SignOut, Package, ChartLineUp, ShieldStar, Warehouse, ArrowDown, ArrowUp, Camera,
   ClipboardText, CaretDown, ShoppingCart, Storefront, Truck, ClockCounterClockwise, Bell, HardDrives, UploadSimple,
   Lightning, LightningSlash, Rows,
 } from "@phosphor-icons/react";
@@ -71,6 +71,7 @@ function DensityToggle() {
 const PURCHASE_ITEMS = [
   { to: "/", label: "Dashboard", icon: ChartBar, testid: "nav-dashboard" },
   { to: "/input", label: "Input Transaksi", icon: Plus, testid: "nav-input" },
+  { to: "/purchasing/temp-transactions", label: "Transaksi Sementara (Foto Nota)", icon: Camera, testid: "nav-temp-tx" },
   { to: "/master", label: "Master List", icon: MagnifyingGlass, testid: "nav-master" },
   { to: "/items", label: "Master Barang", icon: Package, testid: "nav-items" },
   { to: "/kpi", label: "KPI Purchasing", icon: ChartLineUp, testid: "nav-kpi" },
