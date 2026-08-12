@@ -8,8 +8,35 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { Camera, Trash, Image as ImageIcon, ArrowsClockwise, CheckCircle, CircleNotch, WarningCircle, X, DeviceMobile } from "@phosphor-icons/react";
 
-const inputCls = "h-8 w-full border border-slate-300 focus:border-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-600 text-sm px-2 rounded-none";
+const inputCls = "h-7 w-full border border-slate-300 focus:border-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-600 text-[11px] px-1.5 rounded-none";
+const areaCls = "w-full border border-slate-300 focus:border-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-600 text-[11px] px-1.5 py-1 rounded-none resize-none leading-snug overflow-hidden";
 const UNIT_OPTIONS = ["Ea", "Pcs", "Set", "Lot", "Kg", "Ltr", "Mtr", "Box", "Roll"];
+
+// Textarea yang tingginya mengikuti isi (supaya nama barang panjang terbaca penuh)
+function AutoGrowArea({ value, onChange, onBlur, disabled, placeholder, testId, listId }) {
+  const ref = useRef(null);
+  const fit = () => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = `${Math.max(el.scrollHeight, 28)}px`;
+  };
+  useEffect(() => { fit(); }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      data-testid={testId}
+      className={areaCls}
+      value={value}
+      disabled={disabled}
+      placeholder={placeholder}
+      onChange={onChange}
+      onBlur={onBlur}
+      list={listId}
+    />
+  );
+}
 
 /** Transaksi Sementara — hasil AI baca foto nota. Tabel mirip Bulk Transaksi.
  *  Tidak ada yang auto-masuk sistem: user cek/koreksi lalu commit satu per satu. */
@@ -55,7 +82,7 @@ export default function TempTransactionsPage() {
 
   // Autocomplete sumber sama seperti Bulk Transaksi
   useEffect(() => {
-    api.get("/sales-orders").then((r) => setSos((r.data || []).map((s) => s.so_no).filter(Boolean))).catch(() => {});
+    api.get("/sales-orders").then((r) => setSos((r.data || []).filter((s) => s.so_no).map((s) => ({ so_no: s.so_no, customer: s.customer || "" })))).catch(() => {});
     api.get("/master/vendors").then((r) => setVendors(r.data || [])).catch(() => {});
     api.get("/master/items").then((r) => setItems((r.data || []).map((it) => it.item_name || it._id).filter(Boolean))).catch(() => {});
     api.get("/master/categories").then((r) => setCategories(r.data || [])).catch(() => {});
@@ -226,10 +253,10 @@ export default function TempTransactionsPage() {
 
       <Card className="rounded-none border-slate-200 shadow-none overflow-visible bg-white">
         <div className="overflow-x-auto">
-          <table className="w-full text-xs border-collapse">
+          <table className="w-full text-[11px] border-collapse table-fixed">
             <thead className="bg-slate-50 border-b border-slate-200">
-              <tr className="text-[10px] uppercase tracking-[0.05em] font-bold text-slate-500">
-                <th className="p-2 w-8 text-center">
+              <tr className="text-[9px] uppercase tracking-[0.03em] font-bold text-slate-500">
+                <th className="p-1 w-6 text-center">
                   <input
                     type="checkbox"
                     data-testid="select-all"
@@ -239,20 +266,20 @@ export default function TempTransactionsPage() {
                     title="Centang semua baris yang siap"
                   />
                 </th>
-                <th className="p-2 w-14 text-center">Foto</th>
-                <th className="p-2 text-left min-w-[110px]">Tanggal</th>
-                <th className="p-2 text-left min-w-[100px]">SO No</th>
-                <th className="p-2 text-left min-w-[90px]">PO No</th>
-                <th className="p-2 text-left min-w-[150px]">Supplier *</th>
-                <th className="p-2 text-left min-w-[200px]">Nama Barang *</th>
-                <th className="p-2 text-left min-w-[120px]">Kategori</th>
-                <th className="p-2 text-right min-w-[70px]">Qty *</th>
-                <th className="p-2 text-left min-w-[65px]">Unit</th>
-                <th className="p-2 text-right min-w-[100px]">Unit Price</th>
-                <th className="p-2 text-right min-w-[110px]">Total Price</th>
-                <th className="p-2 text-left min-w-[95px]">Invoice</th>
-                <th className="p-2 text-center min-w-[130px]">Masuk Stok?*</th>
-                <th className="p-2 text-center min-w-[150px]">Aksi</th>
+                <th className="p-1 w-8 text-center">Foto</th>
+                <th className="p-1 text-left w-[88px]">Tanggal</th>
+                <th className="p-1 text-left w-[64px]">SO No</th>
+                <th className="p-1 text-left w-[60px]">PO No</th>
+                <th className="p-1 text-left w-[130px]">Supplier *</th>
+                <th className="p-1 text-left">Nama Barang *</th>
+                <th className="p-1 text-left w-[80px]">Kategori</th>
+                <th className="p-1 text-right w-[46px]">Qty *</th>
+                <th className="p-1 text-left w-[52px]">Unit</th>
+                <th className="p-1 text-right w-[70px]">Harga</th>
+                <th className="p-1 text-right w-[76px]">Total</th>
+                <th className="p-1 text-left w-[56px]">Invoice</th>
+                <th className="p-1 text-center w-[92px]">Masuk Stok?*</th>
+                <th className="p-1 text-center w-[124px]">Aksi</th>
               </tr>
             </thead>
             <tbody data-testid="temp-rows">
@@ -297,44 +324,54 @@ export default function TempTransactionsPage() {
                       </td>
                     ) : (
                       <>
-                        <td className="p-1"><Input disabled={disabled} type="date" data-testid={`t-date-${r.id}`} className={inputCls} value={r.invoice_date || ""} onChange={(e) => setRow(r.id, { invoice_date: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} /></td>
-                        <td className="p-1"><Input disabled={disabled} list={`tso-${r.id}`} data-testid={`t-so-${r.id}`} className={inputCls} value={r.project_no || ""} onChange={(e) => setRow(r.id, { project_no: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} placeholder="—" />
-                          <datalist id={`tso-${r.id}`}>{sos.slice(0, 300).map((s) => <option key={s} value={s} />)}</datalist>
+                        <td className="p-0.5"><Input disabled={disabled} type="date" data-testid={`t-date-${r.id}`} className={`${inputCls} min-w-0`} style={{ minWidth: 0 }} value={r.invoice_date || ""} onChange={(e) => setRow(r.id, { invoice_date: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} /></td>
+                        <td className="p-0.5 align-top"><Input disabled={disabled} list={`tso-${r.id}`} data-testid={`t-so-${r.id}`} className={inputCls} value={r.project_no || ""} onChange={(e) => setRow(r.id, { project_no: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} placeholder="—" />
+                          <datalist id={`tso-${r.id}`}>{sos.slice(0, 500).map((s) => <option key={s.so_no} value={s.so_no}>{s.customer}</option>)}</datalist>
+                          {(() => {
+                            const hit = r.project_no ? sos.find((s) => s.so_no === r.project_no) : null;
+                            return hit && hit.customer ? (
+                              <div className="text-[9px] text-sky-700 leading-tight mt-0.5 truncate" title={hit.customer} data-testid={`t-so-cust-${r.id}`}>
+                                {hit.customer}
+                              </div>
+                            ) : null;
+                          })()}
                         </td>
-                        <td className="p-1"><Input disabled={disabled} data-testid={`t-po-${r.id}`} className={inputCls} value={r.po_no || ""} onChange={(e) => setRow(r.id, { po_no: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} placeholder="—" /></td>
-                        <td className="p-1"><Input disabled={disabled} list={`tvd-${r.id}`} data-testid={`t-vendor-${r.id}`} className={inputCls} value={r.vendor_name || ""} onChange={(e) => setRow(r.id, { vendor_name: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} placeholder="Nama Supplier" />
-                          <datalist id={`tvd-${r.id}`}>{vendors.slice(0, 300).map((v) => <option key={v} value={v} />)}</datalist>
+                        <td className="p-0.5"><Input disabled={disabled} data-testid={`t-po-${r.id}`} className={inputCls} value={r.po_no || ""} onChange={(e) => setRow(r.id, { po_no: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} placeholder="—" /></td>
+                        <td className="p-0.5 align-top">
+                          <AutoGrowArea disabled={disabled} testId={`t-vendor-${r.id}`} value={r.vendor_name || ""} onChange={(e) => setRow(r.id, { vendor_name: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} placeholder="Nama Supplier" />
                         </td>
-                        <td className="p-1"><Input disabled={disabled} list={`tit-${r.id}`} data-testid={`t-item-${r.id}`} className={inputCls} value={r.item_name || ""} onChange={(e) => setRow(r.id, { item_name: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} placeholder="Nama Barang" />
-                          <datalist id={`tit-${r.id}`}>{items.slice(0, 500).map((n) => <option key={n} value={n} />)}</datalist>
+                        <td className="p-0.5 align-top">
+                          <AutoGrowArea disabled={disabled} testId={`t-item-${r.id}`} value={r.item_name || ""} onChange={(e) => setRow(r.id, { item_name: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} placeholder="Nama Barang" />
                         </td>
-                        <td className="p-1"><Input disabled={disabled} list={`tcat-${r.id}`} data-testid={`t-cat-${r.id}`} className={inputCls} value={r.category || ""} onChange={(e) => setRow(r.id, { category: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} placeholder="Kategori" title="Kategori barang (tebakan AI — bisa dikoreksi)" />
+                        <td className="p-0.5"><Input disabled={disabled} list={`tcat-${r.id}`} data-testid={`t-cat-${r.id}`} className={inputCls} value={r.category || ""} onChange={(e) => setRow(r.id, { category: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} placeholder="Kategori" title="Kategori barang (tebakan AI — bisa dikoreksi)" />
                           <datalist id={`tcat-${r.id}`}>{categories.slice(0, 200).map((c) => <option key={c} value={c} />)}</datalist>
                         </td>
-                        <td className="p-1"><Input disabled={disabled} type="number" step="any" data-testid={`t-qty-${r.id}`} className={`${inputCls} text-right`} value={r.qty ?? ""} onChange={(e) => setRow(r.id, { qty: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} /></td>
-                        <td className="p-1">
-                          <select disabled={disabled} data-testid={`t-unit-${r.id}`} className={inputCls} value={r.unit || "Ea"} onChange={(e) => { setRow(r.id, { unit: e.target.value }); }} onBlur={() => saveRow(rows.find((x) => x.id === r.id))}>
+                        <td className="p-0.5"><Input disabled={disabled} type="number" step="any" data-testid={`t-qty-${r.id}`} className={`${inputCls} text-right px-1`} value={r.qty ?? ""} onChange={(e) => setRow(r.id, { qty: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} /></td>
+                        <td className="p-0.5">
+                          <select disabled={disabled} data-testid={`t-unit-${r.id}`} className={`${inputCls} px-0.5`} value={r.unit || "Ea"} onChange={(e) => { setRow(r.id, { unit: e.target.value }); }} onBlur={() => saveRow(rows.find((x) => x.id === r.id))}>
                             {UNIT_OPTIONS.map((u) => <option key={u} value={u}>{u}</option>)}
                           </select>
                         </td>
-                        <td className="p-1"><Input disabled={disabled} type="number" step="any" data-testid={`t-price-${r.id}`} className={`${inputCls} text-right`} value={r.unit_price ?? ""} onChange={(e) => setRow(r.id, { unit_price: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} /></td>
-                        <td className="p-1"><Input disabled data-testid={`t-total-${r.id}`} className={`${inputCls} text-right bg-slate-50`} value={r.total_price ? Number(r.total_price).toLocaleString("id-ID") : ""} readOnly /></td>
-                        <td className="p-1"><Input disabled={disabled} data-testid={`t-invoice-${r.id}`} className={inputCls} value={r.invoice_no || ""} onChange={(e) => setRow(r.id, { invoice_no: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} placeholder="—" /></td>
-                        <td className="p-1">
-                          <select disabled={disabled} data-testid={`t-stok-${r.id}`} className={inputCls} value={r.stock_mode || "none"} onChange={(e) => { setRow(r.id, { stock_mode: e.target.value }); }} onBlur={() => saveRow(rows.find((x) => x.id === r.id))}>
-                            <option value="none">✕ Tidak (tanpa stok & log)</option>
-                            <option value="stock">✓ Ya, Masuk Stok</option>
+                        <td className="p-0.5"><Input disabled={disabled} type="number" step="any" data-testid={`t-price-${r.id}`} className={`${inputCls} text-right px-1`} value={r.unit_price ?? ""} onChange={(e) => setRow(r.id, { unit_price: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} /></td>
+                        <td className="p-0.5 text-right tabular-nums text-[11px] text-slate-700 pr-1" data-testid={`t-total-${r.id}`} title="Total = Qty × Harga">
+                          {r.total_price ? Number(r.total_price).toLocaleString("id-ID") : "—"}
+                        </td>
+                        <td className="p-0.5"><Input disabled={disabled} data-testid={`t-invoice-${r.id}`} className={inputCls} value={r.invoice_no || ""} onChange={(e) => setRow(r.id, { invoice_no: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} placeholder="—" /></td>
+                        <td className="p-0.5">
+                          <select disabled={disabled} data-testid={`t-stok-${r.id}`} className={`${inputCls} px-0.5`} value={r.stock_mode || "none"} onChange={(e) => { setRow(r.id, { stock_mode: e.target.value }); }} onBlur={() => saveRow(rows.find((x) => x.id === r.id))}>
+                            <option value="none">✕ Tidak</option>
+                            <option value="stock">✓ Masuk Stok</option>
                             <option value="log">✎ Log Only</option>
                           </select>
                         </td>
                       </>
                     )}
-                    <td className="p-1 text-center whitespace-nowrap">
+                    <td className="p-0.5 text-center whitespace-nowrap">
                       {isFail && (
                         <div className="text-left px-1">
-                          <div className="text-[10px] text-red-700 max-w-[140px] leading-tight mb-1" title={r.error}>
+                          <div className="text-[10px] text-red-700 max-w-[100px] leading-tight mb-1" title={r.error}>
                             <WarningCircle size={11} weight="fill" className="inline mr-0.5" />
-                            {(r.error || "Gagal dibaca").slice(0, 60)}...
+                            {(r.error || "Gagal dibaca").slice(0, 40)}...
                           </div>
                           <button data-testid={`retry-${r.id}`} onClick={() => retry(r)} className="text-[10px] uppercase font-bold text-sky-700 hover:underline mr-2">
                             <ArrowsClockwise size={11} weight="bold" className="inline mr-0.5" />Ulangi AI
@@ -342,19 +379,19 @@ export default function TempTransactionsPage() {
                         </div>
                       )}
                       {!isProc && (
-                        <div className="inline-flex items-center gap-1">
+                        <div className="inline-flex items-center gap-0.5">
                           {!isFail && (
                             <Button
                               data-testid={`commit-${r.id}`}
                               onClick={() => commit(r)}
                               disabled={disabled || !rowValid(r)}
-                              className="rounded-none h-7 px-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] uppercase tracking-[0.05em] font-bold"
+                              className="rounded-none h-7 px-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] uppercase tracking-[0.03em] font-bold"
                               title={rowValid(r) ? "Masukkan baris ini ke sistem" : "Lengkapi Supplier, Barang, Qty dulu"}
                             >
-                              {busyId === r.id ? "..." : <><CheckCircle size={12} weight="bold" className="mr-1" />Masuk Sistem</>}
+                              {busyId === r.id ? "..." : <><CheckCircle size={11} weight="bold" className="mr-0.5" />Masuk</>}
                             </Button>
                           )}
-                          <button data-testid={`discard-${r.id}`} onClick={() => discard(r)} className="p-1.5 hover:bg-red-100 text-red-600" title="Buang draft ini">
+                          <button data-testid={`discard-${r.id}`} onClick={() => discard(r)} className="p-1 hover:bg-red-100 text-red-600" title="Buang draft ini">
                             <Trash size={13} weight="bold" />
                           </button>
                         </div>
