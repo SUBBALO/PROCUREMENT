@@ -17,6 +17,7 @@ import StoragePage from "./pages/StoragePage";
 import StoreReceivePage from "./pages/StoreReceivePage";
 import StoreIssuePage from "./pages/StoreIssuePage";
 import StoreStockPage from "./pages/StoreStockPage";
+import StockOpnamePage from "./pages/StockOpnamePage";
 import StockHistoryPrintPage from "./pages/StockHistoryPrintPage";
 import StoreReportPage from "./pages/StoreReportPage";
 import StoreManualReceivePage from "./pages/StoreManualReceivePage";
@@ -198,6 +199,7 @@ function AppRoutes() {
       <Route path="/store/receive" element={<ProtectedRoute><StoreReceivePage /></ProtectedRoute>} />
       <Route path="/store/issue" element={<ProtectedRoute><StoreIssuePage /></ProtectedRoute>} />
       <Route path="/store/stock" element={<ProtectedRoute><StoreStockPage /></ProtectedRoute>} />
+      <Route path="/store/opname" element={<ProtectedRoute><StockOpnamePage /></ProtectedRoute>} />
       <Route path="/store/stock/history/print" element={<ProtectedRoute><StockHistoryPrintPage /></ProtectedRoute>} />
       <Route path="/store/report" element={<ProtectedRoute blockStore={true}><StoreReportPage /></ProtectedRoute>} />
       <Route path="/store/manual-receive" element={<ProtectedRoute><StoreManualReceivePage /></ProtectedRoute>} />

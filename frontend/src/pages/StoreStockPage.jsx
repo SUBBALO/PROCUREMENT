@@ -5,7 +5,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../components/ui/dialog";
-import { MagnifyingGlass, Package, Warning, Bell, Gear, Trash, X, DownloadSimple } from "@phosphor-icons/react";
+import { MagnifyingGlass, Package, Warning, Bell, Gear, Trash, X, DownloadSimple, ClockCounterClockwise } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { useAuth } from "../lib/auth";
 import BackLink from "../components/BackLink";
@@ -239,9 +239,9 @@ export default function StoreStockPage() {
               </tr>
             </thead>
             <tbody data-testid="stock-table">
-              {loading && (<tr><td colSpan={canEditMin ? 7 : 6} className="p-6 text-center text-slate-400">Memuat...</td></tr>)}
+              {loading && (<tr><td colSpan={7} className="p-6 text-center text-slate-400">Memuat...</td></tr>)}
               {!loading && filtered.length === 0 && (
-                <tr><td colSpan={canEditMin ? 7 : 6} className="p-8 text-center text-slate-400">
+                <tr><td colSpan={7} className="p-8 text-center text-slate-400">
                   <Package size={24} weight="duotone" className="inline-block mr-2 text-slate-300" />
                   Belum ada stok.
                 </td></tr>
@@ -274,36 +274,46 @@ export default function StoreStockPage() {
                   <td className="p-3 text-right tabular-nums text-xs text-slate-500">
                     {s.min_qty != null ? `${Number(s.min_qty).toLocaleString("id-ID")} ${s.unit || ""}` : <span className="text-slate-300">-</span>}
                   </td>
-                  {canEditMin && (
-                    <td className="p-3 text-center">
-                      <div className="inline-flex gap-1">
-                        <button
-                          data-testid={`edit-min-${s.item_name.replace(/\s+/g, "-")}`}
-                          onClick={() => setEditItem({
-                            item_name: s.item_name,
-                            unit: s.unit || "",
-                            min_qty: s.min_qty ?? "",
-                            note: s.rp_note || "",
-                            rp_id: s.rp_id,
-                          })}
-                          className="p-1.5 hover:bg-amber-100 text-amber-700"
-                          title="Set/Ubah batas minimum"
-                        >
-                          <Gear size={13} weight="bold" />
-                        </button>
-                        {s.rp_id && (
+                  <td className="p-3 text-center">
+                    <div className="inline-flex gap-1">
+                      <button
+                        data-testid={`history-btn-${s.item_name.replace(/\s+/g, "-")}`}
+                        onClick={() => setHistoryItem({ item_name: s.item_name, is_customer_material: s.is_customer_material, unit: s.unit })}
+                        className="p-1.5 hover:bg-sky-100 text-sky-700"
+                        title="Riwayat In/Out barang ini (kartu stok)"
+                      >
+                        <ClockCounterClockwise size={13} weight="bold" />
+                      </button>
+                      {canEditMin && (
+                        <>
                           <button
-                            data-testid={`del-min-${s.item_name.replace(/\s+/g, "-")}`}
-                            onClick={() => deleteReorderPoint(s.rp_id, s.item_name)}
-                            className="p-1.5 hover:bg-red-100 text-red-600"
-                            title="Hapus batas minimum"
+                            data-testid={`edit-min-${s.item_name.replace(/\s+/g, "-")}`}
+                            onClick={() => setEditItem({
+                              item_name: s.item_name,
+                              unit: s.unit || "",
+                              min_qty: s.min_qty ?? "",
+                              note: s.rp_note || "",
+                              rp_id: s.rp_id,
+                            })}
+                            className="p-1.5 hover:bg-amber-100 text-amber-700"
+                            title="Set/Ubah batas minimum"
                           >
-                            <Trash size={13} weight="bold" />
+                            <Gear size={13} weight="bold" />
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  )}
+                          {s.rp_id && (
+                            <button
+                              data-testid={`del-min-${s.item_name.replace(/\s+/g, "-")}`}
+                              onClick={() => deleteReorderPoint(s.rp_id, s.item_name)}
+                              className="p-1.5 hover:bg-red-100 text-red-600"
+                              title="Hapus batas minimum"
+                            >
+                              <Trash size={13} weight="bold" />
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </td>
                 </tr>
                 );
               })}
@@ -311,9 +321,9 @@ export default function StoreStockPage() {
             {filtered.length > 0 && (
               <tfoot>
                 <tr className="border-t-2 border-slate-900 bg-slate-50">
-                  <td colSpan={canEditMin ? 4 : 4} className="p-3 text-right text-xs uppercase tracking-[0.1em] font-bold text-slate-600">Total</td>
+                  <td colSpan={4} className="p-3 text-right text-xs uppercase tracking-[0.1em] font-bold text-slate-600">Total</td>
                   <td className="p-3 text-right tabular-nums font-bold text-slate-900">{totalQty.toLocaleString("id-ID")}</td>
-                  <td colSpan={canEditMin ? 2 : 1}></td>
+                  <td colSpan={2}></td>
                 </tr>
               </tfoot>
             )}

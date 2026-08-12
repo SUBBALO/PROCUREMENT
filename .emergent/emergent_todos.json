@@ -1,38 +1,30 @@
 [
   {
-    "content": "Phase 6.1: Backend production router (GET new-so, POST ack/unack)",
+    "content": "Backend: buat router stock_opname.py (create/list/detail/update lines/finalize/delete)",
     "status": "completed"
   },
   {
-    "content": "Phase 6.1: Register production router in server.py",
+    "content": "Backend: register router di server.py + restart + syntax check",
     "status": "completed"
   },
   {
-    "content": "Phase 6.1: Add 'SO Baru' notification category for production",
+    "content": "Frontend: StockOpnamePage.jsx (list sesi + detail hitung + finalize double-confirm)",
     "status": "completed"
   },
   {
-    "content": "Phase 6.1: Frontend ProductionNewSoPage + portal card + route",
+    "content": "Frontend: route /store/opname di App.js + card di StorePortalPage",
     "status": "completed"
   },
   {
-    "content": "Phase 6.1: Test (curl new-so/ack + screenshot page)",
+    "content": "Frontend: tombol ikon Riwayat di kolom Aksi StoreStockPage",
     "status": "completed"
   },
   {
-    "content": "Phase 6.2: Work Order/SPK auto from stamped drawing + BOM",
-    "status": "pending"
+    "content": "Test backend via curl: create->count->finalize->cek receipts/issuances/history",
+    "status": "completed"
   },
   {
-    "content": "Phase 6.3: Production tracking (simple status; detail pending user)",
-    "status": "pending"
-  },
-  {
-    "content": "Phase 6.4: QC Final + dimension report upload",
-    "status": "pending"
-  },
-  {
-    "content": "Phase 6.5: Store Gate Pass + DO (Surat Jalan) after QC OK",
-    "status": "pending"
+    "content": "Screenshot verifikasi UI opname + kompilasi bersih",
+    "status": "completed"
   }
 ]

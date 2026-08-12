@@ -40,6 +40,12 @@ export default function StorePortalPage() {
       accent: "from-fuchsia-500 via-purple-500 to-violet-500", accentText: "text-fuchsia-400",
     },
     {
+      key: "stock-opname", label: "Stock Opname", stats: "Audit Gudang",
+      description: "Hitung fisik vs sistem, finalisasi otomatis membuat penyesuaian selisih stok.",
+      icon: ChartBar, href: "/store/opname",
+      accent: "from-indigo-500 via-blue-500 to-sky-500", accentText: "text-indigo-400",
+    },
+    {
       key: "consumable", label: "Consumable Good Request", stats: "Store Request",
       description: "Store minta consumable, Purchasing tandai saat sudah dibeli — item ter-link ke pembelian.",
       icon: ClipboardText, href: "/store/consumable-requests",
@@ -47,5 +53,5 @@ export default function StorePortalPage() {
     },
   ];
 
-  return <DeptPortal deptLabel="Store Department" deptTagline="Stock · Incoming Goods · Keluar · Pengiriman · Costing · Consumable" accentColor="emerald" cards={CARDS} />;
+  return <DeptPortal deptLabel="Store Department" deptTagline="Stock · Incoming Goods · Keluar · Pengiriman · Costing · Opname · Consumable" accentColor="emerald" cards={CARDS} />;
 }
