@@ -226,6 +226,7 @@ body.density-compact main table thead th {
   top: 0;
   z-index: 5;
   background-color: #f1f5f9;
+  color: #0f172a; /* teks header tabel HITAM agar jelas terbaca */
 }
 
 /* ============================================================

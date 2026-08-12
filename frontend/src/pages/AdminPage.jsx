@@ -966,6 +966,25 @@ function BackupTab() {
   const [keepUsers, setKeepUsers] = useState(true);
   const [wipeConfirmOpen, setWipeConfirmOpen] = useState(false);
   const [wiping, setWiping] = useState(false);
+  // Wipe terpilih (per modul) + preview jumlah data
+  const [wipeMode, setWipeMode] = useState("full");   // 'full' | 'selective'
+  const [wipeModules, setWipeModules] = useState([]);  // list module keys
+  const [wipePreview, setWipePreview] = useState(null);
+
+  const loadWipePreview = useCallback(async () => {
+    try {
+      const { data } = await api.get("/admin/backup/wipe-preview");
+      setWipePreview(data);
+    } catch { /* silent */ }
+  }, []);
+  useEffect(() => { loadWipePreview(); }, [loadWipePreview]);
+
+  const toggleWipeModule = (key) => {
+    setWipeModules((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
+  };
+  const selectedWipeCount = (wipePreview?.modules || [])
+    .filter((m) => wipeModules.includes(m.key))
+    .reduce((a, m) => a + m.count, 0);
 
   // Versi / build info
   const [version, setVersion] = useState(null);
@@ -1073,12 +1092,15 @@ function BackupTab() {
 
   const doWipe = async () => {
     if (wipePhrase !== "WIPE-ALL-DATA") return toast.error("Ketik 'WIPE-ALL-DATA' persis untuk melanjutkan");
+    if (wipeMode === "selective" && wipeModules.length === 0) return toast.error("Pilih minimal 1 modul untuk di-wipe");
     setWiping(true);
     try {
-      const { data } = await api.post("/admin/backup/wipe", { confirm_phrase: wipePhrase, keep_users: keepUsers });
-      toast.success(`Database di-reset — ${data.total_deleted} dokumen dihapus`);
-      setWipePhrase(""); setWipeConfirmOpen(false);
-      loadSummary();
+      const body = { confirm_phrase: wipePhrase, keep_users: keepUsers };
+      if (wipeMode === "selective") body.modules = wipeModules;
+      const { data } = await api.post("/admin/backup/wipe", body);
+      toast.success(`Wipe ${data.mode === "selective" ? "terpilih" : "penuh"} selesai — ${data.total_deleted} dokumen dihapus`);
+      setWipePhrase(""); setWipeConfirmOpen(false); setWipeModules([]);
+      loadSummary(); loadWipePreview();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal reset");
     } finally { setWiping(false); }
@@ -1259,44 +1281,99 @@ function BackupTab() {
       <Card className="rounded-none border-red-300 bg-red-50 p-4">
         <div className="flex items-start gap-3">
           <div className="p-2 border border-red-400 bg-white text-red-700 rounded-none"><Warning size={20} weight="fill" /></div>
-          <div className="flex-1 space-y-2">
-            <div className="text-sm font-bold text-red-900">DANGER ZONE — Reset Database Fresh</div>
+          <div className="flex-1 space-y-3">
+            <div className="text-sm font-bold text-red-900">DANGER ZONE — Reset / Wipe Data</div>
             <div className="text-xs text-red-800">
-              Hapus <b>seluruh data bisnis</b>: Transaksi PO, Sales Order, Store Receipt/Issue/Request, Delivery, BOM, Inquiry, Quotation, Customer, Counters &amp; Activity Logs.
-              Data <b>User</b> tetap dipertahankan agar Anda dan tim bisa login. <b>Aksi ini tidak bisa di-undo.</b> Selalu Export Backup dulu.
+              Hapus data bisnis. <b>User, TTD, TRF, Bank Vendor, &amp; Template</b> selalu dipertahankan. <b>Tidak bisa di-undo</b> — Export Backup dulu.
             </div>
+
+            {/* Mode: Full vs Terpilih */}
+            <div className="inline-flex border border-red-300 rounded-none overflow-hidden" data-testid="wipe-mode">
+              <button type="button" onClick={() => setWipeMode("full")}
+                className={`px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-bold ${wipeMode === "full" ? "bg-red-600 text-white" : "bg-white text-red-700 hover:bg-red-50"}`}
+                data-testid="wipe-mode-full">Wipe Semua</button>
+              <button type="button" onClick={() => setWipeMode("selective")}
+                className={`px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-bold border-l border-red-300 ${wipeMode === "selective" ? "bg-red-600 text-white" : "bg-white text-red-700 hover:bg-red-50"}`}
+                data-testid="wipe-mode-selective">Pilih Modul</button>
+            </div>
+
+            {/* Daftar modul (mode terpilih) */}
+            {wipeMode === "selective" && (
+              <div className="border border-red-200 bg-white p-2" data-testid="wipe-modules">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-red-800">Centang modul yang akan dihapus</span>
+                  <div className="flex gap-2">
+                    <button type="button" className="text-[10px] font-bold uppercase text-red-700 underline" onClick={() => setWipeModules((wipePreview?.modules || []).map((m) => m.key))} data-testid="wipe-select-all">Pilih semua</button>
+                    <button type="button" className="text-[10px] font-bold uppercase text-slate-500 underline" onClick={() => setWipeModules([])} data-testid="wipe-clear-all">Kosongkan</button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
+                  {(wipePreview?.modules || []).map((m) => (
+                    <label key={m.key} className={`flex items-center justify-between gap-2 px-2 py-1 border cursor-pointer ${wipeModules.includes(m.key) ? "border-red-400 bg-red-50" : "border-slate-200 bg-white hover:bg-slate-50"}`} data-testid={`wipe-mod-${m.key}`}>
+                      <span className="flex items-center gap-2 min-w-0">
+                        <input type="checkbox" checked={wipeModules.includes(m.key)} onChange={() => toggleWipeModule(m.key)} className="w-3.5 h-3.5 accent-red-600" />
+                        <span className="text-[11px] text-slate-800 truncate">{m.label}</span>
+                      </span>
+                      <span className="text-[11px] font-bold tabular-nums text-slate-500 shrink-0">{m.count.toLocaleString("id-ID")}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-1.5 text-[11px] text-red-800">Terpilih: <b className="tabular-nums">{selectedWipeCount.toLocaleString("id-ID")}</b> dokumen akan dihapus</div>
+              </div>
+            )}
+
             <div className="grid md:grid-cols-[1fr_auto] gap-2 items-end">
               <div>
                 <Label className="text-[11px] font-semibold text-red-900 mb-1 block">Ketik <span className="font-mono">WIPE-ALL-DATA</span> untuk konfirmasi</Label>
                 <Input data-testid="backup-wipe-phrase" value={wipePhrase} onChange={(e) => setWipePhrase(e.target.value)} className="h-9 rounded-none border-red-300 focus:ring-2 focus:ring-red-600 text-sm" placeholder="WIPE-ALL-DATA" />
               </div>
-              <label className="flex items-center gap-2 text-xs text-red-900 pb-1 cursor-pointer">
-                <input data-testid="backup-wipe-keep-users" type="checkbox" checked={keepUsers} onChange={(e) => setKeepUsers(e.target.checked)} className="w-4 h-4" />
-                Pertahankan Users
-              </label>
+              {wipeMode === "full" && (
+                <label className="flex items-center gap-2 text-xs text-red-900 pb-1 cursor-pointer">
+                  <input data-testid="backup-wipe-keep-users" type="checkbox" checked={keepUsers} onChange={(e) => setKeepUsers(e.target.checked)} className="w-4 h-4" />
+                  Pertahankan Users
+                </label>
+              )}
             </div>
             <Button
               data-testid="backup-wipe-btn"
               onClick={() => setWipeConfirmOpen(true)}
-              disabled={wipePhrase !== "WIPE-ALL-DATA"}
+              disabled={wipePhrase !== "WIPE-ALL-DATA" || (wipeMode === "selective" && wipeModules.length === 0)}
               className="rounded-none bg-red-600 hover:bg-red-700 text-white text-xs uppercase tracking-[0.1em]"
             >
-              <Trash size={13} weight="bold" className="mr-1" /> Reset Database Sekarang
+              <Trash size={13} weight="bold" className="mr-1" /> {wipeMode === "selective" ? "Wipe Modul Terpilih" : "Reset Semua Data"}
             </Button>
           </div>
         </div>
       </Card>
 
-      {/* Final confirmation dialog */}
+      {/* Final confirmation dialog — dengan ringkasan jumlah data */}
       <Dialog open={wipeConfirmOpen} onOpenChange={setWipeConfirmOpen}>
         <DialogContent className="rounded-none max-w-md border-red-400 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-red-700 flex items-center gap-2"><Warning size={20} weight="fill" /> Konfirmasi Reset Database</DialogTitle>
-            <DialogDescription>
-              Anda akan menghapus <b>seluruh data bisnis</b> ({summary?.total_documents?.toLocaleString("id-ID")} dokumen).
-              {keepUsers ? " Data User (login) akan dipertahankan." : " Termasuk semua user kecuali akun Anda sendiri."}
-              <br /><br />
-              Aksi ini <b className="text-red-700">TIDAK BISA di-undo</b>. Pastikan sudah Export Backup.
+            <DialogTitle className="text-red-700 flex items-center gap-2"><Warning size={20} weight="fill" /> Konfirmasi Wipe Data</DialogTitle>
+            <DialogDescription asChild>
+              <div className="text-slate-600">
+                {wipeMode === "selective" ? (
+                  <>
+                    Anda akan menghapus <b className="text-red-700 tabular-nums">{selectedWipeCount.toLocaleString("id-ID")}</b> dokumen dari modul berikut:
+                    <ul className="mt-2 mb-2 border border-slate-200 divide-y divide-slate-100">
+                      {(wipePreview?.modules || []).filter((m) => wipeModules.includes(m.key)).map((m) => (
+                        <li key={m.key} className="flex items-center justify-between px-2 py-1 text-[12px]">
+                          <span className="text-slate-700">{m.label}</span>
+                          <b className="tabular-nums text-red-700">{m.count.toLocaleString("id-ID")}</b>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <>
+                    Anda akan menghapus <b className="text-red-700 tabular-nums">{wipePreview?.grand_total?.toLocaleString("id-ID")}</b> dokumen (<b>seluruh data bisnis</b>).
+                    {keepUsers ? " User (login) dipertahankan." : " Termasuk semua user kecuali akun Anda."}
+                  </>
+                )}
+                <div className="mt-1">Selalu dipertahankan: <b>User, TTD, TRF, Bank Vendor, Template</b>.</div>
+                <div className="mt-2">Aksi ini <b className="text-red-700">TIDAK BISA di-undo</b>. Pastikan sudah Export Backup.</div>
+              </div>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

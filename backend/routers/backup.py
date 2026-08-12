@@ -13,7 +13,7 @@ import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
@@ -136,6 +136,57 @@ PRESERVE_ON_WIPE = {
     "transfer_requests", "vendor_banks",
     "form_templates", "excel_form_templates",
     "car_templates", "car_templates.files", "car_templates.chunks",
+}
+
+# Grup modul untuk WIPE TERPILIH. Tiap modul memetakan ke daftar collection
+# (termasuk lampiran GridFS .files/.chunks) yang akan dihapus bila modul dipilih.
+WIPE_MODULES = {
+    "sales": {
+        "label": "Sales (SO, Quotation, Inquiry)",
+        "collections": ["sales_orders", "quotations", "inquiries", "inquiry_files.files", "inquiry_files.chunks"],
+    },
+    "engineering": {
+        "label": "Engineering (Drawing, DRF, ECN, Controlled Docs)",
+        "collections": [
+            "drawings", "drawings.files", "drawings.chunks",
+            "drawing_requests", "drawing_requests.files", "drawing_requests.chunks",
+            "ecns", "ecn_register",
+            "controlled_docs.files", "controlled_docs.chunks", "controlled_documents",
+            "revision_files.files", "revision_files.chunks",
+        ],
+    },
+    "bom": {
+        "label": "BOM",
+        "collections": ["boms", "bom_attachments", "bom_attachments.files", "bom_attachments.chunks", "bom_reopen_requests"],
+    },
+    "purchasing": {
+        "label": "Purchasing (Transaksi PO)",
+        "collections": ["transactions"],
+    },
+    "store": {
+        "label": "Store & Delivery",
+        "collections": ["store_receipts", "store_issuances", "store_requests", "deliveries"],
+    },
+    "qc": {
+        "label": "QC / Nonconformance",
+        "collections": ["nonconformances", "nc_attachments", "nc_attachments.files", "nc_attachments.chunks"],
+    },
+    "customers": {
+        "label": "Customers",
+        "collections": ["customers"],
+    },
+    "counters": {
+        "label": "Counters (nomor urut dokumen)",
+        "collections": ["counters"],
+    },
+    "logs": {
+        "label": "Activity & Login Logs",
+        "collections": ["activity_logs", "login_attempts"],
+    },
+    "misc": {
+        "label": "File lain-lain (fs)",
+        "collections": ["fs.files", "fs.chunks"],
+    },
 }
 
 
@@ -435,17 +486,38 @@ async def import_backup(
 # WIPE / RESET
 # =============================================================================
 class WipeRequest(BaseModel):
-    confirm_phrase: str          # must equal "WIPE-ALL-DATA"
-    keep_users: bool = True      # default: users tetap ada (agar admin bisa login)
+    confirm_phrase: str                      # must equal "WIPE-ALL-DATA"
+    keep_users: bool = True                  # default: users tetap ada (agar admin bisa login)
+    modules: Optional[List[str]] = None      # None/[] = full wipe; else hanya modul terpilih
+
+
+@router.get("/wipe-preview")
+async def wipe_preview(current: dict = Depends(require_super_admin)):
+    """Ringkasan jumlah dokumen per MODUL yang akan terhapus (untuk konfirmasi ganda).
+    Menghitung dokumen (mengabaikan .chunks GridFS). Hanya Super Admin."""
+    modules = []
+    grand_total = 0
+    for key, mod in WIPE_MODULES.items():
+        count = 0
+        for coll in mod["collections"]:
+            if coll.endswith(".chunks"):
+                continue
+            try:
+                count += await db[coll].count_documents({})
+            except Exception:
+                pass
+        modules.append({"key": key, "label": mod["label"], "count": count})
+        grand_total += count
+    return {"modules": modules, "grand_total": grand_total}
 
 
 @router.post("/wipe")
 async def wipe_database(payload: WipeRequest, current: dict = Depends(require_super_admin)):
-    """DANGER — Hapus SEMUA data bisnis di semua collection (transaksi, SO, Store,
-    BOM, Inquiry, Quotation, Customer, Drawing, Drawing Request/DRF, ECN, Engineering,
-    Nonconformance, Delivery, counters, activity_logs, dan lampiran file terkait).
+    """DANGER — Hapus data bisnis. Dua mode:
+      • FULL (modules kosong): hapus SEMUA collection kecuali yang dipertahankan.
+      • TERPILIH (modules diisi): hapus hanya collection dari modul yang dipilih.
 
-    TETAP DIPERTAHANKAN: users + signatures (login & TTD), transfer_requests +
+    SELALU DIPERTAHANKAN: users + signatures (login & TTD), transfer_requests +
     vendor_banks (TRF live), dan template form (MII/quotation/CAR).
 
     Hanya Super Admin (susanto). Harus konfirmasi phrase 'WIPE-ALL-DATA'.
@@ -458,14 +530,33 @@ async def wipe_database(payload: WipeRequest, current: dict = Depends(require_su
 
     stats: Dict[str, int] = {}
     names = await db.list_collection_names()
+
+    if payload.modules:
+        # ---- WIPE TERPILIH ----
+        target = set()
+        for m in payload.modules:
+            mod = WIPE_MODULES.get(m)
+            if mod:
+                target.update(mod["collections"])
+        target -= PRESERVE_ON_WIPE  # jaga-jaga
+        for coll in names:
+            if coll in target:
+                res = await db[coll].delete_many({})
+                if res.deleted_count:
+                    stats[coll] = res.deleted_count
+        await log_action(current, "wipe_database_selective", "backup", "-",
+                         {"modules": payload.modules, "stats": stats})
+        return {"success": True, "mode": "selective", "modules": payload.modules,
+                "total_deleted": sum(stats.values()), "collections": stats}
+
+    # ---- WIPE FULL ----
     for coll in names:
         if coll in PRESERVE_ON_WIPE:
-            continue  # dipertahankan (users, signatures, TRF, vendor_banks, templates)
+            continue
         res = await db[coll].delete_many({})
         if res.deleted_count:
             stats[coll] = res.deleted_count
 
-    # Opsional: bersihkan users selain super admin (signatures tetap dipertahankan)
     if not payload.keep_users:
         me_username = (current.get("username") or "").lower().strip()
         res = await db.users.delete_many({"username": {"$ne": me_username}})
@@ -473,5 +564,4 @@ async def wipe_database(payload: WipeRequest, current: dict = Depends(require_su
             stats["users"] = res.deleted_count
 
     await log_action(current, "wipe_database", "backup", "-", {"stats": stats, "keep_users": payload.keep_users})
-    total = sum(stats.values())
-    return {"success": True, "total_deleted": total, "collections": stats}
+    return {"success": True, "mode": "full", "total_deleted": sum(stats.values()), "collections": stats}
