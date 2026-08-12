@@ -115,18 +115,28 @@ async def get_version(_: dict = Depends(require_admin)):
 
 # Collections that are safe to snapshot/restore
 BACKUP_COLLECTIONS = [
-    "users", "transactions", "sales_orders", "store_receipts", "store_issuances",
-    "store_requests", "deliveries", "boms", "inquiries", "quotations", "counters",
-    "activity_logs",
-]
-
-# Collections wiped during "reset database" — excludes users (kept so admins can still login)
-WIPE_COLLECTIONS = [
-    "transactions", "sales_orders", "store_receipts", "store_issuances",
-    "store_requests", "deliveries", "boms", "inquiries", "quotations",
-    "customers",
+    "users", "customers", "inquiries", "quotations",
+    "sales_orders", "transactions",
+    "boms", "bom_reopen_requests",
+    "drawings", "drawing_requests", "ecns", "ecn_register",
+    "controlled_documents", "form_templates", "excel_form_templates",
+    "nonconformances",
+    "store_receipts", "store_issuances", "store_requests", "deliveries",
+    "transfer_requests", "vendor_banks",
     "counters", "activity_logs",
 ]
+
+# Koleksi yang TIDAK PERNAH ikut terhapus saat WIPE:
+#  - users + signatures (agar admin bisa login & TTD tetap ada)
+#  - transfer_requests + vendor_banks (TRF operasional/live)
+#  - template konfigurasi form (MII, quotation excel, CAR)
+PRESERVE_ON_WIPE = {
+    "users",
+    "signatures.files", "signatures.chunks",
+    "transfer_requests", "vendor_banks",
+    "form_templates", "excel_form_templates",
+    "car_templates", "car_templates.files", "car_templates.chunks",
+}
 
 
 def _serialize(v):
@@ -347,10 +357,14 @@ async def full_restore(
 
 @router.get("/summary")
 async def backup_summary(current: dict = Depends(require_admin)):
-    """Quick summary — doc counts per collection, for the Admin UI."""
+    """Ringkasan — jumlah dokumen per collection (SEMUA collection, dinamis),
+    agar tidak ada data yang tersembunyi. Koleksi internal GridFS (.chunks) disembunyikan."""
     counts = {}
     total = 0
-    for coll in BACKUP_COLLECTIONS:
+    names = await db.list_collection_names()
+    for coll in sorted(names):
+        if coll.endswith(".chunks"):
+            continue  # binary internal GridFS, sembunyikan dari ringkasan
         n = await db[coll].count_documents({})
         counts[coll] = n
         total += n
@@ -427,10 +441,14 @@ class WipeRequest(BaseModel):
 
 @router.post("/wipe")
 async def wipe_database(payload: WipeRequest, current: dict = Depends(require_super_admin)):
-    """DANGER — Hapus semua data bisnis (transaksi, SO, Store, BOM, Inquiry, Quotation,
-    Customer, counters, activity_logs). User tetap dipertahankan agar login masih bisa.
+    """DANGER — Hapus SEMUA data bisnis di semua collection (transaksi, SO, Store,
+    BOM, Inquiry, Quotation, Customer, Drawing, Drawing Request/DRF, ECN, Engineering,
+    Nonconformance, Delivery, counters, activity_logs, dan lampiran file terkait).
 
-    Hanya Super Admin (susanto) yang bisa. Harus konfirmasi phrase 'WIPE-ALL-DATA'.
+    TETAP DIPERTAHANKAN: users + signatures (login & TTD), transfer_requests +
+    vendor_banks (TRF live), dan template form (MII/quotation/CAR).
+
+    Hanya Super Admin (susanto). Harus konfirmasi phrase 'WIPE-ALL-DATA'.
     """
     if payload.confirm_phrase != "WIPE-ALL-DATA":
         raise HTTPException(
@@ -439,19 +457,20 @@ async def wipe_database(payload: WipeRequest, current: dict = Depends(require_su
         )
 
     stats: Dict[str, int] = {}
-    # Proteksi: koleksi Transfer Request TIDAK PERNAH ikut terhapus (dipakai operasional walau ERP masih testing)
-    PROTECTED = {"transfer_requests", "vendor_banks", "users"}
-    for coll in WIPE_COLLECTIONS:
-        if coll in PROTECTED:
-            continue
+    names = await db.list_collection_names()
+    for coll in names:
+        if coll in PRESERVE_ON_WIPE:
+            continue  # dipertahankan (users, signatures, TRF, vendor_banks, templates)
         res = await db[coll].delete_many({})
-        stats[coll] = res.deleted_count
+        if res.deleted_count:
+            stats[coll] = res.deleted_count
 
-    # Optional: bersihkan users selain super admin
+    # Opsional: bersihkan users selain super admin (signatures tetap dipertahankan)
     if not payload.keep_users:
         me_username = (current.get("username") or "").lower().strip()
         res = await db.users.delete_many({"username": {"$ne": me_username}})
-        stats["users"] = res.deleted_count
+        if res.deleted_count:
+            stats["users"] = res.deleted_count
 
     await log_action(current, "wipe_database", "backup", "-", {"stats": stats, "keep_users": payload.keep_users})
     total = sum(stats.values())
