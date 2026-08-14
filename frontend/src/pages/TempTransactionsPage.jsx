@@ -6,7 +6,7 @@ import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { Camera, Trash, Image as ImageIcon, ArrowsClockwise, CheckCircle, CircleNotch, WarningCircle, X, DeviceMobile } from "@phosphor-icons/react";
+import { Camera, Trash, Image as ImageIcon, ArrowsClockwise, CheckCircle, CircleNotch, WarningCircle, X, DeviceMobile, FileXls } from "@phosphor-icons/react";
 
 const inputCls = "h-7 w-full border border-slate-300 focus:border-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-600 text-[11px] px-1.5 rounded-none";
 const areaCls = "w-full border border-slate-300 focus:border-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-600 text-[11px] px-1.5 py-1 rounded-none resize-none leading-snug overflow-hidden";
@@ -179,6 +179,21 @@ export default function TempTransactionsPage() {
     }
   };
 
+  const exportExcel = async () => {
+    try {
+      const res = await api.get("/temp-transactions/export/xlsx", { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `transaksi_sementara_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Excel terunduh");
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal export Excel");
+    }
+  };
+
   const readyCount = useMemo(() => rows.filter((r) => r.status === "ready").length, [rows]);
 
   // ---- Pilih banyak & commit sekaligus ----
@@ -228,6 +243,9 @@ export default function TempTransactionsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button data-testid="export-xlsx-btn" onClick={exportExcel} disabled={rows.length === 0} variant="outline" className="rounded-none h-9 border-emerald-600 text-emerald-700 hover:bg-emerald-50 text-xs uppercase tracking-[0.1em] font-bold">
+            <FileXls size={14} weight="bold" className="mr-1.5" /> Export Excel
+          </Button>
           {selectedValidIds.length > 0 && (
             <Button data-testid="commit-batch-btn" onClick={commitBatch} disabled={bulkBusy} className="rounded-none h-9 bg-emerald-600 hover:bg-emerald-700 text-white text-xs uppercase tracking-[0.1em] font-bold">
               <CheckCircle size={14} weight="bold" className="mr-1.5" /> {bulkBusy ? "Memproses..." : `Masuk Sistem (${selectedValidIds.length} Baris)`}

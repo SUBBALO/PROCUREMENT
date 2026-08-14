@@ -194,33 +194,31 @@ Tujuan: mempercepat kerja Purchasing (commit massal) dan merapikan data pembelia
 
 ### Phase 10.2 — Kategori Otomatis (AI) + Kolom Kategori di Draft (Status: COMPLETED)
 - Backend (`temp_transactions.py`):
-  - AI sekarang menebak `category` per line item.
+  - AI menebak `category` per line item.
   - Prompt diberi daftar kategori existing dari DB: `db.transactions.distinct('category')` sebagai preferensi pilihan AI.
-  - Field `category` disimpan di draft dan ikut dikirim saat commit.
+  - Field `category` disimpan di draft, bisa diedit via PUT, dan ikut dikirim saat commit.
 - Commit (`temp_transactions.py` → `_commit_one()`):
   - `category` diteruskan ke `bulk_direct_create` (default `Uncategorized` jika kosong).
 - Frontend (`TempTransactionsPage.jsx`):
-  - Kolom **Kategori** ditambahkan.
-  - Autocomplete kategori dari `/master/categories` (datalist).
+  - Kolom **Kategori** + autocomplete dari `/master/categories`.
 
 ### Phase 10.3 — Commit Semua Sekaligus (Status: COMPLETED)
 - Backend (`temp_transactions.py`):
-  - Endpoint baru: `POST /temp-transactions/commit-batch` body `{ids:[...]}`.
+  - Endpoint: `POST /temp-transactions/commit-batch` body `{ids:[...]}`.
   - Refactor: helper `_validate_commit_doc()` + `_commit_one()`.
   - Per-baris gagal dilaporkan tanpa menggagalkan baris lain.
 - Frontend (`TempTransactionsPage.jsx`):
-  - Checkbox per baris yang **ready + valid**.
-  - Select-all.
-  - Tombol **"Masuk Sistem (N Baris)"** muncul bila ada centang.
+  - Checkbox per baris **ready + valid** + select-all.
+  - Tombol **"Masuk Sistem (N Baris)"**.
 
 ### Phase 10.4 — Normalisasi Supplier + Auto-Koreksi Vendor Terdaftar (Status: COMPLETED)
 User goal: memudahkan search nama perusahaan (bukan mulai dari "PT").
 - Backend (`temp_transactions.py`):
   - `_flip_entity_name()`:
     - contoh: `PT. INTERNATIONAL HARDWARE INDO` → `INTERNATIONAL HARDWARE INDO, PT`
-    - prefix yang didukung: PT/CV/UD/PD/FA/TB
+    - prefix: PT/CV/UD/PD/FA/TB
   - `_resolve_vendor()`:
-    - jika vendor sudah pernah ada di database, auto-koreksi ke penulisan yang sudah terdaftar.
+    - jika vendor sudah pernah ada di database, auto-koreksi ke penulisan vendor yang sudah terdaftar.
     - pencocokan memakai `vendor_key` (lowercase, buang tanda baca, buang token badan usaha).
   - Dipakai di:
     - hasil AI (vendor_name otomatis dinormalisasi)
@@ -242,7 +240,37 @@ User goal: memudahkan search nama perusahaan (bukan mulai dari "PT").
   - Stock Opname endpoints OK ✅
 - Cleanup:
   - Semua data tes `zz_`/`ZZ*` bersih (0 sisa).
-  - **PENTING**: ada 1 draft temp_transactions asli user `susanto` (SKC HAND/ROUND DIES...) yang **harus dijaga** dan **tidak boleh disentuh** saat testing/cleanup.
+  - **CATATAN LIVE DATA**: user `susanto` sudah memakai draft temp_transactions; **JANGAN** pernah commit/edit/delete saat testing.
+
+---
+
+## Phase 11: Purchasing — Transaksi Sementara Polish (live feedback) (Status: COMPLETED)
+Tujuan: menghilangkan kebutuhan geser horizontal dan membuat nama barang/supplier panjang terbaca penuh, plus fitur kerja Purchasing tambahan.
+
+### Phase 11.1 — Tabel lebih compact (Status: COMPLETED)
+- `TempTransactionsPage.jsx`: table-fixed, kolom dirampingkan, tombol aksi dipadatkan, overflow horizontal di layar 1366px dihilangkan.
+- Root cause overflow sebelumnya: konten kolom Aksi (tombol + ikon) membuat scroll 6px.
+
+### Phase 11.2 — Nama barang/supplier auto-wrap ke bawah (Status: COMPLETED)
+- `TempTransactionsPage.jsx`:
+  - Kolom Supplier & Nama Barang memakai `AutoGrowArea` (textarea auto-tinggi mengikuti isi).
+  - Nama panjang bisa dibaca penuh tanpa melebar ke samping.
+  - Trade-off: input supplier/barang tidak memakai datalist browser; namun autocomplete untuk SO dan kategori tetap.
+
+### Phase 11.3 — SO menampilkan Customer (Status: COMPLETED)
+- `TempTransactionsPage.jsx`:
+  - `GET /sales-orders` dimuat sebagai `{so_no, customer}`.
+  - Datalist option menampilkan **customer** sebagai label.
+  - Jika `project_no` cocok dengan SO, nama customer tampil kecil di bawah input SO.
+- Catatan data: pada environment ini koleksi `sales_orders` bisa kosong; saat Sales membuat SO, fitur otomatis aktif.
+
+### Phase 11.4 — Export Excel sebelum commit (Status: COMPLETED)
+- Backend (`temp_transactions.py`): `GET /temp-transactions/export/xlsx` menghasilkan Excel (17 kolom) untuk semua draft yang belum masuk sistem.
+- Frontend (`TempTransactionsPage.jsx`): tombol **Export Excel** download blob.
+- Teruji read-only dengan draft asli user (tanpa mengubah/menghapus).
+
+### Phase 11.5 — Portal Purchasing card (Status: COMPLETED)
+- `PurchasingPortalPage.jsx`: card **Transaksi Sementara (Foto Nota)** ditambahkan agar mudah ditemukan dari portal.
 
 ---
 
@@ -253,6 +281,6 @@ User goal: memudahkan search nama perusahaan (bukan mulai dari "PT").
   1) `Store role helpers + pemakaian (admin-like consistency)`
   2) `Stock Opname + Stock history icon` (backend+frontend)
   3) `Temp Transactions base (upload/review/commit per baris + /upload alias)`
-  4) `Temp Transactions enhancements (kategori + commit-batch + vendor normalization)`
-  5) `Fix bulk-direct insert_many empty regression`
+  4) `Temp Transactions enhancements (kategori + commit-batch + vendor normalization + bulk-direct guard)`
+  5) `Temp Transactions polish (compact table + autogrow + SO customer + export excel + portal card)`
 - Reminder: GitHub hanya backup **kode**; untuk **data** gunakan Full Backup (tar.gz).

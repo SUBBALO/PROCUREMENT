@@ -313,6 +313,67 @@ async def list_temp_transactions(current: dict = Depends(require_write)):
     return {"total": len(docs), "processing": processing, "items": docs}
 
 
+@router.get("/temp-transactions/export/xlsx")
+async def export_temp_transactions(current: dict = Depends(require_write)):
+    """Export list Transaksi Sementara (draft yang BELUM masuk sistem) ke Excel.
+    Berguna untuk menarik data hasil baca AI sebelum di-commit."""
+    from io import BytesIO
+
+    from fastapi.responses import StreamingResponse as _SR
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    docs = await db.temp_transactions.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=5000)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Transaksi Sementara"
+    hdr = [
+        "Status", "Tanggal Nota", "SO No", "PO No", "Supplier", "Nama Barang", "Kategori",
+        "Qty", "Unit", "Harga Satuan", "Total", "No Invoice/Nota", "Masuk Stok?",
+        "Nama Foto", "Diupload Oleh", "Diupload Pada", "Catatan Error",
+    ]
+    for i, h in enumerate(hdr, 1):
+        c = ws.cell(1, i, h)
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="0F766E")
+        c.alignment = Alignment(horizontal="center")
+    status_label = {"processing": "Dibaca AI", "ready": "Siap Dicek", "failed": "Gagal Dibaca"}
+    stok_label = {"stock": "Ya, Masuk Stok", "log": "Log Only", "none": "Tidak"}
+    for r_idx, d in enumerate(docs, 2):
+        ws.cell(r_idx, 1, status_label.get(d.get("status"), d.get("status", "")))
+        ws.cell(r_idx, 2, d.get("invoice_date", ""))
+        ws.cell(r_idx, 3, d.get("project_no", ""))
+        ws.cell(r_idx, 4, d.get("po_no", ""))
+        ws.cell(r_idx, 5, d.get("vendor_name", ""))
+        ws.cell(r_idx, 6, d.get("item_name", ""))
+        ws.cell(r_idx, 7, d.get("category", ""))
+        ws.cell(r_idx, 8, d.get("qty", 0))
+        ws.cell(r_idx, 9, d.get("unit", ""))
+        ws.cell(r_idx, 10, d.get("unit_price", 0))
+        ws.cell(r_idx, 11, d.get("total_price", 0))
+        ws.cell(r_idx, 12, d.get("invoice_no", ""))
+        ws.cell(r_idx, 13, stok_label.get(d.get("stock_mode"), ""))
+        ws.cell(r_idx, 14, d.get("photo_name", ""))
+        ws.cell(r_idx, 15, d.get("created_by_username", ""))
+        ws.cell(r_idx, 16, (d.get("created_at") or "")[:19].replace("T", " "))
+        ws.cell(r_idx, 17, d.get("error", ""))
+    widths = [12, 12, 12, 10, 28, 42, 14, 8, 8, 12, 14, 14, 14, 22, 14, 18, 30]
+    for i, w in enumerate(widths, 1):
+        col = ws.cell(1, i).column_letter
+        ws.column_dimensions[col].width = w
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"transaksi_sementara_{_now_iso()[:10]}.xlsx"
+    return _SR(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 @router.get("/temp-transactions/photo/{photo_id}")
 async def get_photo(photo_id: str, current: dict = Depends(get_current_user)):
     try:
