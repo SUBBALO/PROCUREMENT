@@ -282,7 +282,7 @@ async def seed_admin():
 
 
 async def seed_sales_head():
-    """Ensure Kepala Sales account 'asiong' exists (approver inquiry costing).
+    """Ensure Direktur account 'asiong' exists (approver inquiry costing).
     Password default hanya dipakai saat pertama kali dibuat; TIDAK pernah menimpa
     password yang sudah diganti user."""
     username = "asiong"
@@ -300,7 +300,7 @@ async def seed_sales_head():
             "access": {},
             "created_at": _now_iso(),
         })
-        logger.info("Seeded Kepala Sales user: asiong (role=sales_head)")
+        logger.info("Seeded Direktur user: asiong (role=sales_head)")
     else:
         # Pastikan role benar & aktif; password milik user dipertahankan.
         updates: dict = {}

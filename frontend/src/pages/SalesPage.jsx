@@ -341,7 +341,7 @@ export default function SalesPage() {
             {pendingKind === "assigned_to_me" ? "inquiry ditugaskan ke Anda menunggu di-Accept."
              : pendingKind === "pending_assignment" ? "inquiry submitted menunggu untuk di-Assign ke Engineer."
              : pendingKind === "awaiting_review" ? "inquiry menunggu review Anda."
-             : pendingKind === "pending_boss_review" ? "inquiry menunggu persetujuan Anda (Kepala Sales)."
+             : pendingKind === "pending_boss_review" ? "inquiry menunggu persetujuan Anda (Direktur)."
              : "inquiry aktif."}
           </div>
         </Card>
@@ -639,7 +639,7 @@ function CreateInquiryDialog({ onClose, onCreated, initial = null, existingId = 
         await api.post(`/inquiries/${inquiryId}/submit`);
       }
       const noun = isEdit ? "diperbarui" : "tersimpan sebagai draft";
-      toast.success(submitNow ? `Inquiry diajukan untuk review Kepala Sales` : `Inquiry ${noun}`);
+      toast.success(submitNow ? `Inquiry diajukan untuk review Direktur` : `Inquiry ${noun}`);
       onCreated();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal simpan");
@@ -651,7 +651,7 @@ function CreateInquiryDialog({ onClose, onCreated, initial = null, existingId = 
       <DialogContent className="rounded-none max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Draft Inquiry" : "Buat Inquiry Costing Baru"}</DialogTitle>
-          <DialogDescription>Isi detail request costing. {isEdit ? "Simpan perubahan atau ajukan ke Kepala Sales." : "Simpan sebagai draft atau ajukan ke Kepala Sales untuk direview sebelum diteruskan ke Engineering."}</DialogDescription>
+          <DialogDescription>Isi detail request costing. {isEdit ? "Simpan perubahan atau ajukan ke Direktur." : "Simpan sebagai draft atau ajukan ke Direktur untuk direview sebelum diteruskan ke Engineering."}</DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-300">
           <span className="text-[11px] uppercase tracking-[0.15em] font-bold text-emerald-700">Nomor Inquiry</span>
@@ -887,7 +887,7 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
   const isEngHead = ["engineering", "eng_leader", "eng_head"].includes(role) || isAdminLike;
   const isEngStaff = role === "eng_staff";
   const isSalesOrAdmin = role === "sales" || isAdminLike;
-  const isSalesHead = role === "sales_head" || isAdminLike;  // Kepala Sales — approver costing
+  const isSalesHead = role === "sales_head" || isAdminLike;  // Direktur — approver costing
   // eng_staff can only accept/progress/complete if assigned to them
   const isAssignee = data && data.assigned_to_id === user?.id;
   // Only the ACTUAL assignee (regardless of role) can submit costing / revision.
@@ -1045,10 +1045,10 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
               </div>
             )}
 
-            {/* Keputusan Kepala Sales (Asiong) */}
+            {/* Keputusan Direktur (Asiong) */}
             {data.boss_review && (
               <div className="mt-3">
-                <div className="text-[10px] uppercase tracking-[0.1em] font-bold text-slate-500 mb-1">Review Kepala Sales</div>
+                <div className="text-[10px] uppercase tracking-[0.1em] font-bold text-slate-500 mb-1">Review Direktur</div>
                 <div className={`p-2 border-l-4 text-sm ${data.boss_review.approve ? "border-emerald-500 bg-emerald-50" : "border-red-500 bg-red-50"}`} data-testid="boss-review-result">
                   <div className="text-[10px] uppercase tracking-[0.1em] font-bold mb-0.5">
                     {data.boss_review.approve ? "Disetujui → diteruskan ke Engineering" : "Ditolak"} — {data.boss_review.by} · {(data.boss_review.at || "").slice(0, 16).replace("T", " ")}
@@ -1086,10 +1086,10 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
                 </div>
               )}
 
-              {/* Kepala Sales (Asiong): review costing — approve → ke Engineering, tolak → ditutup */}
+              {/* Direktur (Asiong): review costing — approve → ke Engineering, tolak → ditutup */}
               {isSalesHead && data.status === "pending_boss_review" && action !== "boss-approve" && action !== "boss-reject" && (
                 <div className="p-3 border-2 border-fuchsia-400 bg-fuchsia-50 space-y-2" data-testid="boss-review-panel">
-                  <div className="text-[10px] uppercase tracking-[0.1em] font-bold text-fuchsia-900">Review Kepala Sales</div>
+                  <div className="text-[10px] uppercase tracking-[0.1em] font-bold text-fuchsia-900">Review Direktur</div>
                   <div className="text-sm text-fuchsia-900">Setujui untuk meneruskan inquiry ke Engineering, atau tolak (inquiry ditutup).</div>
                   <div className="flex gap-2 flex-wrap">
                     <Button data-testid="btn-boss-approve" onClick={() => setAction("boss-approve")} className="rounded-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs uppercase tracking-[0.1em]">

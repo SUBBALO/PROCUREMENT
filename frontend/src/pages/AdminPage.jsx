@@ -360,6 +360,7 @@ function UsersTab({ me }) {
                         supervisor: "bg-indigo-50 text-indigo-700 border-indigo-200",
                         finance: "bg-teal-50 text-teal-700 border-teal-200",
                         sales: "bg-rose-50 text-rose-700 border-rose-200",
+                        sales_head: "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200",
                         eng_leader: "bg-amber-50 text-amber-700 border-amber-300",
                         eng_head: "bg-amber-50 text-amber-700 border-amber-300",
                         eng_staff: "bg-amber-50 text-amber-600 border-amber-200",
@@ -369,7 +370,7 @@ function UsersTab({ me }) {
                         store: "bg-violet-50 text-violet-700 border-violet-200",
                       };
                       const cls = roleClsMap[u.role] || "bg-slate-50 text-slate-600 border-slate-200";
-                      const label = (u.role === "eng_leader" || u.role === "eng_head") ? "eng leader" : u.role === "eng_staff" ? "eng staff" : u.role;
+                      const label = (u.role === "eng_leader" || u.role === "eng_head") ? "eng leader" : u.role === "eng_staff" ? "eng staff" : u.role === "sales_head" ? "direktur" : u.role;
                       return (
                         <span className={`text-[10px] uppercase tracking-[0.1em] font-bold px-2 py-1 border ${cls}`}>
                           {label}
@@ -461,7 +462,7 @@ function CreateUserDialog({ open, onClose, onSaved }) {
                 <SelectItem value="supervisor">Supervisor (Semua Dept, tanpa Admin Panel)</SelectItem>
                 <SelectItem value="finance">Finance (View + Export Only)</SelectItem>
                 <SelectItem value="sales">Sales</SelectItem>
-                <SelectItem value="sales_head">Kepala Sales (approve costing sebelum ke Engineering)</SelectItem>
+                <SelectItem value="sales_head">Direktur (approve costing sebelum ke Engineering)</SelectItem>
                 <SelectItem value="eng_leader">Engineering Leader (bisa assign)</SelectItem>
                 <SelectItem value="eng_staff">Engineering Staff (hanya job yg di-assign)</SelectItem>
                 <SelectItem value="qc">Quality Control (QC)</SelectItem>
@@ -565,7 +566,7 @@ function EditUserDialog({ user, me, onClose, onSaved }) {
                 <SelectItem value="supervisor">Supervisor</SelectItem>
                 <SelectItem value="finance">Finance (View + Export Only)</SelectItem>
                 <SelectItem value="sales">Sales</SelectItem>
-                <SelectItem value="sales_head">Kepala Sales</SelectItem>
+                <SelectItem value="sales_head">Direktur</SelectItem>
                 <SelectItem value="eng_leader">Engineering Leader</SelectItem>
                 <SelectItem value="eng_staff">Engineering Staff</SelectItem>
                 <SelectItem value="qc">Quality Control (QC)</SelectItem>

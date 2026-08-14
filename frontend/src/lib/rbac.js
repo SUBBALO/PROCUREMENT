@@ -41,3 +41,31 @@ export function isEngineeringRole(role) {
 export function canPrintDrawing(role) {
   return PRINT_ROLES.has((role || "").toLowerCase());
 }
+
+// Label tampilan role (untuk header, badge, dsb). Key internal tetap.
+export const ROLE_LABELS = {
+  super_admin: "Super Admin",
+  admin: "Admin",
+  supervisor: "Supervisor",
+  finance: "Finance",
+  sales: "Sales",
+  sales_head: "Direktur",
+  eng_leader: "Engineering Leader",
+  eng_head: "Engineering Leader",
+  engineering: "Engineering",
+  eng_staff: "Engineering Staff",
+  purchasing: "Purchasing",
+  staff: "Purchasing",
+  store: "Store",
+  qc: "Quality Control",
+  doc_control: "Document Control",
+  document_control: "Document Control",
+  produksi: "Produksi",
+  production: "Produksi",
+};
+
+export function roleLabel(role) {
+  const r = (role || "").toLowerCase();
+  return ROLE_LABELS[r] || role || "";
+}
+

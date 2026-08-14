@@ -3,6 +3,7 @@ import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import api from "../lib/api";
 import { processResizableTables } from "../lib/tableResize";
+import { roleLabel } from "../lib/rbac";
 import { Button } from "./ui/button";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
@@ -548,7 +549,7 @@ export default function AppShell({ children }) {
               <div className="text-xs font-medium text-slate-900" data-testid="current-user">
                 {user?.name || user?.username}
               </div>
-              <div className="text-[10px] uppercase tracking-[0.15em] text-slate-400">{user?.role}</div>
+              <div className="text-[10px] uppercase tracking-[0.15em] text-slate-400">{roleLabel(user?.role)}</div>
             </div>
             <DensityToggle />
             <FastModeToggle />

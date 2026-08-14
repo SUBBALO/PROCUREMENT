@@ -80,7 +80,7 @@ class InquiryReview(BaseModel):
 
 
 class InquiryBossReview(BaseModel):
-    """Kepala Sales (Asiong) approve/tolak inquiry sebelum masuk Engineering."""
+    """Direktur (Asiong) approve/tolak inquiry sebelum masuk Engineering."""
     approve: bool  # True → diteruskan ke Engineering (submitted); False → rejected
     note: str = ""
 
@@ -153,7 +153,7 @@ async def create_inquiry(payload: InquiryCreate, current: dict = Depends(get_cur
 
     now = datetime.utcnow().isoformat()
     # Alur baru (Feb 2026): inquiry dari Sales TIDAK langsung ke Engineering.
-    # Draft → (Kirim) → pending_boss_review → (Kepala Sales approve) → submitted → Engineering.
+    # Draft → (Kirim) → pending_boss_review → (Direktur approve) → submitted → Engineering.
     status = "draft" if payload.save_as_draft else "pending_boss_review"
     doc = {
         "id": str(uuid.uuid4()),
@@ -171,7 +171,7 @@ async def create_inquiry(payload: InquiryCreate, current: dict = Depends(get_cur
         "created_at": now,
         "updated_at": now,
         "submitted_at": now if status == "pending_boss_review" else None,
-        # Boss (Kepala Sales) review — gate sebelum masuk Engineering
+        # Boss (Direktur) review — gate sebelum masuk Engineering
         "boss_review": None,            # {approve, by, at, note}
         "boss_approved_at": None,
         "boss_approved_by_name": "",
@@ -224,11 +224,11 @@ async def list_inquiries(
             {"status": {"$ne": "draft"}},
             {"status": "draft", "created_by_id": current.get("id")},
         ]
-    # Kepala Sales (Asiong): lihat semua inquiry (kecuali draft) — termasuk yang menunggu review-nya
+    # Direktur (Asiong): lihat semua inquiry (kecuali draft) — termasuk yang menunggu review-nya
     if is_sales_head(current):
         filt["status"] = {"$ne": "draft"}
     if is_engineering(current):
-        # Engineers hanya lihat yang SUDAH di-approve Kepala Sales (skip draft/pending boss/rejected)
+        # Engineers hanya lihat yang SUDAH di-approve Direktur (skip draft/pending boss/rejected)
         filt["status"] = {"$nin": ["draft", "pending_boss_review", "rejected"]}
         # eng_staff sees only what's been assigned to them OR still unassigned (so they know pending)
         if role == "eng_staff":
@@ -412,20 +412,20 @@ async def submit_inquiry(inq_id: str, current: dict = Depends(get_current_user))
     return _clean(updated)
 
 
-# ---------------------------- Boss Review (Kepala Sales) ----------------------------
+# ---------------------------- Boss Review (Direktur) ----------------------------
 @router.post("/inquiries/{inq_id}/boss-review")
 async def boss_review_inquiry(inq_id: str, payload: InquiryBossReview, current: dict = Depends(get_current_user)):
-    """Kepala Sales (Asiong) menyetujui / menolak inquiry costing.
+    """Direktur (Asiong) menyetujui / menolak inquiry costing.
     - approve=True  → status 'submitted' (baru terlihat & masuk alur Engineering)
     - approve=False → status 'rejected' (ditutup, tidak bisa diajukan ulang)
     """
     if not (is_sales_head(current) or is_admin_like(current)):
-        raise HTTPException(status_code=403, detail="Hanya Kepala Sales yang bisa review inquiry ini")
+        raise HTTPException(status_code=403, detail="Hanya Direktur yang bisa review inquiry ini")
     d = await db.inquiries.find_one({"id": inq_id})
     if not d:
         raise HTTPException(status_code=404, detail="Inquiry tidak ditemukan")
     if d.get("status") != "pending_boss_review":
-        raise HTTPException(status_code=400, detail="Inquiry ini tidak sedang menunggu review Kepala Sales")
+        raise HTTPException(status_code=400, detail="Inquiry ini tidak sedang menunggu review Direktur")
 
     now = datetime.utcnow().isoformat()
     who = current.get("name") or current.get("username")
@@ -433,7 +433,7 @@ async def boss_review_inquiry(inq_id: str, payload: InquiryBossReview, current: 
     review = {"approve": payload.approve, "by": who, "at": now, "note": note}
 
     if payload.approve:
-        entry = {"at": now, "by": who, "action": "approved by Kepala Sales → diteruskan ke Engineering"}
+        entry = {"at": now, "by": who, "action": "approved by Direktur → diteruskan ke Engineering"}
         await db.inquiries.update_one(
             {"id": inq_id},
             {"$set": {
@@ -448,7 +448,7 @@ async def boss_review_inquiry(inq_id: str, payload: InquiryBossReview, current: 
     else:
         if not note:
             raise HTTPException(status_code=400, detail="Alasan penolakan wajib diisi")
-        entry = {"at": now, "by": who, "action": f"rejected by Kepala Sales: {note}"}
+        entry = {"at": now, "by": who, "action": f"rejected by Direktur: {note}"}
         await db.inquiries.update_one(
             {"id": inq_id},
             {"$set": {
