@@ -429,9 +429,9 @@ function SalesOrderFormDialog({ mode, so, fromQuotation, canSeePrice, currentUse
   };
 
   return (
-    <div className="fixed inset-0 z-[70] bg-black/60 flex items-start justify-center p-4 overflow-y-auto" data-testid="so-form-dialog">
-      <div className="bg-white w-full max-w-3xl my-6 border border-slate-300">
-        <div className="flex items-center justify-between px-4 py-3 bg-emerald-700 text-white">
+    <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-3 sm:p-4" data-testid="so-form-dialog">
+      <div className="bg-white w-full max-w-3xl border border-slate-300 flex flex-col max-h-[92vh] shadow-2xl">
+        <div className="flex items-center justify-between px-4 py-3 bg-emerald-700 text-white shrink-0">
           <div>
             <div className="text-[10px] uppercase tracking-widest opacity-80">{isEdit ? "Edit Sales Order" : "Buat Sales Order Baru"}</div>
             <div className="font-semibold">Tarik dari Quotation (opsional) atau isi manual</div>
@@ -439,7 +439,7 @@ function SalesOrderFormDialog({ mode, so, fromQuotation, canSeePrice, currentUse
           <button onClick={onClose} className="p-1 hover:bg-white/20" data-testid="so-form-close"><X size={18} /></button>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="p-4 space-y-4 overflow-y-auto flex-1 min-h-0">
           {!isEdit && (
             <div>
               <Label className="text-xs font-semibold text-slate-600 mb-1 block">Ref Quotation <span className="normal-case font-normal text-slate-400">(opsional — tarik data otomatis)</span></Label>
@@ -529,7 +529,7 @@ function SalesOrderFormDialog({ mode, so, fromQuotation, canSeePrice, currentUse
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-slate-200 bg-slate-50">
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-slate-200 bg-slate-50 shrink-0">
           <Button variant="outline" onClick={onClose} className="rounded-none">Batal</Button>
           <Button onClick={save} disabled={saving || !soNoValid} className="rounded-none bg-emerald-700 hover:bg-emerald-800 text-white disabled:opacity-40" data-testid="so-save-btn">
             {saving ? <CircleNotch size={14} className="animate-spin mr-1" /> : <CheckCircle size={14} weight="bold" className="mr-1" />}

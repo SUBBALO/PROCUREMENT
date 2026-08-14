@@ -273,7 +273,7 @@ export default function TempTransactionsPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-[11px] border-collapse table-fixed">
             <thead className="bg-slate-50 border-b border-slate-200">
-              <tr className="text-[9px] uppercase tracking-[0.03em] font-bold text-slate-500">
+              <tr className="text-[9px] uppercase tracking-[0.03em] font-bold text-slate-500 [&>th]:align-middle [&>th]:py-1.5">
                 <th className="p-1 w-6 text-center">
                   <input
                     type="checkbox"
@@ -295,9 +295,9 @@ export default function TempTransactionsPage() {
                 <th className="p-1 text-left w-[52px]">Unit</th>
                 <th className="p-1 text-right w-[70px]">Harga</th>
                 <th className="p-1 text-right w-[76px]">Total</th>
-                <th className="p-1 text-left w-[56px]">Invoice</th>
+                <th className="p-1 text-left w-[72px]">Invoice</th>
                 <th className="p-1 text-center w-[92px]">Masuk Stok?*</th>
-                <th className="p-1 text-center w-[124px]">Aksi</th>
+                <th className="p-1 text-center w-[116px]">Aksi</th>
               </tr>
             </thead>
             <tbody data-testid="temp-rows">
@@ -313,8 +313,8 @@ export default function TempTransactionsPage() {
                 const isFail = r.status === "failed";
                 const disabled = isProc || busyId === r.id;
                 return (
-                  <tr key={r.id} className={`border-b border-slate-100 ${isProc ? "bg-sky-50/50" : isFail ? "bg-red-50/50" : selected.has(r.id) ? "bg-emerald-50/50" : ""}`} data-testid={`temp-row-${r.id}`}>
-                    <td className="p-1 text-center">
+                  <tr key={r.id} className={`border-b border-slate-100 [&>td]:align-top transition-colors ${isProc ? "bg-sky-50/50" : isFail ? "bg-red-50/50" : selected.has(r.id) ? "bg-emerald-50/60" : "hover:bg-slate-50/70"}`} data-testid={`temp-row-${r.id}`}>
+                    <td className="p-1 pt-2 text-center">
                       {r.status === "ready" && rowValid(r) ? (
                         <input
                           type="checkbox"
@@ -325,7 +325,7 @@ export default function TempTransactionsPage() {
                         />
                       ) : null}
                     </td>
-                    <td className="p-1 text-center">
+                    <td className="p-1 pt-1 text-center">
                       <button
                         data-testid={`photo-btn-${r.id}`}
                         onClick={() => setPhotoView({ photo_id: r.photo_id, photo_name: r.photo_name })}
@@ -371,7 +371,7 @@ export default function TempTransactionsPage() {
                           </select>
                         </td>
                         <td className="p-0.5"><Input disabled={disabled} type="number" step="any" data-testid={`t-price-${r.id}`} className={`${inputCls} text-right px-1`} value={r.unit_price ?? ""} onChange={(e) => setRow(r.id, { unit_price: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} /></td>
-                        <td className="p-0.5 text-right tabular-nums text-[11px] text-slate-700 pr-1" data-testid={`t-total-${r.id}`} title="Total = Qty × Harga">
+                        <td className="p-0.5 pt-2 text-right tabular-nums text-[11px] text-slate-700 pr-1" data-testid={`t-total-${r.id}`} title="Total = Qty × Harga">
                           {r.total_price ? Number(r.total_price).toLocaleString("id-ID") : "—"}
                         </td>
                         <td className="p-0.5"><Input disabled={disabled} data-testid={`t-invoice-${r.id}`} className={inputCls} value={r.invoice_no || ""} onChange={(e) => setRow(r.id, { invoice_no: e.target.value })} onBlur={() => saveRow(rows.find((x) => x.id === r.id))} placeholder="—" /></td>
@@ -384,7 +384,7 @@ export default function TempTransactionsPage() {
                         </td>
                       </>
                     )}
-                    <td className="p-0.5 text-center whitespace-nowrap">
+                    <td className="p-0.5 pt-1.5 text-center whitespace-nowrap">
                       {isFail && (
                         <div className="text-left px-1">
                           <div className="text-[10px] text-red-700 max-w-[100px] leading-tight mb-1" title={r.error}>
