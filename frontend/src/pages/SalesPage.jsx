@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Link, useNavigate, useSearchParams, useLocation } from "react-router-dom";
-import api from "../lib/api";
+import api, { formatDateID } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -448,6 +448,8 @@ export default function SalesPage() {
                 <th className="text-left p-3">Customer</th>
                 <th className="text-left p-3">Deadline</th>
                 <th className="text-left p-3">Status</th>
+                <th className="text-left p-3">Tgl Request</th>
+                <th className="text-left p-3">Tgl Selesai</th>
                 <th className="text-left p-3">{isEngineering ? "Ditugaskan ke" : "PIC Engineer"}</th>
                 {!isEngOnly && <th className="text-right p-3">Est. Value</th>}
                 <th className="text-left p-3">Sales / Dibuat</th>
@@ -455,8 +457,8 @@ export default function SalesPage() {
               </tr>
             </thead>
             <tbody>
-              {loading && (<tr><td colSpan={isEngOnly ? 8 : 9} className="p-6 text-center text-slate-400"><CircleNotch size={18} className="inline animate-spin" /></td></tr>)}
-              {!loading && filteredItems.length === 0 && (<tr><td colSpan={isEngOnly ? 8 : 9} className="p-8 text-center text-slate-400">{statusFilter ? "Tidak ada inquiry dengan status ini." : "Belum ada inquiry."}</td></tr>)}
+              {loading && (<tr><td colSpan={isEngOnly ? 10 : 11} className="p-6 text-center text-slate-400"><CircleNotch size={18} className="inline animate-spin" /></td></tr>)}
+              {!loading && filteredItems.length === 0 && (<tr><td colSpan={isEngOnly ? 10 : 11} className="p-8 text-center text-slate-400">{statusFilter ? "Tidak ada inquiry dengan status ini." : "Belum ada inquiry."}</td></tr>)}
               {filteredItems.length > 0 && pag.pagedData.map((r) => {
                 const dInfo = getDeadlineInfo(r.customer_deadline);
                 const dlActive = dInfo && !["accepted", "closed"].includes(r.status);
@@ -473,6 +475,14 @@ export default function SalesPage() {
                       {dlActive && <div className={dInfo.cls}>⏱ {dInfo.label}</div>}
                     </td>
                     <td className="p-3"><StatusBadge status={r.status} /></td>
+                    <td className="p-3 text-xs text-slate-600 whitespace-nowrap" data-testid={`inq-req-date-${r.inquiry_no}`}>
+                      {(r.submitted_at || r.created_at) ? formatDateID((r.submitted_at || r.created_at).slice(0, 10)) : <span className="text-slate-300">-</span>}
+                    </td>
+                    <td className="p-3 text-xs whitespace-nowrap" data-testid={`inq-done-date-${r.inquiry_no}`}>
+                      {r.completed_at
+                        ? <span className="text-emerald-700 font-semibold">{formatDateID(r.completed_at.slice(0, 10))}</span>
+                        : <span className="text-slate-300">-</span>}
+                    </td>
                     <td className="p-3 text-slate-700 text-xs">
                       {isEngineering
                         ? (r.assigned_to_name || <span className="italic text-slate-400">Belum di-assign</span>)

@@ -1752,7 +1752,7 @@ async def export_inquiries_excel(
     ws = wb.active
     ws.title = "Inquiries"
     headers = ["No", "No Inquiry", "Judul", "Customer", "Deadline", "Status", "PIC Engineer",
-               "Jumlah Item", "Dibuat Oleh", "Tanggal Buat", "Diterima Oleh", "Tanggal Selesai"]
+               "Jumlah Item", "Dibuat Oleh", "Tanggal Buat", "Tanggal Request", "Diterima Oleh", "Tanggal Selesai"]
     for i, h in enumerate(headers, 1):
         c = ws.cell(row=1, column=i, value=h)
         _xl_header_style(c)
@@ -1770,6 +1770,7 @@ async def export_inquiries_excel(
             len(d.get("items") or []),
             d.get("created_by_name") or "",
             (d.get("created_at") or "")[:10],
+            (d.get("submitted_at") or "")[:10] if d.get("submitted_at") else "",
             d.get("accepted_by_name") or "",
             (d.get("completed_at") or "")[:10] if d.get("completed_at") else "",
         ]
@@ -1779,7 +1780,7 @@ async def export_inquiries_excel(
             c.font = Font(size=10)
             c.alignment = Alignment(vertical="center", wrap_text=True)
 
-    widths = [5, 22, 40, 28, 12, 14, 20, 8, 18, 12, 18, 12]
+    widths = [5, 22, 40, 28, 12, 14, 20, 8, 18, 12, 14, 18, 12]
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
     ws.freeze_panes = "A2"
