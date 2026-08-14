@@ -263,7 +263,7 @@ export default function SalesPage() {
   }, [items]);
 
   return (
-    <div className="max-w-[1400px] mx-auto p-6 space-y-5">
+    <div className="max-w-[1400px] mx-auto p-4 space-y-3">
       <button
         type="button"
         onClick={() => { if (window.history.length > 1) navigate(-1); else navigate(backLink); }}
@@ -277,11 +277,11 @@ export default function SalesPage() {
 
       <div className="flex items-end justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <HeaderIcon size={22} weight="duotone" className={headerIconCls} />
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }} data-testid="sales-page-title">{headerTitle}</h1>
+          <div className="flex items-center gap-2">
+            <HeaderIcon size={18} weight="duotone" className={headerIconCls} />
+            <h1 className="text-xl font-bold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }} data-testid="sales-page-title">{headerTitle}</h1>
           </div>
-          <p className="text-xs uppercase tracking-[0.1em] text-slate-500">{headerSubtitle}</p>
+          <p className="text-[10px] uppercase tracking-[0.1em] text-slate-500 mt-0.5">{headerSubtitle}</p>
         </div>
         {isSales && (
           <div className="flex items-center gap-2">
@@ -1489,7 +1489,7 @@ function StatCard({ label, value, accent = "slate", testid, active = false, onCl
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-2 border px-2.5 py-1.5 cursor-pointer transition-colors ${
+      className={`inline-flex items-center gap-1.5 border px-2 py-1 cursor-pointer transition-colors ${
         active
           ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900"
           : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
@@ -1497,8 +1497,8 @@ function StatCard({ label, value, accent = "slate", testid, active = false, onCl
       data-testid={testid}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${dot} shrink-0`} />
-      <span className="text-lg font-bold tabular-nums leading-none text-slate-800" style={{ fontFamily: "Chivo, sans-serif" }}>{value ?? 0}</span>
-      <span className="text-[10px] uppercase tracking-[0.08em] font-semibold text-slate-500 leading-tight whitespace-nowrap">{label}</span>
+      <span className="text-base font-bold tabular-nums leading-none text-slate-800" style={{ fontFamily: "Chivo, sans-serif" }}>{value ?? 0}</span>
+      <span className="text-[10px] uppercase tracking-[0.06em] font-semibold text-slate-500 leading-tight whitespace-nowrap">{label}</span>
     </button>
   );
 }
