@@ -707,7 +707,7 @@ function CreateInquiryDialog({ onClose, onCreated, initial = null, existingId = 
               )}
             </div>
             <div>
-              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Deadline Customer</Label>
+              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Deadline Costing</Label>
               <Input data-testid="inq-deadline" type="date" className={inputCls} value={deadline} onChange={(e) => setDeadline(e.target.value)} />
             </div>
           </div>
@@ -975,7 +975,7 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
             <div className="grid grid-cols-2 gap-4 text-sm">
               <Meta label="Customer" value={data.customer_name} />
               <Meta label="Project" value={data.project_name || "-"} />
-              <Meta label="Deadline Customer" value={<DeadlineDisplay iso={data.customer_deadline} status={data.status} />} />
+              <Meta label="Deadline Costing" value={<DeadlineDisplay iso={data.customer_deadline} status={data.status} />} />
               <Meta label="Dibuat oleh" value={`${data.created_by_name} · ${(data.created_at || "").slice(0, 10)}`} />
               <Meta label="Ditugaskan ke" value={data.assigned_to_name || <span className="italic text-slate-400">Belum di-assign</span>} highlight />
               <Meta label="PIC Engineer" value={data.pic_engineer_name || "-"} />
