@@ -1,30 +1,30 @@
 [
   {
-    "content": "Backend: buat router stock_opname.py (create/list/detail/update lines/finalize/delete)",
+    "content": "Backend: add sales_head role + is_sales_head helper (deps.py, auth.py)",
     "status": "completed"
   },
   {
-    "content": "Backend: register router di server.py + restart + syntax check",
+    "content": "Backend: seed 'asiong' user (server.py)",
     "status": "completed"
   },
   {
-    "content": "Frontend: StockOpnamePage.jsx (list sesi + detail hitung + finalize double-confirm)",
+    "content": "Backend: inquiry status flow → pending_boss_review + boss-review endpoint + fields (sales.py)",
     "status": "completed"
   },
   {
-    "content": "Frontend: route /store/opname di App.js + card di StorePortalPage",
+    "content": "Backend: visibility/stats/export/pending-count updates for new statuses (sales.py)",
     "status": "completed"
   },
   {
-    "content": "Frontend: tombol ikon Riwayat di kolom Aksi StoreStockPage",
+    "content": "Frontend: statuses, stat cards, create-dialog labels, boss review panel in detail (SalesPage.jsx)",
     "status": "completed"
   },
   {
-    "content": "Test backend via curl: create->count->finalize->cek receipts/issuances/history",
+    "content": "Frontend: routing + landing card access for sales_head (App.js, LandingPage.jsx)",
     "status": "completed"
   },
   {
-    "content": "Screenshot verifikasi UI opname + kompilasi bersih",
+    "content": "Test end-to-end flow (Sales → Boss approve/reject → Engineering)",
     "status": "completed"
   }
 ]

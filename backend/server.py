@@ -281,6 +281,39 @@ async def seed_admin():
             logger.info(f"Ensured admin role/perms (password preserved): {admin_username}")
 
 
+async def seed_sales_head():
+    """Ensure Kepala Sales account 'asiong' exists (approver inquiry costing).
+    Password default hanya dipakai saat pertama kali dibuat; TIDAK pernah menimpa
+    password yang sudah diganti user."""
+    username = "asiong"
+    existing = await db.users.find_one({"username": username})
+    if not existing:
+        await db.users.insert_one({
+            "id": str(uuid.uuid4()),
+            "username": username,
+            "password_hash": hash_password("asiong123"),
+            "name": "Asiong",
+            "role": "sales_head",
+            "active": True,
+            "must_change_password": True,   # wajib ganti password saat login pertama
+            "perms": [],
+            "access": {},
+            "created_at": _now_iso(),
+        })
+        logger.info("Seeded Kepala Sales user: asiong (role=sales_head)")
+    else:
+        # Pastikan role benar & aktif; password milik user dipertahankan.
+        updates: dict = {}
+        if existing.get("role") != "sales_head":
+            updates["role"] = "sales_head"
+        if existing.get("active") is False:
+            updates["active"] = True
+        if updates:
+            await db.users.update_one({"username": username}, {"$set": updates})
+            logger.info("Ensured asiong role=sales_head (password preserved)")
+
+
+
 @app.on_event("startup")
 async def startup():
     # Drop legacy email index if present, add unique username index
@@ -336,6 +369,7 @@ async def startup():
     except Exception as e:
         logger.warning(f"drawings/perf index skip: {e}")
     await seed_admin()
+    await seed_sales_head()
     await seed_form_templates()
     # Pre-warm LibreOffice (background) agar preview Excel siap sebelum request pertama.
     try:

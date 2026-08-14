@@ -134,8 +134,8 @@ function ProtectedRoute({ children, storeRoleTo = "/store/stock", blockStore = f
     }
     return <AppShell>{children}</AppShell>;
   }
-  // Sales: ONLY /sales accessible outside `/` (+ universal pages)
-  if (user.role === "sales") {
+  // Sales & Kepala Sales: ONLY /sales accessible outside `/` (+ universal pages)
+  if (user.role === "sales" || user.role === "sales_head") {
     if (!isUniversalPage && !location.pathname.startsWith("/sales")) {
       return <Navigate to="/sales" replace />;
     }

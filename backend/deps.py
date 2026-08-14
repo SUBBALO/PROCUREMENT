@@ -42,6 +42,7 @@ ENGINEERING_HEAD_ROLES = ("engineering", "eng_head", "eng_leader")  # legacy 'en
 PURCHASING_ROLES = ("staff", "purchasing")
 STORE_ROLES = ("store",)
 SALES_ROLES = ("sales",)
+SALES_HEAD_ROLES = ("sales_head",)
 FINANCE_ROLES = ("finance",)
 QC_ROLES = ("qc",)
 DOC_CONTROL_ROLES = ("doc_control", "document_control")
@@ -107,6 +108,11 @@ def is_production(user: dict) -> bool:
 
 def is_sales(user: dict) -> bool:
     return (user or {}).get("role") in SALES_ROLES
+
+
+def is_sales_head(user: dict) -> bool:
+    """Kepala Sales (mis. Asiong) — approver inquiry costing sebelum masuk Engineering."""
+    return (user or {}).get("role") in SALES_HEAD_ROLES
 
 
 # Role yang boleh MENERBITKAN Nonconformance (CAR) terhadap Drawing.

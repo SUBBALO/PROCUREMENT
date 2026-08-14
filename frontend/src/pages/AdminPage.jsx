@@ -461,6 +461,7 @@ function CreateUserDialog({ open, onClose, onSaved }) {
                 <SelectItem value="supervisor">Supervisor (Semua Dept, tanpa Admin Panel)</SelectItem>
                 <SelectItem value="finance">Finance (View + Export Only)</SelectItem>
                 <SelectItem value="sales">Sales</SelectItem>
+                <SelectItem value="sales_head">Kepala Sales (approve costing sebelum ke Engineering)</SelectItem>
                 <SelectItem value="eng_leader">Engineering Leader (bisa assign)</SelectItem>
                 <SelectItem value="eng_staff">Engineering Staff (hanya job yg di-assign)</SelectItem>
                 <SelectItem value="qc">Quality Control (QC)</SelectItem>
@@ -564,6 +565,7 @@ function EditUserDialog({ user, me, onClose, onSaved }) {
                 <SelectItem value="supervisor">Supervisor</SelectItem>
                 <SelectItem value="finance">Finance (View + Export Only)</SelectItem>
                 <SelectItem value="sales">Sales</SelectItem>
+                <SelectItem value="sales_head">Kepala Sales</SelectItem>
                 <SelectItem value="eng_leader">Engineering Leader</SelectItem>
                 <SelectItem value="eng_staff">Engineering Staff</SelectItem>
                 <SelectItem value="qc">Quality Control (QC)</SelectItem>

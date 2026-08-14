@@ -20,7 +20,7 @@ const DEPARTMENTS = [
     accentText: "text-rose-600",
     accentBorder: "border-rose-300",
     stats: "Inquiry · Quotation",
-    roles: ["admin", "super_admin", "supervisor", "finance", "sales"],
+    roles: ["admin", "super_admin", "supervisor", "finance", "sales", "sales_head"],
   },
   {
     key: "engineering",
@@ -104,7 +104,7 @@ const DEPARTMENTS = [
     accentText: "text-indigo-700",
     accentBorder: "border-indigo-300",
     stats: "Search · Preview · Print",
-    roles: ["admin", "super_admin", "supervisor", "finance", "engineering", "eng_leader", "eng_head", "eng_staff", "purchasing", "qc", "sales", "doc_control", "document_control", "store", "staff"],
+    roles: ["admin", "super_admin", "supervisor", "finance", "engineering", "eng_leader", "eng_head", "eng_staff", "purchasing", "qc", "sales", "sales_head", "doc_control", "document_control", "store", "staff"],
   },
   {
     key: "produksi",

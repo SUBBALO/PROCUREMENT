@@ -21,7 +21,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from db import db
 from deps import (
     get_current_user, log_action,
-    is_admin_like, is_engineering, is_eng_head, is_super_admin_user,
+    is_admin_like, is_engineering, is_eng_head, is_super_admin_user, is_sales_head,
 )
 from services.soft_delete import NOT_DELETED_FILTER, merged, soft_delete_one
 
@@ -77,6 +77,12 @@ class InquiryProgress(BaseModel):
 class InquiryReview(BaseModel):
     approve: bool  # True → accepted, False → revision_requested
     review_note: str = ""
+
+
+class InquiryBossReview(BaseModel):
+    """Kepala Sales (Asiong) approve/tolak inquiry sebelum masuk Engineering."""
+    approve: bool  # True → diteruskan ke Engineering (submitted); False → rejected
+    note: str = ""
 
 
 class InquiryAssign(BaseModel):
@@ -146,7 +152,9 @@ async def create_inquiry(payload: InquiryCreate, current: dict = Depends(get_cur
         raise HTTPException(status_code=400, detail="Nama customer wajib diisi")
 
     now = datetime.utcnow().isoformat()
-    status = "draft" if payload.save_as_draft else "submitted"
+    # Alur baru (Feb 2026): inquiry dari Sales TIDAK langsung ke Engineering.
+    # Draft → (Kirim) → pending_boss_review → (Kepala Sales approve) → submitted → Engineering.
+    status = "draft" if payload.save_as_draft else "pending_boss_review"
     doc = {
         "id": str(uuid.uuid4()),
         "inquiry_no": await _new_inquiry_no(),
@@ -162,7 +170,14 @@ async def create_inquiry(payload: InquiryCreate, current: dict = Depends(get_cur
         "created_by_name": current.get("name") or current.get("username"),
         "created_at": now,
         "updated_at": now,
-        "submitted_at": now if status == "submitted" else None,
+        "submitted_at": now if status == "pending_boss_review" else None,
+        # Boss (Kepala Sales) review — gate sebelum masuk Engineering
+        "boss_review": None,            # {approve, by, at, note}
+        "boss_approved_at": None,
+        "boss_approved_by_name": "",
+        "rejected_at": None,
+        "rejected_by_name": "",
+        "rejection_note": "",
         # Engineering assignment (eng_head assigns to engineer)
         "assigned_to_id": "",
         "assigned_to_name": "",
@@ -209,9 +224,12 @@ async def list_inquiries(
             {"status": {"$ne": "draft"}},
             {"status": "draft", "created_by_id": current.get("id")},
         ]
+    # Kepala Sales (Asiong): lihat semua inquiry (kecuali draft) — termasuk yang menunggu review-nya
+    if is_sales_head(current):
+        filt["status"] = {"$ne": "draft"}
     if is_engineering(current):
-        # Engineers only see submitted onwards (skip drafts)
-        filt["status"] = {"$nin": ["draft"]}
+        # Engineers hanya lihat yang SUDAH di-approve Kepala Sales (skip draft/pending boss/rejected)
+        filt["status"] = {"$nin": ["draft", "pending_boss_review", "rejected"]}
         # eng_staff sees only what's been assigned to them OR still unassigned (so they know pending)
         if role == "eng_staff":
             filt["$or"] = [
@@ -286,8 +304,11 @@ async def inquiries_pending_count(current: dict = Depends(get_current_user)):
             "created_by_id": current.get("id"),
         })
         return {"role": role, "count": n, "kind": "awaiting_review"}
+    if is_sales_head(current):
+        n = await db.inquiries.count_documents({"status": "pending_boss_review"})
+        return {"role": role, "count": n, "kind": "pending_boss_review"}
     if is_admin_like(current):
-        n = await db.inquiries.count_documents({"status": {"$in": ["submitted", "awaiting_review"]}})
+        n = await db.inquiries.count_documents({"status": {"$in": ["pending_boss_review", "submitted", "awaiting_review"]}})
         return {"role": role, "count": n, "kind": "all_active"}
     return {"role": role, "count": 0}
 
@@ -320,7 +341,7 @@ async def inquiries_masterlist(
     Didefinisikan SEBELUM /inquiries/{inq_id} agar tidak tertangkap sebagai id."""
     if not (is_engineering(current) or is_admin_like(current)):
         raise HTTPException(status_code=403, detail="Hanya Engineering/Admin")
-    filt = {"status": {"$ne": "draft"}}
+    filt = {"status": {"$nin": ["draft", "pending_boss_review", "rejected"]}}
     if status and status != "all":
         filt["status"] = status
     if category and category != "all":
@@ -380,15 +401,70 @@ async def submit_inquiry(inq_id: str, current: dict = Depends(get_current_user))
         raise HTTPException(status_code=403, detail="Bukan Inquiry Anda")
 
     now = datetime.utcnow().isoformat()
-    entry = {"at": now, "by": current.get("name") or current.get("username"), "action": "submitted to engineering"}
+    entry = {"at": now, "by": current.get("name") or current.get("username"), "action": "submitted for boss review"}
     await db.inquiries.update_one(
         {"id": inq_id},
-        {"$set": {"status": "submitted", "submitted_at": now, "updated_at": now},
+        {"$set": {"status": "pending_boss_review", "submitted_at": now, "updated_at": now},
          "$push": {"history": entry}},
     )
-    await log_action(current, "submit_inquiry", "inquiry", inq_id, {})
+    await log_action(current, "submit_inquiry", "inquiry", inq_id, {"to": "pending_boss_review"})
     updated = await db.inquiries.find_one({"id": inq_id})
     return _clean(updated)
+
+
+# ---------------------------- Boss Review (Kepala Sales) ----------------------------
+@router.post("/inquiries/{inq_id}/boss-review")
+async def boss_review_inquiry(inq_id: str, payload: InquiryBossReview, current: dict = Depends(get_current_user)):
+    """Kepala Sales (Asiong) menyetujui / menolak inquiry costing.
+    - approve=True  → status 'submitted' (baru terlihat & masuk alur Engineering)
+    - approve=False → status 'rejected' (ditutup, tidak bisa diajukan ulang)
+    """
+    if not (is_sales_head(current) or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Kepala Sales yang bisa review inquiry ini")
+    d = await db.inquiries.find_one({"id": inq_id})
+    if not d:
+        raise HTTPException(status_code=404, detail="Inquiry tidak ditemukan")
+    if d.get("status") != "pending_boss_review":
+        raise HTTPException(status_code=400, detail="Inquiry ini tidak sedang menunggu review Kepala Sales")
+
+    now = datetime.utcnow().isoformat()
+    who = current.get("name") or current.get("username")
+    note = (payload.note or "").strip()
+    review = {"approve": payload.approve, "by": who, "at": now, "note": note}
+
+    if payload.approve:
+        entry = {"at": now, "by": who, "action": "approved by Kepala Sales → diteruskan ke Engineering"}
+        await db.inquiries.update_one(
+            {"id": inq_id},
+            {"$set": {
+                "status": "submitted",
+                "boss_review": review,
+                "boss_approved_at": now,
+                "boss_approved_by_name": who,
+                "updated_at": now,
+            }, "$push": {"history": entry}},
+        )
+        await log_action(current, "boss_approve_inquiry", "inquiry", inq_id, {"note": note})
+    else:
+        if not note:
+            raise HTTPException(status_code=400, detail="Alasan penolakan wajib diisi")
+        entry = {"at": now, "by": who, "action": f"rejected by Kepala Sales: {note}"}
+        await db.inquiries.update_one(
+            {"id": inq_id},
+            {"$set": {
+                "status": "rejected",
+                "boss_review": review,
+                "rejected_at": now,
+                "rejected_by_name": who,
+                "rejection_note": note,
+                "updated_at": now,
+            }, "$push": {"history": entry}},
+        )
+        await log_action(current, "boss_reject_inquiry", "inquiry", inq_id, {"note": note})
+
+    updated = await db.inquiries.find_one({"id": inq_id})
+    return _clean(updated)
+
 
 
 # ---------------------------- Assignment (Eng Head only) ----------------------------
@@ -1611,7 +1687,7 @@ async def check_so(so_no: str, current: dict = Depends(get_current_user)):
 # =============================================================================
 # STATS / DASHBOARD
 # =============================================================================
-INQUIRY_STATUSES = ["draft", "submitted", "in_progress", "pending_head_review", "head_revision", "awaiting_review", "accepted", "revision_requested", "closed"]
+INQUIRY_STATUSES = ["draft", "pending_boss_review", "submitted", "in_progress", "pending_head_review", "head_revision", "awaiting_review", "accepted", "revision_requested", "rejected", "closed"]
 QUOTATION_STATUSES = ["on_bidding", "confirm_order", "cancel"]
 
 
@@ -1630,7 +1706,7 @@ async def sales_stats(
     inq_filter: dict = {}
     quo_filter: dict = {}
     if is_engineering(current):
-        inq_filter["status"] = {"$nin": ["draft"]}
+        inq_filter["status"] = {"$nin": ["draft", "pending_boss_review", "rejected"]}
         if role == "eng_staff":
             inq_filter["$or"] = [
                 {"assigned_to_id": current.get("id")},
@@ -1726,8 +1802,10 @@ async def export_inquiries_excel(
     role = current.get("role")
     if role == "sales":
         filt["created_by_id"] = current.get("id")
+    if is_sales_head(current):
+        filt["status"] = {"$ne": "draft"}
     if is_engineering(current):
-        filt["status"] = {"$nin": ["draft"]}
+        filt["status"] = {"$nin": ["draft", "pending_boss_review", "rejected"]}
         if role == "eng_staff":
             filt["$or"] = [
                 {"assigned_to_id": current.get("id")},

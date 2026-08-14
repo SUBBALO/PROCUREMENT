@@ -36,6 +36,8 @@ const inputCls = "h-9 rounded-none border-slate-300 focus:ring-2 focus:ring-rose
 
 const STATUS_META = {
   draft: { label: "Draft", cls: "bg-slate-100 text-slate-700 border-slate-300" },
+  pending_boss_review: { label: "Menunggu Review Bos", cls: "bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300" },
+  rejected: { label: "Ditolak Bos", cls: "bg-red-100 text-red-800 border-red-400" },
   submitted: { label: "Terkirim", cls: "bg-amber-100 text-amber-800 border-amber-300" },
   in_progress: { label: "Dikerjakan", cls: "bg-sky-100 text-sky-800 border-sky-300" },
   pending_head_review: { label: "Menunggu Review Head", cls: "bg-amber-100 text-amber-900 border-amber-400" },
@@ -293,7 +295,7 @@ export default function SalesPage() {
             </Button>
           </div>
         )}
-        {!isSales && isEngineering && (
+        {!isSales && (isEngineering || role === "sales_head") && (
           <Button data-testid="inq-export-excel" onClick={doExport} disabled={exporting} variant="outline" className="rounded-none h-9 text-xs uppercase tracking-[0.1em]">
             <MicrosoftExcelLogo size={14} weight="bold" className="mr-1.5 text-emerald-600" /> {exporting ? "Menyiapkan…" : "Export Excel"}
           </Button>
@@ -305,6 +307,7 @@ export default function SalesPage() {
         <div className="flex flex-wrap gap-2" data-testid="sales-stats-grid">
           <StatCard label="Total Inquiry" value={stats.inquiries?.total} accent="rose" testid="stat-inq-total" active={statusFilter === ""} onClick={() => setStatusFilter("")} />
           <StatCard label="Draft" value={stats.inquiries?.by_status?.draft} accent="slate" testid="stat-inq-draft" active={statusFilter === "draft"} onClick={() => setStatusFilter(statusFilter === "draft" ? "" : "draft")} />
+          <StatCard label="Menunggu Review Bos" value={stats.inquiries?.by_status?.pending_boss_review} accent="violet" testid="stat-inq-pending-boss" active={statusFilter === "pending_boss_review"} onClick={() => setStatusFilter(statusFilter === "pending_boss_review" ? "" : "pending_boss_review")} />
           <StatCard label="Terkirim" value={stats.inquiries?.by_status?.submitted} accent="amber" testid="stat-inq-submitted" active={statusFilter === "submitted"} onClick={() => setStatusFilter(statusFilter === "submitted" ? "" : "submitted")} />
           <StatCard label="Dikerjakan" value={stats.inquiries?.by_status?.in_progress} accent="sky" testid="stat-inq-in-progress" active={statusFilter === "in_progress"} onClick={() => setStatusFilter(statusFilter === "in_progress" ? "" : "in_progress")} />
           <StatCard label="Menunggu Review Head" value={stats.inquiries?.by_status?.pending_head_review} accent="amber" testid="stat-inq-pending-head" active={statusFilter === "pending_head_review"} onClick={() => setStatusFilter(statusFilter === "pending_head_review" ? "" : "pending_head_review")} />
@@ -312,6 +315,7 @@ export default function SalesPage() {
           <StatCard label="Menunggu Review Sales" value={stats.inquiries?.by_status?.awaiting_review} accent="violet" testid="stat-inq-awaiting" active={statusFilter === "awaiting_review"} onClick={() => setStatusFilter(statusFilter === "awaiting_review" ? "" : "awaiting_review")} />
           <StatCard label="Accepted" value={stats.inquiries?.by_status?.accepted} accent="emerald" testid="stat-inq-accepted" active={statusFilter === "accepted"} onClick={() => setStatusFilter(statusFilter === "accepted" ? "" : "accepted")} />
           <StatCard label="Minta Revisi" value={stats.inquiries?.by_status?.revision_requested} accent="red" testid="stat-inq-revision" active={statusFilter === "revision_requested"} onClick={() => setStatusFilter(statusFilter === "revision_requested" ? "" : "revision_requested")} />
+          <StatCard label="Ditolak Bos" value={stats.inquiries?.by_status?.rejected} accent="red" testid="stat-inq-rejected" active={statusFilter === "rejected"} onClick={() => setStatusFilter(statusFilter === "rejected" ? "" : "rejected")} />
           <StatCard label="Closed" value={stats.inquiries?.by_status?.closed} accent="slate" testid="stat-inq-closed" active={statusFilter === "closed"} onClick={() => setStatusFilter(statusFilter === "closed" ? "" : "closed")} />
         </div>
       )}
@@ -337,6 +341,7 @@ export default function SalesPage() {
             {pendingKind === "assigned_to_me" ? "inquiry ditugaskan ke Anda menunggu di-Accept."
              : pendingKind === "pending_assignment" ? "inquiry submitted menunggu untuk di-Assign ke Engineer."
              : pendingKind === "awaiting_review" ? "inquiry menunggu review Anda."
+             : pendingKind === "pending_boss_review" ? "inquiry menunggu persetujuan Anda (Kepala Sales)."
              : "inquiry aktif."}
           </div>
         </Card>
@@ -634,7 +639,7 @@ function CreateInquiryDialog({ onClose, onCreated, initial = null, existingId = 
         await api.post(`/inquiries/${inquiryId}/submit`);
       }
       const noun = isEdit ? "diperbarui" : "tersimpan sebagai draft";
-      toast.success(submitNow ? `Inquiry terkirim ke Engineering` : `Inquiry ${noun}`);
+      toast.success(submitNow ? `Inquiry diajukan untuk review Kepala Sales` : `Inquiry ${noun}`);
       onCreated();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal simpan");
@@ -646,7 +651,7 @@ function CreateInquiryDialog({ onClose, onCreated, initial = null, existingId = 
       <DialogContent className="rounded-none max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Draft Inquiry" : "Buat Inquiry Costing Baru"}</DialogTitle>
-          <DialogDescription>Isi detail request costing untuk dikirim ke Engineering. {isEdit ? "Simpan perubahan atau langsung kirim." : "Simpan sebagai draft atau langsung kirim."}</DialogDescription>
+          <DialogDescription>Isi detail request costing. {isEdit ? "Simpan perubahan atau ajukan ke Kepala Sales." : "Simpan sebagai draft atau ajukan ke Kepala Sales untuk direview sebelum diteruskan ke Engineering."}</DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-300">
           <span className="text-[11px] uppercase tracking-[0.15em] font-bold text-emerald-700">Nomor Inquiry</span>
@@ -773,7 +778,7 @@ function CreateInquiryDialog({ onClose, onCreated, initial = null, existingId = 
             {saving ? "Menyimpan..." : (isEdit ? "Simpan Perubahan" : "Simpan sebagai Draft")}
           </Button>
           <Button data-testid="inq-submit" onClick={() => doSave(true)} disabled={saving} className="rounded-none bg-rose-600 hover:bg-rose-700 text-white">
-            <PaperPlaneTilt size={13} weight="bold" className="mr-1" /> Kirim ke Engineering
+            <PaperPlaneTilt size={13} weight="bold" className="mr-1" /> Kirim untuk Review Bos
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -882,6 +887,7 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
   const isEngHead = ["engineering", "eng_leader", "eng_head"].includes(role) || isAdminLike;
   const isEngStaff = role === "eng_staff";
   const isSalesOrAdmin = role === "sales" || isAdminLike;
+  const isSalesHead = role === "sales_head" || isAdminLike;  // Kepala Sales — approver costing
   // eng_staff can only accept/progress/complete if assigned to them
   const isAssignee = data && data.assigned_to_id === user?.id;
   // Only the ACTUAL assignee (regardless of role) can submit costing / revision.
@@ -948,6 +954,11 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
         await api.post(`/inquiries/${inquiryId}/review`, { approve: false, review_note: actNote });
       } else if (a === "submit-draft") {
         await api.post(`/inquiries/${inquiryId}/submit`);
+      } else if (a === "boss-approve") {
+        await api.post(`/inquiries/${inquiryId}/boss-review`, { approve: true, note: actNote });
+      } else if (a === "boss-reject") {
+        if (!actNote.trim()) { setProcessing(false); return toast.error("Alasan penolakan wajib diisi"); }
+        await api.post(`/inquiries/${inquiryId}/boss-review`, { approve: false, note: actNote });
       }
       toast.success("Berhasil");
       setAction(null); setActInput(""); setActNote(""); setPendingEngFiles([]);
@@ -1034,6 +1045,20 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
               </div>
             )}
 
+            {/* Keputusan Kepala Sales (Asiong) */}
+            {data.boss_review && (
+              <div className="mt-3">
+                <div className="text-[10px] uppercase tracking-[0.1em] font-bold text-slate-500 mb-1">Review Kepala Sales</div>
+                <div className={`p-2 border-l-4 text-sm ${data.boss_review.approve ? "border-emerald-500 bg-emerald-50" : "border-red-500 bg-red-50"}`} data-testid="boss-review-result">
+                  <div className="text-[10px] uppercase tracking-[0.1em] font-bold mb-0.5">
+                    {data.boss_review.approve ? "Disetujui → diteruskan ke Engineering" : "Ditolak"} — {data.boss_review.by} · {(data.boss_review.at || "").slice(0, 16).replace("T", " ")}
+                  </div>
+                  <div className="text-slate-800 whitespace-pre-wrap">{data.boss_review.note || "(tanpa catatan)"}</div>
+                </div>
+              </div>
+            )}
+
+
             {/* Sales reviews */}
             {(data.sales_reviews || []).length > 0 && (
               <div className="mt-3 space-y-1.5">
@@ -1056,10 +1081,53 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
                     <PencilSimple size={13} weight="bold" className="mr-1" /> Edit Draft
                   </Button>
                   <Button data-testid="submit-draft" onClick={() => doAction("submit-draft")} disabled={processing} className="rounded-none bg-rose-600 hover:bg-rose-700 text-white">
-                    <PaperPlaneTilt size={13} weight="bold" className="mr-1" /> Kirim ke Engineering
+                    <PaperPlaneTilt size={13} weight="bold" className="mr-1" /> Kirim untuk Review Bos
                   </Button>
                 </div>
               )}
+
+              {/* Kepala Sales (Asiong): review costing — approve → ke Engineering, tolak → ditutup */}
+              {isSalesHead && data.status === "pending_boss_review" && action !== "boss-approve" && action !== "boss-reject" && (
+                <div className="p-3 border-2 border-fuchsia-400 bg-fuchsia-50 space-y-2" data-testid="boss-review-panel">
+                  <div className="text-[10px] uppercase tracking-[0.1em] font-bold text-fuchsia-900">Review Kepala Sales</div>
+                  <div className="text-sm text-fuchsia-900">Setujui untuk meneruskan inquiry ke Engineering, atau tolak (inquiry ditutup).</div>
+                  <div className="flex gap-2 flex-wrap">
+                    <Button data-testid="btn-boss-approve" onClick={() => setAction("boss-approve")} className="rounded-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs uppercase tracking-[0.1em]">
+                      <Check size={13} weight="bold" className="mr-1" /> Setuju & Teruskan ke Engineering
+                    </Button>
+                    <Button data-testid="btn-boss-reject" onClick={() => setAction("boss-reject")} className="rounded-none bg-red-600 hover:bg-red-700 text-white text-xs uppercase tracking-[0.1em]">
+                      <X size={13} weight="bold" className="mr-1" /> Tolak
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {isSalesHead && (action === "boss-approve" || action === "boss-reject") && (
+                <div className={`p-3 border-2 space-y-2 ${action === "boss-approve" ? "border-emerald-400 bg-emerald-50" : "border-red-400 bg-red-50"}`}>
+                  <Label className="text-xs font-semibold text-slate-700">
+                    {action === "boss-approve" ? "Catatan persetujuan (opsional)" : "Alasan penolakan *"}
+                  </Label>
+                  <textarea
+                    data-testid="boss-review-note"
+                    className="w-full border border-slate-300 rounded-none p-2 text-sm min-h-[70px]"
+                    value={actNote}
+                    onChange={(e) => setActNote(e.target.value)}
+                    placeholder={action === "boss-approve" ? "mis. OK, lanjut costing" : "mis. Spesifikasi belum jelas / bukan prioritas"}
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => { setAction(null); setActNote(""); }} disabled={processing} className="rounded-none">Batal</Button>
+                    <Button
+                      data-testid="boss-review-confirm"
+                      onClick={() => doAction()}
+                      disabled={processing}
+                      className={`rounded-none text-white ${action === "boss-approve" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-red-600 hover:bg-red-700"}`}
+                    >
+                      {processing ? "Memproses..." : (action === "boss-approve" ? "Konfirmasi Setuju" : "Konfirmasi Tolak")}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
 
               {/* Sales accepted → Buat Quotation shortcut (hidden once a linked quotation exists) */}
               {isSalesOrAdmin && data.status === "accepted" && !action && (data.linked_quotations || []).length === 0 && (

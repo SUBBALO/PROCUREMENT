@@ -159,7 +159,7 @@ VALID_ROLES = (
     "super_admin", "admin", "supervisor", "finance",
     "eng_leader",                          # NEW canonical (Feb 2026)
     "eng_head", "eng_staff", "engineering",  # eng_head = legacy alias for eng_leader; engineering = legacy alias
-    "sales", "purchasing", "staff",           # staff = legacy alias for purchasing
+    "sales", "sales_head", "purchasing", "staff",           # staff = legacy alias for purchasing; sales_head = Kepala Sales (approver costing)
     "store",
     "qc",  # Quality Control — Material Incoming Inspection (MII)
     "doc_control",  # Document Control (Salma) — Digital stamp & controlled document distribution
