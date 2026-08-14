@@ -163,7 +163,11 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
     dwg_so = set(s for s in await db.drawings.distinct("so_no") if s)
     drf_so = set(s for s in await db.drawing_requests.distinct(
         "so_no", {"status": {"$in": TRACKER_STATUSES}, "deleted_at": {"$exists": False}}) if s)
-    universe = list(dwg_so | drf_so)
+    # + SEMUA sales_orders aktif → SO baru (belum ada DRF/drawing) langsung tampil di papan
+    #   dengan status "SO Baru — Menunggu Drawing Request" (permintaan user: apapun aktivitas SO muncul di dashboard)
+    all_so = set(s for s in await db.sales_orders.distinct(
+        "so_no", {"deleted_at": {"$exists": False}}) if s)
+    universe = list(dwg_so | drf_so | all_so)
 
     # sales_orders yang ADA → dipakai untuk header (customer/desc/tanggal) bila tersedia
     so_docs = await db.sales_orders.find({"so_no": {"$in": universe}}, {"_id": 0}).to_list(length=5000) if universe else []
@@ -311,7 +315,11 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
 
         if current_stage == "Engineering":
             if total == 0:
-                status_now, status_kind = "Menunggu Drawing (DRF)", "pending"
+                if not drf_by.get(sono):
+                    # SO baru dari Sales — belum ada Drawing Request sama sekali
+                    status_now, status_kind = "SO Baru — Menunggu Drawing Request", "pending"
+                else:
+                    status_now, status_kind = "Menunggu Drawing (DRF)", "pending"
             elif rev_n > 0:
                 status_now, status_kind = f"Revisi Drawing ({rev_n}/{total})", "revision"
             elif peh_n > 0:
@@ -353,6 +361,8 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
                 break
         if status_kind == "done":
             pic = ""
+        elif "SO Baru" in status_now:
+            pic = "Sales"
         elif "Verifikasi Sales" in status_now:
             pic = sales_name or "Sales"
         elif "QC" in status_now or current_stage == "QC":
