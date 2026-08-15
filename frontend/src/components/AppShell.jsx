@@ -14,7 +14,7 @@ import PdfPreviewModal from "./PdfPreviewModal";
 import {
   ChartBar, Plus, MagnifyingGlass, SignOut, Package, ChartLineUp, ShieldStar, Warehouse, ArrowDown, ArrowUp, Camera,
   ClipboardText, CaretDown, ShoppingCart, Storefront, Truck, ClockCounterClockwise, Bell, HardDrives, UploadSimple,
-  Lightning, LightningSlash, Rows,
+  Lightning, LightningSlash, Rows, Wrench, FileText, Gauge,
 } from "@phosphor-icons/react";
 
 /* Mode Cepat sekarang PERMANEN — tombol dihapus atas permintaan user.
@@ -280,13 +280,25 @@ export default function AppShell({ children }) {
   // Filter dept visibility per role
   const isEngineering = ENG_ROLES.includes(role);
   const isSales = role === "sales";
+  const isDirektur = role === "sales_head";  // Asiong — Sales full edit, modul lain VIEW ONLY
   const isPurchasing = role === "purchasing" || role === "staff";  // legacy staff alias
   const isFinanceOnly = role === "finance";
-  const showPurchasing = !isEngineering && !isSales && (isAdminLike || isPurchasing || isFinanceOnly);
-  const showStore = !isEngineering && !isSales && (isAdminLike || role === "store" || isFinanceOnly);
+  const showPurchasing = !isEngineering && !isSales && !isDirektur && (isAdminLike || isPurchasing || isFinanceOnly);
+  const showStore = !isEngineering && !isSales && !isDirektur && (isAdminLike || role === "store" || isFinanceOnly);
   // Admin panel: super_admin ONLY (admin role like Erwin cannot access).
   const showAdmin = isSuperAdmin;
-  const showBom = !isSales;  // BOM visible for all except sales-only users
+  const showBom = !isSales && !isDirektur;  // BOM (editable) disembunyikan utk Direktur (view-only)
+
+  // Menu Engineering VIEW untuk Direktur (Asiong): pantau beban & lihat tiap engineer kerjakan apa.
+  const ENG_VIEW_ITEMS = [
+    { to: "/engineering/workload", label: "Monitor Beban Kerja", icon: Gauge, testid: "dir-eng-workload" },
+    { to: "/engineering/logwork", label: "Logwork per Engineer", icon: ClockCounterClockwise, testid: "dir-eng-logwork" },
+    { to: "/engineering/drawings", label: "Master Drawing List", icon: FileText, testid: "dir-eng-masterlist" },
+    { to: "/drawings/controlled", label: "Controlled Drawings", icon: FileText, testid: "dir-eng-controlled" },
+    { to: "/documents/register", label: "Dokumen Terkontrol", icon: ClipboardText, testid: "dir-eng-documents" },
+    { to: "/engineering/inquiries", label: "Inquiry Costing", icon: ClipboardText, testid: "dir-eng-inquiries" },
+    { to: "/engineering/so-tracker", label: "SO Tracker", icon: ClipboardText, testid: "dir-eng-sotracker" },
+  ];
 
   // Purchasing items per role
   const purchasingItems = () => {
@@ -342,6 +354,15 @@ export default function AppShell({ children }) {
                   outgoing={role === "finance" ? [] : STORE_OUTGOING}
                   includeReport={true}
                   canViewReport={canViewStoreReport}
+                  activePath={location.pathname}
+                />
+              )}
+              {!isLanding && isDirektur && (
+                <DeptDropdown
+                  label="Engineering"
+                  icon={Wrench}
+                  testid="dept-engineering-direktur"
+                  items={ENG_VIEW_ITEMS}
                   activePath={location.pathname}
                 />
               )}
