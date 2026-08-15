@@ -31,6 +31,18 @@ export default function ProductionAttendancePage() {
   const [modalDate, setModalDate] = useState(todayStr());
   const [rows, setRows] = useState([]);
   const [savingAtt, setSavingAtt] = useState(false);
+  const [holidays, setHolidays] = useState({}); // { 'YYYY-MM-DD': 'Nama libur' }
+
+  const loadHolidays = useCallback(async () => {
+    try {
+      const yr = (month || "").slice(0, 4) || String(new Date().getFullYear());
+      const { data } = await api.get("/production/holidays", { params: { year: yr } });
+      const map = {};
+      (data.items || []).forEach((h) => { if (h.date) map[h.date.slice(0, 10)] = h.name || "Libur Nasional"; });
+      setHolidays(map);
+    } catch { /* ignore */ }
+  }, [month]);
+  useEffect(() => { loadHolidays(); }, [loadHolidays]);
 
   const loadGrid = useCallback(async () => {
     setLoading(true);
@@ -106,8 +118,9 @@ export default function ProductionAttendancePage() {
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-2 text-[10px]">
+      <div className="flex flex-wrap items-center gap-2 text-[10px]">
         {statuses.map((s) => <span key={s} className={`px-2 py-0.5 rounded font-bold ${STATUS_CELL[s]}`}>{STATUS_ABBR[s]} = {STATUS_LABELS[s]}</span>)}
+        <span className="px-2 py-0.5 rounded font-bold bg-rose-50 text-rose-600 border-l-2 border-l-rose-500" data-testid="legend-holiday">Garis merah = Minggu / Libur Nasional (L)</span>
       </div>
 
       {showMaster && (
@@ -145,10 +158,11 @@ export default function ProductionAttendancePage() {
               <tr className="bg-slate-100 text-slate-600">
                 <th className="px-2 py-2 text-left font-bold border border-slate-200 sticky left-0 bg-slate-100 z-10 min-w-[160px]">Nama</th>
                 <th className="px-2 py-2 text-left font-bold border border-slate-200 min-w-[90px]">Bagian</th>
-                {grid.days.map((d) => { const dw = dowOf(d); const sun = dw === 0; return (
-                  <th key={d} data-testid={`att-day-head-${d.slice(8)}`} className={`px-1 py-1 text-center font-bold border border-slate-200 w-8 ${sun ? "bg-rose-50 border-l-2 border-l-rose-500 text-rose-600" : ""}`}>
-                    <div className={`text-[8px] font-bold leading-none ${sun ? "text-rose-500" : "text-slate-400"}`}>{DOW_ABBR[dw] || ""}</div>
+                {grid.days.map((d) => { const dw = dowOf(d); const sun = dw === 0; const hol = !!holidays[d]; const red = sun || hol; return (
+                  <th key={d} data-testid={`att-day-head-${d.slice(8)}`} title={hol ? holidays[d] : (sun ? "Minggu" : "")} className={`px-1 py-1 text-center font-bold border border-slate-200 w-8 ${red ? "bg-rose-50 border-l-2 border-l-rose-500 text-rose-600" : ""}`}>
+                    <div className={`text-[8px] font-bold leading-none ${red ? "text-rose-500" : "text-slate-400"}`}>{DOW_ABBR[dw] || ""}</div>
                     <div className="leading-tight">{Number(d.slice(8))}</div>
+                    {hol && <div className="text-[7px] font-bold text-rose-500 leading-none">L</div>}
                   </th>
                 ); })}
               </tr>
@@ -166,7 +180,9 @@ export default function ProductionAttendancePage() {
                     {grid.days.map((d) => {
                       const st = (grid.records[e.id] || {})[d];
                       const sun = dowOf(d) === 0;
-                      return <td key={d} className={`text-center border border-slate-200 font-bold ${sun ? "border-l-2 border-l-rose-500" : ""} ${st ? STATUS_CELL[st] : (sun ? "bg-rose-50/50 text-rose-300" : "text-slate-200")}`} title={st ? STATUS_LABELS[st] : (sun ? "Minggu" : "")}>{st ? STATUS_ABBR[st] : "·"}</td>;
+                      const hol = !!holidays[d];
+                      const red = sun || hol;
+                      return <td key={d} className={`text-center border border-slate-200 font-bold ${red ? "border-l-2 border-l-rose-500" : ""} ${st ? STATUS_CELL[st] : (red ? "bg-rose-50/50 text-rose-300" : "text-slate-200")}`} title={st ? STATUS_LABELS[st] : (hol ? holidays[d] : (sun ? "Minggu" : ""))}>{st ? STATUS_ABBR[st] : "·"}</td>;
                     })}
                   </tr>
                 ))
