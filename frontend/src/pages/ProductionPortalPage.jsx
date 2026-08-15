@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
+import ProductionJobProgressPage from "./ProductionJobProgressPage";
 import api from "../lib/api";
 import { Signature, FileText, Factory, WarningCircle, ClipboardText, Notebook, Gauge, Package, CalendarX, UsersThree, Clock, ChartBar } from "@phosphor-icons/react";
 
@@ -131,12 +132,41 @@ export default function ProductionPortalPage() {
     },
   ];
 
+  // Susun kartu ke sidebar kiri (grup), Job Progress tampil di tengah
+  const GROUP_OF = {
+    "job-progress": "monitor",
+    "so-work-summary": "monitor",
+    "daily-report": "harian",
+    "frn": "harian",
+    "overtime": "harian",
+    "attendance": "harian",
+    "new-so": "so",
+    "holidays": "so",
+    "ecn-ttd": "drawing",
+    "controlled": "drawing",
+  };
+  const GROUP_DEFS = [
+    { key: "monitor", label: "Monitoring" },
+    { key: "harian", label: "Input Harian" },
+    { key: "so", label: "SO & Master" },
+    { key: "drawing", label: "Drawing & TTD" },
+  ];
+  const groups = GROUP_DEFS.map((g) => ({
+    ...g,
+    cards: CARDS.filter((c) => (GROUP_OF[c.key] || "harian") === g.key),
+  }));
+
   return (
     <DeptPortal
       deptLabel="Produksi"
-      deptTagline="Daily Production Report · Masterlist Bulanan · Acknowledge ECN · TTD Digital"
+      deptTagline="Daily Monitoring Job Progress di tengah · Menu produksi di kiri"
       accentColor="amber"
-      cards={CARDS}
-    />
+      groups={groups}
+      compactCards
+      sidebarMenu
+      cardsLabel="Menu Produksi"
+    >
+      <ProductionJobProgressPage embedded />
+    </DeptPortal>
   );
 }

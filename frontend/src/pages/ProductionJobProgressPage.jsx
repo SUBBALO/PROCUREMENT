@@ -26,7 +26,7 @@ const enumerateDates = (start, end) => {
 };
 const editCls = "w-full h-8 px-1.5 text-xs bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-amber-400 rounded-sm";
 
-export default function ProductionJobProgressPage() {
+export default function ProductionJobProgressPage({ embedded = false }) {
   const [items, setItems] = useState([]);
   const [stats, setStats] = useState({ count: 0, finished: 0, in_progress: 0, late: 0, warning: 0, avg_productivity: 0 });
   const [loading, setLoading] = useState(true);
@@ -112,8 +112,8 @@ export default function ProductionJobProgressPage() {
   };
 
   return (
-    <div className="p-4 max-w-[1700px] mx-auto space-y-4" data-testid="job-progress-page">
-      <BackLink />
+    <div className={embedded ? "space-y-4" : "p-4 max-w-[1700px] mx-auto space-y-4"} data-testid="job-progress-page">
+      {!embedded && <BackLink />}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-amber-700 mb-1">
@@ -136,18 +136,17 @@ export default function ProductionJobProgressPage() {
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-3">
-        <div className="flex flex-wrap lg:flex-col gap-2.5 lg:w-44 shrink-0" data-testid="jp-kpi-sidebar">
-          <div className="flex-1 lg:flex-none min-w-[140px]"><StatCard testid="stat-total" icon={ClipboardText} label="Total Job Aktif" value={stats.count} cls="bg-white border-slate-200 text-slate-800" /></div>
-          <div className="flex-1 lg:flex-none min-w-[140px]"><StatCard testid="stat-progress" icon={Spinner} label="Sedang Proses" value={stats.in_progress} cls="bg-sky-50 border-sky-200 text-sky-700" /></div>
-          <div className="flex-1 lg:flex-none min-w-[140px]"><StatCard testid="stat-warning" icon={Warning} label="Warning" value={stats.warning} cls="bg-amber-50 border-amber-200 text-amber-700" /></div>
-          <div className="flex-1 lg:flex-none min-w-[140px]"><StatCard testid="stat-late" icon={WarningCircle} label="Terlambat" value={stats.late} cls="bg-rose-50 border-rose-200 text-rose-700" /></div>
-          <div className="flex-1 lg:flex-none min-w-[140px]"><StatCard testid="stat-finished" icon={CheckCircle} label="Selesai" value={stats.finished} cls="bg-emerald-50 border-emerald-200 text-emerald-700" /></div>
-          <div className="flex-1 lg:flex-none min-w-[140px]"><StatCard testid="stat-avg-prod" icon={Gauge} label="Avg Produktivitas" value={`${stats.avg_productivity}%`} cls="bg-violet-50 border-violet-200 text-violet-700" /></div>
-        </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5" data-testid="jp-kpi-strip">
+        <StatCard testid="stat-total" icon={ClipboardText} label="Total Job Aktif" value={stats.count} cls="bg-white border-slate-200 text-slate-800" />
+        <StatCard testid="stat-progress" icon={Spinner} label="Sedang Proses" value={stats.in_progress} cls="bg-sky-50 border-sky-200 text-sky-700" />
+        <StatCard testid="stat-warning" icon={Warning} label="Warning" value={stats.warning} cls="bg-amber-50 border-amber-200 text-amber-700" />
+        <StatCard testid="stat-late" icon={WarningCircle} label="Terlambat" value={stats.late} cls="bg-rose-50 border-rose-200 text-rose-700" />
+        <StatCard testid="stat-finished" icon={CheckCircle} label="Selesai" value={stats.finished} cls="bg-emerald-50 border-emerald-200 text-emerald-700" />
+        <StatCard testid="stat-avg-prod" icon={Gauge} label="Avg Produktivitas" value={`${stats.avg_productivity}%`} cls="bg-violet-50 border-violet-200 text-violet-700" />
+      </div>
 
-        <div className="flex-1 min-w-0 bg-white border border-slate-200 rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse" data-testid="job-progress-table">
             <thead>
               <tr className="bg-slate-100 text-slate-600 text-[10px] uppercase tracking-wider">
@@ -233,7 +232,6 @@ export default function ProductionJobProgressPage() {
               )}
             </tbody>
           </table>
-        </div>
         </div>
       </div>
 
