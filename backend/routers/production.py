@@ -1033,18 +1033,145 @@ class OvertimeIn(BaseModel):
     customer: str = ""
     ot_start: str = ""
     ot_end: str = ""
+    ot_hours: Optional[float] = None   # isi manual jumlah jam lembur (opsional; override jam mulai/selesai)
 
 
-def _ot_hours(start: str, end: str) -> float:
+class OvertimeRulesIn(BaseModel):
+    weekday_start: str = "16:00"
+    saturday_start: str = "15:00"
+    holiday_work_start: str = "08:00"
+    holiday_work_end: str = "16:00"
+    holiday_break_hours: float = 1
+    rounding: str = "floor"          # floor | half | round
+    wd_first_mult: float = 1.5       # hari kerja/Sabtu jam ke-1
+    wd_rest_mult: float = 2.0        # hari kerja/Sabtu jam ke-2 dst
+    hol_normal_hours: int = 7        # Minggu/libur jam ke-1..N
+    hol_normal_mult: float = 2.0
+    hol_8th_mult: float = 3.0        # jam ke-(N+1)
+    hol_extra_mult: float = 4.0      # jam berikutnya
+
+
+# Aturan lembur default (dari referensi Gaji Trial.xlsx / Depnaker 6-hari kerja)
+DEFAULT_OT_RULES = {
+    "weekday_start": "16:00",
+    "saturday_start": "15:00",
+    "holiday_work_start": "08:00",
+    "holiday_work_end": "16:00",
+    "holiday_break_hours": 1,
+    "rounding": "floor",
+    "wd_first_mult": 1.5,
+    "wd_rest_mult": 2.0,
+    "hol_normal_hours": 7,
+    "hol_normal_mult": 2.0,
+    "hol_8th_mult": 3.0,
+    "hol_extra_mult": 4.0,
+}
+
+
+async def _get_ot_rules() -> dict:
+    doc = await db.production_overtime_rules.find_one({"_id": "default"}) or {}
+    rules = {**DEFAULT_OT_RULES}
+    for k in DEFAULT_OT_RULES:
+        if doc.get(k) is not None:
+            rules[k] = doc[k]
+    return rules
+
+
+def _time_to_min(t: str) -> int:
     try:
-        sh, sm = [int(x) for x in start.split(":")[:2]]
-        eh, em = [int(x) for x in end.split(":")[:2]]
-        mins = (eh * 60 + em) - (sh * 60 + sm)
+        h, m = [int(x) for x in (t or "").split(":")[:2]]
+        return h * 60 + m
+    except Exception:
+        return 0
+
+
+def _round_hours(mins: int, mode: str) -> float:
+    """Bulatkan durasi menit menjadi jam sesuai mode."""
+    if mins <= 0:
+        return 0.0
+    if mode == "half":            # kelipatan 0.5 jam (bulat ke bawah)
+        return (mins // 30) * 0.5
+    if mode == "round":           # bulat terdekat ke jam penuh
+        return float(round(mins / 60.0))
+    return float(mins // 60)      # floor: bulat ke bawah ke jam penuh
+
+
+def _ot_day_type(ot_date: str, holidays: set) -> str:
+    iso = _date_only(ot_date)
+    try:
+        wd = datetime.fromisoformat(iso).weekday()   # Sen=0 .. Sab=5, Min=6
+    except Exception:
+        wd = 0
+    if iso in holidays or wd == 6:
+        return "holiday"
+    if wd == 5:
+        return "saturday"
+    return "weekday"
+
+
+def _calc_overtime(ot_date: str, start: str, end: str, rules: dict, holidays: set, manual_hours=None) -> dict:
+    """Hitung jam lembur + rincian pengali (1.5x/2x/3x/4x) + jam tertimbang.
+    - manual_hours: jika diisi, dipakai langsung sbg jumlah jam lembur (spt entri manual di Excel).
+    - Untuk Minggu/libur, jam istirahat otomatis dikurangi (mis. 08:00-16:00 = 8 jam - 1 = 7 jam)
+      HANYA bila jam dihitung dari jam mulai/selesai (bukan input manual).
+    """
+    day_type = _ot_day_type(ot_date, holidays)
+    manual = manual_hours is not None and str(manual_hours) != "" and float(manual_hours) > 0
+    if manual:
+        ot_hours = float(manual_hours)
+        raw_hours = ot_hours
+    else:
+        mins = _time_to_min(end) - _time_to_min(start)
         if mins < 0:
             mins += 24 * 60  # lewat tengah malam
-        return round(mins / 60.0, 2)
-    except Exception:
-        return 0.0
+        raw_hours = round(mins / 60.0, 2)
+        ot_hours = _round_hours(mins, rules.get("rounding") or "floor")
+        if day_type == "holiday":
+            ot_hours = max(0.0, ot_hours - float(rules.get("holiday_break_hours", 1) or 0))
+    x15 = x2 = x3 = x4 = 0.0
+    if day_type == "holiday":
+        n = int(rules.get("hol_normal_hours", 7))
+        x2 = min(ot_hours, float(n))
+        rem = ot_hours - x2
+        x3 = 1.0 if rem >= 1 else rem
+        rem = max(0.0, rem - 1)
+        x4 = rem
+        weighted = (x2 * float(rules.get("hol_normal_mult", 2.0))
+                    + x3 * float(rules.get("hol_8th_mult", 3.0))
+                    + x4 * float(rules.get("hol_extra_mult", 4.0)))
+    else:
+        x15 = 1.0 if ot_hours >= 1 else ot_hours
+        x2 = max(0.0, ot_hours - 1)
+        weighted = (x15 * float(rules.get("wd_first_mult", 1.5))
+                    + x2 * float(rules.get("wd_rest_mult", 2.0)))
+    label = {"holiday": "Minggu/Libur", "saturday": "Sabtu", "weekday": "Hari Kerja"}[day_type]
+    return {
+        "day_type": day_type,
+        "day_label": label,
+        "raw_hours": round(raw_hours, 2),
+        "ot_hours": round(ot_hours, 2),
+        "manual": manual,
+        "x15": round(x15, 2), "x2": round(x2, 2), "x3": round(x3, 2), "x4": round(x4, 2),
+        "weighted_hours": round(weighted, 2),
+    }
+
+
+@router.get("/overtime-rules")
+async def get_overtime_rules(current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    return {"rules": await _get_ot_rules()}
+
+
+@router.put("/overtime-rules")
+async def update_overtime_rules(payload: OvertimeRulesIn, current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengubah master lembur")
+    doc = {**payload.dict(), "_id": "default", "updated_at": _now_iso(),
+           "updated_by": current.get("name") or current.get("username") or ""}
+    await db.production_overtime_rules.update_one({"_id": "default"}, {"$set": doc}, upsert=True)
+    await log_action(current, "update_overtime_rules", "overtime_rules", "default", {})
+    return {"ok": True, "rules": await _get_ot_rules()}
 
 
 @router.get("/overtime")
@@ -1052,15 +1179,40 @@ async def list_overtime(month: Optional[str] = None, current: dict = Depends(get
     if not _can_view(current):
         raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
     m = month or datetime.now(timezone.utc).strftime("%Y-%m")
+    rules = await _get_ot_rules()
+    hol_docs = await db.holidays.find({}, {"_id": 0, "date": 1}).to_list(length=5000)
+    holidays = {_date_only(h.get("date") or "") for h in hol_docs if h.get("date")}
     rows = await db.production_overtime.find({"ot_date": {"$regex": f"^{m}"}}, {"_id": 0}).to_list(length=50000)
     rows.sort(key=lambda r: (r.get("ot_date") or "", r.get("created_at") or ""), reverse=True)
     items, summary = [], {}
     for r in rows:
-        hrs = _ot_hours(r.get("ot_start") or "", r.get("ot_end") or "")
-        items.append({**{k: r.get(k) or "" for k in ["id", "ot_date", "ot_no", "name", "so_no", "customer", "ot_start", "ot_end"]}, "hours": hrs})
-        summary[r.get("name") or "-"] = round(summary.get(r.get("name") or "-", 0) + hrs, 2)
-    summary_list = sorted([{"name": k, "total_hours": v} for k, v in summary.items()], key=lambda x: -x["total_hours"])
-    return {"month": m, "items": items, "summary": summary_list, "total_hours": round(sum(summary.values()), 2)}
+        calc = _calc_overtime(r.get("ot_date") or "", r.get("ot_start") or "", r.get("ot_end") or "", rules, holidays, r.get("ot_hours"))
+        items.append({**{k: r.get(k) or "" for k in ["id", "ot_date", "ot_no", "name", "so_no", "customer", "ot_start", "ot_end"]},
+                      "hours": calc["ot_hours"], **calc})
+        nm = r.get("name") or "-"
+        s = summary.setdefault(nm, {"name": nm, "total_hours": 0.0, "x15": 0.0, "x2": 0.0, "x3": 0.0, "x4": 0.0, "weighted_hours": 0.0})
+        s["total_hours"] = round(s["total_hours"] + calc["ot_hours"], 2)
+        s["x15"] = round(s["x15"] + calc["x15"], 2)
+        s["x2"] = round(s["x2"] + calc["x2"], 2)
+        s["x3"] = round(s["x3"] + calc["x3"], 2)
+        s["x4"] = round(s["x4"] + calc["x4"], 2)
+        s["weighted_hours"] = round(s["weighted_hours"] + calc["weighted_hours"], 2)
+    summary_list = sorted(summary.values(), key=lambda x: -x["total_hours"])
+    return {
+        "month": m, "items": items, "summary": summary_list, "rules": rules,
+        "total_hours": round(sum(s["total_hours"] for s in summary.values()), 2),
+        "total_weighted": round(sum(s["weighted_hours"] for s in summary.values()), 2),
+    }
+
+
+@router.post("/overtime/preview")
+async def preview_overtime(payload: OvertimeIn, current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    rules = await _get_ot_rules()
+    hol_docs = await db.holidays.find({}, {"_id": 0, "date": 1}).to_list(length=5000)
+    holidays = {_date_only(h.get("date") or "") for h in hol_docs if h.get("date")}
+    return _calc_overtime(payload.ot_date or "", payload.ot_start or "", payload.ot_end or "", rules, holidays, payload.ot_hours)
 
 
 @router.post("/overtime")
@@ -1081,7 +1233,9 @@ async def create_overtime(payload: OvertimeIn, current: dict = Depends(get_curre
     doc = {
         "id": str(uuid.uuid4()), "ot_date": od, "ot_no": ot_no, "name": (payload.name or "").strip(),
         "so_no": so_no, "customer": customer, "ot_start": (payload.ot_start or "").strip(),
-        "ot_end": (payload.ot_end or "").strip(), "created_by_username": current.get("name") or current.get("username") or "",
+        "ot_end": (payload.ot_end or "").strip(),
+        "ot_hours": (float(payload.ot_hours) if (payload.ot_hours is not None and str(payload.ot_hours) != "") else None),
+        "created_by_username": current.get("name") or current.get("username") or "",
         "created_at": _now_iso(),
     }
     await db.production_overtime.insert_one(doc)

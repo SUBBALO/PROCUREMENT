@@ -1,18 +1,18 @@
 [
   {
-    "content": "Job Progress board + auto-fill + detail modal + Working Date Target + Productivity",
+    "content": "Backend: overtime rules master + _calc_overtime (day-type, multipliers, holiday break deduction, manual hours)",
     "status": "completed"
   },
   {
-    "content": "Holiday master (menu + CRUD) and integrate into Working Date Target (exclude Sundays + holidays)",
+    "content": "Backend: create/list/preview overtime with tier breakdown + weighted hours",
     "status": "completed"
   },
   {
-    "content": "FGRN as spreadsheet multi-row popup (date-first, auto-save, SO->customer/desc autofill)",
+    "content": "Frontend: Master Lembur modal + live OT preview + manual hours + tier columns",
     "status": "completed"
   },
   {
-    "content": "Run testing_agent_v3 for FGRN spreadsheet + Holiday + holiday-aware Working Date Target",
-    "status": "in_progress"
+    "content": "Verify: py_compile, esbuild, API smoke tests, screenshots",
+    "status": "completed"
   }
 ]
