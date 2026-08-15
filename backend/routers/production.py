@@ -263,6 +263,73 @@ def _work_hours(start: str, end: str) -> float:
         return 0.0
 
 
+# ===== Shift & pemisahan jam Normal vs Lembur =====
+DEFAULT_SHIFT = {"shift1_start": "08:00", "shift1_end": "16:00", "shift2_start": "16:00", "shift2_end": "24:00"}
+
+
+async def _get_shift_settings() -> dict:
+    doc = await db.production_shift_settings.find_one({"_id": "default"}) or {}
+    s = {**DEFAULT_SHIFT}
+    for k in DEFAULT_SHIFT:
+        if doc.get(k):
+            s[k] = doc[k]
+    return s
+
+
+def _min_of(t: str) -> int:
+    try:
+        h, m = [int(x) for x in (t or "").split(":")[:2]]
+        return h * 60 + m
+    except Exception:
+        return 0
+
+
+def _split_normal_ot(ws: str, we: str, shift: int, s: dict):
+    """Bagi jam kerja jadi (normal, lembur). Shift 1 normal 08–16, Shift 2 dari setting.
+    Jam kerja di luar jendela normal shift dihitung lembur."""
+    a = _min_of(ws); b = _min_of(we)
+    if b <= a:
+        b += 1440  # lintas tengah malam
+    total = b - a
+    if total <= 0:
+        return (0.0, 0.0)
+    if shift == 2:
+        ns = _min_of(s.get("shift2_start", "16:00")); ne = _min_of(s.get("shift2_end", "24:00"))
+    else:
+        ns = _min_of(s.get("shift1_start", "08:00")); ne = _min_of(s.get("shift1_end", "16:00"))
+    if ne <= ns:
+        ne += 1440
+    lo = max(a, ns); hi = min(b, ne)
+    normal = max(0, hi - lo)
+    ot = total - normal
+    return (round(normal / 60.0, 2), round(ot / 60.0, 2))
+
+
+async def _nightshift_set(operators: set, dates: set) -> set:
+    """Kumpulan (operator_name_lower, date) yang berstatus Night Shift (Shift 2)."""
+    if not operators or not dates:
+        return set()
+    emps = await db.production_employees.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(length=5000)
+    name_to_id = {(e.get("name") or "").strip().lower(): e.get("id") for e in emps}
+    id_to_name = {e.get("id"): (e.get("name") or "").strip().lower() for e in emps}
+    att = await db.production_attendance.find(
+        {"date": {"$in": list(dates)}, "status": "night_shift"}, {"_id": 0, "employee_id": 1, "date": 1}
+    ).to_list(length=100000)
+    out = set()
+    for a in att:
+        nm = id_to_name.get(a.get("employee_id"))
+        if nm:
+            out.add((nm, a.get("date")))
+    return out
+
+
+class ShiftSettingsIn(BaseModel):
+    shift1_start: str = "08:00"
+    shift1_end: str = "16:00"
+    shift2_start: str = "16:00"
+    shift2_end: str = "24:00"
+
+
 def _serialize_report(r: dict) -> dict:
     ws = r.get("work_start") or ""
     we = r.get("work_end") or ""
@@ -368,6 +435,22 @@ def _build_report_filter(month, date, operator, so_no) -> dict:
     return filt
 
 
+@router.get("/shift-settings")
+async def get_shift_settings(current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    return {"settings": await _get_shift_settings()}
+
+
+@router.put("/shift-settings")
+async def update_shift_settings(payload: ShiftSettingsIn, current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengubah")
+    doc = {**payload.dict(), "_id": "default", "updated_at": _now_iso()}
+    await db.production_shift_settings.update_one({"_id": "default"}, {"$set": doc}, upsert=True)
+    return {"ok": True, "settings": await _get_shift_settings()}
+
+
 @router.get("/so-work-summary")
 async def so_work_summary(month: Optional[str] = None, q: Optional[str] = None, current: dict = Depends(get_current_user)):
     """Ringkasan kerja per SO dari Daily Production Report:
@@ -380,6 +463,10 @@ async def so_work_summary(month: Optional[str] = None, q: Optional[str] = None, 
     if q and q.strip():
         filt["so_no"] = {"$regex": q.strip(), "$options": "i"}
     rows = await db.production_reports.find(filt, {"_id": 0}).to_list(length=200000)
+    shift_s = await _get_shift_settings()
+    all_ops = {(r.get("operator_name") or "").strip().lower() for r in rows if r.get("operator_name")}
+    all_dates = {r.get("report_date") or "" for r in rows if r.get("report_date")}
+    nightset = await _nightshift_set(all_ops, all_dates)
     agg: dict = {}
     for r in rows:
         so = (r.get("so_no") or "").strip()
@@ -388,8 +475,11 @@ async def so_work_summary(month: Optional[str] = None, q: Optional[str] = None, 
         rd = r.get("report_date") or ""
         op = (r.get("operator_name") or "").strip()
         hrs = _work_hours(r.get("work_start") or "", r.get("work_end") or "")
+        shift = 2 if (op.lower(), rd) in nightset else 1
+        normal, ot = _split_normal_ot(r.get("work_start") or "", r.get("work_end") or "", shift, shift_s)
         a = agg.setdefault(so, {"so_no": so, "customer": r.get("customer") or "", "dates": set(),
-                                "operators": set(), "machines": set(), "total_hours": 0.0, "qty_ok": 0.0, "qty_ng": 0.0})
+                                "operators": set(), "machines": set(), "total_hours": 0.0,
+                                "normal_hours": 0.0, "ot_hours": 0.0, "has_shift2": False, "qty_ok": 0.0, "qty_ng": 0.0})
         if not a["customer"] and r.get("customer"):
             a["customer"] = r.get("customer")
         if rd:
@@ -400,6 +490,10 @@ async def so_work_summary(month: Optional[str] = None, q: Optional[str] = None, 
         if mc:
             a["machines"].add(mc)
         a["total_hours"] += hrs
+        a["normal_hours"] += normal
+        a["ot_hours"] += ot
+        if shift == 2:
+            a["has_shift2"] = True
         a["qty_ok"] += _f(r.get("qty_ok"))
         a["qty_ng"] += _f(r.get("qty_ng"))
     items = []
@@ -408,6 +502,8 @@ async def so_work_summary(month: Optional[str] = None, q: Optional[str] = None, 
         items.append({
             "so_no": a["so_no"], "customer": a["customer"],
             "total_days": len(dts), "total_hours": round(a["total_hours"], 2),
+            "normal_hours": round(a["normal_hours"], 2), "ot_hours": round(a["ot_hours"], 2),
+            "has_shift2": a["has_shift2"],
             "operators_count": len(a["operators"]),
             "operators": sorted(a["operators"]),
             "machines": sorted(a["machines"]),
