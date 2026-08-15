@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
 import api from "../lib/api";
-import { Signature, FileText, Factory, WarningCircle, ClipboardText, Notebook, Gauge, Package, CalendarX, UsersThree } from "@phosphor-icons/react";
+import { Signature, FileText, Factory, WarningCircle, ClipboardText, Notebook, Gauge, Package, CalendarX, UsersThree, Clock } from "@phosphor-icons/react";
 
 export default function ProductionPortalPage() {
   const [pendingTtd, setPendingTtd] = useState(0);
@@ -60,6 +60,17 @@ export default function ProductionPortalPage() {
       href: "/produksi/attendance",
       accent: "from-indigo-500 via-blue-500 to-cyan-500",
       accentText: "text-indigo-400",
+    },
+    {
+      key: "overtime",
+      label: "Overtime Request",
+      stats: "Form OT · Rekap jam OT/bulan",
+      description:
+        "Form permintaan lembur per SO (customer auto). Lihat total jam overtime tiap karyawan dalam satu bulan.",
+      icon: Clock,
+      href: "/produksi/overtime",
+      accent: "from-orange-500 via-amber-500 to-yellow-500",
+      accentText: "text-orange-400",
     },
     {
       key: "holidays",

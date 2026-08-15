@@ -1019,3 +1019,80 @@ async def save_attendance(payload: AttendanceBulk, current: dict = Depends(get_c
     await log_action(current, "save_attendance", "attendance", d, {"count": len(payload.entries)})
     return {"ok": True, "count": len(payload.entries)}
 
+
+
+# ==========================================================================
+# Overtime Request + rekap OT bulanan
+# ==========================================================================
+
+class OvertimeIn(BaseModel):
+    ot_date: str = ""
+    ot_no: str = ""
+    name: str = ""
+    so_no: str = ""
+    customer: str = ""
+    ot_start: str = ""
+    ot_end: str = ""
+
+
+def _ot_hours(start: str, end: str) -> float:
+    try:
+        sh, sm = [int(x) for x in start.split(":")[:2]]
+        eh, em = [int(x) for x in end.split(":")[:2]]
+        mins = (eh * 60 + em) - (sh * 60 + sm)
+        if mins < 0:
+            mins += 24 * 60  # lewat tengah malam
+        return round(mins / 60.0, 2)
+    except Exception:
+        return 0.0
+
+
+@router.get("/overtime")
+async def list_overtime(month: Optional[str] = None, current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    m = month or datetime.now(timezone.utc).strftime("%Y-%m")
+    rows = await db.production_overtime.find({"ot_date": {"$regex": f"^{m}"}}, {"_id": 0}).to_list(length=50000)
+    rows.sort(key=lambda r: (r.get("ot_date") or "", r.get("created_at") or ""), reverse=True)
+    items, summary = [], {}
+    for r in rows:
+        hrs = _ot_hours(r.get("ot_start") or "", r.get("ot_end") or "")
+        items.append({**{k: r.get(k) or "" for k in ["id", "ot_date", "ot_no", "name", "so_no", "customer", "ot_start", "ot_end"]}, "hours": hrs})
+        summary[r.get("name") or "-"] = round(summary.get(r.get("name") or "-", 0) + hrs, 2)
+    summary_list = sorted([{"name": k, "total_hours": v} for k, v in summary.items()], key=lambda x: -x["total_hours"])
+    return {"month": m, "items": items, "summary": summary_list, "total_hours": round(sum(summary.values()), 2)}
+
+
+@router.post("/overtime")
+async def create_overtime(payload: OvertimeIn, current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa input")
+    od = _date_only((payload.ot_date or "").strip()) or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    so_no = (payload.so_no or "").strip()
+    customer = (payload.customer or "").strip()
+    if so_no and not customer:
+        so = await db.sales_orders.find_one({"so_no": so_no, "deleted_at": {"$exists": False}})
+        if so:
+            customer = so.get("customer") or ""
+    ot_no = (payload.ot_no or "").strip()
+    if not ot_no:
+        seq = (await db.production_overtime.count_documents({})) + 1
+        ot_no = f"OT-{datetime.now(timezone.utc).strftime('%Y%m')}-{seq:04d}"
+    doc = {
+        "id": str(uuid.uuid4()), "ot_date": od, "ot_no": ot_no, "name": (payload.name or "").strip(),
+        "so_no": so_no, "customer": customer, "ot_start": (payload.ot_start or "").strip(),
+        "ot_end": (payload.ot_end or "").strip(), "created_by_username": current.get("name") or current.get("username") or "",
+        "created_at": _now_iso(),
+    }
+    await db.production_overtime.insert_one(doc)
+    await log_action(current, "create_overtime", "overtime", doc["id"], {"name": doc["name"], "so_no": so_no})
+    return {"ok": True, "id": doc["id"], "ot_no": ot_no}
+
+
+@router.delete("/overtime/{ot_id}")
+async def delete_overtime(ot_id: str, current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa menghapus")
+    await db.production_overtime.delete_one({"id": ot_id})
+    return {"ok": True}
+

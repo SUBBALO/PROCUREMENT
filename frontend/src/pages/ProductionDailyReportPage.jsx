@@ -71,11 +71,6 @@ function SpreadsheetEditor({ date, opts, soMap, onSaved }) {
       if (field === "so_no" && soMap[value] !== undefined) row.customer = soMap[value];
       return next;
     });
-    if ((field === "work_start" || field === "work_end") && /^\d{1,2}:\d{2}$/.test(value)) {
-      const col = field === "work_start" ? 6 : 7;
-      const nc = nextEditable(col);
-      if (nc != null) setTimeout(() => focusCell(idx, nc), 10);
-    }
   };
 
   const buildPayload = (row) => ({
