@@ -26,7 +26,7 @@ export default function EngineeringPortalPage() {
       .catch(() => setEcnTotal(0));
     if (isEngUser) {
       api.get("/drawing-requests/my-queue")
-        .then(({ data }) => setJobPending(data.pending_count || 0))
+        .then(({ data }) => setJobPending((data.antri_count || 0) + (data.diterima_count || 0)))
         .catch(() => setJobPending(0));
       api.get("/engineering/workload")
         .then(({ data }) => setOverloadCount(data?.summary?.overload || 0))

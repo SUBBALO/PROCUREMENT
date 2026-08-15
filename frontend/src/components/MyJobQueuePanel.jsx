@@ -3,20 +3,21 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import api from "../lib/api";
 import {
-  ArrowClockwise, CheckCircle, ClipboardText, ArrowRight, Clock, Hourglass, Tray,
+  ArrowClockwise, CheckCircle, ClipboardText, ArrowRight, PlayCircle, Hourglass, TrayArrowDown, Gear, Tray,
 } from "@phosphor-icons/react";
 
 /**
- * MyJobQueuePanel — Antrian job untuk eng staff yang login.
- * - pending: DRF di-assign Riski tapi belum diterima → tombol TERIMA (set start kerja)
- * - in_progress: sudah diterima → tombol Buka Work Order
+ * MyJobQueuePanel — Antrian job untuk engineer yang login (3 tahap).
+ *  1. ANTRI    (accepted)    → ditugaskan Leader, belum diterima → tombol "Terima"
+ *  2. DITERIMA (received)    → sudah diterima, belum digambar     → tombol "Mulai Kerjakan"
+ *  3. PROSES   (in_progress) → sedang dikerjakan                  → "Buka Work Order"
  * Prop `compact` untuk tampilan ringkas di dashboard.
  */
 export default function MyJobQueuePanel({ compact = false }) {
   const navigate = useNavigate();
-  const [data, setData] = useState({ pending: [], in_progress: [], pending_count: 0, in_progress_count: 0 });
+  const [data, setData] = useState({ antri: [], diterima: [], proses: [] });
   const [loading, setLoading] = useState(true);
-  const [accepting, setAccepting] = useState(null);
+  const [busy, setBusy] = useState(null); // drf.id sedang diproses
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -32,24 +33,35 @@ export default function MyJobQueuePanel({ compact = false }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const acceptJob = async (drf) => {
-    setAccepting(drf.id);
+  const doTerima = async (drf) => {
+    setBusy(drf.id);
     try {
-      await api.post(`/drawing-requests/${drf.id}/start-work`);
-      toast.success(`Job ${drf.form_no} diterima — mulai kerja tercatat`);
+      await api.post(`/drawing-requests/${drf.id}/accept-work`);
+      toast.success(`Job ${drf.form_no} diterima`);
       load();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal menerima job");
-    } finally {
-      setAccepting(null);
+    } finally { setBusy(null); }
+  };
+
+  const doMulai = async (drf) => {
+    setBusy(drf.id);
+    try {
+      await api.post(`/drawing-requests/${drf.id}/start-work`);
+      toast.success(`Mulai kerjakan ${drf.form_no}`);
+      navigate(`/engineering/drf/${drf.id}`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal memulai job");
+      setBusy(null);
     }
   };
 
   const fmt = (iso) => (iso ? new Date(iso).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }) : "-");
 
-  const pending = data.pending || [];
-  const working = data.in_progress || [];
-  const nothing = pending.length === 0 && working.length === 0;
+  const antri = data.antri || [];
+  const diterima = data.diterima || [];
+  const proses = data.proses || [];
+  const nothing = antri.length === 0 && diterima.length === 0 && proses.length === 0;
 
   if (loading) {
     return (
@@ -70,21 +82,34 @@ export default function MyJobQueuePanel({ compact = false }) {
         </div>
         <div className="text-[11px] text-slate-400 mt-0.5">
           Ditugaskan oleh {drf.assigned_by || "-"} · {fmt(drf.assigned_at)}
-          {mode === "working" && drf.work_started_at && <> · <span className="text-emerald-600">Mulai kerja: {fmt(drf.work_started_at)}</span></>}
+          {drf.work_received_at && <> · <span className="text-sky-600">Diterima: {fmt(drf.work_received_at)}</span></>}
+          {drf.work_started_at && <> · <span className="text-emerald-600">Mulai: {fmt(drf.work_started_at)}</span></>}
         </div>
       </div>
-      {mode === "pending" ? (
+
+      {mode === "antri" && (
         <button
-          onClick={() => acceptJob(drf)}
-          disabled={accepting === drf.id}
-          className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold uppercase tracking-wider disabled:opacity-60"
-          data-testid={`myqueue-accept-${drf.id}`}
+          onClick={() => doTerima(drf)}
+          disabled={busy === drf.id}
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-[12px] font-bold uppercase tracking-wider disabled:opacity-60"
+          data-testid={`myqueue-terima-${drf.id}`}
         >
-          {accepting === drf.id
-            ? <><ArrowClockwise size={14} className="animate-spin" /> ...</>
-            : <><CheckCircle size={15} weight="bold" /> Terima</>}
+          {busy === drf.id ? <ArrowClockwise size={14} className="animate-spin" /> : <CheckCircle size={15} weight="bold" />} Terima
         </button>
-      ) : (
+      )}
+
+      {mode === "diterima" && (
+        <button
+          onClick={() => doMulai(drf)}
+          disabled={busy === drf.id}
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold uppercase tracking-wider disabled:opacity-60"
+          data-testid={`myqueue-mulai-${drf.id}`}
+        >
+          {busy === drf.id ? <ArrowClockwise size={14} className="animate-spin" /> : <PlayCircle size={15} weight="bold" />} Mulai Kerjakan
+        </button>
+      )}
+
+      {mode === "proses" && (
         <button
           onClick={() => navigate(`/engineering/drf/${drf.id}`)}
           className="inline-flex items-center gap-1.5 px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-bold uppercase tracking-wider"
@@ -96,16 +121,29 @@ export default function MyJobQueuePanel({ compact = false }) {
     </div>
   );
 
+  const Section = ({ icon: Icon, color, title, list, mode, hint }) => (
+    list.length > 0 ? (
+      <div className="space-y-2">
+        <div className={`flex items-center gap-1.5 text-[11px] uppercase tracking-widest font-bold ${color}`}>
+          <Icon size={14} weight="fill" /> {title} ({list.length})
+        </div>
+        {hint && <div className="text-[11px] text-slate-400 -mt-1">{hint}</div>}
+        {(compact ? list.slice(0, 3) : list).map((drf) => <JobRow key={drf.id} drf={drf} mode={mode} />)}
+      </div>
+    ) : null
+  );
+
   return (
     <div className="border-2 border-teal-500 bg-teal-50/40" data-testid="myqueue-panel">
-      <div className="flex items-center justify-between gap-2 px-4 py-3 bg-teal-600 text-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-teal-600 text-white">
         <div className="flex items-center gap-2">
           <Tray size={18} weight="fill" />
           <span className="text-sm font-bold uppercase tracking-[0.15em]">Antrian Job Saya</span>
         </div>
         <div className="flex items-center gap-2 text-[11px] font-bold">
-          <span className="px-2 py-0.5 bg-white/20" data-testid="myqueue-pending-count">Belum diterima: {pending.length}</span>
-          <span className="px-2 py-0.5 bg-white/20" data-testid="myqueue-working-count">Dikerjakan: {working.length}</span>
+          <span className="px-2 py-0.5 bg-amber-400/90 text-amber-950" data-testid="myqueue-antri-count">Antri: {antri.length}</span>
+          <span className="px-2 py-0.5 bg-white/25" data-testid="myqueue-diterima-count">Diterima: {diterima.length}</span>
+          <span className="px-2 py-0.5 bg-white/25" data-testid="myqueue-proses-count">Proses: {proses.length}</span>
         </div>
       </div>
 
@@ -117,25 +155,13 @@ export default function MyJobQueuePanel({ compact = false }) {
           </div>
         )}
 
-        {pending.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-widest font-bold text-amber-700">
-              <Hourglass size={14} weight="fill" /> Perlu Diterima ({pending.length})
-            </div>
-            {(compact ? pending.slice(0, 3) : pending).map((drf) => <JobRow key={drf.id} drf={drf} mode="pending" />)}
-          </div>
-        )}
+        <Section icon={Hourglass} color="text-amber-700" title="Antri — Perlu Diterima" list={antri} mode="antri"
+          hint="Klik Terima untuk mengakui pekerjaan ini." />
+        <Section icon={TrayArrowDown} color="text-sky-700" title="Diterima — Siap Dikerjakan" list={diterima} mode="diterima"
+          hint="Klik Mulai Kerjakan saat mau menggambar (tanggal mulai tercatat)." />
+        <Section icon={Gear} color="text-emerald-700" title="Proses — Sedang Dikerjakan" list={proses} mode="proses" />
 
-        {working.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-widest font-bold text-sky-700">
-              <Clock size={14} weight="fill" /> Sedang Dikerjakan ({working.length})
-            </div>
-            {(compact ? working.slice(0, 3) : working).map((drf) => <JobRow key={drf.id} drf={drf} mode="working" />)}
-          </div>
-        )}
-
-        {compact && (pending.length > 3 || working.length > 3) && (
+        {compact && (antri.length > 3 || diterima.length > 3 || proses.length > 3) && (
           <button
             onClick={() => navigate("/engineering/my-queue")}
             className="w-full text-center text-[12px] font-bold text-teal-700 hover:text-teal-900 py-1"

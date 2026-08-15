@@ -19,7 +19,7 @@ export function useWorkOrderTabs() {
   useEffect(() => {
     let alive = true;
     api.get("/drawing-requests/my-queue")
-      .then(({ data }) => { if (alive) setJobPending(data.pending_count || 0); })
+      .then(({ data }) => { if (alive) setJobPending((data.antri_count || 0) + (data.diterima_count || 0)); })
       .catch(() => {});
     if (isLeader) {
       api.get("/drawing-requests/pending-count-for-engineering")
@@ -30,10 +30,11 @@ export function useWorkOrderTabs() {
   }, [isLeader]);
 
   const tabs = [];
-  if (!isLeader || jobPending > 0) {
-    tabs.push({ key: "my-queue", label: "Job Saya", to: "/engineering/my-queue", icon: Tray, badge: jobPending || undefined });
+  // Staff: cukup 1 halaman "Antrian Job Saya". Tab "Work Order" (papan assign) khusus Leader.
+  tabs.push({ key: "my-queue", label: "Antrian Job Saya", to: "/engineering/my-queue", icon: Tray, badge: jobPending || undefined });
+  if (isLeader) {
+    tabs.push({ key: "work-orders", label: "Work Order (Assign)", to: "/engineering/work-orders", icon: Wrench, badge: drfPending || undefined });
   }
-  tabs.push({ key: "work-orders", label: "Work Order", to: "/engineering/work-orders", icon: Wrench, badge: isLeader ? (drfPending || undefined) : undefined });
   return tabs;
 }
 

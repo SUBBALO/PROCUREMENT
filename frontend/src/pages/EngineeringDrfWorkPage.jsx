@@ -157,7 +157,7 @@ export default function EngineeringDrfWorkPage() {
     setAccepting(true);
     try {
       await api.post(`/drawing-requests/${drfId}/start-work`);
-      toast.success("Job diterima — tanggal mulai kerja tercatat");
+      toast.success("Mulai kerjakan — tanggal mulai tercatat");
       load();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal menerima job");
@@ -225,7 +225,7 @@ export default function EngineeringDrfWorkPage() {
         <div className="border-2 border-emerald-500 bg-emerald-50 p-4 flex flex-wrap items-center justify-between gap-3" data-testid="drf-accept-gate">
           <div className="text-sm text-slate-700 flex-1 min-w-[240px]">
             <b className="text-emerald-800">Job ini ditugaskan ke Anda oleh {drf.assigned_by || "Eng Leader"}.</b><br />
-            Klik <b>TERIMA JOB</b> untuk mulai bekerja — tanggal mulai kerja akan tercatat. Setelah itu Anda bisa generate drawing, upload, dan isi BOM.
+            Klik <b>MULAI KERJAKAN</b> untuk mulai menggambar — tanggal mulai akan tercatat. Setelah itu Anda bisa generate drawing, upload, dan isi BOM.
           </div>
           <button
             onClick={startWork}
@@ -235,7 +235,7 @@ export default function EngineeringDrfWorkPage() {
           >
             {accepting
               ? <><ArrowClockwise size={16} className="animate-spin" /> Memproses...</>
-              : <><CheckCircle size={16} weight="bold" /> Terima Job</>}
+              : <><CheckCircle size={16} weight="bold" /> Mulai Kerjakan</>}
           </button>
         </div>
       )}

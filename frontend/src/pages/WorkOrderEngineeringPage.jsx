@@ -7,6 +7,7 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import BackLink from "../components/BackLink";
+import DrfStageBoardPanel from "../components/DrfStageBoardPanel";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
 import {
   Wrench, ArrowClockwise, MagnifyingGlass, UserPlus, ArrowRight, Eye, CheckCircle,
@@ -16,9 +17,10 @@ import {
 const LEADER_ROLES = ["eng_head", "eng_leader", "admin", "super_admin", "supervisor"];
 
 const INQ_STATUS = {
-  submitted: { label: "Perlu Diterima", cls: "bg-amber-100 text-amber-800 border-amber-400" },
-  accepted: { label: "Diterima", cls: "bg-sky-100 text-sky-800 border-sky-400" },
-  in_progress: { label: "Dikerjakan", cls: "bg-violet-100 text-violet-800 border-violet-400" },
+  submitted: { label: "Perlu Di-assign", cls: "bg-amber-100 text-amber-800 border-amber-400" },
+  accepted: { label: "Antri", cls: "bg-amber-50 text-amber-700 border-amber-300" },
+  received: { label: "Diterima", cls: "bg-sky-100 text-sky-800 border-sky-400" },
+  in_progress: { label: "Proses", cls: "bg-violet-100 text-violet-800 border-violet-400" },
 };
 
 /**
@@ -133,6 +135,8 @@ export default function WorkOrderEngineeringPage() {
         </p>
       </div>
 
+      {isLeader && <DrfStageBoardPanel />}
+
       {/* Tabs utama */}
       <div className="flex gap-1 border-b border-slate-200 flex-wrap">
         <TabBtn active={tab === "inquiry"} onClick={() => setTab("inquiry")} icon={ClipboardText} label="Inquiry" count={activeInq.length} testid="hub-tab-inquiry" />
@@ -167,7 +171,7 @@ export default function WorkOrderEngineeringPage() {
               <tbody data-testid="hub-inquiry-list">
                 {activeInq.length === 0 && <tr><td colSpan={6} className="p-12 text-center text-slate-400">Tidak ada inquiry aktif.</td></tr>}
                 {pagInq.pagedData.map((i) => {
-                  const st = INQ_STATUS[i.status === "submitted" ? "submitted" : (i.status === "accepted" ? "accepted" : "in_progress")] || INQ_STATUS.in_progress;
+                  const st = INQ_STATUS[i.status] || INQ_STATUS.in_progress;
                   return (
                     <tr key={i.id} className="border-b border-slate-100 hover:bg-sky-50/40" data-testid={`hub-inq-row-${i.inquiry_no || i.id}`}>
                       <td className="p-3 font-mono font-semibold text-slate-900 text-xs">{i.inquiry_no || i.title || i.id}</td>

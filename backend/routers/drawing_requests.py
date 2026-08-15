@@ -42,7 +42,7 @@ from pydantic import BaseModel, Field
 from db import db
 from deps import (
     ENGINEERING_HEAD_ROLES, SALES_ROLES,
-    get_current_user, is_admin_like, is_eng_head, is_engineering, log_action,
+    get_current_user, is_admin_like, is_eng_head, is_engineering, is_sales_head, log_action,
 )
 
 router = APIRouter(tags=["drawing_request"])
@@ -159,7 +159,7 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
     # accepted/in_progress/completed. Board lama HANYA membaca sales_orders, sehingga
     # SO yang belum punya record sales_orders tidak muncul. Kini disamakan: gabungan
     # SO dari drawings (ada gambar) DAN drawing_requests (masuk workflow Engineering).
-    TRACKER_STATUSES = ["accepted", "in_progress", "completed"]
+    TRACKER_STATUSES = ["accepted", "received", "in_progress", "completed"]
     dwg_so = set(s for s in await db.drawings.distinct("so_no") if s)
     drf_so = set(s for s in await db.drawing_requests.distinct(
         "so_no", {"status": {"$in": TRACKER_STATUSES}, "deleted_at": {"$exists": False}}) if s)
@@ -543,6 +543,7 @@ async def list_drawing_requests(
         filt["$or"] = [
             {"status": "submitted"},
             {"status": "accepted", "linked_drawing_id": {"$in": [None, ""]}},
+            {"status": "received", "linked_drawing_id": {"$in": [None, ""]}},
             {"status": "in_progress"},
         ]
     elif scope == "for_sales_ttd":
@@ -709,28 +710,92 @@ async def drf_engineering_users(current: dict = Depends(get_current_user)):
 
 @router.get("/drawing-requests/my-queue")
 async def my_job_queue(current: dict = Depends(get_current_user)):
-    """Antrian job untuk eng staff yang login: DRF yang di-assign ke dia.
-    - pending (accepted, belum start) → perlu klik TERIMA
-    - in_progress → sudah diterima, sedang dikerjakan.
+    """Antrian job untuk engineer yang login: DRF yang di-assign ke dia.
+    3 tahap:
+    - antri     (accepted)    → belum diterima → tombol TERIMA
+    - diterima  (received)    → sudah diterima, belum digambar → tombol MULAI KERJAKAN
+    - proses    (in_progress) → sedang dikerjakan → buka Work Order
     Didefinisikan SEBELUM route /{drf_id} agar tidak tertangkap sebagai id."""
     uid = current.get("id")
     if not uid:
         raise HTTPException(status_code=401, detail="Unauthorized")
     docs = await db.drawing_requests.find(
         {"assigned_engineer_id": uid,
-         "status": {"$in": ["accepted", "in_progress"]},
+         "status": {"$in": ["accepted", "received", "in_progress"]},
          "deleted_at": {"$exists": False}},
         {"_id": 0},
     ).sort("assigned_at", -1).to_list(length=200)
-    pending, working = [], []
+    antri, diterima, proses = [], [], []
     for d in docs:
         d = _clean(d)
-        if d.get("work_started_at"):
-            working.append(d)
+        st = d.get("status")
+        if st == "in_progress" or d.get("work_started_at"):
+            proses.append(d)
+        elif st == "received" or d.get("work_received_at"):
+            diterima.append(d)
         else:
-            pending.append(d)
-    return {"pending": pending, "in_progress": working,
-            "pending_count": len(pending), "in_progress_count": len(working)}
+            antri.append(d)
+    return {
+        "antri": antri, "diterima": diterima, "proses": proses,
+        "antri_count": len(antri), "diterima_count": len(diterima), "proses_count": len(proses),
+        # backward-compat (konsumen lama)
+        "pending": antri, "in_progress": proses,
+        "pending_count": len(antri), "in_progress_count": len(proses),
+    }
+
+
+@router.get("/drawing-requests/stage-board")
+async def drf_stage_board(current: dict = Depends(get_current_user)):
+    """Ringkasan beban DRF per engineer dalam 3 tahap (untuk monitor Bos/Leader):
+    - antri    (accepted)    : sudah ditugaskan, engineer belum Terima
+    - diterima (received)    : sudah diterima, belum digambar
+    - proses   (in_progress) : sedang dikerjakan
+    Juga mengembalikan jumlah 'submitted' yang masih menunggu di-assign Eng Leader."""
+    if not (is_engineering(current) or is_admin_like(current) or is_sales_head(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering / Leader / Direktur")
+    from deps import ENGINEERING_ROLES
+    users = await db.users.find(
+        {"role": {"$in": list(ENGINEERING_ROLES)}, "active": {"$ne": False}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "username": 1, "name": 1, "role": 1},
+    ).sort("name", 1).to_list(length=200)
+    per = {u["id"]: {
+        "user_id": u["id"], "name": u.get("name") or u.get("username"),
+        "username": u.get("username"), "role": u.get("role"),
+        "antri": 0, "diterima": 0, "proses": 0, "total": 0,
+    } for u in users}
+
+    docs = await db.drawing_requests.find(
+        {"status": {"$in": ["accepted", "received", "in_progress"]}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "assigned_engineer_id": 1, "assigned_engineer_name": 1, "status": 1,
+         "work_received_at": 1, "work_started_at": 1},
+    ).to_list(length=5000)
+
+    unassigned = {"antri": 0, "diterima": 0, "proses": 0}
+    for d in docs:
+        st = d.get("status")
+        bucket = "proses" if (st == "in_progress" or d.get("work_started_at")) else (
+            "diterima" if (st == "received" or d.get("work_received_at")) else "antri")
+        uid = d.get("assigned_engineer_id")
+        target = per.get(uid)
+        if target is None:
+            unassigned[bucket] += 1
+            continue
+        target[bucket] += 1
+        target["total"] += 1
+
+    items = [p for p in per.values()]
+    items.sort(key=lambda x: (x["total"], x["proses"]), reverse=True)
+    submitted_waiting = await db.drawing_requests.count_documents(
+        {"status": "submitted", "deleted_at": {"$exists": False}})
+    totals = {
+        "antri": sum(p["antri"] for p in items) + unassigned["antri"],
+        "diterima": sum(p["diterima"] for p in items) + unassigned["diterima"],
+        "proses": sum(p["proses"] for p in items) + unassigned["proses"],
+        "submitted_waiting": submitted_waiting,
+    }
+    return {"items": items, "totals": totals, "submitted_waiting": submitted_waiting}
+
+
 
 
 
@@ -765,7 +830,7 @@ async def _compute_workload(start: str = "", end: str = ""):
 
     # DRF
     drf_q = ({"assigned_engineer_id": {"$in": ids}, "deleted_at": {"$exists": False}} if period
-             else {"status": {"$in": ["accepted", "in_progress"]}, "deleted_at": {"$exists": False}})
+             else {"status": {"$in": ["accepted", "received", "in_progress"]}, "deleted_at": {"$exists": False}})
     for d in await db.drawing_requests.find(drf_q, {"_id": 0, "assigned_engineer_id": 1, "created_at": 1, "received_at": 1, "expected_due_date": 1, "due_date": 1}).to_list(length=5000):
         uid = d.get("assigned_engineer_id")
         if uid not in stats:
@@ -923,7 +988,7 @@ async def engineering_workload_detail(user_id: str, current: dict = Depends(get_
     # DRF aktif
     drf = []
     for d in await db.drawing_requests.find(
-        {"assigned_engineer_id": user_id, "status": {"$in": ["accepted", "in_progress"]}, "deleted_at": {"$exists": False}},
+        {"assigned_engineer_id": user_id, "status": {"$in": ["accepted", "received", "in_progress"]}, "deleted_at": {"$exists": False}},
         {"_id": 0, "id": 1, "form_no": 1, "so_no": 1, "customer_name": 1, "project_name": 1, "status": 1, "expected_due_date": 1, "due_date": 1},
     ).sort("created_at", -1).to_list(length=1000):
         drf.append({
@@ -1355,7 +1420,7 @@ async def reassign_drf(
         raise HTTPException(status_code=403, detail="Hanya Engineering Leader/Admin atau engineer yang ditugaskan yang boleh memindahkan tugas ini")
     if not old_id:
         raise HTTPException(status_code=400, detail="DRF belum pernah di-assign. Gunakan Accept & Assign dulu.")
-    if doc.get("status") not in ("accepted", "in_progress"):
+    if doc.get("status") not in ("accepted", "received", "in_progress"):
         raise HTTPException(status_code=400, detail=f"DRF status = {doc.get('status')} — hanya bisa dipindah saat 'accepted' atau 'in_progress'")
 
     eng = await db.users.find_one({"id": payload.assigned_engineer_id})
@@ -1431,11 +1496,11 @@ async def reassign_drf(
 
 
 
-@router.post("/drawing-requests/{drf_id}/start-work")
-async def start_work_drf(drf_id: str, current: dict = Depends(get_current_user)):
-    """Eng staff (yang di-assign) KLIK TERIMA → mulai kerja.
-    Set work_started_at (Tanggal Start Kerja) + status in_progress.
-    Per SO: sekali terima = start kerja untuk semua drawing di SO ini."""
+@router.post("/drawing-requests/{drf_id}/accept-work")
+async def accept_work_drf(drf_id: str, current: dict = Depends(get_current_user)):
+    """Engineer yang ditugaskan KLIK TERIMA (mengakui pekerjaan).
+    Status: accepted (Antri) → received (Diterima). Belum mulai menggambar.
+    Set work_received_at + work_received_by."""
     doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}})
     if not doc:
         raise HTTPException(status_code=404, detail="DRF tidak ditemukan")
@@ -1445,8 +1510,40 @@ async def start_work_drf(drf_id: str, current: dict = Depends(get_current_user))
         raise HTTPException(status_code=403, detail="Hanya engineer yang ditugaskan yang bisa menerima job ini")
     if not assignee:
         raise HTTPException(status_code=400, detail="DRF belum di-assign ke engineer manapun")
-    if doc.get("status") not in ("accepted", "in_progress"):
-        raise HTTPException(status_code=400, detail=f"DRF harus sudah di-accept & di-assign dulu (status: {doc.get('status')})")
+    if doc.get("status") not in ("accepted", "received"):
+        raise HTTPException(status_code=400, detail=f"DRF harus sudah di-assign (Antri) dulu (status: {doc.get('status')})")
+    # Idempotent
+    if doc.get("status") == "received" or doc.get("work_received_at"):
+        return _clean(doc)
+    now = _now_iso()
+    upd = {
+        "status": "received",
+        "work_received_at": now,
+        "work_received_by": current.get("name") or current.get("username"),
+        "updated_at": now,
+    }
+    await db.drawing_requests.update_one({"id": drf_id}, {"$set": upd})
+    await log_action(current, "drf_accept_work", "drawing_requests", drf_id, {"form_no": doc.get("form_no")})
+    out = await db.drawing_requests.find_one({"id": drf_id}, {"_id": 0})
+    return _clean(out)
+
+
+@router.post("/drawing-requests/{drf_id}/start-work")
+async def start_work_drf(drf_id: str, current: dict = Depends(get_current_user)):
+    """Engineer KLIK MULAI KERJAKAN → mulai menggambar.
+    Status: received/accepted → in_progress (Proses). Set work_started_at.
+    Per SO: sekali mulai = start kerja untuk semua drawing di SO ini."""
+    doc = await db.drawing_requests.find_one({"id": drf_id, "deleted_at": {"$exists": False}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="DRF tidak ditemukan")
+    assignee = doc.get("assigned_engineer_id")
+    is_assignee = assignee and current.get("id") == assignee
+    if not (is_assignee or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya engineer yang ditugaskan yang bisa mulai job ini")
+    if not assignee:
+        raise HTTPException(status_code=400, detail="DRF belum di-assign ke engineer manapun")
+    if doc.get("status") not in ("accepted", "received", "in_progress"):
+        raise HTTPException(status_code=400, detail=f"DRF harus sudah diterima dulu (status: {doc.get('status')})")
     # Idempotent: kalau sudah pernah start, jangan overwrite tanggalnya.
     if doc.get("work_started_at"):
         return _clean(doc)
@@ -1457,6 +1554,10 @@ async def start_work_drf(drf_id: str, current: dict = Depends(get_current_user))
         "work_started_by": current.get("name") or current.get("username"),
         "updated_at": now,
     }
+    # Kalau engineer skip tombol Terima, catat penerimaan sekaligus saat mulai.
+    if not doc.get("work_received_at"):
+        upd["work_received_at"] = now
+        upd["work_received_by"] = current.get("name") or current.get("username")
     await db.drawing_requests.update_one({"id": drf_id}, {"$set": upd})
     # Denormalisasi tanggal ke drawing yang sudah ada (jika sudah di-generate sebelumnya)
     await db.drawings.update_many(
@@ -1502,7 +1603,7 @@ async def generate_drawings_for_drf(
     is_assignee = assignee and current.get("id") == assignee
     if not (is_assignee or is_eng_head(current) or is_admin_like(current)):
         raise HTTPException(status_code=403, detail="Hanya engineer yang ditugaskan yang boleh mengerjakan DRF ini")
-    if doc["status"] not in ("accepted", "in_progress"):
+    if doc["status"] not in ("accepted", "received", "in_progress"):
         raise HTTPException(status_code=400, detail=f"DRF harus di-accept & di-assign dulu (status sekarang: {doc['status']})")
     if not payload.drawings:
         raise HTTPException(status_code=400, detail="Minimal 1 drawing")
@@ -1586,7 +1687,7 @@ async def pull_repeat_drawings(
     is_assignee = assignee and current.get("id") == assignee
     if not (is_assignee or is_eng_head(current) or is_admin_like(current)):
         raise HTTPException(status_code=403, detail="Hanya engineer yang ditugaskan yang boleh mengerjakan DRF ini")
-    if doc["status"] not in ("accepted", "in_progress"):
+    if doc["status"] not in ("accepted", "received", "in_progress"):
         raise HTTPException(status_code=400, detail=f"DRF harus di-accept & di-assign dulu (status sekarang: {doc['status']})")
     if not payload.source_drawing_ids:
         raise HTTPException(status_code=400, detail="Pilih minimal 1 drawing lama untuk ditarik")

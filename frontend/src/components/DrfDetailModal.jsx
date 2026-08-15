@@ -14,9 +14,10 @@ const TYPE_META = {
   repeat_order: { label: "Repeat Order", cls: "bg-blue-50 text-blue-700 border-blue-300" },
 };
 const STATUS_META = {
-  submitted: { label: "Perlu Diterima", cls: "bg-amber-100 text-amber-800 border-amber-300" },
-  accepted: { label: "Diterima — Belum Digambar", cls: "bg-sky-100 text-sky-800 border-sky-300" },
-  in_progress: { label: "Sedang Dikerjakan", cls: "bg-violet-100 text-violet-800 border-violet-300" },
+  submitted: { label: "Perlu Di-assign", cls: "bg-amber-100 text-amber-800 border-amber-300" },
+  accepted: { label: "Antri", cls: "bg-amber-50 text-amber-700 border-amber-300" },
+  received: { label: "Diterima — Belum Digambar", cls: "bg-sky-100 text-sky-800 border-sky-300" },
+  in_progress: { label: "Proses — Sedang Dikerjakan", cls: "bg-violet-100 text-violet-800 border-violet-300" },
   completed: { label: "Selesai", cls: "bg-emerald-100 text-emerald-800 border-emerald-300" },
 };
 const APPROVAL_META = {

@@ -124,7 +124,7 @@ const DEPARTMENTS = [
     key: "transfer-request",
     label: "Transfer / Finance",
     tagline: "Transfer Request Form · CRF-TT",
-    description: "Ajukan pembayaran ke Finance (CRF-TT). Multi-vendor & multi-baris, auto-isi rekening dari Master Bank Vendor, PPh & valas fleksibel, preview & cetak PDF. Bisa diajukan Sales, Engineering & Purchasing.",
+    description: "Ajukan pembayaran ke Finance (CRF-TT). Multi-vendor & multi-baris, auto-isi rekening dari Master Bank Vendor, PPh & valas fleksibel, preview & cetak PDF.",
     icon: Bank,
     href: "/transfer-request",
     accent: "from-sky-500 via-cyan-500 to-blue-500",
@@ -132,7 +132,7 @@ const DEPARTMENTS = [
     accentText: "text-sky-600",
     accentBorder: "border-sky-300",
     stats: "TRF · Vendor Bank · PDF",
-    roles: ["admin", "super_admin", "supervisor", "sales", "engineering", "eng_leader", "eng_head", "eng_staff", "purchasing", "finance"],
+    roles: ["admin", "super_admin", "sales_head", "finance"],
   },
 ];
 
