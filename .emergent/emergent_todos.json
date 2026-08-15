@@ -1,18 +1,18 @@
 [
   {
-    "content": "Attendance: tampilkan hari (3 huruf) di header tanggal + marking kolom Minggu garis merah",
+    "content": "Backend: endpoint bulk create overtime (multi-row per satu tanggal)",
     "status": "completed"
   },
   {
-    "content": "Export Excel rekap lembur bulanan (kolom pengali 1.5x/2x/3x/4x + tertimbang) — backend endpoint + frontend button",
+    "content": "Frontend: form OT date-first multi-row (No, Name, SO, Customer auto, From, To)",
     "status": "completed"
   },
   {
-    "content": "Preview Drawing/BOM di halaman SO Masuk Produksi (modal pratinjau)",
+    "content": "Frontend: tombol Cetak Form (print) sesuai layout Excel + tanda tangan",
     "status": "completed"
   },
   {
-    "content": "Verify: py_compile, esbuild, screenshots",
+    "content": "Verify: py_compile, esbuild, smoke test bulk, screenshot form + print",
     "status": "completed"
   }
 ]

@@ -6,7 +6,7 @@ bisa 'acknowledge' (tandai sudah dilihat/disiapkan).
 """
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -1358,6 +1358,46 @@ async def create_overtime(payload: OvertimeIn, current: dict = Depends(get_curre
     await db.production_overtime.insert_one(doc)
     await log_action(current, "create_overtime", "overtime", doc["id"], {"name": doc["name"], "so_no": so_no})
     return {"ok": True, "id": doc["id"], "ot_no": ot_no}
+
+
+class OvertimeBulkIn(BaseModel):
+    ot_date: str = ""
+    entries: List[OvertimeIn] = []
+
+
+@router.post("/overtime/bulk")
+async def create_overtime_bulk(payload: OvertimeBulkIn, current: dict = Depends(get_current_user)):
+    """Simpan banyak baris OT sekaligus untuk 1 tanggal (OVER TIME REQUEST FORM)."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa input")
+    od = _date_only((payload.ot_date or "").strip()) or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    ym = od[:7].replace("-", "")
+    seq = await db.production_overtime.count_documents({})
+    created = []
+    for e in payload.entries:
+        name = (e.name or "").strip()
+        if not name:
+            continue
+        so_no = (e.so_no or "").strip()
+        customer = (e.customer or "").strip()
+        if so_no and not customer:
+            so = await db.sales_orders.find_one({"so_no": so_no, "deleted_at": {"$exists": False}})
+            if so:
+                customer = so.get("customer") or ""
+        seq += 1
+        ot_no = (e.ot_no or "").strip() or f"OT-{ym}-{seq:04d}"
+        doc = {
+            "id": str(uuid.uuid4()), "ot_date": od, "ot_no": ot_no, "name": name,
+            "so_no": so_no, "customer": customer, "ot_start": (e.ot_start or "").strip(),
+            "ot_end": (e.ot_end or "").strip(),
+            "ot_hours": (float(e.ot_hours) if (e.ot_hours is not None and str(e.ot_hours) != "") else None),
+            "created_by_username": current.get("name") or current.get("username") or "",
+            "created_at": _now_iso(),
+        }
+        await db.production_overtime.insert_one(doc)
+        created.append(doc["id"])
+    await log_action(current, "create_overtime_bulk", "overtime", od, {"count": len(created)})
+    return {"ok": True, "count": len(created), "ids": created}
 
 
 @router.delete("/overtime/{ot_id}")

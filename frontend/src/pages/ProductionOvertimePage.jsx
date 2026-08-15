@@ -2,14 +2,15 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import BackLink from "../components/BackLink";
 import api, { downloadXlsx } from "../lib/api";
-import { Clock, Plus, Trash, X, FloppyDisk, CalendarBlank, Gear, Info, DownloadSimple } from "@phosphor-icons/react";
+import { Clock, Plus, Trash, X, FloppyDisk, CalendarBlank, Gear, DownloadSimple, Printer } from "@phosphor-icons/react";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 const inputCls = "w-full h-9 px-2 text-sm border border-slate-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-500";
+const cellCls = "w-full h-8 px-1.5 text-sm border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-amber-400";
 const fmtDate = (d) => { try { return new Date(d + "T00:00:00").toLocaleDateString("id-ID", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }); } catch { return d; } };
-const num = (v) => (v === 0 || v ? String(v) : "—");
-const EMPTY = { ot_date: todayStr(), ot_no: "", name: "", so_no: "", customer: "", ot_start: "", ot_end: "", ot_hours: "" };
+const fmtLongDate = (d) => { try { return new Date(d + "T00:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" }); } catch { return d; } };
+const newRow = () => ({ name: "", so_no: "", customer: "", ot_start: "16:00", ot_end: "18:00" });
 
 const DAY_BADGE = {
   weekday: "bg-sky-50 border-sky-200 text-sky-700",
@@ -23,10 +24,13 @@ export default function ProductionOvertimePage() {
   const [loading, setLoading] = useState(true);
   const [sos, setSos] = useState([]);
   const [emps, setEmps] = useState([]);
+
+  // multi-row request form (satu tanggal, banyak baris) — OVER TIME REQUEST FORM
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState(EMPTY);
+  const [formDate, setFormDate] = useState(todayStr());
+  const [formRows, setFormRows] = useState([newRow()]);
   const [saving, setSaving] = useState(false);
-  const [preview, setPreview] = useState(null);
+
   // rules master
   const [rulesOpen, setRulesOpen] = useState(false);
   const [rules, setRules] = useState(null);
@@ -42,43 +46,89 @@ export default function ProductionOvertimePage() {
   useEffect(() => { (async () => { try { const r = await api.get("/production/so-brief"); setSos(r.data.items || []); } catch {} try { const e = await api.get("/production/employees"); setEmps(e.data.items || []); } catch {} })(); }, []);
 
   const soMap = useMemo(() => { const m = {}; sos.forEach((s) => { m[s.so_no] = s; }); return m; }, [sos]);
-  const setField = (k, v) => setForm((f) => { const n = { ...f, [k]: v }; if (k === "so_no" && soMap[v]) n.customer = soMap[v].customer || ""; return n; });
 
-  // Live preview dari backend (day type + rincian pengali)
-  useEffect(() => {
-    if (!modalOpen) return;
-    const hasTimes = form.ot_start && form.ot_end;
-    const hasManual = form.ot_hours !== "" && Number(form.ot_hours) > 0;
-    if (!form.ot_date || (!hasTimes && !hasManual)) { setPreview(null); return; }
-    const t = setTimeout(async () => {
-      try {
-        const { data } = await api.post("/production/overtime/preview", {
-          ot_date: form.ot_date, ot_start: form.ot_start, ot_end: form.ot_end,
-          ot_hours: hasManual ? Number(form.ot_hours) : null,
-        });
-        setPreview(data);
-      } catch { setPreview(null); }
-    }, 250);
-    return () => clearTimeout(t);
-  }, [modalOpen, form.ot_date, form.ot_start, form.ot_end, form.ot_hours]);
+  const openForm = () => { setFormDate(todayStr()); setFormRows([newRow(), newRow(), newRow()]); setModalOpen(true); };
+  const setRow = (i, k, v) => setFormRows((rs) => rs.map((r, ix) => {
+    if (ix !== i) return r;
+    const n = { ...r, [k]: v };
+    if (k === "so_no" && soMap[v]) n.customer = soMap[v].customer || "";
+    return n;
+  }));
+  const addRow = () => setFormRows((rs) => [...rs, newRow()]);
+  const removeRow = (i) => setFormRows((rs) => (rs.length <= 1 ? rs : rs.filter((_, ix) => ix !== i)));
 
-  const save = async () => {
-    if (!form.name.trim()) { toast.error("Isi nama"); return; }
-    const hasTimes = form.ot_start && form.ot_end;
-    const hasManual = form.ot_hours !== "" && Number(form.ot_hours) > 0;
-    if (!hasTimes && !hasManual) { toast.error("Isi jam mulai/selesai atau jumlah jam lembur"); return; }
+  const saveForm = async () => {
+    const entries = formRows.filter((r) => (r.name || "").trim());
+    if (entries.length === 0) { toast.error("Isi minimal 1 baris (nama)"); return; }
     setSaving(true);
     try {
-      await api.post("/production/overtime", { ...form, ot_hours: hasManual ? Number(form.ot_hours) : null });
-      toast.success("OT Request tersimpan"); setModalOpen(false); setForm(EMPTY); setPreview(null); load();
-    } catch (e) { toast.error(e.response?.data?.detail || "Gagal"); }
+      const { data: res } = await api.post("/production/overtime/bulk", { ot_date: formDate, entries });
+      toast.success(`${res.count} baris OT tersimpan`);
+      setModalOpen(false); load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal menyimpan"); }
     finally { setSaving(false); }
   };
+
   const remove = async (r) => { if (!window.confirm(`Hapus OT ${r.ot_no}?`)) return; try { await api.delete(`/production/overtime/${r.id}`); load(); } catch { toast.error("Gagal"); } };
 
   const exportXlsx = async () => {
     try { await downloadXlsx("/production/overtime/export.xlsx", { month }, `rekap_lembur_${month}.xlsx`); toast.success("Rekap lembur diexport"); }
     catch (e) { toast.error(e.message || "Gagal export"); }
+  };
+
+  // ===== Cetak OVER TIME REQUEST FORM (per tanggal) =====
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printDate, setPrintDate] = useState(todayStr());
+  const printRows = useMemo(() => (data.items || []).filter((r) => r.ot_date === printDate), [data.items, printDate]);
+  const doPrint = () => {
+    const rowsHtml = printRows.length === 0
+      ? `<tr><td colspan="6" style="text-align:center;padding:16px;color:#888">Tidak ada data OT pada tanggal ini</td></tr>`
+      : printRows.map((r, i) => `<tr>
+          <td style="text-align:center">${i + 1}</td>
+          <td>${r.name || ""}</td>
+          <td style="text-align:center">${r.so_no || ""}</td>
+          <td>${r.customer || ""}</td>
+          <td style="text-align:center">${r.ot_start || ""}</td>
+          <td style="text-align:center">${r.ot_end || ""}</td>
+        </tr>`).join("");
+    // padding rows biar form penuh
+    const pad = Math.max(0, 12 - printRows.length);
+    const padHtml = Array.from({ length: pad }).map((_, i) => `<tr>
+      <td style="text-align:center">${printRows.length + i + 1}</td><td></td><td></td><td></td><td></td><td></td></tr>`).join("");
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>OT Request ${printDate}</title>
+      <style>
+        * { font-family: Arial, Helvetica, sans-serif; }
+        body { margin: 24px; color: #111; }
+        .company { text-align:center; font-weight:bold; font-size:16px; border:1px solid #111; padding:6px; }
+        .title { text-align:center; font-weight:bold; font-size:18px; margin:10px 0 4px; letter-spacing:1px; }
+        .date { font-size:13px; margin:6px 0 10px; }
+        table { border-collapse: collapse; width: 100%; font-size: 12px; }
+        th, td { border: 1px solid #333; padding: 5px 6px; }
+        th { background:#f0f0f0; text-align:center; }
+        .sign { display:flex; justify-content: space-around; margin-top: 42px; text-align:center; font-size:12px; }
+        .sign .box { width: 40%; }
+        .sign .line { margin-top: 60px; border-top: 1px solid #111; padding-top: 4px; font-weight:bold; }
+        @media print { body { margin: 12mm; } }
+      </style></head><body>
+      <div class="company">PT. MITRA KARYA SARANA</div>
+      <div class="title">OVER TIME REQUEST FORM</div>
+      <div class="date"><b>Date :</b> ${fmtLongDate(printDate)}</div>
+      <table>
+        <thead>
+          <tr><th rowspan="2" style="width:38px">No</th><th rowspan="2">Name</th><th rowspan="2" style="width:80px">SO No.</th><th rowspan="2" style="width:120px">Customer</th><th colspan="2">Time</th></tr>
+          <tr><th style="width:70px">From</th><th style="width:70px">To</th></tr>
+        </thead>
+        <tbody>${rowsHtml}${padHtml}</tbody>
+      </table>
+      <div class="sign">
+        <div class="box"><div>Prepared By,</div><div class="line">Leader / SPV</div></div>
+        <div class="box"><div>Approved By,</div><div class="line">Dept. Head</div></div>
+      </div>
+      <script>window.onload=function(){window.print();}</script>
+      </body></html>`;
+    const w = window.open("", "_blank");
+    if (!w) { toast.error("Popup diblokir browser. Izinkan popup untuk mencetak."); return; }
+    w.document.open(); w.document.write(html); w.document.close();
   };
 
   const openRules = async () => {
@@ -105,17 +155,18 @@ export default function ProductionOvertimePage() {
         <div>
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-amber-700 mb-1"><Clock size={14} weight="fill" /> Produksi · Overtime</div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>Overtime Request &amp; Rekap</h1>
-          <p className="text-xs text-slate-500 mt-1">Isi jam lembur (mulai–selesai atau jumlah jam manual). Sistem hitung otomatis pengali 1.5x / 2x / 3x / 4x sesuai jenis hari.</p>
+          <p className="text-xs text-slate-500 mt-1">Isi form OT per tanggal (banyak baris), sistem hitung otomatis pengali 1.5x / 2x / 3x / 4x. Bisa dicetak &amp; ditandatangani.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded px-2 h-9"><CalendarBlank size={16} weight="bold" className="text-slate-500" /><input type="month" value={month} onChange={(e) => setMonth(e.target.value)} data-testid="ot-month" className="text-sm outline-none bg-transparent" /></div>
           <button onClick={openRules} data-testid="ot-master-btn" className="inline-flex items-center gap-1.5 h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-bold rounded hover:bg-slate-100"><Gear size={16} weight="bold" /> Master Lembur</button>
+          <button onClick={() => { setPrintDate(todayStr()); setPrintOpen(true); }} data-testid="ot-print-btn" className="inline-flex items-center gap-1.5 h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-bold rounded hover:bg-slate-100"><Printer size={16} weight="bold" /> Cetak Form</button>
           <button onClick={exportXlsx} data-testid="ot-export-btn" className="inline-flex items-center gap-1.5 h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-bold rounded hover:bg-slate-100"><DownloadSimple size={16} weight="bold" /> Export Excel</button>
-          <button onClick={() => { setForm(EMPTY); setPreview(null); setModalOpen(true); }} data-testid="add-ot-btn" className="inline-flex items-center gap-1.5 h-9 px-4 bg-amber-600 text-white text-sm font-bold rounded hover:bg-amber-700"><Plus size={16} weight="bold" /> Overtime Request</button>
+          <button onClick={openForm} data-testid="add-ot-btn" className="inline-flex items-center gap-1.5 h-9 px-4 bg-amber-600 text-white text-sm font-bold rounded hover:bg-amber-700"><Plus size={16} weight="bold" /> Overtime Request</button>
         </div>
       </div>
 
-      {/* Summary total OT per karyawan */}
+      {/* Rekap per karyawan */}
       <div className="bg-white border border-slate-200 rounded-lg p-3">
         <div className="text-[11px] font-bold text-slate-600 uppercase mb-2">Rekap OT per Karyawan · {month} <span className="text-amber-700">(Total: {data.total_hours} jam · Tertimbang: {data.total_weighted} jam)</span></div>
         <div className="overflow-x-auto" data-testid="ot-summary">
@@ -190,45 +241,67 @@ export default function ProductionOvertimePage() {
       <datalist id="ot-dl-sos">{sos.map((s) => <option key={s.so_no} value={s.so_no}>{s.customer}</option>)}</datalist>
       <datalist id="ot-dl-emps">{emps.map((e) => <option key={e.id} value={e.name} />)}</datalist>
 
-      {/* ===== Overtime Request modal ===== */}
+      {/* ===== Overtime Request FORM (date-first, multi-row) ===== */}
       {modalOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" data-testid="ot-modal">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200"><h2 className="text-base font-bold text-slate-900 flex items-center gap-2"><Clock size={18} weight="bold" className="text-amber-600" /> Overtime Request Form</h2><button onClick={() => setModalOpen(false)} data-testid="ot-modal-close" className="p-1.5 rounded text-slate-400 hover:bg-slate-100"><X size={18} weight="bold" /></button></div>
-            <div className="px-5 py-4 grid grid-cols-2 gap-3">
-              <div><label className="text-xs font-bold text-slate-600">Tanggal</label><input type="date" value={form.ot_date} onChange={(e) => setField("ot_date", e.target.value)} data-testid="ot-f-date" className={inputCls} /></div>
-              <div><label className="text-xs font-bold text-slate-600">No. (auto)</label><input value={form.ot_no} onChange={(e) => setField("ot_no", e.target.value)} placeholder="OT-YYYYMM-####" data-testid="ot-f-no" className={inputCls} /></div>
-              <div className="col-span-2"><label className="text-xs font-bold text-slate-600">Nama *</label><input list="ot-dl-emps" value={form.name} onChange={(e) => setField("name", e.target.value)} data-testid="ot-f-name" placeholder="Nama karyawan" className={inputCls} /></div>
-              <div><label className="text-xs font-bold text-slate-600">SO No</label><input list="ot-dl-sos" value={form.so_no} onChange={(e) => setField("so_no", e.target.value)} data-testid="ot-f-so" placeholder="Pilih SO" className={inputCls} /></div>
-              <div><label className="text-xs font-bold text-slate-600">Customer</label><input value={form.customer} onChange={(e) => setField("customer", e.target.value)} data-testid="ot-f-cust" placeholder="auto dari SO" className={inputCls} /></div>
-              <div><label className="text-xs font-bold text-slate-600">Jam OT (mulai)</label><input type="time" value={form.ot_start} onChange={(e) => setField("ot_start", e.target.value)} data-testid="ot-f-start" className={inputCls} /></div>
-              <div><label className="text-xs font-bold text-slate-600">Jam Selesai OT</label><input type="time" value={form.ot_end} onChange={(e) => setField("ot_end", e.target.value)} data-testid="ot-f-end" className={inputCls} /></div>
-              <div className="col-span-2">
-                <label className="text-xs font-bold text-slate-600">Jumlah Jam Lembur (manual, opsional)</label>
-                <input type="number" min="0" step="0.5" value={form.ot_hours} onChange={(e) => setField("ot_hours", e.target.value)} data-testid="ot-f-hours" placeholder="Isi angka jam bila tanpa jam mulai/selesai (mis. 7)" className={inputCls} />
-                <p className="text-[11px] text-slate-400 mt-0.5">Kosongkan bila pakai jam mulai/selesai. Untuk Minggu/libur, istirahat otomatis dikurangi dari jam mulai–selesai.</p>
+        <div className="fixed inset-0 z-[200] flex items-start justify-center p-4 pt-8 bg-slate-900/50 backdrop-blur-sm" data-testid="ot-modal">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[88vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 shrink-0">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2"><Clock size={18} weight="bold" className="text-amber-600" /> Over Time Request Form</h2>
+                <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded px-2 h-9"><CalendarBlank size={16} weight="bold" className="text-amber-600" /><input type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} data-testid="ot-form-date" className="text-sm outline-none bg-transparent font-semibold" /></div>
+                <span className="text-xs text-slate-500">{fmtLongDate(formDate)}</span>
               </div>
+              <button onClick={() => setModalOpen(false)} data-testid="ot-modal-close" className="p-1.5 rounded text-slate-400 hover:bg-slate-100"><X size={18} weight="bold" /></button>
             </div>
-
-            {/* Live preview rincian pengali */}
-            {preview && (
-              <div className="mx-5 mb-3 rounded-lg border border-amber-200 bg-amber-50/70 px-4 py-3" data-testid="ot-preview">
-                <div className="flex items-center gap-2 text-[11px] font-bold text-amber-800 uppercase mb-2"><Info size={14} weight="bold" /> Perhitungan Otomatis</div>
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
-                  <span>Jenis hari: <span className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-bold ${DAY_BADGE[preview.day_type]}`}>{preview.day_label}</span></span>
-                  <span>Jam lembur: <b className="text-slate-800" data-testid="ot-preview-hours">{preview.ot_hours} jam</b></span>
-                  <span className="text-slate-500">1.5x: <b>{num(preview.x15)}</b></span>
-                  <span className="text-slate-500">2x: <b>{num(preview.x2)}</b></span>
-                  <span className="text-slate-500">3x: <b>{num(preview.x3)}</b></span>
-                  <span className="text-slate-500">4x: <b>{num(preview.x4)}</b></span>
-                  <span>Tertimbang: <b className="text-amber-700" data-testid="ot-preview-weighted">{preview.weighted_hours} jam</b></span>
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200 bg-slate-50">
+            <div className="px-5 py-3 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="bg-slate-100 text-[10px] uppercase text-slate-500">
+                  <th className="px-2 py-1 w-8 text-center">No</th>
+                  <th className="px-2 py-1 text-left min-w-[200px]">Name</th>
+                  <th className="px-2 py-1 text-left w-32">SO No.</th>
+                  <th className="px-2 py-1 text-left w-40">Customer</th>
+                  <th className="px-2 py-1 text-center w-24">From</th>
+                  <th className="px-2 py-1 text-center w-24">To</th>
+                  <th className="px-2 py-1 w-10"></th>
+                </tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {formRows.map((r, i) => (
+                    <tr key={i} data-testid={`ot-form-row-${i}`}>
+                      <td className="px-2 py-1 text-center text-slate-400 font-bold">{i + 1}</td>
+                      <td className="px-2 py-1"><input list="ot-dl-emps" value={r.name} onChange={(e) => setRow(i, "name", e.target.value)} data-testid={`ot-row-name-${i}`} placeholder="Nama karyawan" className={cellCls} /></td>
+                      <td className="px-2 py-1"><input list="ot-dl-sos" value={r.so_no} onChange={(e) => setRow(i, "so_no", e.target.value)} data-testid={`ot-row-so-${i}`} placeholder="SO / PIC" className={cellCls} /></td>
+                      <td className="px-2 py-1"><input value={r.customer} onChange={(e) => setRow(i, "customer", e.target.value)} data-testid={`ot-row-cust-${i}`} placeholder="auto" className={cellCls} /></td>
+                      <td className="px-2 py-1"><input type="time" value={r.ot_start} onChange={(e) => setRow(i, "ot_start", e.target.value)} data-testid={`ot-row-from-${i}`} className={cellCls} /></td>
+                      <td className="px-2 py-1"><input type="time" value={r.ot_end} onChange={(e) => setRow(i, "ot_end", e.target.value)} data-testid={`ot-row-to-${i}`} className={cellCls} /></td>
+                      <td className="px-2 py-1 text-center"><button onClick={() => removeRow(i)} data-testid={`ot-row-del-${i}`} className="p-1 rounded text-slate-400 hover:bg-rose-100 hover:text-rose-600"><Trash size={14} weight="bold" /></button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <button onClick={addRow} data-testid="ot-add-row" className="mt-2 inline-flex items-center gap-1.5 h-8 px-3 text-xs font-bold text-amber-700 border border-amber-300 bg-amber-50 rounded hover:bg-amber-100"><Plus size={14} weight="bold" /> Tambah Baris</button>
+              <p className="text-[11px] text-slate-400 mt-2">Untuk Minggu/libur, jam istirahat otomatis dikurangi (mis. 08:00–16:00 = 7 jam). Pengali dihitung otomatis di rekap.</p>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200 bg-slate-50 shrink-0">
               <button onClick={() => setModalOpen(false)} className="h-9 px-4 text-sm font-bold text-slate-600 border border-slate-300 bg-white rounded hover:bg-slate-100">Batal</button>
-              <button onClick={save} disabled={saving} data-testid="ot-save-btn" className="inline-flex items-center gap-1.5 h-9 px-5 bg-amber-600 text-white text-sm font-bold rounded hover:bg-amber-700 disabled:opacity-60"><FloppyDisk size={16} weight="bold" /> {saving ? "Menyimpan…" : "Simpan"}</button>
+              <button onClick={saveForm} disabled={saving} data-testid="ot-save-btn" className="inline-flex items-center gap-1.5 h-9 px-5 bg-amber-600 text-white text-sm font-bold rounded hover:bg-amber-700 disabled:opacity-60"><FloppyDisk size={16} weight="bold" /> {saving ? "Menyimpan…" : "Simpan"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Cetak Form popup ===== */}
+      {printOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" data-testid="ot-print-modal">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200"><h2 className="text-base font-bold text-slate-900 flex items-center gap-2"><Printer size={18} weight="bold" className="text-amber-600" /> Cetak Over Time Request Form</h2><button onClick={() => setPrintOpen(false)} data-testid="ot-print-close" className="p-1.5 rounded text-slate-400 hover:bg-slate-100"><X size={18} weight="bold" /></button></div>
+            <div className="px-5 py-4 space-y-3">
+              <div><label className="text-xs font-bold text-slate-600">Pilih Tanggal Form</label><input type="date" value={printDate} onChange={(e) => setPrintDate(e.target.value)} data-testid="ot-print-date" className={inputCls} /></div>
+              <div className="text-xs text-slate-500">{fmtLongDate(printDate)} — <b className="text-amber-700" data-testid="ot-print-count">{printRows.length} baris</b> OT ditemukan di bulan {month}.</div>
+              {printRows.length === 0 && <div className="text-[11px] text-rose-500">Tidak ada data OT pada tanggal ini (pastikan bulan yang dipilih di atas benar).</div>}
+            </div>
+            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200 bg-slate-50">
+              <button onClick={() => setPrintOpen(false)} className="h-9 px-4 text-sm font-bold text-slate-600 border border-slate-300 bg-white rounded hover:bg-slate-100">Tutup</button>
+              <button onClick={doPrint} data-testid="ot-print-do" className="inline-flex items-center gap-1.5 h-9 px-5 bg-amber-600 text-white text-sm font-bold rounded hover:bg-amber-700"><Printer size={16} weight="bold" /> Cetak</button>
             </div>
           </div>
         </div>
