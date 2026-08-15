@@ -177,7 +177,8 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
     drfs = await db.drawing_requests.find(
         {"so_no": {"$in": universe}, "deleted_at": {"$exists": False}},
         {"_id": 0, "so_no": 1, "expected_due_date": 1, "delivery_due_date": 1, "customer_name": 1, "customer": 1,
-         "project_name": 1, "notes": 1, "date": 1, "created_at": 1, "assigned_engineer_name": 1, "requested_by": 1},
+         "project_name": 1, "notes": 1, "date": 1, "created_at": 1, "assigned_engineer_name": 1, "requested_by": 1,
+         "status": 1, "assigned_engineer_id": 1, "work_received_at": 1, "work_started_at": 1},
     ).to_list(length=5000) if universe else []
     drf_latest = {}
     for r in drfs:
@@ -315,11 +316,23 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
 
         if current_stage == "Engineering":
             if total == 0:
-                if not drf_by.get(sono):
+                drfs_so = drf_by.get(sono) or []
+                if not drfs_so:
                     # SO baru dari Sales — belum ada Drawing Request sama sekali
                     status_now, status_kind = "SO Baru — Menunggu Drawing Request", "pending"
                 else:
-                    status_now, status_kind = "Menunggu Drawing (DRF)", "pending"
+                    # Belum ada drawing digambar — tampilkan tahap DRF (assign/terima/mulai)
+                    any_started = any(x.get("status") == "in_progress" or x.get("work_started_at") for x in drfs_so)
+                    any_received = any(x.get("status") == "received" or x.get("work_received_at") for x in drfs_so)
+                    any_assigned = any(x.get("assigned_engineer_id") for x in drfs_so)
+                    if any_started:
+                        status_now, status_kind = "Engineering mulai menggambar", "progress"
+                    elif any_received:
+                        status_now, status_kind = "DRF Diterima — Belum Dikerjakan", "waiting"
+                    elif any_assigned:
+                        status_now, status_kind = "DRF Ditugaskan — Menunggu Diterima Engineer", "waiting"
+                    else:
+                        status_now, status_kind = "Menunggu Drawing (DRF)", "pending"
             elif rev_n > 0:
                 status_now, status_kind = f"Revisi Drawing ({rev_n}/{total})", "revision"
             elif peh_n > 0:
