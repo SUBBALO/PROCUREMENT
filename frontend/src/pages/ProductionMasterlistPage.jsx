@@ -194,15 +194,6 @@ export default function ProductionMasterlistPage({ embedded = false, refreshSign
               ) : (
                 grouped.map((g) => (
                   <React.Fragment key={g.date}>
-                    <tr className="bg-amber-50/70">
-                      <td colSpan={6} className="px-3 py-1.5 text-[11px] font-bold text-amber-800 uppercase tracking-wider">
-                        {fmtDate(g.date)} · {g.rows.length} baris
-                      </td>
-                      <td className="px-3 py-1.5 text-[11px] font-bold text-amber-800 text-center">
-                        {Math.round(g.rows.reduce((s, r) => s + (Number(r.work_hours) || 0), 0) * 100) / 100} jam
-                      </td>
-                      <td colSpan={2} className="bg-amber-50/70"></td>
-                    </tr>
                     {g.rows.map((r, i) => (
                       <tr key={r.id} className="hover:bg-slate-50" data-testid={`ml-row-${g.date}-${i}`}>
                         <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{fmtDate(r.report_date)}</td>

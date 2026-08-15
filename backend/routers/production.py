@@ -360,12 +360,19 @@ async def report_options(current: dict = Depends(get_current_user)):
     if not _can_view(current):
         raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
 
-    # Operator: user role produksi/production + nama operator yang pernah diinput
+    # Operator: dari master karyawan produksi (data absensi) + user Produksi + histori
+    op_set = set()
+    prod_emps = await db.production_employees.find(
+        {"active": {"$ne": False}}, {"_id": 0, "name": 1},
+    ).to_list(length=5000)
+    for e in prod_emps:
+        nm = (e.get("name") or "").strip()
+        if nm:
+            op_set.add(nm)
     prod_users = await db.users.find(
         {"role": {"$in": ["production", "produksi"]}, "active": {"$ne": False}},
         {"_id": 0, "name": 1, "username": 1},
     ).to_list(length=500)
-    op_set = set()
     for u in prod_users:
         nm = (u.get("name") or u.get("username") or "").strip()
         if nm:
@@ -802,6 +809,7 @@ class FrnIn(BaseModel):
     description: str = ""
     qty: float = 0
     qc_comment: str = ""
+    item_index: Optional[int] = None   # item ke-berapa dalam SO (untuk SO multi-item)
 
 
 def _serialize_frn(r: dict) -> dict:
@@ -814,6 +822,10 @@ def _serialize_frn(r: dict) -> dict:
         "description": r.get("description") or "",
         "qty": _f(r.get("qty")),
         "qc_comment": r.get("qc_comment") or "",
+        "item_index": r.get("item_index"),
+        "status": r.get("status") or "released",  # data lama tanpa status dianggap released
+        "qc_by": r.get("qc_by") or "",
+        "qc_at": r.get("qc_at") or "",
         "created_by_username": r.get("created_by_username") or "",
         "created_at": r.get("created_at") or "",
     }
@@ -829,7 +841,7 @@ async def so_brief(started_only: bool = False, current: dict = Depends(get_curre
         filt["prod_started"] = True
     sos = await db.sales_orders.find(filt, {"_id": 0}).sort("so_no", 1).to_list(length=10000)
     # Total qty release per SO untuk hitung balance
-    frn_rows = await db.fg_release_notes.find({}, {"_id": 0, "so_no": 1, "qty": 1}).to_list(length=100000)
+    frn_rows = await db.fg_release_notes.find({"status": {"$ne": "rejected"}}, {"_id": 0, "so_no": 1, "qty": 1}).to_list(length=100000)
     released = {}
     for fr in frn_rows:
         sn = fr.get("so_no") or ""
@@ -853,7 +865,41 @@ async def so_brief(started_only: bool = False, current: dict = Depends(get_curre
     return {"items": items}
 
 
-async def _validate_frn_qty(so_no: str, new_qty: float, exclude_id: str = None):
+@router.get("/so-items")
+async def so_items(so_no: str = "", current: dict = Depends(get_current_user)):
+    """Daftar item dalam 1 SO + sisa balance per item (untuk pilih item saat Release Note)."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    so = await db.sales_orders.find_one({"so_no": (so_no or "").strip(), "deleted_at": {"$exists": False}})
+    if not so:
+        return {"so_no": so_no, "customer": "", "items": []}
+    # Qty release per item (non-rejected)
+    frns = await db.fg_release_notes.find(
+        {"so_no": so_no, "status": {"$ne": "rejected"}}, {"_id": 0, "qty": 1, "item_index": 1}
+    ).to_list(length=100000)
+    rel_by_idx = {}
+    for fr in frns:
+        idx = fr.get("item_index")
+        idx = int(idx) if idx is not None else -1
+        rel_by_idx[idx] = rel_by_idx.get(idx, 0) + _f(fr.get("qty"))
+    items = []
+    for i, it in enumerate(so.get("items") or []):
+        qty = _f(it.get("qty"))
+        rel = rel_by_idx.get(i, 0)
+        # jika ada release lama tanpa item_index (idx -1), bebankan ke item pertama
+        if i == 0 and -1 in rel_by_idx:
+            rel += rel_by_idx[-1]
+        items.append({
+            "index": i,
+            "name": str(it.get("name") or f"Item {i + 1}").strip(),
+            "qty": qty,
+            "released": rel,
+            "balance": max(0, qty - rel),
+        })
+    return {"so_no": so_no, "customer": so.get("customer") or "", "items": items}
+
+
+async def _validate_frn_qty(so_no: str, new_qty: float, exclude_id: str = None, item_index=None):
     """Tolak jika total qty release (existing + baru) melebihi SO qty."""
     if not so_no:
         return
@@ -863,7 +909,22 @@ async def _validate_frn_qty(so_no: str, new_qty: float, exclude_id: str = None):
     so_qty = _so_qty_total(so)
     if so_qty <= 0:
         return
-    q = {"so_no": so_no}
+    items = so.get("items") or []
+    # Validasi per item bila item_index diberikan & SO multi-item
+    if item_index is not None and 0 <= int(item_index) < len(items) and len(items) > 1:
+        idx = int(item_index)
+        item_qty = _f(items[idx].get("qty"))
+        q = {"so_no": so_no, "status": {"$ne": "rejected"}, "item_index": idx}
+        if exclude_id:
+            q["id"] = {"$ne": exclude_id}
+        rows = await db.fg_release_notes.find(q, {"_id": 0, "qty": 1}).to_list(length=100000)
+        used = sum(_f(e.get("qty")) for e in rows)
+        bal = item_qty - used
+        if new_qty > bal:
+            nm = str(items[idx].get("name") or f"Item {idx + 1}")
+            raise HTTPException(status_code=400, detail=f"Qty melebihi sisa item '{nm}'. Sisa: {bal:g} (qty item {item_qty:g}, sudah rilis {used:g})")
+        return
+    q = {"so_no": so_no, "status": {"$ne": "rejected"}}
     if exclude_id:
         q["id"] = {"$ne": exclude_id}
     existing = await db.fg_release_notes.find(q, {"_id": 0, "qty": 1}).to_list(length=100000)
@@ -898,18 +959,25 @@ async def create_frn(payload: FrnIn, current: dict = Depends(get_current_user)):
     so_no = (payload.so_no or "").strip()
     customer = (payload.customer or "").strip()
     description = (payload.description or "").strip()
-    # Auto-lengkapi customer & deskripsi dari SO bila kosong
-    if so_no and (not customer or not description):
+    item_index = payload.item_index
+    # Auto-lengkapi customer & deskripsi dari SO; tentukan item
+    if so_no:
         so = await db.sales_orders.find_one({"so_no": so_no, "deleted_at": {"$exists": False}})
         if so:
             customer = customer or (so.get("customer") or "")
-            description = description or _so_desc(so)
+            so_its = so.get("items") or []
+            if item_index is None and len(so_its) == 1:
+                item_index = 0  # 1 item → otomatis
+            if item_index is not None and 0 <= int(item_index) < len(so_its):
+                description = str(so_its[int(item_index)].get("name") or "").strip() or description
+            if not description:
+                description = _so_desc(so)
     # Auto nomor release note bila kosong
     release_no = (payload.release_no or "").strip()
     if not release_no:
         seq = (await db.fg_release_notes.count_documents({})) + 1
         release_no = f"RN-{datetime.now(timezone.utc).strftime('%Y%m')}-{seq:04d}"
-    await _validate_frn_qty(so_no, _f(payload.qty))
+    await _validate_frn_qty(so_no, _f(payload.qty), item_index=item_index)
     doc = {
         "id": str(uuid.uuid4()),
         "frn_date": frn_date,
@@ -919,6 +987,8 @@ async def create_frn(payload: FrnIn, current: dict = Depends(get_current_user)):
         "description": description,
         "qty": _f(payload.qty),
         "qc_comment": (payload.qc_comment or "").strip(),
+        "item_index": (int(item_index) if item_index is not None else None),
+        "status": "draft",
         "created_by": current.get("id"),
         "created_by_username": current.get("name") or current.get("username") or "",
         "created_at": _now_iso(),
@@ -936,7 +1006,7 @@ async def update_frn(frn_id: str, payload: FrnIn, current: dict = Depends(get_cu
     existing = await db.fg_release_notes.find_one({"id": frn_id})
     if not existing:
         raise HTTPException(status_code=404, detail="Release note tidak ditemukan")
-    await _validate_frn_qty((payload.so_no or "").strip(), _f(payload.qty), exclude_id=frn_id)
+    await _validate_frn_qty((payload.so_no or "").strip(), _f(payload.qty), exclude_id=frn_id, item_index=payload.item_index if payload.item_index is not None else existing.get("item_index"))
     updates = {
         "frn_date": (payload.frn_date or existing.get("frn_date") or "").strip(),
         "release_no": (payload.release_no or existing.get("release_no") or "").strip(),
@@ -945,6 +1015,7 @@ async def update_frn(frn_id: str, payload: FrnIn, current: dict = Depends(get_cu
         "description": (payload.description or "").strip(),
         "qty": _f(payload.qty),
         "qc_comment": (payload.qc_comment or "").strip(),
+        "item_index": (int(payload.item_index) if payload.item_index is not None else existing.get("item_index")),
         "updated_at": _now_iso(),
     }
     await db.fg_release_notes.update_one({"id": frn_id}, {"$set": updates})
@@ -962,6 +1033,55 @@ async def delete_frn(frn_id: str, current: dict = Depends(get_current_user)):
     await db.fg_release_notes.delete_one({"id": frn_id})
     await log_action(current, "delete_frn", "fg_release_note", frn_id, {"so_no": existing.get("so_no")})
     return {"ok": True}
+
+
+async def _set_frn_status(frn_id: str, status: str, current: dict, extra: dict = None):
+    existing = await db.fg_release_notes.find_one({"id": frn_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Release note tidak ditemukan")
+    updates = {"status": status, "updated_at": _now_iso(), **(extra or {})}
+    await db.fg_release_notes.update_one({"id": frn_id}, {"$set": updates})
+    await log_action(current, f"frn_{status}", "fg_release_note", frn_id, {"so_no": existing.get("so_no")})
+    return _serialize_frn({**existing, **updates})
+
+
+@router.post("/frn/{frn_id}/submit")
+async def submit_frn(frn_id: str, current: dict = Depends(get_current_user)):
+    """Produksi submit ke QC (draft → submitted)."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Tidak diizinkan")
+    return await _set_frn_status(frn_id, "submitted", current)
+
+
+@router.post("/frn/{frn_id}/release")
+async def release_frn(frn_id: str, current: dict = Depends(get_current_user)):
+    """QC setujui → released (barang jadi siap dikirim)."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Tidak diizinkan")
+    return await _set_frn_status(frn_id, "released", current, {
+        "qc_by": current.get("name") or current.get("username") or "", "qc_at": _now_iso(),
+    })
+
+
+@router.post("/frn/{frn_id}/reject")
+async def reject_frn(frn_id: str, current: dict = Depends(get_current_user)):
+    """QC tolak → rejected (tidak dihitung sbg barang jadi)."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Tidak diizinkan")
+    return await _set_frn_status(frn_id, "rejected", current, {
+        "qc_by": current.get("name") or current.get("username") or "", "qc_at": _now_iso(),
+    })
+
+
+@router.post("/frn/submit-date")
+async def submit_frn_date(payload: dict, current: dict = Depends(get_current_user)):
+    """Submit semua draft pada 1 tanggal ke QC."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Tidak diizinkan")
+    d = (payload.get("date") or "").strip()
+    res = await db.fg_release_notes.update_many({"frn_date": d, "status": "draft"},
+                                                {"$set": {"status": "submitted", "updated_at": _now_iso()}})
+    return {"ok": True, "count": res.modified_count}
 
 
 class JobProgressIn(BaseModel):
@@ -982,11 +1102,15 @@ async def job_progress(current: dict = Depends(get_current_user)):
         {"prod_started": True, "deleted_at": {"$exists": False}}, {"_id": 0}
     ).sort("prod_started_at", 1).to_list(length=10000)
 
-    # Agregasi qty release per SO
-    frn_rows = await db.fg_release_notes.find({}, {"_id": 0, "so_no": 1, "qty": 1, "frn_date": 1}).to_list(length=100000)
+    # Agregasi qty release per SO — HANYA yang sudah di-RELEASE oleh QC (barang jadi siap kirim).
+    # Data lama tanpa status dianggap released (backward compat).
+    frn_rows = await db.fg_release_notes.find({}, {"_id": 0, "so_no": 1, "qty": 1, "frn_date": 1, "status": 1}).to_list(length=100000)
     frn_sum = {}
     frn_last = {}
     for r in frn_rows:
+        st = r.get("status") or "released"
+        if st != "released":
+            continue
         sn = r.get("so_no") or ""
         frn_sum[sn] = frn_sum.get(sn, 0) + _f(r.get("qty"))
         d = _date_only(r.get("frn_date") or "")
