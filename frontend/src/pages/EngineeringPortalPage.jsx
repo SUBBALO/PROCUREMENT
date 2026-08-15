@@ -51,17 +51,6 @@ export default function EngineeringPortalPage() {
   };
 
   const CARDS = [
-    ...(isHead ? [{
-      key: "leader-verify",
-      label: "Menunggu Verifikasi Leader",
-      stats: "Antrian TTD Drawing · Review Dokumen SO",
-      description: "Daftar SO/DRF yang memiliki drawing menunggu verifikasi & TTD Anda. Klik untuk membuka antrian & review dokumen SO lengkap.",
-      icon: PencilSimpleLine,
-      onClick: goToLeaderQueue,
-      badgeCount: leaderPending,
-      accent: "from-emerald-500 via-teal-500 to-green-500",
-      accentText: "text-emerald-400",
-    }] : []),
     ...(isEngUser ? [{
       key: "so-tracker",
       label: "SO Document Tracker",
