@@ -81,7 +81,7 @@ export default function SalesPage() {
   const { user } = useAuth();
   const role = user?.role;
   const isAdminLike = ROLE_ADMIN_LIKE.includes(role);
-  const isSales = role === "sales" || isAdminLike;
+  const isSales = role === "sales" || role === "sales_head" || isAdminLike;
   const isEngineering = ROLE_ENG_ANY.includes(role) || isAdminLike;
   const isEngHead = ROLE_ENG_HEAD.includes(role) || isAdminLike;
   const isEngStaff = role === "eng_staff";

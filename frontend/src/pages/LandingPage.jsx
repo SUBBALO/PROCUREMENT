@@ -141,8 +141,11 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const role = user?.role || "";
 
-  // Filter departments visible to this user
-  const visible = DEPARTMENTS.filter((d) => d.roles.includes(role));
+  // Filter departments visible to this user.
+  // Direktur (sales_head / Asiong) = akses view semua modul → tampilkan semua kartu.
+  const visible = role === "sales_head"
+    ? DEPARTMENTS
+    : DEPARTMENTS.filter((d) => d.roles.includes(role));
 
   const now = new Date();
   const greeting = now.getHours() < 11 ? "Selamat pagi" : now.getHours() < 15 ? "Selamat siang" : now.getHours() < 18 ? "Selamat sore" : "Selamat malam";
@@ -187,7 +190,12 @@ export default function LandingPage() {
                   <button
                     key={d.key}
                     data-testid={`dept-card-${d.key}`}
-                    onClick={() => d.href !== "#" && navigate(d.href)}
+                    onClick={() => {
+                      let href = d.href;
+                      // Direktur: kartu Engineering langsung ke papan Logwork engineer
+                      if (role === "sales_head" && d.key === "engineering") href = "/engineering/logwork";
+                      if (href !== "#") navigate(href);
+                    }}
                     className="group w-full flex items-center gap-2.5 px-2.5 py-2 text-left hover:bg-slate-100 border-l-2 border-transparent hover:border-slate-900 transition-colors duration-150"
                   >
                     <span className={`w-8 h-8 flex items-center justify-center bg-slate-50 border ${d.accentBorder} shrink-0`}>

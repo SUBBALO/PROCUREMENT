@@ -797,6 +797,109 @@ async def drf_stage_board(current: dict = Depends(get_current_user)):
 
 
 
+@router.get("/engineering/logwork")
+async def engineering_logwork(current: dict = Depends(get_current_user)):
+    """Logwork per engineer untuk monitor Direktur/Leader.
+    Berisi beban SAAT INI (DRF/SO, Inquiry, Drawing yang sedang dipegang) yang bisa
+    diklik ke detail, plus RIWAYAT aktivitas terakhir (terima/mulai/selesai)."""
+    if not (is_engineering(current) or is_admin_like(current) or is_sales_head(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering / Leader / Direktur")
+    from deps import ENGINEERING_ROLES
+    users = await db.users.find(
+        {"role": {"$in": list(ENGINEERING_ROLES)}, "active": {"$ne": False}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "username": 1, "name": 1, "role": 1},
+    ).sort("name", 1).to_list(length=200)
+
+    def _stage(d):
+        st = d.get("status")
+        if st == "in_progress" or d.get("work_started_at"):
+            return "proses"
+        if st == "received" or d.get("work_received_at"):
+            return "diterima"
+        return "antri"
+
+    per = {}
+    for u in users:
+        per[u["id"]] = {
+            "user_id": u["id"], "name": u.get("name") or u.get("username"),
+            "username": u.get("username"), "role": u.get("role"),
+            "counts": {"antri": 0, "diterima": 0, "proses": 0},
+            "drf": [], "inquiry": [], "drawing": [], "history": [],
+        }
+
+    # --- Active DRF ---
+    drfs = await db.drawing_requests.find(
+        {"status": {"$in": ["accepted", "received", "in_progress"]}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "form_no": 1, "so_no": 1, "project_name": 1, "customer_name": 1,
+         "status": 1, "request_type": 1, "assigned_engineer_id": 1, "assigned_at": 1,
+         "work_received_at": 1, "work_started_at": 1, "expected_due_date": 1},
+    ).to_list(length=5000)
+    for d in drfs:
+        p = per.get(d.get("assigned_engineer_id"))
+        if not p:
+            continue
+        stg = _stage(d)
+        p["counts"][stg] += 1
+        p["drf"].append({
+            "id": d.get("id"), "form_no": d.get("form_no"), "so_no": d.get("so_no"),
+            "project_name": d.get("project_name"), "customer_name": d.get("customer_name"),
+            "request_type": d.get("request_type"), "stage": stg,
+            "assigned_at": d.get("assigned_at"), "work_received_at": d.get("work_received_at"),
+            "work_started_at": d.get("work_started_at"), "due_date": d.get("expected_due_date"),
+        })
+        # history events dari DRF ini
+        if d.get("work_received_at"):
+            p["history"].append({"at": d["work_received_at"], "event": "Diterima", "type": "drf",
+                                  "ref": d.get("id"), "label": f"{d.get('form_no')} · SO {d.get('so_no') or '-'}"})
+        if d.get("work_started_at"):
+            p["history"].append({"at": d["work_started_at"], "event": "Mulai Kerjakan", "type": "drf",
+                                  "ref": d.get("id"), "label": f"{d.get('form_no')} · SO {d.get('so_no') or '-'}"})
+
+    # --- Active Inquiry (costing) ---
+    inqs = await db.inquiries.find(
+        {"assigned_to_id": {"$nin": ["", None]},
+         "status": {"$nin": ["completed", "rejected", "cancelled", "draft"]},
+         "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "inquiry_no": 1, "title": 1, "customer_name": 1, "status": 1,
+         "assigned_to_id": 1, "assigned_at": 1},
+    ).to_list(length=5000)
+    for iq in inqs:
+        p = per.get(iq.get("assigned_to_id"))
+        if not p:
+            continue
+        p["inquiry"].append({
+            "id": iq.get("id"), "inquiry_no": iq.get("inquiry_no"), "title": iq.get("title"),
+            "customer_name": iq.get("customer_name"), "status": iq.get("status"),
+            "assigned_at": iq.get("assigned_at"),
+        })
+
+    # --- Active Drawing (belum controlled/released) ---
+    drws = await db.drawings.find(
+        {"assigned_to_user_id": {"$nin": ["", None]},
+         "approval_status": {"$nin": ["controlled", "released"]},
+         "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "drawing_no": 1, "so_no": 1, "approval_status": 1, "assigned_to_user_id": 1, "title": 1},
+    ).to_list(length=20000)
+    for dr in drws:
+        p = per.get(dr.get("assigned_to_user_id"))
+        if not p:
+            continue
+        p["drawing"].append({
+            "id": dr.get("id"), "drawing_no": dr.get("drawing_no"), "so_no": dr.get("so_no"),
+            "approval_status": dr.get("approval_status"), "title": dr.get("title"),
+        })
+
+    items = []
+    for p in per.values():
+        p["history"].sort(key=lambda x: x.get("at") or "", reverse=True)
+        p["history"] = p["history"][:15]
+        p["total_active"] = len(p["drf"]) + len(p["inquiry"]) + len(p["drawing"])
+        items.append(p)
+    items.sort(key=lambda x: x["total_active"], reverse=True)
+    return {"items": items}
+
+
+
 
 
 async def _compute_workload(start: str = "", end: str = ""):

@@ -66,6 +66,7 @@ import DrawingRequestInboxPage from "./pages/DrawingRequestInboxPage";
 import MyAssignmentsPage from "./pages/MyAssignmentsPage";
 import EngineeringDrfWorkPage from "./pages/EngineeringDrfWorkPage";
 import EngineeringMyQueuePage from "./pages/EngineeringMyQueuePage";
+import EngineeringLogworkPage from "./pages/EngineeringLogworkPage";
 import EngineeringInquiryMasterlistPage from "./pages/EngineeringInquiryMasterlistPage";
 import SoTrackerListPage from "./pages/SoTrackerListPage";
 import SoTrackerDetailPage from "./pages/SoTrackerDetailPage";
@@ -134,10 +135,18 @@ function ProtectedRoute({ children, storeRoleTo = "/store/stock", blockStore = f
     }
     return <AppShell>{children}</AppShell>;
   }
-  // Sales & Kepala Sales: ONLY /sales accessible outside `/` (+ universal pages)
-  if (user.role === "sales" || user.role === "sales_head") {
+  // Sales: ONLY /sales accessible outside `/` (+ universal pages)
+  if (user.role === "sales") {
     if (!isUniversalPage && !location.pathname.startsWith("/sales")) {
       return <Navigate to="/sales" replace />;
+    }
+    return <AppShell>{children}</AppShell>;
+  }
+  // Direktur (sales_head / Asiong): boleh LIHAT semua modul (view-only, di-enforce backend),
+  // tapi tidak boleh buka Admin (kelola user/konfigurasi).
+  if (user.role === "sales_head") {
+    if (location.pathname.startsWith("/admin")) {
+      return <Navigate to="/" replace />;
     }
     return <AppShell>{children}</AppShell>;
   }
@@ -238,6 +247,7 @@ function AppRoutes() {
       <Route path="/engineering/my-drf" element={<ProtectedRoute><MyDrfWorkListPage /></ProtectedRoute>} />
       <Route path="/engineering/drf/:drfId" element={<ProtectedRoute><EngineeringDrfWorkPage /></ProtectedRoute>} />
       <Route path="/engineering/my-queue" element={<ProtectedRoute><EngineeringMyQueuePage /></ProtectedRoute>} />
+      <Route path="/engineering/logwork" element={<ProtectedRoute><EngineeringLogworkPage /></ProtectedRoute>} />
       <Route path="/engineering/inquiry-masterlist" element={<ProtectedRoute><EngineeringInquiryMasterlistPage /></ProtectedRoute>} />
       <Route path="/engineering/so-tracker" element={<ProtectedRoute><SoTrackerListPage /></ProtectedRoute>} />
       <Route path="/engineering/so-tracker/:drfId" element={<ProtectedRoute><SoTrackerDetailPage /></ProtectedRoute>} />

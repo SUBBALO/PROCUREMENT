@@ -42,7 +42,7 @@ export default function SalesOrderPage() {
   const { user } = useAuth();
   const role = user?.role;
   const canSeePrice = ["super_admin", "admin", "finance"].includes(role);
-  const canCreate = ["sales", "admin", "super_admin", "finance", "supervisor"].includes(role);
+  const canCreate = ["sales", "sales_head", "admin", "super_admin", "finance", "supervisor"].includes(role);
   const canWrite = user && role !== "finance" && role !== "store"; // untuk import excel/hapus (sesuai lama)
   const canDelete = ["admin", "super_admin"].includes(role); // hapus SO: HANYA admin
 

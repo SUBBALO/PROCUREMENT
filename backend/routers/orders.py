@@ -16,7 +16,7 @@ router = APIRouter(tags=["orders"])
 
 # ---- Sales Order (rich) helpers ----
 PRICE_ROLES = {"super_admin", "admin", "finance"}
-SO_CREATE_ROLES = {"sales", "admin", "super_admin", "finance", "supervisor"}
+SO_CREATE_ROLES = {"sales", "sales_head", "admin", "super_admin", "finance", "supervisor"}
 # Peta status DRF -> status proses SO Engineering
 _DRF_TO_SO_STATUS = {
     "submitted": "submitted_eng",

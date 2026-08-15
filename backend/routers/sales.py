@@ -144,8 +144,8 @@ def _clean(doc: dict) -> dict:
 # =============================================================================
 @router.post("/inquiries")
 async def create_inquiry(payload: InquiryCreate, current: dict = Depends(get_current_user)):
-    if current.get("role") != "sales" and not is_admin_like(current):
-        raise HTTPException(status_code=403, detail="Hanya Sales & Admin yang bisa buat Inquiry")
+    if current.get("role") not in ("sales", "sales_head") and not is_admin_like(current):
+        raise HTTPException(status_code=403, detail="Hanya Sales, Direktur & Admin yang bisa buat Inquiry")
     if not payload.title.strip():
         raise HTTPException(status_code=400, detail="Judul wajib diisi")
     if not payload.customer_name.strip():
@@ -154,7 +154,13 @@ async def create_inquiry(payload: InquiryCreate, current: dict = Depends(get_cur
     now = datetime.utcnow().isoformat()
     # Alur baru (Feb 2026): inquiry dari Sales TIDAK langsung ke Engineering.
     # Draft → (Kirim) → pending_boss_review → (Direktur approve) → submitted → Engineering.
-    status = "draft" if payload.save_as_draft else "pending_boss_review"
+    # Direktur/Admin yang membuat sendiri: langsung 'submitted' (skip approval, dia Bos-nya).
+    if payload.save_as_draft:
+        status = "draft"
+    elif is_sales_head(current) or is_admin_like(current):
+        status = "submitted"
+    else:
+        status = "pending_boss_review"
     doc = {
         "id": str(uuid.uuid4()),
         "inquiry_no": await _new_inquiry_no(),
@@ -170,7 +176,7 @@ async def create_inquiry(payload: InquiryCreate, current: dict = Depends(get_cur
         "created_by_name": current.get("name") or current.get("username"),
         "created_at": now,
         "updated_at": now,
-        "submitted_at": now if status == "pending_boss_review" else None,
+        "submitted_at": now if status in ("pending_boss_review", "submitted") else None,
         # Boss (Direktur) review — gate sebelum masuk Engineering
         "boss_review": None,            # {approve, by, at, note}
         "boss_approved_at": None,
@@ -401,13 +407,20 @@ async def submit_inquiry(inq_id: str, current: dict = Depends(get_current_user))
         raise HTTPException(status_code=403, detail="Bukan Inquiry Anda")
 
     now = datetime.utcnow().isoformat()
-    entry = {"at": now, "by": current.get("name") or current.get("username"), "action": "submitted for boss review"}
+    # Direktur/Admin submit sendiri → langsung ke Engineering (skip review). Sales → review Direktur.
+    if is_sales_head(current) or is_admin_like(current):
+        new_status = "submitted"
+        action_txt = "submitted to engineering (Direktur)"
+    else:
+        new_status = "pending_boss_review"
+        action_txt = "submitted for boss review"
+    entry = {"at": now, "by": current.get("name") or current.get("username"), "action": action_txt}
     await db.inquiries.update_one(
         {"id": inq_id},
-        {"$set": {"status": "pending_boss_review", "submitted_at": now, "updated_at": now},
+        {"$set": {"status": new_status, "submitted_at": now, "updated_at": now},
          "$push": {"history": entry}},
     )
-    await log_action(current, "submit_inquiry", "inquiry", inq_id, {"to": "pending_boss_review"})
+    await log_action(current, "submit_inquiry", "inquiry", inq_id, {"to": new_status})
     updated = await db.inquiries.find_one({"id": inq_id})
     return _clean(updated)
 
@@ -992,8 +1005,8 @@ def _block_engineering_from_quotation(current: dict):
 
 @router.post("/quotations")
 async def create_quotation(payload: QuotationCreate, current: dict = Depends(get_current_user)):
-    if not (current.get("role") == "sales" or is_admin_like(current)):
-        raise HTTPException(status_code=403, detail="Hanya Sales yang bisa buat Quotation")
+    if not (current.get("role") in ("sales", "sales_head") or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Sales & Direktur yang bisa buat Quotation")
     if not payload.customer_name.strip():
         raise HTTPException(status_code=400, detail="Customer wajib diisi")
 
@@ -1144,8 +1157,8 @@ async def get_quotation(qid: str, current: dict = Depends(get_current_user)):
 @router.patch("/quotations/{qid}")
 async def update_quotation(qid: str, payload: QuotationUpdate, current: dict = Depends(get_current_user)):
     """Full-form Quotation edit → creates a revision snapshot + increments revision_no."""
-    if not (current.get("role") == "sales" or is_admin_like(current)):
-        raise HTTPException(status_code=403, detail="Hanya Sales yang bisa edit Quotation")
+    if not (current.get("role") in ("sales", "sales_head") or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Sales & Direktur yang bisa edit Quotation")
     d = await db.quotations.find_one({"id": qid})
     if not d:
         raise HTTPException(status_code=404, detail="Quotation tidak ditemukan")
@@ -1459,8 +1472,8 @@ async def upsert_customer_by_name(payload: dict, current: dict = Depends(get_cur
 
 @router.patch("/quotations/{qid}/status")
 async def update_quotation_status(qid: str, payload: QuotationStatusUpdate, current: dict = Depends(get_current_user)):
-    if not (current.get("role") == "sales" or is_admin_like(current)):
-        raise HTTPException(status_code=403, detail="Hanya Sales yang bisa update status")
+    if not (current.get("role") in ("sales", "sales_head") or is_admin_like(current)):
+        raise HTTPException(status_code=403, detail="Hanya Sales & Direktur yang bisa update status")
     if payload.status not in ("on_bidding", "confirm_order", "cancel"):
         raise HTTPException(status_code=400, detail="Status tidak valid")
 

@@ -50,7 +50,7 @@ export default function QuotationPage() {
   const { user } = useAuth();
   // Semua role yang wajar boleh buat quotation (backend tidak membatasi role).
   // Sebelumnya hanya "sales"/"admin" -> super_admin & supervisor tidak melihat tombol "Buat Quotation".
-  const isSales = ["sales", "admin", "super_admin", "supervisor"].includes(user?.role);
+  const isSales = ["sales", "sales_head", "admin", "super_admin", "supervisor"].includes(user?.role);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");

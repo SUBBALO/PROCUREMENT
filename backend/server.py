@@ -216,6 +216,59 @@ async def enforce_permissions(request, call_next):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Direktur (sales_head / Asiong) — Global VIEW-ONLY + Download
+# ═══════════════════════════════════════════════════════════════════════════
+# Direktur boleh membuka & melihat SEMUA modul + download, tapi hanya boleh
+# INPUT (write) untuk Inquiry, Quotation, dan Sales Order. Semua write lain diblok.
+DIREKTUR_WRITE_PREFIXES = (
+    "/api/inquiries",
+    "/api/quotations",
+    "/api/sales-orders",
+)
+DIREKTUR_ALWAYS_ALLOW = (
+    "/api/auth/logout",
+    "/api/auth/change-password",
+    "/api/auth/refresh",
+    "/api/auth/login",
+)
+
+
+@app.middleware("http")
+async def direktur_view_only(request, call_next):
+    method = request.method.upper()
+    if method not in ("POST", "PUT", "PATCH", "DELETE"):
+        return await call_next(request)
+    path = request.url.path
+    if not path.startswith("/api/"):
+        return await call_next(request)
+    token = request.cookies.get("access_token")
+    if not token:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth[7:]
+    if not token:
+        return await call_next(request)
+    try:
+        payload = decode_token(token)
+        if payload.get("type") != "access":
+            return await call_next(request)
+        user = await db.users.find_one({"id": payload.get("sub")}, {"role": 1})
+    except Exception:
+        return await call_next(request)
+    if not user or user.get("role") != "sales_head":
+        return await call_next(request)
+    # Direktur: hanya boleh write untuk Inquiry / Quotation / Sales Order
+    allowed = path in DIREKTUR_ALWAYS_ALLOW or path.startswith(DIREKTUR_WRITE_PREFIXES)
+    if not allowed:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Direktur hanya dapat melihat & mengunduh. Input hanya tersedia untuk Inquiry, Quotation, dan Sales Order."},
+        )
+    return await call_next(request)
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Iter 22 — Security Headers Middleware (Layer 2)
 # ═══════════════════════════════════════════════════════════════════════════
 @app.middleware("http")
