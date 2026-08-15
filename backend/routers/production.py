@@ -534,15 +534,27 @@ async def so_work_summary_detail(so_no: str, current: dict = Depends(get_current
     by_date: dict = {}
     by_op: dict = {}
     total_hours = 0.0
+    total_normal = 0.0
+    total_ot = 0.0
+    shift_s = await _get_shift_settings()
+    all_ops = {(r.get("operator_name") or "").strip().lower() for r in rows if r.get("operator_name")}
+    all_dates = {r.get("report_date") or "" for r in rows if r.get("report_date")}
+    nightset = await _nightshift_set(all_ops, all_dates)
     for r in rows:
         if not customer and r.get("customer"):
             customer = r.get("customer")
         rd = r.get("report_date") or ""
         op = (r.get("operator_name") or "").strip()
         hrs = _work_hours(r.get("work_start") or "", r.get("work_end") or "")
+        shift = 2 if (op.lower(), rd) in nightset else 1
+        normal, ot = _split_normal_ot(r.get("work_start") or "", r.get("work_end") or "", shift, shift_s)
         total_hours += hrs
-        d = by_date.setdefault(rd, {"date": rd, "hours": 0.0, "operators": set(), "machines": set(), "rows": []})
+        total_normal += normal
+        total_ot += ot
+        d = by_date.setdefault(rd, {"date": rd, "hours": 0.0, "normal": 0.0, "ot": 0.0, "operators": set(), "machines": set(), "rows": []})
         d["hours"] += hrs
+        d["normal"] += normal
+        d["ot"] += ot
         if op:
             d["operators"].add(op)
         mc = (r.get("machine_no") or "").strip()
@@ -550,9 +562,10 @@ async def so_work_summary_detail(so_no: str, current: dict = Depends(get_current
             d["machines"].add(mc)
         d["rows"].append({
             "operator_name": op, "process": r.get("process") or "",
-            "machine_no": mc,
+            "machine_no": mc, "shift": shift,
             "work_start": r.get("work_start") or "", "work_end": r.get("work_end") or "",
-            "work_hours": hrs, "qty_ok": _f(r.get("qty_ok")), "qty_ng": _f(r.get("qty_ng")),
+            "work_hours": hrs, "normal_hours": normal, "ot_hours": ot,
+            "qty_ok": _f(r.get("qty_ok")), "qty_ng": _f(r.get("qty_ng")),
         })
         o = by_op.setdefault(op or "-", {"name": op or "-", "days": set(), "hours": 0.0})
         if rd:
@@ -561,6 +574,7 @@ async def so_work_summary_detail(so_no: str, current: dict = Depends(get_current
     dates = sorted(by_date.keys())
     by_date_list = [{
         "date": by_date[k]["date"], "hours": round(by_date[k]["hours"], 2),
+        "normal": round(by_date[k]["normal"], 2), "ot": round(by_date[k]["ot"], 2),
         "operators": sorted(by_date[k]["operators"]),
         "machines": sorted(by_date[k]["machines"]),
         "rows": by_date[k]["rows"],
@@ -595,6 +609,7 @@ async def so_work_summary_detail(so_no: str, current: dict = Depends(get_current
     return {
         "so_no": so, "customer": customer,
         "total_days": len(dates), "total_hours": round(total_hours, 2),
+        "total_normal": round(total_normal, 2), "total_ot": round(total_ot, 2),
         "first_date": dates[0] if dates else "", "last_date": dates[-1] if dates else "",
         "by_date": by_date_list, "by_operator": by_op_list,
         "so_qty": so_qty, "total_released": total_released,
@@ -949,6 +964,16 @@ async def list_frn(so_no: Optional[str] = None, month: Optional[str] = None,
     rows = await db.fg_release_notes.find(filt, {"_id": 0}).to_list(length=100000)
     rows.sort(key=lambda r: (r.get("frn_date") or "", r.get("created_at") or ""), reverse=True)
     return {"items": [_serialize_frn(r) for r in rows]}
+
+
+@router.get("/frn/pending-qc")
+async def frn_pending_qc(current: dict = Depends(get_current_user)):
+    """Daftar release note menunggu QC (submitted) untuk approve/tolak."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Tidak diizinkan")
+    rows = await db.fg_release_notes.find({"status": "submitted"}, {"_id": 0}).to_list(length=10000)
+    rows.sort(key=lambda r: (r.get("frn_date") or "", r.get("created_at") or ""))
+    return {"items": [_serialize_frn(r) for r in rows], "count": len(rows)}
 
 
 @router.get("/frn/qc-pending-count")
@@ -1735,6 +1760,33 @@ async def overtime_grid(month: Optional[str] = None, current: dict = Depends(get
         "grand_total_hours": round(sum(i["total_hours"] for i in items), 2),
         "grand_total_days": sum(i["total_days"] for i in items),
     }
+
+
+@router.get("/overtime/grid/export.xlsx")
+async def export_overtime_grid_xlsx(month: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Export rekap grid lembur bulanan (Nama × tanggal + Total)."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    import io
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    g = await overtime_grid(month, current)
+    wb = Workbook(); ws = wb.active; ws.title = "Rekap Lembur"
+    hdr = ["Nama"] + [str(int(d[8:])) for d in g["days"]] + ["Total Jam", "Kali"]
+    ws.append(hdr)
+    hf = Font(bold=True, color="FFFFFF"); hfill = PatternFill("solid", fgColor="B45309"); ctr = Alignment(horizontal="center")
+    for c in range(1, len(hdr) + 1):
+        cell = ws.cell(row=1, column=c); cell.font = hf; cell.fill = hfill; cell.alignment = ctr
+    for it in g["items"]:
+        row = [it["name"]] + [it["per_date"].get(d, "") for d in g["days"]] + [it["total_hours"], it["total_days"]]
+        ws.append(row)
+    ws.append([])
+    ws.append(["TOTAL", *[""] * len(g["days"]), g["grand_total_hours"], g["grand_total_days"]])
+    ws.column_dimensions["A"].width = 22
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="rekap_grid_lembur_{g["month"]}.xlsx"'})
 
 
 @router.get("/overtime/export.xlsx")

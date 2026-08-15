@@ -50,6 +50,7 @@ import EcnTtdQueuePage from "./pages/EcnTtdQueuePage";
 import ProductionPortalPage from "./pages/ProductionPortalPage";
 import ProductionNewSoPage from "./pages/ProductionNewSoPage";
 import ProductionDailyReportPage from "./pages/ProductionDailyReportPage";
+import ProductionQcReleasePage from "./pages/ProductionQcReleasePage";
 import ProductionSoWorkSummaryPage from "./pages/ProductionSoWorkSummaryPage";
 import ProductionJobProgressPage from "./pages/ProductionJobProgressPage";
 import ProductionFrnPage from "./pages/ProductionFrnPage";
@@ -240,6 +241,7 @@ function AppRoutes() {
       <Route path="/produksi/new-so" element={<ProtectedRoute><ProductionNewSoPage /></ProtectedRoute>} />
       <Route path="/produksi/daily-report" element={<ProtectedRoute><ProductionDailyReportPage /></ProtectedRoute>} />
       <Route path="/produksi/so-work-summary" element={<ProtectedRoute><ProductionSoWorkSummaryPage /></ProtectedRoute>} />
+      <Route path="/produksi/qc-release" element={<ProtectedRoute><ProductionQcReleasePage /></ProtectedRoute>} />
       <Route path="/produksi/job-progress" element={<ProtectedRoute><ProductionJobProgressPage /></ProtectedRoute>} />
       <Route path="/produksi/frn" element={<ProtectedRoute><ProductionFrnPage /></ProtectedRoute>} />
       <Route path="/produksi/holidays" element={<ProtectedRoute><ProductionHolidayPage /></ProtectedRoute>} />

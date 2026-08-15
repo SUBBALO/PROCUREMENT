@@ -117,10 +117,12 @@ export default function ProductionSoWorkSummaryPage() {
               {detailLoading ? <div className="py-8 text-center text-slate-400">Memuat…</div> : (
                 <>
                   {/* Ringkasan angka besar */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-3"><div className="text-[10px] uppercase font-bold text-amber-700 flex items-center gap-1"><CalendarCheck size={13} weight="fill" /> Total Hari</div><div className="text-2xl font-bold text-amber-700 mt-0.5" data-testid="sws-d-days">{detail.total_days} hari</div></div>
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-3"><div className="text-[10px] uppercase font-bold text-amber-700 flex items-center gap-1"><Clock size={13} weight="fill" /> Total Jam</div><div className="text-2xl font-bold text-amber-700 mt-0.5" data-testid="sws-d-hours">{detail.total_hours} jam</div></div>
                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-3"><div className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1"><UsersThree size={13} weight="fill" /> Operator</div><div className="text-2xl font-bold text-slate-800 mt-0.5">{(detail.by_operator || []).length} org</div></div>
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3"><div className="text-[10px] uppercase font-bold text-emerald-700">Jam Normal</div><div className="text-2xl font-bold text-emerald-700 mt-0.5" data-testid="sws-d-normal">{detail.total_normal ?? "—"} jam</div></div>
+                    <div className="bg-orange-50 border border-orange-200 rounded-lg p-3"><div className="text-[10px] uppercase font-bold text-orange-700">Jam Lembur</div><div className="text-2xl font-bold text-orange-700 mt-0.5" data-testid="sws-d-ot">{detail.total_ot ?? "—"} jam</div></div>
                   </div>
                   <p className="text-xs text-slate-500">Periode: <b>{fmtDate(detail.first_date)}</b> s/d <b>{fmtDate(detail.last_date)}</b></p>
 
@@ -147,18 +149,20 @@ export default function ProductionSoWorkSummaryPage() {
                         <div key={d.date} className="border border-slate-200 rounded-lg overflow-hidden" data-testid={`sws-d-date-${d.date}`}>
                           <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50">
                             <span className="text-xs font-bold text-slate-700">{fmtDate(d.date)} <span className="text-slate-400 font-normal">· {(d.operators || []).length} operator{(d.machines || []).length ? ` · Mesin: ${(d.machines || []).join(", ")}` : ""}</span></span>
-                            <span className="text-xs font-bold text-amber-700">{d.hours} jam</span>
+                            <span className="text-xs font-bold"><span className="text-emerald-700">N {d.normal ?? 0}</span> · <span className="text-orange-700">L {d.ot ?? 0}</span> · <span className="text-amber-700">{d.hours} jam</span></span>
                           </div>
                           <table className="w-full text-xs">
-                            <thead><tr className="text-[9px] uppercase text-slate-400"><th className="px-2 py-1 text-left">Operator</th><th className="px-2 py-1 text-left">Process</th><th className="px-2 py-1 text-left">Mesin</th><th className="px-2 py-1 text-center">Jam Kerja</th><th className="px-2 py-1 text-center">Jam</th></tr></thead>
+                            <thead><tr className="text-[9px] uppercase text-slate-400"><th className="px-2 py-1 text-left">Operator</th><th className="px-2 py-1 text-left">Shift</th><th className="px-2 py-1 text-left">Process</th><th className="px-2 py-1 text-left">Mesin</th><th className="px-2 py-1 text-center">Jam Kerja</th><th className="px-2 py-1 text-center text-emerald-600">Normal</th><th className="px-2 py-1 text-center text-orange-600">Lembur</th></tr></thead>
                             <tbody className="divide-y divide-slate-100">
                               {d.rows.map((r, ix) => (
                                 <tr key={ix}>
                                   <td className="px-2 py-1 font-semibold text-slate-700">{r.operator_name || "—"}</td>
+                                  <td className="px-2 py-1">{r.shift === 2 ? <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[9px] font-bold">Shift 2</span> : <span className="text-slate-500 text-[10px]">Shift 1</span>}</td>
                                   <td className="px-2 py-1 text-slate-600">{r.process || "—"}</td>
                                   <td className="px-2 py-1 text-slate-600">{r.machine_no || "—"}</td>
                                   <td className="px-2 py-1 text-center text-slate-500">{r.work_start || "?"}–{r.work_end || "?"}</td>
-                                  <td className="px-2 py-1 text-center font-bold text-amber-700">{r.work_hours}</td>
+                                  <td className="px-2 py-1 text-center font-bold text-emerald-700">{r.normal_hours ?? "—"}</td>
+                                  <td className="px-2 py-1 text-center font-bold text-orange-700">{r.ot_hours ?? "—"}</td>
                                 </tr>
                               ))}
                             </tbody>

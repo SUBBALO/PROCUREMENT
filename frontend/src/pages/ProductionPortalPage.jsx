@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
 import ProductionJobProgressPage from "./ProductionJobProgressPage";
 import api from "../lib/api";
-import { Signature, FileText, Factory, WarningCircle, ClipboardText, Notebook, Gauge, Package, CalendarX, UsersThree, Clock, ChartBar } from "@phosphor-icons/react";
+import { Signature, FileText, Factory, WarningCircle, ClipboardText, Notebook, Gauge, Package, CalendarX, UsersThree, Clock, ChartBar, SealCheck } from "@phosphor-icons/react";
 
 export default function ProductionPortalPage() {
   const [pendingTtd, setPendingTtd] = useState(0);
@@ -41,6 +41,18 @@ export default function ProductionPortalPage() {
         "Catat barang jadi yang lolos QC dan dirilis per SO (boleh bertahap/partial). Setiap rilis otomatis menambah Qty Finished pada papan Job Progress.",
       icon: Package,
       href: "/produksi/frn",
+      badgeCount: qcPending,
+      accent: "from-emerald-500 via-teal-500 to-cyan-500",
+      accentText: "text-emerald-400",
+    },
+    {
+      key: "qc-release",
+      label: "QC — Approve Release",
+      stats: "Cek QC · Release / Tolak",
+      description:
+        "Daftar Release Note menunggu QC. QC menyetujui (Release = barang jadi siap kirim) atau menolak sekaligus dari satu layar.",
+      icon: SealCheck,
+      href: "/produksi/qc-release",
       badgeCount: qcPending,
       accent: "from-emerald-500 via-teal-500 to-cyan-500",
       accentText: "text-emerald-400",
@@ -143,6 +155,7 @@ export default function ProductionPortalPage() {
     "so-work-summary": "monitor",
     "daily-report": "harian",
     "frn": "harian",
+    "qc-release": "harian",
     "overtime": "harian",
     "attendance": "harian",
     "new-so": "so",

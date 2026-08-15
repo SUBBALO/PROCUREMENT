@@ -82,6 +82,10 @@ export default function ProductionOvertimePage() {
     try { await downloadXlsx("/production/overtime/export.xlsx", { month }, `rekap_lembur_${month}.xlsx`); toast.success("Rekap lembur diexport"); }
     catch (e) { toast.error(e.message || "Gagal export"); }
   };
+  const exportGridXlsx = async () => {
+    try { await downloadXlsx("/production/overtime/grid/export.xlsx", { month }, `rekap_grid_lembur_${month}.xlsx`); toast.success("Rekap grid diexport"); }
+    catch (e) { toast.error(e.message || "Gagal export"); }
+  };
 
   // ===== Cetak OVER TIME REQUEST FORM (per tanggal) =====
   const [printOpen, setPrintOpen] = useState(false);
@@ -172,7 +176,7 @@ export default function ProductionOvertimePage() {
           </div>
           <button onClick={openRules} data-testid="ot-master-btn" className="inline-flex items-center gap-1.5 h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-bold rounded hover:bg-slate-100"><Gear size={16} weight="bold" /> Master Lembur</button>
           <button onClick={() => { setPrintDate(todayStr()); setPrintOpen(true); }} data-testid="ot-print-btn" className="inline-flex items-center gap-1.5 h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-bold rounded hover:bg-slate-100"><Printer size={16} weight="bold" /> Cetak Form</button>
-          <button onClick={exportXlsx} data-testid="ot-export-btn" className="inline-flex items-center gap-1.5 h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-bold rounded hover:bg-slate-100"><DownloadSimple size={16} weight="bold" /> Export Excel</button>
+          <button onClick={view === "grid" ? exportGridXlsx : exportXlsx} data-testid="ot-export-btn" className="inline-flex items-center gap-1.5 h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-bold rounded hover:bg-slate-100"><DownloadSimple size={16} weight="bold" /> Export Excel</button>
           <button onClick={openForm} data-testid="add-ot-btn" className="inline-flex items-center gap-1.5 h-9 px-4 bg-amber-600 text-white text-sm font-bold rounded hover:bg-amber-700"><Plus size={16} weight="bold" /> Overtime Request</button>
         </div>
       </div>
