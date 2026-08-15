@@ -192,8 +192,8 @@ export default function LandingPage() {
                     data-testid={`dept-card-${d.key}`}
                     onClick={() => {
                       let href = d.href;
-                      // Direktur: kartu Engineering langsung ke papan Logwork engineer
-                      if (role === "sales_head" && d.key === "engineering") href = "/engineering/logwork";
+                      // Direktur: kartu Engineering langsung ke Monitor Beban Kerja
+                      if (role === "sales_head" && d.key === "engineering") href = "/engineering/workload";
                       if (href !== "#") navigate(href);
                     }}
                     className="group w-full flex items-center gap-2.5 px-2.5 py-2 text-left hover:bg-slate-100 border-l-2 border-transparent hover:border-slate-900 transition-colors duration-150"

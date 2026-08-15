@@ -495,9 +495,14 @@ export default function EngineeringWorkloadPage() {
                       <tr>
                         <th className="text-left py-2 px-2">No.</th>
                         <th className="text-left py-2 px-2">SO</th>
+                        {detailTab === "drf" && <th className="text-left py-2 px-2">Customer</th>}
                         <th className="text-left py-2 px-2">Keterangan</th>
+                        {detailTab === "drf" && <th className="text-left py-2 px-2">Qty</th>}
+                        {detailTab === "drf" && <th className="text-left py-2 px-2">Tgl Order</th>}
+                        {detailTab === "drf" && <th className="text-left py-2 px-2">Rencana Selesai</th>}
+                        {detailTab === "drf" && <th className="text-left py-2 px-2">Request Dari</th>}
                         <th className="text-left py-2 px-2">Status</th>
-                        <th className="text-left py-2 px-2">Due</th>
+                        {detailTab !== "drf" && <th className="text-left py-2 px-2">Due</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -505,9 +510,14 @@ export default function EngineeringWorkloadPage() {
                         <tr key={r.id || i} className="border-b border-slate-50" data-testid={`workload-detail-row-${detailTab}-${i}`}>
                           <td className="py-1.5 px-2 font-mono font-semibold text-slate-800 whitespace-nowrap">{r.no}</td>
                           <td className="py-1.5 px-2 font-mono text-slate-500 whitespace-nowrap">{r.so_no || "-"}</td>
-                          <td className="py-1.5 px-2 text-slate-600 max-w-[280px] truncate" title={r.title}>{r.title || "-"}</td>
+                          {detailTab === "drf" && <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap">{r.customer_name || "-"}</td>}
+                          <td className="py-1.5 px-2 text-slate-600 max-w-[240px] truncate" title={r.title}>{r.title || "-"}</td>
+                          {detailTab === "drf" && <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap tabular-nums">{r.qty || "-"}</td>}
+                          {detailTab === "drf" && <td className="py-1.5 px-2 text-slate-500 whitespace-nowrap">{r.order_date || "-"}</td>}
+                          {detailTab === "drf" && <td className={`py-1.5 px-2 whitespace-nowrap ${r.plan_finish && r.plan_finish < new Date().toISOString().slice(0,10) ? "text-rose-600 font-bold" : "text-slate-500"}`}>{r.plan_finish || "-"}</td>}
+                          {detailTab === "drf" && <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap">{r.request_from || "-"}</td>}
                           <td className="py-1.5 px-2"><span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border border-slate-200 bg-slate-50 text-slate-600">{(r.status || "-").replace(/_/g, " ")}</span></td>
-                          <td className={`py-1.5 px-2 whitespace-nowrap ${r.due && String(r.due).slice(0,10) < new Date().toISOString().slice(0,10) ? "text-rose-600 font-bold" : "text-slate-500"}`}>{r.due ? String(r.due).slice(0, 10) : "-"}</td>
+                          {detailTab !== "drf" && <td className={`py-1.5 px-2 whitespace-nowrap ${r.due && String(r.due).slice(0,10) < new Date().toISOString().slice(0,10) ? "text-rose-600 font-bold" : "text-slate-500"}`}>{r.due ? String(r.due).slice(0, 10) : "-"}</td>}
                         </tr>
                       ))}
                     </tbody>

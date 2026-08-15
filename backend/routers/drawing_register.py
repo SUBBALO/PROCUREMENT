@@ -182,7 +182,7 @@ def _can_modify_drawing(user: dict, drawing: dict) -> bool:
 def _can_view(user: dict) -> bool:
     role = (user or {}).get("role", "")
     return role in (
-        "admin", "super_admin", "supervisor", "finance", "sales", "purchasing",
+        "admin", "super_admin", "supervisor", "finance", "sales", "sales_head", "purchasing",
         "eng_leader", "eng_head", "eng_staff", "engineering", "production", "produksi", "qc",
         "doc_control", "document_control", "store",
     )

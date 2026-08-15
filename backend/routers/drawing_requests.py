@@ -997,7 +997,7 @@ async def _compute_workload(start: str = "", end: str = ""):
 async def engineering_workload(start: str = "", end: str = "", current: dict = Depends(get_current_user)):
     """Monitor beban kerja per engineer. Tanpa start/end = beban aktif sekarang.
     Dengan start & end (YYYY-MM-DD) = laporan periode (mingguan/bulanan)."""
-    if not (is_engineering(current) or is_admin_like(current)):
+    if not (is_engineering(current) or is_admin_like(current) or is_sales_head(current)):
         raise HTTPException(status_code=403, detail="Hanya Engineering / Admin")
     return await _compute_workload(start, end)
 
@@ -1006,7 +1006,7 @@ async def engineering_workload(start: str = "", end: str = "", current: dict = D
 async def engineering_workload_export(format: str = "xlsx", start: str = "", end: str = "",
                                       current: dict = Depends(get_current_user)):
     """Export laporan beban kerja (Excel/PDF) sesuai tampilan monitor + rentang tanggal."""
-    if not (is_engineering(current) or is_admin_like(current)):
+    if not (is_engineering(current) or is_admin_like(current) or is_sales_head(current)):
         raise HTTPException(status_code=403, detail="Hanya Engineering / Admin")
     from fastapi.responses import StreamingResponse
     data = await _compute_workload(start, end)
@@ -1082,7 +1082,7 @@ async def engineering_workload_export(format: str = "xlsx", start: str = "", end
 async def engineering_workload_detail(user_id: str, current: dict = Depends(get_current_user)):
     """Rincian item beban aktif seorang engineer (view-only): daftar DRF, Drawing, Inquiry, ECN
     yang sedang menjadi beban. Dipakai saat angka breakdown di Monitor diklik."""
-    if not (is_engineering(current) or is_admin_like(current)):
+    if not (is_engineering(current) or is_admin_like(current) or is_sales_head(current)):
         raise HTTPException(status_code=403, detail="Hanya Engineering / Admin")
     u = await db.users.find_one({"id": user_id}, {"_id": 0, "id": 1, "name": 1, "username": 1})
     if not u:
@@ -1092,12 +1092,20 @@ async def engineering_workload_detail(user_id: str, current: dict = Depends(get_
     drf = []
     for d in await db.drawing_requests.find(
         {"assigned_engineer_id": user_id, "status": {"$in": ["accepted", "received", "in_progress"]}, "deleted_at": {"$exists": False}},
-        {"_id": 0, "id": 1, "form_no": 1, "so_no": 1, "customer_name": 1, "project_name": 1, "status": 1, "expected_due_date": 1, "due_date": 1},
+        {"_id": 0, "id": 1, "form_no": 1, "so_no": 1, "customer_name": 1, "project_name": 1, "status": 1,
+         "expected_due_date": 1, "due_date": 1, "qty_order": 1, "unit": 1, "po_received_date": 1,
+         "date": 1, "created_at": 1, "requested_by": 1},
     ).sort("created_at", -1).to_list(length=1000):
+        rb = d.get("requested_by") or {}
         drf.append({
             "id": d.get("id"), "no": d.get("form_no", "-"), "so_no": d.get("so_no", "-"),
             "title": " · ".join([x for x in [d.get("customer_name"), d.get("project_name")] if x]) or "-",
             "status": d.get("status", "-"), "due": d.get("expected_due_date") or d.get("due_date") or "",
+            "customer_name": d.get("customer_name") or "-",
+            "qty": (f"{d.get('qty_order')} {d.get('unit') or ''}".strip() if d.get("qty_order") not in (None, "") else "-"),
+            "order_date": (d.get("po_received_date") or d.get("date") or d.get("created_at") or "")[:10],
+            "plan_finish": (d.get("expected_due_date") or d.get("due_date") or "")[:10],
+            "request_from": rb.get("name") or "-",
         })
 
     # Drawing aktif + ECN/revisi aktif
@@ -1150,7 +1158,7 @@ async def engineering_workload_trend(weeks: int = 8, current: dict = Depends(get
     Menghitung jumlah tugas BARU (DRF + Drawing + Inquiry + ECN) yang di-assign ke tiap engineer
     berdasarkan tanggal dibuat, dikelompokkan per minggu (Senin–Minggu). Untuk lihat siapa yang
     konsisten padat."""
-    if not (is_engineering(current) or is_admin_like(current)):
+    if not (is_engineering(current) or is_admin_like(current) or is_sales_head(current)):
         raise HTTPException(status_code=403, detail="Hanya Engineering / Admin")
     from deps import ENGINEERING_ROLES
     weeks = max(4, min(16, int(weeks or 8)))
