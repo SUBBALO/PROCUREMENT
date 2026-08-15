@@ -69,6 +69,7 @@ import EngineeringMyQueuePage from "./pages/EngineeringMyQueuePage";
 import EngineeringLogworkPage from "./pages/EngineeringLogworkPage";
 import EngineeringInquiryMasterlistPage from "./pages/EngineeringInquiryMasterlistPage";
 import SoTrackerListPage from "./pages/SoTrackerListPage";
+import EngineeringMonitorPage from "./pages/EngineeringMonitorPage";
 import SoTrackerDetailPage from "./pages/SoTrackerDetailPage";
 import MyDrfWorkListPage from "./pages/MyDrfWorkListPage";
 import ECNPage from "./pages/ECNPage";
@@ -254,6 +255,7 @@ function AppRoutes() {
       <Route path="/engineering/ecn" element={<ProtectedRoute><ECNPage /></ProtectedRoute>} />
       <Route path="/engineering/work-orders" element={<ProtectedRoute><WorkOrderEngineeringPage /></ProtectedRoute>} />
       <Route path="/engineering/workload" element={<ProtectedRoute><EngineeringWorkloadPage /></ProtectedRoute>} />
+      <Route path="/engineering/monitor" element={<ProtectedRoute><EngineeringMonitorPage /></ProtectedRoute>} />
       <Route path="/engineering/kpi" element={<ProtectedRoute><EngineeringKpiPage /></ProtectedRoute>} />
       <Route path="/engineering/work-order/:drawingId" element={<ProtectedRoute><EngineeringWorkOrderPage /></ProtectedRoute>} />
       <Route path="/my/signature-history" element={<ProtectedRoute><MySignatureHistoryPage /></ProtectedRoute>} />

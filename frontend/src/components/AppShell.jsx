@@ -291,13 +291,12 @@ export default function AppShell({ children }) {
 
   // Menu Engineering VIEW untuk Direktur (Asiong): pantau beban & lihat tiap engineer kerjakan apa.
   const ENG_VIEW_ITEMS = [
-    { to: "/engineering/workload", label: "Monitor Beban Kerja", icon: Gauge, testid: "dir-eng-workload" },
+    { to: "/engineering/monitor", label: "Monitor Engineering", icon: Gauge, testid: "dir-eng-monitor" },
     { to: "/engineering/logwork", label: "Logwork per Engineer", icon: ClockCounterClockwise, testid: "dir-eng-logwork" },
     { to: "/engineering/drawings", label: "Master Drawing List", icon: FileText, testid: "dir-eng-masterlist" },
     { to: "/drawings/controlled", label: "Controlled Drawings", icon: FileText, testid: "dir-eng-controlled" },
     { to: "/documents/register", label: "Dokumen Terkontrol", icon: ClipboardText, testid: "dir-eng-documents" },
     { to: "/engineering/inquiries", label: "Inquiry Costing", icon: ClipboardText, testid: "dir-eng-inquiries" },
-    { to: "/engineering/so-tracker", label: "SO Tracker", icon: ClipboardText, testid: "dir-eng-sotracker" },
   ];
 
   // Purchasing items per role

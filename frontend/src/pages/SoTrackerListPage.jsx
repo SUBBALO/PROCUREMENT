@@ -17,7 +17,7 @@ const fmtDate = (iso) => {
   catch { return "—"; }
 };
 
-export default function SoTrackerListPage() {
+export default function SoTrackerListPage({ embedded = false }) {
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -35,8 +35,8 @@ export default function SoTrackerListPage() {
   useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [load]);
 
   return (
-    <div className="p-4 max-w-[1250px] mx-auto space-y-4">
-      <BackLink />
+    <div className={embedded ? "space-y-4" : "p-4 max-w-[1250px] mx-auto space-y-4"}>
+      {!embedded && <BackLink />}
       <div>
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-cyan-700 mb-1">
           <Kanban size={14} weight="fill" /> Engineering · SO Tracker

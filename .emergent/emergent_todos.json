@@ -1,34 +1,22 @@
 [
   {
-    "content": "Backend: global view-only middleware for sales_head (allow only inquiry/quotation/SO writes)",
+    "content": "Add embedded prop to child pages",
     "status": "completed"
   },
   {
-    "content": "Backend: allow sales_head to create/edit Inquiry (+skip own approval), Quotation, SO",
+    "content": "Register /engineering/monitor route in App.js",
     "status": "completed"
   },
   {
-    "content": "Backend: /engineering/logwork endpoint (per-engineer active items + history)",
+    "content": "Replace 3 monitor cards with single 'Monitor Engineering' card + update Director nav",
     "status": "completed"
   },
   {
-    "content": "Frontend: routing — sales_head full view access except /admin (App.js)",
+    "content": "Compile with esbuild + screenshot verification",
     "status": "completed"
   },
   {
-    "content": "Frontend: landing cards for sales_head; Engineering card → logwork board",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: EngineeringLogworkPage (per-engineer drilldown + history) + route",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: enable Sales input (Inquiry/Quotation/SO) buttons for sales_head",
-    "status": "completed"
-  },
-  {
-    "content": "Test: view-only enforcement + Asiong inputs + logwork board",
+    "content": "Run testing_agent_v3 for monitor consolidation",
     "status": "completed"
   }
 ]

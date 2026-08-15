@@ -5,7 +5,7 @@ import MyJobQueuePanel from "../components/MyJobQueuePanel";
 import api from "../lib/api";
 import {
   Wrench, Package, CurrencyCircleDollar, FileText, Kanban, ClipboardText as ClipboardIcon,
-  Tray, PencilSimpleLine, Gauge, ChartLineUp, WarningCircle,
+  Tray, PencilSimpleLine, Gauge, WarningCircle,
 } from "@phosphor-icons/react";
 import { useAuth } from "../lib/auth";
 
@@ -51,16 +51,6 @@ export default function EngineeringPortalPage() {
   };
 
   const CARDS = [
-    ...(isEngUser ? [{
-      key: "so-tracker",
-      label: "SO Document Tracker",
-      stats: "Progress per-SO · Terbit Partial · BOM Siap Beli",
-      description: "Pantau progress tiap SO: status BOM & drawing bisa terbit bertahap. Tandai drawing terbit partial atau BOM siap dibeli untuk Purchasing.",
-      icon: Kanban,
-      href: "/engineering/so-tracker",
-      accent: "from-cyan-500 via-teal-500 to-emerald-500",
-      accentText: "text-cyan-400",
-    }] : []),
     ...(isHead ? [{
       key: "work-orders",
       label: "Pekerjaan Masuk (Work Order)",
@@ -86,15 +76,9 @@ export default function EngineeringPortalPage() {
       accent: "from-amber-500 via-orange-500 to-rose-500", accentText: "text-amber-400",
     }] : []),
     ...(isHead ? [{
-      key: "kpi", label: "KPI Engineering", stats: "Laporan Bulanan · Auditable",
-      description: "Skor KPI bulanan (drawing/BOM compliance, on-time, validasi MKS) dihitung otomatis dari data ERP. Klik tiap indikator untuk telusur audit record aslinya.",
-      icon: ChartLineUp, href: "/engineering/kpi",
-      accent: "from-emerald-500 via-teal-500 to-cyan-500", accentText: "text-emerald-400",
-    }] : []),
-    ...(isHead ? [{
-      key: "workload", label: "Monitor Beban Kerja", stats: "Beban per Engineer · Overload",
-      description: "Pantau beban kerja tiap engineer (DRF + Drawing + Inquiry + ECN). Lihat siapa yang Overload / Sibuk / Normal beserta jumlah tugas terlambat.",
-      icon: Gauge, href: "/engineering/workload",
+      key: "monitor", label: "Monitor Engineering", stats: "Beban Kerja · SO Tracker · KPI",
+      description: "Satu pintu monitoring Engineering: tab Beban Kerja (overload per engineer), SO Document Tracker (progress per-SO), dan KPI bulanan yang auditable.",
+      icon: Gauge, href: "/engineering/monitor",
       badgeCount: overloadCount,
       accent: "from-rose-500 via-orange-500 to-amber-500", accentText: "text-rose-400",
     }] : []),
@@ -131,6 +115,7 @@ export default function EngineeringPortalPage() {
     "so-tracker": "monitor",
     "workload": "monitor",
     "kpi": "monitor",
+    "monitor": "monitor",
   };
   const GROUP_DEFS = [
     { key: "masuk", label: "Pekerjaan Masuk" },

@@ -30,7 +30,7 @@ const BREAKDOWN = [
   { key: "ecn", label: "ECN/Revisi", icon: PencilSimpleLine, cls: "text-indigo-600" },
 ];
 
-export default function EngineeringWorkloadPage() {
+export default function EngineeringWorkloadPage({ embedded = false }) {
   const [data, setData] = useState(null);
   const [trend, setTrend] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -159,13 +159,15 @@ export default function EngineeringWorkloadPage() {
 
   return (
     <div className="space-y-4" data-testid="workload-page">
-      <BackLink />
+      {!embedded && <BackLink />}
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
+          {!embedded && (
           <Link to="/engineering" className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 mb-1" data-testid="workload-back-link">
             <ArrowLeft size={14} weight="bold" /> Kembali ke Engineering Portal
           </Link>
+          )}
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2" style={{ fontFamily: "Chivo, sans-serif" }}>
             <Gauge size={24} weight="bold" className="text-amber-600" />
             Monitor Beban Kerja Engineer

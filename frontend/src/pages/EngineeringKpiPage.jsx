@@ -27,7 +27,7 @@ const CATEGORY_STYLES = {
 
 const achColor = (v) => (v == null ? "text-slate-300" : v >= 90 ? "text-emerald-600" : v >= 80 ? "text-sky-600" : v >= 71 ? "text-amber-600" : "text-rose-600");
 
-export default function EngineeringKpiPage() {
+export default function EngineeringKpiPage({ embedded = false }) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -67,7 +67,7 @@ export default function EngineeringKpiPage() {
 
   return (
     <div className="space-y-6 print:space-y-2">
-      <div className="print:hidden"><BackLink /></div>
+      {!embedded && <div className="print:hidden"><BackLink /></div>}
 
       {/* Filter bar (screen only) */}
       <div className="print:hidden flex flex-wrap items-end justify-between gap-4">
