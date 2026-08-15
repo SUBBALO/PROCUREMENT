@@ -22,6 +22,8 @@ export default function ProductionOvertimePage() {
   const [month, setMonth] = useState(thisMonth());
   const [data, setData] = useState({ items: [], summary: [], total_hours: 0, total_weighted: 0, rules: null });
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState("grid");   // grid | summary
+  const [grid, setGrid] = useState({ days: [], items: [], grand_total_hours: 0, grand_total_days: 0 });
   const [sos, setSos] = useState([]);
   const [emps, setEmps] = useState([]);
 
@@ -43,6 +45,11 @@ export default function ProductionOvertimePage() {
     finally { setLoading(false); }
   }, [month]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    api.get("/production/overtime/grid", { params: { month } })
+      .then(({ data }) => setGrid(data))
+      .catch(() => setGrid({ days: [], items: [], grand_total_hours: 0, grand_total_days: 0 }));
+  }, [month, data.items]);
   useEffect(() => { (async () => { try { const r = await api.get("/production/so-brief"); setSos(r.data.items || []); } catch {} try { const e = await api.get("/production/employees"); setEmps(e.data.items || []); } catch {} })(); }, []);
 
   const soMap = useMemo(() => { const m = {}; sos.forEach((s) => { m[s.so_no] = s; }); return m; }, [sos]);
@@ -159,6 +166,10 @@ export default function ProductionOvertimePage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded px-2 h-9"><CalendarBlank size={16} weight="bold" className="text-slate-500" /><input type="month" value={month} onChange={(e) => setMonth(e.target.value)} data-testid="ot-month" className="text-sm outline-none bg-transparent" /></div>
+          <div className="inline-flex border border-slate-300 rounded overflow-hidden">
+            <button onClick={() => setView("grid")} data-testid="ot-view-grid" className={`px-3 h-9 text-xs font-bold ${view === "grid" ? "bg-amber-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Rekap Grid</button>
+            <button onClick={() => setView("summary")} data-testid="ot-view-summary" className={`px-3 h-9 text-xs font-bold border-l border-slate-300 ${view === "summary" ? "bg-amber-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Per Karyawan</button>
+          </div>
           <button onClick={openRules} data-testid="ot-master-btn" className="inline-flex items-center gap-1.5 h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-bold rounded hover:bg-slate-100"><Gear size={16} weight="bold" /> Master Lembur</button>
           <button onClick={() => { setPrintDate(todayStr()); setPrintOpen(true); }} data-testid="ot-print-btn" className="inline-flex items-center gap-1.5 h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-bold rounded hover:bg-slate-100"><Printer size={16} weight="bold" /> Cetak Form</button>
           <button onClick={exportXlsx} data-testid="ot-export-btn" className="inline-flex items-center gap-1.5 h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-bold rounded hover:bg-slate-100"><DownloadSimple size={16} weight="bold" /> Export Excel</button>
@@ -167,6 +178,7 @@ export default function ProductionOvertimePage() {
       </div>
 
       {/* Rekap per karyawan */}
+      {view === "summary" && (
       <div className="bg-white border border-slate-200 rounded-lg p-3">
         <div className="text-[11px] font-bold text-slate-600 uppercase mb-2">Rekap OT per Karyawan · {month} <span className="text-amber-700">(Total: {data.total_hours} jam · Tertimbang: {data.total_weighted} jam)</span></div>
         <div className="overflow-x-auto" data-testid="ot-summary">
@@ -198,6 +210,44 @@ export default function ProductionOvertimePage() {
           )}
         </div>
       </div>
+      )}
+
+      {/* Rekap grid bulanan (mirip absensi) */}
+      {view === "grid" && (
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden" data-testid="ot-grid">
+        <div className="px-3 py-2 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase">
+          Rekap Lembur Harian · {month} <span className="text-amber-700">(Total bulan ini: {grid.grand_total_hours} jam · {grid.grand_total_days} kali lembur)</span>
+        </div>
+        <div className="overflow-auto max-h-[65vh]">
+          <table className="text-xs border-separate border-spacing-0" data-testid="ot-grid-table">
+            <thead>
+              <tr className="bg-slate-100 text-slate-600">
+                <th className="px-2 py-2 text-left font-bold border border-slate-200 sticky left-0 top-0 bg-slate-100 z-30 min-w-[160px]">Nama</th>
+                {grid.days.map((d) => { const sun = new Date(d + "T00:00:00").getDay() === 0; return (
+                  <th key={d} className={`px-1 py-1 text-center font-bold border border-slate-200 w-8 sticky top-0 z-20 ${sun ? "bg-rose-100 text-rose-600 border-l-2 border-l-rose-500" : "bg-slate-100"}`}>{Number(d.slice(8))}</th>
+                ); })}
+                <th className="px-2 py-2 text-center font-bold border border-slate-200 sticky right-0 top-0 bg-amber-100 text-amber-700 z-30 min-w-[70px]">Total Jam</th>
+                <th className="px-2 py-2 text-center font-bold border border-slate-200 bg-amber-50 text-amber-700 min-w-[60px] sticky top-0 z-20">Kali</th>
+              </tr>
+            </thead>
+            <tbody>
+              {grid.items.length === 0 ? (
+                <tr><td colSpan={grid.days.length + 3} className="px-3 py-10 text-center text-slate-400" data-testid="ot-grid-empty">Belum ada lembur bulan ini.</td></tr>
+              ) : grid.items.map((r) => (
+                <tr key={r.name} className="group" data-testid={`ot-grid-row-${r.name}`}>
+                  <td className="px-2 py-1 font-semibold text-slate-800 border border-slate-200 sticky left-0 bg-white group-hover:bg-amber-50/40 z-10 min-w-[160px]">{r.name}</td>
+                  {grid.days.map((d) => { const v = r.per_date[d]; return (
+                    <td key={d} className={`text-center border border-slate-200 ${v ? "font-bold text-amber-700 bg-amber-50/60" : "text-slate-200"}`}>{v || "·"}</td>
+                  ); })}
+                  <td className="px-2 py-1 text-center font-bold text-amber-700 border border-slate-200 sticky right-0 bg-amber-50 group-hover:bg-amber-100 z-10">{r.total_hours}</td>
+                  <td className="px-2 py-1 text-center font-semibold text-slate-600 border border-slate-200">{r.total_days}x</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      )}
 
       <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">

@@ -1703,6 +1703,40 @@ async def list_overtime(month: Optional[str] = None, current: dict = Depends(get
     }
 
 
+@router.get("/overtime/grid")
+async def overtime_grid(month: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Rekap lembur bentuk grid bulanan (karyawan × tanggal) + total per bulan — mirip absensi."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    import calendar as _cal
+    m = month or datetime.now(timezone.utc).strftime("%Y-%m")
+    yr, mo = int(m[:4]), int(m[5:7])
+    ndays = _cal.monthrange(yr, mo)[1]
+    days = [f"{m}-{d:02d}" for d in range(1, ndays + 1)]
+    rules = await _get_ot_rules()
+    hol_docs = await db.holidays.find({}, {"_id": 0, "date": 1}).to_list(length=5000)
+    holidays = {_date_only(h.get("date") or "") for h in hol_docs if h.get("date")}
+    rows = await db.production_overtime.find({"ot_date": {"$regex": f"^{m}"}}, {"_id": 0}).to_list(length=50000)
+    grid = {}
+    for r in rows:
+        calc = _calc_overtime(r.get("ot_date") or "", r.get("ot_start") or "", r.get("ot_end") or "", rules, holidays, r.get("ot_hours"))
+        nm = (r.get("name") or "-").strip() or "-"
+        d = _date_only(r.get("ot_date") or "")
+        g = grid.setdefault(nm, {})
+        g[d] = round(g.get(d, 0) + calc["ot_hours"], 2)
+    items = []
+    for nm, perdate in grid.items():
+        th = round(sum(perdate.values()), 2)
+        td = len([1 for v in perdate.values() if v > 0])
+        items.append({"name": nm, "per_date": perdate, "total_hours": th, "total_days": td})
+    items.sort(key=lambda x: x["name"])
+    return {
+        "month": m, "days": days, "items": items,
+        "grand_total_hours": round(sum(i["total_hours"] for i in items), 2),
+        "grand_total_days": sum(i["total_days"] for i in items),
+    }
+
+
 @router.get("/overtime/export.xlsx")
 async def export_overtime_xlsx(month: Optional[str] = None, current: dict = Depends(get_current_user)):
     """Export rekap lembur bulanan ke Excel (detail per record + rekap per karyawan)."""
