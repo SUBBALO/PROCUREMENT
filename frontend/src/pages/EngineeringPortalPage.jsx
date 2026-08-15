@@ -119,9 +119,9 @@ export default function EngineeringPortalPage() {
   };
   const GROUP_DEFS = [
     { key: "masuk", label: "Pekerjaan Masuk" },
+    { key: "monitor", label: "Monitor" },
     { key: "approval", label: "Proses & Approval" },
     { key: "data", label: "Master & Data" },
-    { key: "monitor", label: "Monitor" },
   ];
   const groups = GROUP_DEFS.map((g) => ({
     ...g,
@@ -131,7 +131,7 @@ export default function EngineeringPortalPage() {
   return (
     <DeptPortal
       deptLabel="Engineering Department"
-      deptTagline="Menu dikelompokkan: Pekerjaan Masuk · Proses & Approval · Master & Data · Monitor"
+      deptTagline="Menu dikelompokkan: Pekerjaan Masuk · Monitor · Proses & Approval · Master & Data"
       accentColor="amber"
       groups={groups}
       compactCards
