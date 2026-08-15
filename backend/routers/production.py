@@ -94,6 +94,56 @@ async def list_new_so(scope: str = "unack", current: dict = Depends(get_current_
     return {"items": items, "count": len(items), "unack_count": unack_count, "scope": scope}
 
 
+@router.get("/so-attachments")
+async def so_attachments(so_no: str = "", current: dict = Depends(get_current_user)):
+    """Pratinjau lampiran SO untuk Produksi: daftar Drawing (PDF) + BOM (beserta item).
+    Dipakai di halaman SO Masuk agar operator bisa cek drawing/BOM tanpa pindah menu."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    so = (so_no or "").strip()
+    if not so:
+        return {"drawings": [], "boms": []}
+    dwg_docs = await db.drawings.find(
+        {"so_no": so, "deleted_at": {"$exists": False}}, {"_id": 0}
+    ).sort("updated_at", -1).to_list(length=200)
+    drawings = [{
+        "id": d.get("id"),
+        "drawing_no": d.get("drawing_no") or "-",
+        "title": d.get("title") or d.get("project_name") or "",
+        "revision": d.get("revision") or "",
+        "discipline": d.get("discipline") or "",
+        "approval_status": d.get("approval_status") or "draft",
+        "has_file": bool(d.get("file_id")),
+    } for d in dwg_docs]
+
+    bom_docs = await db.boms.find(
+        {"so_no": so, "deleted_at": {"$exists": False}}, {"_id": 0}
+    ).sort("uploaded_at", 1).to_list(length=100)
+    boms = []
+    for idx, b in enumerate(bom_docs):
+        if not b.get("bom_no"):
+            continue
+        its = b.get("items") or []
+        boms.append({
+            "id": b.get("id"),
+            "bom_no": b.get("bom_no"),
+            "part_no": b.get("part_no") or (idx + 1),
+            "project_name": b.get("project_name") or "",
+            "items_count": len(its),
+            "items": [{
+                "item_no": it.get("item_no"),
+                "item_name": it.get("item_name") or "",
+                "item_specification": it.get("item_specification") or "",
+                "qty": it.get("qty") or 0,
+                "uom": it.get("uom") or "",
+                "material": it.get("material") or "",
+                "weight_kg": it.get("weight_kg"),
+                "remark": it.get("remark") or "",
+            } for it in its],
+        })
+    return {"so_no": so, "drawings": drawings, "boms": boms}
+
+
 @router.post("/new-so/{so_id}/ack")
 async def ack_new_so(so_id: str, current: dict = Depends(get_current_user)):
     """Tandai SO sudah dilihat/disiapkan Produksi."""
@@ -1203,6 +1253,73 @@ async def list_overtime(month: Optional[str] = None, current: dict = Depends(get
         "total_hours": round(sum(s["total_hours"] for s in summary.values()), 2),
         "total_weighted": round(sum(s["weighted_hours"] for s in summary.values()), 2),
     }
+
+
+@router.get("/overtime/export.xlsx")
+async def export_overtime_xlsx(month: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Export rekap lembur bulanan ke Excel (detail per record + rekap per karyawan)."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    import io
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    m = month or datetime.now(timezone.utc).strftime("%Y-%m")
+    rules = await _get_ot_rules()
+    hol_docs = await db.holidays.find({}, {"_id": 0, "date": 1}).to_list(length=5000)
+    holidays = {_date_only(h.get("date") or "") for h in hol_docs if h.get("date")}
+    rows = await db.production_overtime.find({"ot_date": {"$regex": f"^{m}"}}, {"_id": 0}).to_list(length=50000)
+    rows.sort(key=lambda r: (r.get("ot_date") or "", r.get("created_at") or ""))
+
+    hdr_font = Font(bold=True, color="FFFFFF")
+    hdr_fill = PatternFill("solid", fgColor="B45309")
+    center = Alignment(horizontal="center")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Detail Lembur"
+    headers = ["Tanggal", "No.", "Nama", "SO No", "Customer", "Jenis Hari",
+               "Jam Mulai", "Jam Selesai", "Jam Lembur", "1.5x", "2x", "3x", "4x", "Jam Tertimbang"]
+    ws.append(headers)
+    for c in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=c); cell.font = hdr_font; cell.fill = hdr_fill; cell.alignment = center
+
+    summary = {}
+    for r in rows:
+        calc = _calc_overtime(r.get("ot_date") or "", r.get("ot_start") or "", r.get("ot_end") or "", rules, holidays, r.get("ot_hours"))
+        ws.append([
+            r.get("ot_date") or "", r.get("ot_no") or "", r.get("name") or "", r.get("so_no") or "",
+            r.get("customer") or "", calc["day_label"],
+            r.get("ot_start") or "", r.get("ot_end") or "",
+            calc["ot_hours"], calc["x15"], calc["x2"], calc["x3"], calc["x4"], calc["weighted_hours"],
+        ])
+        nm = r.get("name") or "-"
+        s = summary.setdefault(nm, {"total": 0.0, "x15": 0.0, "x2": 0.0, "x3": 0.0, "x4": 0.0, "w": 0.0})
+        s["total"] += calc["ot_hours"]; s["x15"] += calc["x15"]; s["x2"] += calc["x2"]
+        s["x3"] += calc["x3"]; s["x4"] += calc["x4"]; s["w"] += calc["weighted_hours"]
+    for w, col in zip([12, 16, 22, 14, 24, 14, 11, 11, 11, 8, 8, 8, 8, 14], range(1, 15)):
+        ws.column_dimensions[chr(64 + col)].width = w
+
+    ws2 = wb.create_sheet("Rekap per Karyawan")
+    h2 = ["Nama", "Total Jam", "1.5x", "2x", "3x", "4x", "Jam Tertimbang"]
+    ws2.append(h2)
+    for c in range(1, len(h2) + 1):
+        cell = ws2.cell(row=1, column=c); cell.font = hdr_font; cell.fill = hdr_fill; cell.alignment = center
+    for nm, s in sorted(summary.items(), key=lambda x: -x[1]["total"]):
+        ws2.append([nm, round(s["total"], 2), round(s["x15"], 2), round(s["x2"], 2),
+                    round(s["x3"], 2), round(s["x4"], 2), round(s["w"], 2)])
+    for w, col in zip([24, 12, 8, 8, 8, 8, 14], range(1, 8)):
+        ws2.column_dimensions[chr(64 + col)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="rekap_lembur_{m}.xlsx"'},
+    )
 
 
 @router.post("/overtime/preview")

@@ -1,18 +1,18 @@
 [
   {
-    "content": "Backend: overtime rules master + _calc_overtime (day-type, multipliers, holiday break deduction, manual hours)",
+    "content": "Attendance: tampilkan hari (3 huruf) di header tanggal + marking kolom Minggu garis merah",
     "status": "completed"
   },
   {
-    "content": "Backend: create/list/preview overtime with tier breakdown + weighted hours",
+    "content": "Export Excel rekap lembur bulanan (kolom pengali 1.5x/2x/3x/4x + tertimbang) — backend endpoint + frontend button",
     "status": "completed"
   },
   {
-    "content": "Frontend: Master Lembur modal + live OT preview + manual hours + tier columns",
+    "content": "Preview Drawing/BOM di halaman SO Masuk Produksi (modal pratinjau)",
     "status": "completed"
   },
   {
-    "content": "Verify: py_compile, esbuild, API smoke tests, screenshots",
+    "content": "Verify: py_compile, esbuild, screenshots",
     "status": "completed"
   }
 ]

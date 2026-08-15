@@ -13,6 +13,8 @@ const STATUS_LABELS = { hadir: "Hadir", terlambat: "Terlambat", ijin_keluar: "Ij
 const STATUS_ABBR = { hadir: "H", terlambat: "T", ijin_keluar: "IK", ijin_pulang: "IP", night_shift: "N", mc_sakit: "S", tidak_hadir: "A", insitu: "IS" };
 const STATUS_CELL = { hadir: "bg-emerald-100 text-emerald-700", terlambat: "bg-amber-100 text-amber-700", ijin_keluar: "bg-blue-100 text-blue-700", ijin_pulang: "bg-sky-100 text-sky-700", night_shift: "bg-indigo-100 text-indigo-700", mc_sakit: "bg-rose-100 text-rose-700", tidak_hadir: "bg-rose-200 text-rose-800", insitu: "bg-violet-100 text-violet-700" };
 const STATUS_TEXT = { hadir: "text-emerald-700", terlambat: "text-amber-600", ijin_keluar: "text-blue-600", ijin_pulang: "text-sky-600", night_shift: "text-indigo-600", mc_sakit: "text-rose-600", tidak_hadir: "text-rose-700", insitu: "text-violet-600" };
+const DOW_ABBR = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
+const dowOf = (iso) => { try { return new Date(iso + "T00:00:00").getDay(); } catch { return -1; } };
 
 export default function ProductionAttendancePage() {
   const [month, setMonth] = useState(thisMonth());
@@ -143,7 +145,12 @@ export default function ProductionAttendancePage() {
               <tr className="bg-slate-100 text-slate-600">
                 <th className="px-2 py-2 text-left font-bold border border-slate-200 sticky left-0 bg-slate-100 z-10 min-w-[160px]">Nama</th>
                 <th className="px-2 py-2 text-left font-bold border border-slate-200 min-w-[90px]">Bagian</th>
-                {grid.days.map((d) => <th key={d} className="px-1 py-2 text-center font-bold border border-slate-200 w-7">{Number(d.slice(8))}</th>)}
+                {grid.days.map((d) => { const dw = dowOf(d); const sun = dw === 0; return (
+                  <th key={d} data-testid={`att-day-head-${d.slice(8)}`} className={`px-1 py-1 text-center font-bold border border-slate-200 w-8 ${sun ? "bg-rose-50 border-l-2 border-l-rose-500 text-rose-600" : ""}`}>
+                    <div className={`text-[8px] font-bold leading-none ${sun ? "text-rose-500" : "text-slate-400"}`}>{DOW_ABBR[dw] || ""}</div>
+                    <div className="leading-tight">{Number(d.slice(8))}</div>
+                  </th>
+                ); })}
               </tr>
             </thead>
             <tbody>
@@ -158,7 +165,8 @@ export default function ProductionAttendancePage() {
                     <td className="px-2 py-1 text-[10px] text-slate-500 border border-slate-200">{e.designation || "—"}</td>
                     {grid.days.map((d) => {
                       const st = (grid.records[e.id] || {})[d];
-                      return <td key={d} className={`text-center border border-slate-200 font-bold ${st ? STATUS_CELL[st] : "text-slate-200"}`} title={st ? STATUS_LABELS[st] : ""}>{st ? STATUS_ABBR[st] : "·"}</td>;
+                      const sun = dowOf(d) === 0;
+                      return <td key={d} className={`text-center border border-slate-200 font-bold ${sun ? "border-l-2 border-l-rose-500" : ""} ${st ? STATUS_CELL[st] : (sun ? "bg-rose-50/50 text-rose-300" : "text-slate-200")}`} title={st ? STATUS_LABELS[st] : (sun ? "Minggu" : "")}>{st ? STATUS_ABBR[st] : "·"}</td>;
                     })}
                   </tr>
                 ))

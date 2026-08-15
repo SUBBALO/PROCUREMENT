@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import BackLink from "../components/BackLink";
-import api from "../lib/api";
-import { Clock, Plus, Trash, X, FloppyDisk, CalendarBlank, Gear, Info } from "@phosphor-icons/react";
+import api, { downloadXlsx } from "../lib/api";
+import { Clock, Plus, Trash, X, FloppyDisk, CalendarBlank, Gear, Info, DownloadSimple } from "@phosphor-icons/react";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -76,6 +76,11 @@ export default function ProductionOvertimePage() {
   };
   const remove = async (r) => { if (!window.confirm(`Hapus OT ${r.ot_no}?`)) return; try { await api.delete(`/production/overtime/${r.id}`); load(); } catch { toast.error("Gagal"); } };
 
+  const exportXlsx = async () => {
+    try { await downloadXlsx("/production/overtime/export.xlsx", { month }, `rekap_lembur_${month}.xlsx`); toast.success("Rekap lembur diexport"); }
+    catch (e) { toast.error(e.message || "Gagal export"); }
+  };
+
   const openRules = async () => {
     try { const { data } = await api.get("/production/overtime-rules"); setRules(data.rules); setRulesOpen(true); }
     catch (e) { toast.error(e.response?.data?.detail || "Gagal memuat master"); }
@@ -105,6 +110,7 @@ export default function ProductionOvertimePage() {
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded px-2 h-9"><CalendarBlank size={16} weight="bold" className="text-slate-500" /><input type="month" value={month} onChange={(e) => setMonth(e.target.value)} data-testid="ot-month" className="text-sm outline-none bg-transparent" /></div>
           <button onClick={openRules} data-testid="ot-master-btn" className="inline-flex items-center gap-1.5 h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-bold rounded hover:bg-slate-100"><Gear size={16} weight="bold" /> Master Lembur</button>
+          <button onClick={exportXlsx} data-testid="ot-export-btn" className="inline-flex items-center gap-1.5 h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-bold rounded hover:bg-slate-100"><DownloadSimple size={16} weight="bold" /> Export Excel</button>
           <button onClick={() => { setForm(EMPTY); setPreview(null); setModalOpen(true); }} data-testid="add-ot-btn" className="inline-flex items-center gap-1.5 h-9 px-4 bg-amber-600 text-white text-sm font-bold rounded hover:bg-amber-700"><Plus size={16} weight="bold" /> Overtime Request</button>
         </div>
       </div>

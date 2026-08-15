@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import BackLink from "../components/BackLink";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { ClipboardText, CheckCircle, ArrowCounterClockwise, ArrowClockwise, Play } from "@phosphor-icons/react";
+import { ClipboardText, CheckCircle, ArrowCounterClockwise, ArrowClockwise, Play, FilePdf, Cube, X, Eye, DownloadSimple } from "@phosphor-icons/react";
 
 function fmtDate(s) {
   if (!s) return "-";
@@ -68,6 +68,49 @@ export default function ProductionNewSoPage() {
     } finally { setBusy(null); }
   };
   const openStart = (so) => { setStartDate(new Date().toISOString().slice(0, 10)); setStartModal(so); };
+
+  // ----- Preview Drawing/BOM -----
+  const [attSo, setAttSo] = useState(null);       // SO yang dibuka pratinjaunya
+  const [att, setAtt] = useState({ drawings: [], boms: [] });
+  const [attLoading, setAttLoading] = useState(false);
+  const [tab, setTab] = useState("drawing");
+  const [pdfUrl, setPdfUrl] = useState("");
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [activeDwg, setActiveDwg] = useState(null);
+  const [activeBom, setActiveBom] = useState(null);
+
+  const openAtt = async (so) => {
+    setAttSo(so); setAttLoading(true); setPdfUrl(""); setActiveDwg(null); setActiveBom(null);
+    setTab(so.has_drawing ? "drawing" : "bom");
+    try {
+      const { data } = await api.get("/production/so-attachments", { params: { so_no: so.so_no } });
+      setAtt({ drawings: data.drawings || [], boms: data.boms || [] });
+      if ((data.boms || []).length > 0) setActiveBom(data.boms[0]);
+      if ((data.drawings || []).length > 0 && data.drawings[0].has_file) loadPdf(data.drawings[0]);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal memuat lampiran");
+    } finally { setAttLoading(false); }
+  };
+  const loadPdf = async (dwg) => {
+    if (!dwg?.has_file) { toast.error("Drawing belum ada file PDF"); return; }
+    setActiveDwg(dwg); setPdfLoading(true);
+    if (pdfUrl) { URL.revokeObjectURL(pdfUrl); setPdfUrl(""); }
+    try {
+      const res = await api.get(`/drawings/${dwg.id}/preview`, { responseType: "blob" });
+      setPdfUrl(URL.createObjectURL(res.data));
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal memuat PDF");
+    } finally { setPdfLoading(false); }
+  };
+  const downloadDwg = async (dwg) => {
+    try {
+      const res = await api.get(`/drawings/${dwg.id}/download`, { responseType: "blob" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(res.data);
+      a.download = `${dwg.drawing_no}.pdf`; document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(a.href);
+    } catch (e) { toast.error("Gagal unduh"); }
+  };
+  const closeAtt = () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); setPdfUrl(""); setAttSo(null); };
 
   const unstartWork = async (so) => {
     setBusy(so.id);
@@ -170,8 +213,16 @@ export default function ProductionNewSoPage() {
                     ) : (so.description || "-")}
                   </td>
                   <td className="px-2 py-1 text-right font-bold text-slate-900 tabular-nums" data-testid={`qty-total-${so.so_no}`}>{fmtQty(so.qty_total)}</td>
-                  <td className="px-2 py-1 text-center"><StatusPill ok={so.has_drawing} label="DWG" /></td>
-                  <td className="px-2 py-1 text-center"><StatusPill ok={so.has_bom} label="BOM" /></td>
+                  <td className="px-2 py-1 text-center">
+                    {so.has_drawing ? (
+                      <button onClick={() => { setTab("drawing"); openAtt(so); }} data-testid={`preview-dwg-${so.so_no}`} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors" title="Pratinjau Drawing"><Eye size={11} weight="bold" /> DWG</button>
+                    ) : <StatusPill ok={false} label="DWG" />}
+                  </td>
+                  <td className="px-2 py-1 text-center">
+                    {so.has_bom ? (
+                      <button onClick={() => { setTab("bom"); openAtt(so); }} data-testid={`preview-bom-${so.so_no}`} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors" title="Pratinjau BOM"><Eye size={11} weight="bold" /> BOM</button>
+                    ) : <StatusPill ok={false} label="BOM" />}
+                  </td>
                   <td className="px-2 py-1">
                     <div className="flex flex-col gap-0.5">
                       {so.prod_started ? (
@@ -238,6 +289,120 @@ export default function ProductionNewSoPage() {
                 <Play size={14} weight="fill" className="mr-1" /> OK, Mulai
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Preview Drawing / BOM ===== */}
+      {attSo && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" data-testid="att-preview-modal">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[88vh] flex flex-col overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between shrink-0">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2"><FilePdf size={18} weight="duotone" className="text-emerald-600" /> Lampiran SO {attSo.so_no}</h2>
+                <p className="text-[11px] text-slate-500">{attSo.customer}</p>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="inline-flex border border-slate-300 rounded overflow-hidden mr-2">
+                  <button onClick={() => setTab("drawing")} data-testid="att-tab-drawing" className={`px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-bold ${tab === "drawing" ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Drawing ({att.drawings.length})</button>
+                  <button onClick={() => setTab("bom")} data-testid="att-tab-bom" className={`px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-bold border-l border-slate-300 ${tab === "bom" ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>BOM ({att.boms.length})</button>
+                </div>
+                <button onClick={closeAtt} data-testid="att-preview-close" className="p-1.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={18} weight="bold" /></button>
+              </div>
+            </div>
+
+            {attLoading ? (
+              <div className="flex-1 flex items-center justify-center text-slate-400">Memuat lampiran…</div>
+            ) : tab === "drawing" ? (
+              <div className="flex-1 flex overflow-hidden">
+                {/* Drawing list */}
+                <div className="w-64 border-r border-slate-200 overflow-y-auto shrink-0 bg-slate-50">
+                  {att.drawings.length === 0 ? (
+                    <div className="p-4 text-xs text-slate-400" data-testid="att-dwg-empty">Belum ada drawing untuk SO ini.</div>
+                  ) : att.drawings.map((d) => (
+                    <button key={d.id} onClick={() => loadPdf(d)} data-testid={`att-dwg-${d.drawing_no}`}
+                      className={`w-full text-left px-3 py-2 border-b border-slate-100 hover:bg-white transition-colors ${activeDwg?.id === d.id ? "bg-white border-l-2 border-l-emerald-500" : ""}`}>
+                      <div className="font-mono font-bold text-[11px] text-slate-800">{d.drawing_no}{d.revision ? ` · Rev ${d.revision}` : ""}</div>
+                      <div className="text-[10px] text-slate-500 truncate">{d.title || "—"}</div>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="text-[9px] uppercase font-bold text-slate-400">{d.discipline || ""}</span>
+                        {!d.has_file && <span className="text-[9px] font-bold text-amber-600">(belum ada PDF)</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                {/* PDF viewer */}
+                <div className="flex-1 flex flex-col bg-slate-100">
+                  {activeDwg && (
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-200 bg-white shrink-0">
+                      <span className="text-xs font-bold text-slate-700 font-mono">{activeDwg.drawing_no}</span>
+                      {activeDwg.has_file && <Button size="sm" variant="outline" onClick={() => downloadDwg(activeDwg)} data-testid="att-dwg-download" className="rounded-none h-7 text-[10px]"><DownloadSimple size={12} weight="bold" className="mr-1" /> Unduh</Button>}
+                    </div>
+                  )}
+                  <div className="flex-1 overflow-hidden">
+                    {pdfLoading ? (
+                      <div className="h-full flex items-center justify-center text-slate-400">Memuat PDF…</div>
+                    ) : pdfUrl ? (
+                      <iframe title="drawing-pdf" src={pdfUrl} className="w-full h-full border-0" data-testid="att-pdf-frame" />
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-slate-400 text-sm">Pilih drawing di kiri untuk pratinjau.</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 flex overflow-hidden">
+                {/* BOM list */}
+                <div className="w-56 border-r border-slate-200 overflow-y-auto shrink-0 bg-slate-50">
+                  {att.boms.length === 0 ? (
+                    <div className="p-4 text-xs text-slate-400" data-testid="att-bom-empty">Belum ada BOM untuk SO ini.</div>
+                  ) : att.boms.map((b) => (
+                    <button key={b.id} onClick={() => setActiveBom(b)} data-testid={`att-bom-${b.bom_no}`}
+                      className={`w-full text-left px-3 py-2 border-b border-slate-100 hover:bg-white transition-colors ${activeBom?.id === b.id ? "bg-white border-l-2 border-l-emerald-500" : ""}`}>
+                      <div className="font-mono font-bold text-[11px] text-slate-800">{b.bom_no}</div>
+                      <div className="text-[10px] text-slate-500">Part {b.part_no} · {b.items_count} item</div>
+                    </button>
+                  ))}
+                </div>
+                {/* BOM items */}
+                <div className="flex-1 overflow-auto bg-white">
+                  {activeBom ? (
+                    <table className="w-full border-collapse text-xs" data-testid="att-bom-table">
+                      <thead className="bg-slate-100 border-b border-slate-200 sticky top-0">
+                        <tr className="text-[10px] uppercase tracking-[0.06em] font-bold text-slate-600 text-left">
+                          <th className="px-2 py-1.5 w-10">No</th>
+                          <th className="px-2 py-1.5 min-w-[180px]">Nama Item</th>
+                          <th className="px-2 py-1.5 min-w-[140px]">Spesifikasi</th>
+                          <th className="px-2 py-1.5 w-16 text-right">Qty</th>
+                          <th className="px-2 py-1.5 w-14">Satuan</th>
+                          <th className="px-2 py-1.5 min-w-[120px]">Material</th>
+                          <th className="px-2 py-1.5 w-16 text-right">Berat (kg)</th>
+                          <th className="px-2 py-1.5 min-w-[120px]">Remark</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {activeBom.items.length === 0 ? (
+                          <tr><td colSpan={8} className="px-3 py-6 text-center text-slate-400">BOM tanpa item.</td></tr>
+                        ) : activeBom.items.map((it, ix) => (
+                          <tr key={ix} className="border-b border-slate-100 hover:bg-emerald-50/40">
+                            <td className="px-2 py-1 text-slate-500">{it.item_no}</td>
+                            <td className="px-2 py-1 font-semibold text-slate-800">{it.item_name || "—"}</td>
+                            <td className="px-2 py-1 text-slate-600">{it.item_specification || "—"}</td>
+                            <td className="px-2 py-1 text-right tabular-nums font-bold">{fmtQty(it.qty)}</td>
+                            <td className="px-2 py-1 text-slate-600">{it.uom || "—"}</td>
+                            <td className="px-2 py-1 text-slate-600">{it.material || "—"}</td>
+                            <td className="px-2 py-1 text-right tabular-nums text-slate-600">{it.weight_kg ?? "—"}</td>
+                            <td className="px-2 py-1 text-slate-500">{it.remark || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-slate-400 text-sm">Pilih BOM di kiri.</div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
