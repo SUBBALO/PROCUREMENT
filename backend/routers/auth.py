@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
+# Feature toggle — lockout brute-force dimatikan sementara atas permintaan (Feb 2026).
+LOGIN_LOCKOUT_ENABLED = False
 PASSWORD_MIN_LEN = 10
 DEFAULT_PASSWORDS = {"admin123", "riski123", "trisna123", "salma123", "qc12345",
                      "sales12345", "cekcek123", "supervisor123", "test123", "password"}
@@ -56,6 +58,8 @@ def _validate_password_strength(password: str) -> None:
 
 async def _get_lockout_remaining(username: str) -> int:
     """Return remaining seconds sampai lockout expires, atau 0 kalau tidak locked."""
+    if not LOGIN_LOCKOUT_ENABLED:
+        return 0
     doc = await db.login_attempts.find_one({"username": username})
     if not doc:
         return 0
@@ -70,6 +74,8 @@ async def _get_lockout_remaining(username: str) -> int:
 
 
 async def _record_failed_login(username: str) -> None:
+    if not LOGIN_LOCKOUT_ENABLED:
+        return
     doc = await db.login_attempts.find_one({"username": username})
     now = datetime.now(timezone.utc)
     if not doc:
