@@ -7,6 +7,7 @@ import { Signature, FileText, Factory, WarningCircle, ClipboardText, Notebook, G
 export default function ProductionPortalPage() {
   const [pendingTtd, setPendingTtd] = useState(0);
   const [newSo, setNewSo] = useState(0);
+  const [qcPending, setQcPending] = useState(0);
 
   useEffect(() => {
     api.get("/drawings/ecn-pending-ttd")
@@ -15,6 +16,9 @@ export default function ProductionPortalPage() {
     api.get("/production/new-so?scope=unack")
       .then(({ data }) => setNewSo(data.unack_count || 0))
       .catch(() => setNewSo(0));
+    api.get("/production/frn/qc-pending-count")
+      .then(({ data }) => setQcPending(data.count || 0))
+      .catch(() => setQcPending(0));
   }, []);
 
   const CARDS = [
@@ -37,6 +41,7 @@ export default function ProductionPortalPage() {
         "Catat barang jadi yang lolos QC dan dirilis per SO (boleh bertahap/partial). Setiap rilis otomatis menambah Qty Finished pada papan Job Progress.",
       icon: Package,
       href: "/produksi/frn",
+      badgeCount: qcPending,
       accent: "from-emerald-500 via-teal-500 to-cyan-500",
       accentText: "text-emerald-400",
     },

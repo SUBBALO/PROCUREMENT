@@ -951,6 +951,15 @@ async def list_frn(so_no: Optional[str] = None, month: Optional[str] = None,
     return {"items": [_serialize_frn(r) for r in rows]}
 
 
+@router.get("/frn/qc-pending-count")
+async def frn_qc_pending_count(current: dict = Depends(get_current_user)):
+    """Jumlah release note yang menunggu QC (status submitted)."""
+    if not _can_view(current):
+        return {"count": 0}
+    n = await db.fg_release_notes.count_documents({"status": "submitted"})
+    return {"count": n}
+
+
 @router.post("/frn")
 async def create_frn(payload: FrnIn, current: dict = Depends(get_current_user)):
     if not _can_view(current):
