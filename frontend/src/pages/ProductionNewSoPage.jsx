@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import BackLink from "../components/BackLink";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { ClipboardText, CheckCircle, ArrowCounterClockwise, ArrowClockwise } from "@phosphor-icons/react";
+import { ClipboardText, CheckCircle, ArrowCounterClockwise, ArrowClockwise, Play } from "@phosphor-icons/react";
 
 function fmtDate(s) {
   if (!s) return "-";
@@ -52,6 +52,39 @@ export default function ProductionNewSoPage() {
     } finally { setBusy(null); }
   };
 
+  const [startModal, setStartModal] = useState(null); // so yang mau dimulai
+  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+
+  const startWork = async () => {
+    const so = startModal;
+    setBusy(so.id);
+    try {
+      await api.post(`/production/new-so/${so.id}/start`, { start_date: startDate });
+      toast.success(`SO ${so.so_no || ""} — Mulai Kerja ${startDate}`);
+      setStartModal(null);
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal menandai mulai kerja");
+    } finally { setBusy(null); }
+  };
+  const openStart = (so) => { setStartDate(new Date().toISOString().slice(0, 10)); setStartModal(so); };
+
+  const unstartWork = async (so) => {
+    setBusy(so.id);
+    try {
+      await api.post(`/production/new-so/${so.id}/unstart`);
+      toast.success(`SO ${so.so_no || ""} — status Mulai Kerja dibatalkan`);
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal membatalkan");
+    } finally { setBusy(null); }
+  };
+
+  const fmtQty = (n) => {
+    const v = Number(n || 0);
+    return Number.isInteger(v) ? v.toLocaleString("id-ID") : v.toLocaleString("id-ID", { maximumFractionDigits: 2 });
+  };
+
   const StatusPill = ({ ok, label }) => (
     <span className={`inline-block px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] border ${
       ok ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-slate-50 text-slate-400"
@@ -67,7 +100,7 @@ export default function ProductionNewSoPage() {
             <ClipboardText size={20} weight="duotone" className="text-emerald-600" /> SO Masuk (Baru)
           </h1>
           <p className="text-slate-500">
-            Sales Order yang baru dibuat. Produksi bisa lihat lebih awal (walau drawing belum di-stamp), pantau kesiapan drawing/BOM, lalu tandai <b>siap disiapkan</b>.
+            Sales Order yang baru dibuat. Produksi bisa lihat lebih awal (walau drawing belum di-stamp), pantau kesiapan drawing/BOM, tandai <b>siap</b>, lalu <b>Mulai Kerja</b> saat pengerjaan dimulai.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -101,19 +134,20 @@ export default function ProductionNewSoPage() {
                 <th className="px-2 py-1 w-28">No. SO</th>
                 <th className="px-2 py-1 w-24">Tanggal</th>
                 <th className="px-2 py-1 min-w-[180px]">Customer</th>
-                <th className="px-2 py-1 min-w-[220px]">Keterangan</th>
+                <th className="px-2 py-1 min-w-[220px]">Deskripsi</th>
+                <th className="px-2 py-1 w-24 text-right">Qty Total</th>
                 <th className="px-2 py-1 w-24 text-center">Drawing</th>
                 <th className="px-2 py-1 w-24 text-center">BOM</th>
-                <th className="px-2 py-1 w-28">Status</th>
-                <th className="px-2 py-1 w-32 text-center">Aksi</th>
+                <th className="px-2 py-1 w-32">Status</th>
+                <th className="px-2 py-1 w-40 text-center">Aksi</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-400">Memuat…</td></tr>
+                <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400">Memuat…</td></tr>
               )}
               {!loading && items.length === 0 && (
-                <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-400" data-testid="empty-state">
+                <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400" data-testid="empty-state">
                   {scope === "unack" ? "Tidak ada SO baru. Semua sudah disiapkan 🎉" : "Belum ada SO."}
                 </td></tr>
               )}
@@ -122,26 +156,60 @@ export default function ProductionNewSoPage() {
                   <td className="px-2 py-1 font-mono font-bold text-slate-900">{so.so_no || "-"}</td>
                   <td className="px-2 py-1 text-slate-600 whitespace-nowrap">{fmtDate(so.so_date || so.created_at)}</td>
                   <td className="px-2 py-1 text-slate-800">{so.customer || "-"}</td>
-                  <td className="px-2 py-1 text-slate-600">{so.description || "-"}</td>
+                  <td className="px-2 py-1 text-slate-600">
+                    {(so.items && so.items.length > 0) ? (
+                      <div className="space-y-0.5">
+                        {so.items.map((it, ix) => (
+                          <div key={ix} className="flex items-center gap-1" data-testid={`so-item-${so.so_no}-${ix}`}>
+                            <span className="text-slate-400">•</span>
+                            <span className="text-slate-700">{it.name || "-"}</span>
+                            <span className="text-[10px] font-bold text-slate-500">({fmtQty(it.qty)} {it.unit})</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (so.description || "-")}
+                  </td>
+                  <td className="px-2 py-1 text-right font-bold text-slate-900 tabular-nums" data-testid={`qty-total-${so.so_no}`}>{fmtQty(so.qty_total)}</td>
                   <td className="px-2 py-1 text-center"><StatusPill ok={so.has_drawing} label="DWG" /></td>
                   <td className="px-2 py-1 text-center"><StatusPill ok={so.has_bom} label="BOM" /></td>
                   <td className="px-2 py-1">
-                    {so.prod_ack ? (
-                      <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-emerald-700" title={`oleh ${so.prod_ack_by} · ${fmtDate(so.prod_ack_at)}`}>Siap ✓</span>
-                    ) : (
-                      <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-amber-600">Baru</span>
-                    )}
+                    <div className="flex flex-col gap-0.5">
+                      {so.prod_started ? (
+                        <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-blue-700" title={`Mulai kerja oleh ${so.prod_started_by} · ${fmtDate(so.prod_started_at)}`}>▶ Dikerjakan</span>
+                      ) : so.prod_ack ? (
+                        <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-emerald-700" title={`oleh ${so.prod_ack_by} · ${fmtDate(so.prod_ack_at)}`}>Siap ✓</span>
+                      ) : (
+                        <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-amber-600">Baru</span>
+                      )}
+                      {so.released > 0 && (
+                        <span className={`text-[10px] font-bold ${so.balance <= 0 ? "text-emerald-700" : "text-slate-500"}`} data-testid={`progress-${so.so_no}`}>
+                          {so.balance <= 0 ? "Selesai " : "Siap "}{fmtQty(so.released)}/{fmtQty(so.qty_total)} pcs
+                        </span>
+                      )}
+                    </div>
                   </td>
-                  <td className="px-2 py-1 text-center">
-                    {so.prod_ack ? (
-                      <Button variant="outline" size="sm" disabled={busy === so.id} onClick={() => unack(so)} className="rounded-none h-7 text-[10px]" data-testid={`unack-${so.so_no}`}>
-                        <ArrowCounterClockwise size={12} weight="bold" className="mr-1" /> Batal
-                      </Button>
-                    ) : (
-                      <Button size="sm" disabled={busy === so.id} onClick={() => ack(so)} className="rounded-none h-7 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white" data-testid={`ack-${so.so_no}`}>
-                        <CheckCircle size={12} weight="bold" className="mr-1" /> Tandai Siap
-                      </Button>
-                    )}
+                  <td className="px-2 py-1">
+                    <div className="flex items-center justify-center gap-1 flex-wrap">
+                      {!so.prod_ack && !so.prod_started && (
+                        <Button size="sm" disabled={busy === so.id} onClick={() => ack(so)} className="rounded-none h-7 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white" data-testid={`ack-${so.so_no}`}>
+                          <CheckCircle size={12} weight="bold" className="mr-1" /> Tandai Siap
+                        </Button>
+                      )}
+                      {so.prod_ack && !so.prod_started && (
+                        <Button variant="outline" size="sm" disabled={busy === so.id} onClick={() => unack(so)} className="rounded-none h-7 text-[10px]" data-testid={`unack-${so.so_no}`}>
+                          <ArrowCounterClockwise size={12} weight="bold" className="mr-1" /> Batal
+                        </Button>
+                      )}
+                      {!so.prod_started ? (
+                        <Button size="sm" disabled={busy === so.id} onClick={() => openStart(so)} className="rounded-none h-7 text-[10px] bg-blue-600 hover:bg-blue-700 text-white" data-testid={`start-${so.so_no}`}>
+                          <Play size={12} weight="fill" className="mr-1" /> Mulai Kerja
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" disabled={busy === so.id} onClick={() => unstartWork(so)} className="rounded-none h-7 text-[10px]" data-testid={`unstart-${so.so_no}`}>
+                          <ArrowCounterClockwise size={12} weight="bold" className="mr-1" /> Batal Mulai
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -149,6 +217,30 @@ export default function ProductionNewSoPage() {
           </table>
         </div>
       </Card>
+
+      {startModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" data-testid="start-modal">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-slate-900">Mulai Kerja · SO {startModal.so_no}</h2>
+              <button onClick={() => setStartModal(null)} data-testid="start-modal-close" className="p-1 rounded text-slate-400 hover:bg-slate-100"><ArrowCounterClockwise size={16} weight="bold" /></button>
+            </div>
+            <div className="px-5 py-4 space-y-2">
+              <p className="text-xs text-slate-500">{startModal.customer}</p>
+              <label className="text-xs font-bold text-slate-600">Tanggal Mulai Kerja</label>
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} data-testid="start-date-input"
+                className="w-full h-9 px-2 text-sm border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              <p className="text-[11px] text-slate-400">Pastikan tanggal benar — ini jadi Date Received di Job Progress.</p>
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+              <button onClick={() => setStartModal(null)} className="h-9 px-4 text-sm font-bold text-slate-600 border border-slate-300 bg-white rounded hover:bg-slate-100">Batal</button>
+              <Button onClick={startWork} disabled={busy === startModal.id} data-testid="start-confirm-btn" className="h-9 px-5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded">
+                <Play size={14} weight="fill" className="mr-1" /> OK, Mulai
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

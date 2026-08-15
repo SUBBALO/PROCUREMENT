@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
 import api from "../lib/api";
-import { Signature, FileText, Factory, WarningCircle, ClipboardText } from "@phosphor-icons/react";
+import { Signature, FileText, Factory, WarningCircle, ClipboardText, Notebook, Gauge, Package, CalendarX, UsersThree } from "@phosphor-icons/react";
 
 export default function ProductionPortalPage() {
   const [pendingTtd, setPendingTtd] = useState(0);
@@ -17,6 +17,61 @@ export default function ProductionPortalPage() {
   }, []);
 
   const CARDS = [
+    {
+      key: "job-progress",
+      label: "Daily Monitoring Job Progress",
+      stats: "Semua aktivitas produksi · Progress per-SO",
+      description:
+        "Papan utama monitoring semua job produksi per SO: Date Received (mulai kerja), Due Date, Qty Finished (otomatis dari Release Note), Balance & % progress, hingga Days sampai selesai.",
+      icon: Gauge,
+      href: "/produksi/job-progress",
+      accent: "from-amber-500 via-orange-500 to-rose-500",
+      accentText: "text-amber-400",
+    },
+    {
+      key: "frn",
+      label: "Finished Goods Release Note",
+      stats: "Rilis barang jadi · QC · Partial",
+      description:
+        "Catat barang jadi yang lolos QC dan dirilis per SO (boleh bertahap/partial). Setiap rilis otomatis menambah Qty Finished pada papan Job Progress.",
+      icon: Package,
+      href: "/produksi/frn",
+      accent: "from-emerald-500 via-teal-500 to-cyan-500",
+      accentText: "text-emerald-400",
+    },
+    {
+      key: "daily-report",
+      label: "Daily Production Report",
+      stats: "Input harian · Masterlist · Export Excel",
+      description:
+        "Laporan produksi harian model spreadsheet: ketik & Enter untuk baris berikutnya (auto-simpan). Catat operator, SO, proses, qty OK & NG, jam kerja, mesin. Tab Masterlist Bulanan untuk rekap & export Excel.",
+      icon: Notebook,
+      href: "/produksi/daily-report",
+      accent: "from-amber-500 via-orange-500 to-rose-500",
+      accentText: "text-amber-400",
+    },
+    {
+      key: "attendance",
+      label: "Absensi Kehadiran",
+      stats: "Check-in harian · Status kehadiran",
+      description:
+        "Absensi harian karyawan produksi (Hadir/Terlambat/Ijin/Night Shift/MC/In-situ). Operator yang tidak hadir otomatis tidak bisa diinput di Daily Production.",
+      icon: UsersThree,
+      href: "/produksi/attendance",
+      accent: "from-indigo-500 via-blue-500 to-cyan-500",
+      accentText: "text-indigo-400",
+    },
+    {
+      key: "holidays",
+      label: "Hari Libur Nasional",
+      stats: "Master libur · Working Date Target",
+      description:
+        "Input tanggal libur nasional per tahun. Dipakai untuk menghitung Working Date Target di Job Progress (kecualikan Minggu & hari libur).",
+      icon: CalendarX,
+      href: "/produksi/holidays",
+      accent: "from-rose-500 via-pink-500 to-fuchsia-500",
+      accentText: "text-rose-400",
+    },
     {
       key: "new-so",
       label: "SO Masuk (Baru)",
@@ -57,7 +112,7 @@ export default function ProductionPortalPage() {
   return (
     <DeptPortal
       deptLabel="Produksi"
-      deptTagline="Acknowledge ECN · TTD Digital · Controlled Drawing"
+      deptTagline="Daily Production Report · Masterlist Bulanan · Acknowledge ECN · TTD Digital"
       accentColor="amber"
       cards={CARDS}
     />

@@ -102,6 +102,7 @@ class SOFullCreate(BaseModel):
     customer: str
     customer_address: Optional[str] = ""
     po_customer_no: Optional[str] = ""
+    due_date: Optional[str] = ""
     description: Optional[str] = ""
     sales_name: Optional[str] = ""
     currency: Optional[str] = "IDR"
@@ -305,6 +306,7 @@ async def create_so_full(payload: SOFullCreate, current: dict = Depends(get_curr
         "customer": (payload.customer or "").strip(),
         "customer_address": (payload.customer_address or "").strip(),
         "po_customer_no": (payload.po_customer_no or "").strip(),
+        "due_date": (payload.due_date or "").strip(),
         "description": payload.description or "",
         "sales_name": (payload.sales_name or current.get("name") or current.get("username", "")).strip(),
         "currency": payload.currency or "IDR",
@@ -344,6 +346,7 @@ async def update_so_full(sid: str, payload: SOFullCreate, current: dict = Depend
         "customer": (payload.customer or "").strip(),
         "customer_address": (payload.customer_address or "").strip(),
         "po_customer_no": (payload.po_customer_no or "").strip(),
+        "due_date": (payload.due_date or "").strip(),
         "description": payload.description or "",
         "sales_name": (payload.sales_name or "").strip(),
         "currency": payload.currency or "IDR",

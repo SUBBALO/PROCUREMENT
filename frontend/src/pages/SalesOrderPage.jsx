@@ -339,6 +339,7 @@ function SalesOrderFormDialog({ mode, so, fromQuotation, canSeePrice, currentUse
   const isEdit = mode === "edit";
   const [soNo, setSoNo] = useState(so?.so_no || "");
   const [soDate, setSoDate] = useState(so?.so_date || today());
+  const [dueDate, setDueDate] = useState(so?.due_date || "");
   const [customer, setCustomer] = useState(so?.customer || "");
   const [customerAddress, setCustomerAddress] = useState(so?.customer_address || "");
   const [poNo, setPoNo] = useState(so?.po_customer_no || "");
@@ -415,7 +416,7 @@ function SalesOrderFormDialog({ mode, so, fromQuotation, canSeePrice, currentUse
     setSaving(true);
     try {
       const payload = {
-        so_no: soNo.trim(), so_date: soDate, customer: customer.trim(), customer_address: customerAddress,
+        so_no: soNo.trim(), so_date: soDate, due_date: dueDate, customer: customer.trim(), customer_address: customerAddress,
         po_customer_no: poNo.trim(), sales_name: salesName.trim(), currency,
         source_quotation_id: srcQuoId, source_quotation_no: srcQuoNo,
         items: cleanItems.map((it) => ({ name: it.name.trim(), qty: Number(it.qty) || 0, unit: it.unit || "pcs", price: Number(it.price) || 0 })),
@@ -457,6 +458,10 @@ function SalesOrderFormDialog({ mode, so, fromQuotation, canSeePrice, currentUse
             <div>
               <Label className="text-xs font-semibold text-slate-600 mb-1 block">Tanggal SO</Label>
               <Input type="date" className={inputCls} value={soDate} onChange={(e) => setSoDate(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Due Date (Delivery)</Label>
+              <Input type="date" data-testid="so-input-due" className={inputCls} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </div>
             <div>
               <Label className="text-xs font-semibold text-slate-600 mb-1 block">No. PO Customer</Label>

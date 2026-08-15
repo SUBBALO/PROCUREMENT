@@ -1,22 +1,18 @@
 [
   {
-    "content": "Add embedded prop to child pages",
+    "content": "Job Progress board + auto-fill + detail modal + Working Date Target + Productivity",
     "status": "completed"
   },
   {
-    "content": "Register /engineering/monitor route in App.js",
+    "content": "Holiday master (menu + CRUD) and integrate into Working Date Target (exclude Sundays + holidays)",
     "status": "completed"
   },
   {
-    "content": "Replace 3 monitor cards with single 'Monitor Engineering' card + update Director nav",
+    "content": "FGRN as spreadsheet multi-row popup (date-first, auto-save, SO->customer/desc autofill)",
     "status": "completed"
   },
   {
-    "content": "Compile with esbuild + screenshot verification",
-    "status": "completed"
-  },
-  {
-    "content": "Run testing_agent_v3 for monitor consolidation",
-    "status": "completed"
+    "content": "Run testing_agent_v3 for FGRN spreadsheet + Holiday + holiday-aware Working Date Target",
+    "status": "in_progress"
   }
 ]

@@ -49,6 +49,11 @@ import QCPortalPage from "./pages/QCPortalPage";
 import EcnTtdQueuePage from "./pages/EcnTtdQueuePage";
 import ProductionPortalPage from "./pages/ProductionPortalPage";
 import ProductionNewSoPage from "./pages/ProductionNewSoPage";
+import ProductionDailyReportPage from "./pages/ProductionDailyReportPage";
+import ProductionJobProgressPage from "./pages/ProductionJobProgressPage";
+import ProductionFrnPage from "./pages/ProductionFrnPage";
+import ProductionHolidayPage from "./pages/ProductionHolidayPage";
+import ProductionAttendancePage from "./pages/ProductionAttendancePage";
 import MaterialCostingPage from "./pages/MaterialCostingPage";
 import MasterDrawingPage from "./pages/MasterDrawingPage";import EngineeringMasterListPage from "./pages/EngineeringMasterListPage";
 import BomEntryGridPage from "./pages/BomEntryGridPage";
@@ -231,6 +236,11 @@ function AppRoutes() {
       <Route path="/ecn-ttd" element={<ProtectedRoute><EcnTtdQueuePage /></ProtectedRoute>} />
       <Route path="/produksi" element={<ProtectedRoute><ProductionPortalPage /></ProtectedRoute>} />
       <Route path="/produksi/new-so" element={<ProtectedRoute><ProductionNewSoPage /></ProtectedRoute>} />
+      <Route path="/produksi/daily-report" element={<ProtectedRoute><ProductionDailyReportPage /></ProtectedRoute>} />
+      <Route path="/produksi/job-progress" element={<ProtectedRoute><ProductionJobProgressPage /></ProtectedRoute>} />
+      <Route path="/produksi/frn" element={<ProtectedRoute><ProductionFrnPage /></ProtectedRoute>} />
+      <Route path="/produksi/holidays" element={<ProtectedRoute><ProductionHolidayPage /></ProtectedRoute>} />
+      <Route path="/produksi/attendance" element={<ProtectedRoute><ProductionAttendancePage /></ProtectedRoute>} />
       <Route path="/qc/mii" element={<ProtectedRoute><QCPage /></ProtectedRoute>} />
       <Route path="/qc/inspections/:id" element={<ProtectedRoute><QCPage /></ProtectedRoute>} />
       <Route path="/engineering/material-costing" element={<ProtectedRoute><MaterialCostingPage /></ProtectedRoute>} />
