@@ -584,6 +584,52 @@ async def accept_inquiry(inq_id: str, payload: InquiryAccept, current: dict = De
     return _clean(updated)
 
 
+@router.post("/inquiries/{inq_id}/receive-job")
+async def receive_inquiry_job(inq_id: str, current: dict = Depends(get_current_user)):
+    """Engineer yang di-assign klik TERIMA: mengakui job (masih antri, belum dikerjakan).
+    Set accepted_at. Ini alur ringan berbasis tanggal (bukan accept+PIC eng_head)."""
+    d = await db.inquiries.find_one({"id": inq_id})
+    if not d:
+        raise HTTPException(status_code=404, detail="Inquiry tidak ditemukan")
+    if not (d.get("assigned_to_id") == current.get("id") or is_admin_like(current) or is_eng_head(current)):
+        raise HTTPException(status_code=403, detail="Inquiry ini belum ditugaskan ke Anda")
+    if d.get("accepted_at"):
+        return _clean(d)
+    now = datetime.utcnow().isoformat()
+    who = current.get("name") or current.get("username")
+    await db.inquiries.update_one({"id": inq_id}, {
+        "$set": {"accepted_at": now, "accepted_by_name": who, "updated_at": now},
+        "$push": {"history": {"at": now, "by": who, "action": "job diterima (antri)"}},
+    })
+    await log_action(current, "receive_inquiry_job", "inquiry", inq_id, {})
+    return _clean(await db.inquiries.find_one({"id": inq_id}))
+
+
+@router.post("/inquiries/{inq_id}/start-job")
+async def start_inquiry_job(inq_id: str, current: dict = Depends(get_current_user)):
+    """Engineer klik KERJAKAN: mulai mengerjakan. Set work_started_at."""
+    d = await db.inquiries.find_one({"id": inq_id})
+    if not d:
+        raise HTTPException(status_code=404, detail="Inquiry tidak ditemukan")
+    if not (d.get("assigned_to_id") == current.get("id") or is_admin_like(current) or is_eng_head(current)):
+        raise HTTPException(status_code=403, detail="Inquiry ini belum ditugaskan ke Anda")
+    if d.get("work_started_at"):
+        return _clean(d)
+    now = datetime.utcnow().isoformat()
+    who = current.get("name") or current.get("username")
+    upd = {"work_started_at": now, "work_started_by": who, "updated_at": now}
+    if not d.get("accepted_at"):
+        upd["accepted_at"] = now
+        upd["accepted_by_name"] = who
+    await db.inquiries.update_one({"id": inq_id}, {
+        "$set": upd,
+        "$push": {"history": {"at": now, "by": who, "action": "mulai kerjakan inquiry"}},
+    })
+    await log_action(current, "start_inquiry_job", "inquiry", inq_id, {})
+    return _clean(await db.inquiries.find_one({"id": inq_id}))
+
+
+
 @router.post("/inquiries/{inq_id}/progress")
 async def add_progress(inq_id: str, payload: InquiryProgress, current: dict = Depends(get_current_user)):
     if not (is_engineering(current) or is_admin_like(current)):

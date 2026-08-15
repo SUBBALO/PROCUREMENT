@@ -1,37 +1,60 @@
 import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
 import api from "../lib/api";
-import { Storefront, FileText, Users, ClipboardText, PenNib, WarningCircle } from "@phosphor-icons/react";
+import { Storefront, FileText, Users, ClipboardText, PenNib, WarningCircle, SealCheck } from "@phosphor-icons/react";
 import { useNotifCount } from "../lib/useNotifCount";
+import { useAuth } from "../lib/auth";
 
 export default function SalesPortalPage() {
+  const { user } = useAuth();
+  const isDirektur = user?.role === "sales_head"; // Asiong — approval yang dia butuh hanya Inquiry
   // Badge "Review & TTD" = drawing yang masih menunggu TTD Sales (approval_status = pending_sales).
-  // Drawing yang sudah 'approved' TIDAK dihitung (TTD Sales sudah selesai → lanjut ke Document Control).
   const pendingDrawings = useNotifCount("drawing_pending_approval");
   const [pendingApproval, setPendingApproval] = useState(0);
+  const [pendingInquiry, setPendingInquiry] = useState(0);
 
   useEffect(() => {
     const fetch = () => {
-      api.get("/drawings/pending-my-approval")
-        .then(({ data }) => setPendingApproval(data?.total || 0)).catch(() => {});
+      if (isDirektur) {
+        api.get("/inquiries/pending-count")
+          .then(({ data }) => setPendingInquiry(data?.count || 0)).catch(() => {});
+      } else {
+        api.get("/drawings/pending-my-approval")
+          .then(({ data }) => setPendingApproval(data?.total || 0)).catch(() => {});
+      }
     };
     fetch();
     const t = setInterval(fetch, 45000);
     return () => clearInterval(t);
-  }, []);
+  }, [isDirektur]);
+
+  // Kartu approval utama — untuk Direktur: approval Inquiry; untuk Sales: TTD Drawing.
+  const approvalCard = isDirektur
+    ? {
+        key: "inquiry-approval",
+        label: "Menunggu Approval Inquiry",
+        stats: "Setujui / Tolak · Sebelum ke Engineering",
+        description: "Inquiry costing dari Sales yang menunggu persetujuan Anda (Direktur). Buka untuk review lalu Setuju (teruskan ke Engineering) atau Tolak. Inquiry yang Anda setujui langsung masuk alur Engineering.",
+        icon: SealCheck,
+        href: "/sales/inquiries?status=pending_boss_review",
+        accent: "from-fuchsia-500 via-purple-500 to-violet-500",
+        accentText: "text-fuchsia-400",
+        badgeCount: pendingInquiry,
+      }
+    : {
+        key: "pending-approval",
+        label: "Review & TTD Drawing (Sales Approval)",
+        stats: "Cek final · Isi SO Data · TTD",
+        description: "Drawing sudah di-approve Engineering & QC — Anda review terakhir sebagai Sales. Preview drawing (baca-saja), klik TTD & Approve → isi SO/PO/Qty/Customer untuk SO Stamp Produksi. Tab 'Riwayat TTD Saya' berisi semua drawing yang pernah Anda tanda tangani (bukti audit).",
+        icon: PenNib,
+        href: "/drawings/pending-my-approval",
+        accent: "from-orange-500 via-amber-500 to-yellow-500",
+        accentText: "text-orange-400",
+        badgeCount: pendingApproval,
+      };
 
   const CARDS = [
-    {
-      key: "pending-approval",
-      label: "Review & TTD Drawing (Sales Approval)",
-      stats: "Cek final · Isi SO Data · TTD",
-      description: "Drawing sudah di-approve Engineering & QC — Anda review terakhir sebagai Sales. Preview drawing (baca-saja), klik TTD & Approve → isi SO/PO/Qty/Customer untuk SO Stamp Produksi. Tab 'Riwayat TTD Saya' berisi semua drawing yang pernah Anda tanda tangani (bukti audit).",
-      icon: PenNib,
-      href: "/drawings/pending-my-approval",
-      accent: "from-orange-500 via-amber-500 to-yellow-500",
-      accentText: "text-orange-400",
-      badgeCount: pendingApproval,
-    },
+    approvalCard,
     {
       key: "inquiry", label: "Inquiry Costing", stats: "Ke Engineering",
       description: "Kirim permintaan costing harga ke Engineering, upload drawing & dokumen, review hasilnya.",

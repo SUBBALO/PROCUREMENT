@@ -98,6 +98,13 @@ export default function SalesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
+  // Filter awal dari query param (mis. kartu portal Direktur → ?status=pending_boss_review)
+  useEffect(() => {
+    const s = searchParams.get("status");
+    if (s) setStatusFilter(s);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const isEngInquiryContext = location.pathname === "/engineering/inquiries";
   const inqTabs = useInquiryTabs();
   // Deep-link: /engineering/inquiries?open=<inquiryId> → langsung buka detail item yang dituju

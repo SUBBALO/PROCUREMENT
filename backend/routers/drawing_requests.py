@@ -735,9 +735,39 @@ async def my_job_queue(current: dict = Depends(get_current_user)):
             diterima.append(d)
         else:
             antri.append(d)
+    # Inquiry costing yang di-assign ke engineer ini (belum selesai)
+    inq_docs = await db.inquiries.find(
+        {"assigned_to_id": uid,
+         "status": {"$nin": ["completed", "rejected", "cancelled", "draft", "closed"]},
+         "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "inquiry_no": 1, "title": 1, "customer_name": 1, "project_name": 1,
+         "status": 1, "assigned_at": 1, "accepted_at": 1, "work_started_at": 1, "customer_deadline": 1},
+    ).sort("assigned_at", -1).to_list(length=200)
+    inquiry_antri, inquiry_diterima, inquiry_proses = [], [], []
+    for iq in inq_docs:
+        started = bool(iq.get("work_started_at"))
+        accepted = bool(iq.get("accepted_at"))
+        stage = "proses" if started else ("diterima" if accepted else "belum_terima")
+        row = {
+            "id": iq.get("id"), "inquiry_no": iq.get("inquiry_no"), "title": iq.get("title"),
+            "customer_name": iq.get("customer_name"), "project_name": iq.get("project_name"),
+            "status": iq.get("status"), "assigned_at": iq.get("assigned_at"),
+            "accepted_at": iq.get("accepted_at"), "work_started_at": iq.get("work_started_at"),
+            "deadline": iq.get("customer_deadline"), "stage": stage,
+        }
+        if started:
+            inquiry_proses.append(row)
+        elif accepted:
+            inquiry_diterima.append(row)
+        else:
+            inquiry_antri.append(row)
+
     return {
         "antri": antri, "diterima": diterima, "proses": proses,
         "antri_count": len(antri), "diterima_count": len(diterima), "proses_count": len(proses),
+        # Inquiry costing — 3 tahap sama (Terima → Kerjakan), digabung di satu halaman Tugas Saya
+        "inquiry_antri": inquiry_antri, "inquiry_diterima": inquiry_diterima, "inquiry_proses": inquiry_proses,
+        "inquiry_antri_count": len(inquiry_antri), "inquiry_diterima_count": len(inquiry_diterima), "inquiry_proses_count": len(inquiry_proses),
         # backward-compat (konsumen lama)
         "pending": antri, "in_progress": proses,
         "pending_count": len(antri), "in_progress_count": len(proses),
@@ -1137,12 +1167,19 @@ async def engineering_workload_detail(user_id: str, current: dict = Depends(get_
     inquiry = []
     for iq in await db.inquiries.find(
         {"assigned_to_id": user_id, "status": {"$nin": ["completed", "rejected", "cancelled", "draft"]}, "deleted_at": {"$exists": False}},
-        {"_id": 0, "id": 1, "inquiry_no": 1, "customer_name": 1, "title": 1, "project_name": 1, "status": 1, "due_date": 1, "target_date": 1},
+        {"_id": 0, "id": 1, "inquiry_no": 1, "customer_name": 1, "title": 1, "project_name": 1, "status": 1, "due_date": 1, "target_date": 1, "accepted_at": 1, "work_started_at": 1},
     ).sort("created_at", -1).to_list(length=2000):
+        # Status jelas berbasis tahap terima/kerjakan (bukan sekadar 'in_progress')
+        if iq.get("work_started_at"):
+            stage_label = "Dikerjakan"
+        elif iq.get("accepted_at"):
+            stage_label = "Diterima (antri)"
+        else:
+            stage_label = "Belum Diterima"
         inquiry.append({
             "id": iq.get("id"), "no": iq.get("inquiry_no", "-"), "so_no": "-",
             "title": iq.get("title") or iq.get("project_name") or iq.get("customer_name") or "-",
-            "status": iq.get("status", "-"), "due": iq.get("due_date") or iq.get("target_date") or "",
+            "status": stage_label, "due": iq.get("due_date") or iq.get("target_date") or "",
         })
 
     return {

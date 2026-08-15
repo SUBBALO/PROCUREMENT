@@ -72,16 +72,14 @@ export default function EngineeringPortalPage() {
       accent: "from-cyan-500 via-teal-500 to-emerald-500",
       accentText: "text-cyan-400",
     }] : []),
-    ...(isEngUser ? [{
+    ...(isHead ? [{
       key: "work-orders",
       label: "Pekerjaan Masuk (Work Order)",
-      stats: isHead ? "Inquiry · New Order · Repeat Order" : "Job Saya · Kerjakan Drawing",
-      description: isHead
-        ? "Satu pintu Engineering: tab Inquiry (costing), New Order & Repeat Order (Drawing Request). Terima DRF, tunjuk engineer, dan pantau progres."
-        : "Berisi tab Inquiry / New Order / Repeat Order serta 'Perlu TTD Saya' & 'Riwayat TTD'. Buka DRF untuk generate nomor drawing, upload, isi BOM, lalu TTD & submit.",
+      stats: "Inquiry · New Order · Repeat Order",
+      description: "Satu pintu Engineering Leader: tab Inquiry (costing), New Order & Repeat Order (Drawing Request). Terima DRF, tunjuk engineer, dan pantau progres.",
       icon: Kanban,
-      href: isHead ? "/engineering/work-orders" : "/engineering/my-queue",
-      badgeCount: isHead ? drfPending : jobPending,
+      href: "/engineering/work-orders",
+      badgeCount: drfPending,
       accent: "from-teal-500 via-cyan-500 to-sky-500",
       accentText: "text-teal-400",
     }] : []),
@@ -172,8 +170,8 @@ export default function EngineeringPortalPage() {
       sidebarMenu
       cardsLabel="Menu Engineering"
     >
-      <EngineeringQueuePanel isHead={isHead} isEngUser={isEngUser} />
-      {isEngUser && <MyJobQueuePanel compact />}
+      {isHead && <EngineeringQueuePanel isHead={isHead} isEngUser={isEngUser} />}
+      {isEngUser && <MyJobQueuePanel compact={isHead} />}
     </DeptPortal>
   );
 }

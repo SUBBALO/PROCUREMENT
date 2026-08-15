@@ -32,9 +32,10 @@ function DueBadge({ value }) {
 }
 
 const STATUS_META = {
-  submitted: { label: "Perlu Diterima", cls: "bg-amber-100 text-amber-800 border-amber-300" },
-  accepted: { label: "Diterima", cls: "bg-sky-100 text-sky-800 border-sky-300" },
-  in_progress: { label: "Dikerjakan", cls: "bg-violet-100 text-violet-800 border-violet-300" },
+  submitted: { label: "Perlu Di-assign", cls: "bg-amber-100 text-amber-800 border-amber-300" },
+  accepted: { label: "Antri (belum diterima)", cls: "bg-amber-50 text-amber-700 border-amber-300" },
+  received: { label: "Diterima (belum dikerjakan)", cls: "bg-sky-100 text-sky-800 border-sky-300" },
+  in_progress: { label: "Proses (dikerjakan)", cls: "bg-violet-100 text-violet-800 border-violet-300" },
 };
 
 /**
@@ -116,7 +117,12 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
     status: d.status,
     due: d.expected_due_date || d.due_date,
   }));
-  const normInqStatus = (s) => (s === "submitted" ? "submitted" : (s === "accepted" ? "accepted" : "in_progress"));
+  const normInqStatus = (q) => {
+    if (q.work_started_at) return "in_progress";   // Proses
+    if (q.accepted_at) return "received";          // Diterima (belum dikerjakan)
+    if (q.status === "submitted") return "submitted";
+    return "accepted";                              // ditugaskan, belum diterima = Antri
+  };
   const inqRows = inquiries
     .filter((q) => !["draft", "completed", "rejected", "cancelled"].includes(q.status))
     .map((q) => ({
@@ -126,7 +132,7 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
       so_no: "-",
       customer_name: q.customer_name, project_name: q.project_name || q.title,
       engineer: q.assigned_to_name,
-      status: normInqStatus(q.status),
+      status: normInqStatus(q),
       due: q.due_date || q.target_date || "",
     }));
   const rows = [...drfRows, ...inqRows];
@@ -135,18 +141,20 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
     all: rows.length,
     submitted: rows.filter((r) => r.status === "submitted").length,
     accepted: rows.filter((r) => r.status === "accepted").length,
+    received: rows.filter((r) => r.status === "received").length,
     in_progress: rows.filter((r) => r.status === "in_progress").length,
   };
 
   const FILTERS = [
     { key: "all", label: "Semua Antrian", icon: TrayIcon, accent: "text-slate-700", ring: "border-l-slate-400" },
-    { key: "submitted", label: "Perlu Diterima", icon: PaperPlaneTilt, accent: "text-amber-600", ring: "border-l-amber-500" },
-    { key: "accepted", label: "Diterima", icon: CheckCircle, accent: "text-sky-600", ring: "border-l-sky-500" },
+    { key: "submitted", label: "Perlu Di-assign", icon: PaperPlaneTilt, accent: "text-amber-600", ring: "border-l-amber-500" },
+    { key: "accepted", label: "Antri (belum diterima)", icon: PaperPlaneTilt, accent: "text-amber-700", ring: "border-l-amber-400" },
+    { key: "received", label: "Diterima (belum dikerjakan)", icon: CheckCircle, accent: "text-sky-600", ring: "border-l-sky-500" },
     { key: "in_progress", label: "Sedang Dikerjakan", icon: Gear, accent: "text-violet-600", ring: "border-l-violet-500" },
   ];
 
   // PRIORITAS: due date terdekat dulu (kosong paling akhir), lalu status.
-  const order = { submitted: 0, accepted: 1, in_progress: 2 };
+  const order = { submitted: 0, accepted: 1, received: 2, in_progress: 3 };
   const dueMs = (r) => {
     const v = r.due || "";
     if (!v) return Infinity;
@@ -241,7 +249,7 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
       {tab === "incoming" && (
         <div data-testid="eng-queue-incoming">
           {/* Filter tiles */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-200" data-testid="eng-queue-filters">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-px bg-slate-200" data-testid="eng-queue-filters">
             {FILTERS.map((f) => {
               const Icon = f.icon;
               const activeF = filter === f.key;
