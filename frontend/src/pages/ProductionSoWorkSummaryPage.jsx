@@ -69,10 +69,11 @@ export default function ProductionSoWorkSummaryPage() {
               <th className="px-3 py-2 text-center font-bold">Total Hari</th>
               <th className="px-3 py-2 text-center font-bold text-amber-700">Total Jam</th>
               <th className="px-3 py-2 text-left font-bold">Operator</th>
+              <th className="px-3 py-2 text-left font-bold">Mesin</th>
             </tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {loading ? <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-400">Memuat…</td></tr>
-                : items.length === 0 ? <tr><td colSpan={6} className="px-3 py-10 text-center text-slate-400" data-testid="sws-empty">Belum ada laporan produksi ber-SO pada periode ini.</td></tr>
+              {loading ? <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-400">Memuat…</td></tr>
+                : items.length === 0 ? <tr><td colSpan={7} className="px-3 py-10 text-center text-slate-400" data-testid="sws-empty">Belum ada laporan produksi ber-SO pada periode ini.</td></tr>
                 : items.map((s) => (
                   <tr key={s.so_no} onClick={() => openDetail(s)} className="hover:bg-amber-50/50 cursor-pointer" data-testid={`sws-row-${s.so_no}`}>
                     <td className="px-3 py-2 font-mono font-bold text-slate-900">{s.so_no}</td>
@@ -83,6 +84,9 @@ export default function ProductionSoWorkSummaryPage() {
                     <td className="px-3 py-2 text-slate-600">
                       <span className="font-semibold">{s.operators_count} org</span>
                       <span className="text-[11px] text-slate-400"> · {(s.operators || []).slice(0, 3).join(", ")}{(s.operators || []).length > 3 ? "…" : ""}</span>
+                    </td>
+                    <td className="px-3 py-2 text-slate-600">
+                      {(s.machines || []).length === 0 ? <span className="text-slate-300">—</span> : (s.machines || []).map((m) => <span key={m} className="inline-block mr-1 mb-0.5 px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-600">{m}</span>)}
                     </td>
                   </tr>
                 ))}
@@ -135,16 +139,17 @@ export default function ProductionSoWorkSummaryPage() {
                       {(detail.by_date || []).map((d) => (
                         <div key={d.date} className="border border-slate-200 rounded-lg overflow-hidden" data-testid={`sws-d-date-${d.date}`}>
                           <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50">
-                            <span className="text-xs font-bold text-slate-700">{fmtDate(d.date)} <span className="text-slate-400 font-normal">· {(d.operators || []).length} operator</span></span>
+                            <span className="text-xs font-bold text-slate-700">{fmtDate(d.date)} <span className="text-slate-400 font-normal">· {(d.operators || []).length} operator{(d.machines || []).length ? ` · Mesin: ${(d.machines || []).join(", ")}` : ""}</span></span>
                             <span className="text-xs font-bold text-amber-700">{d.hours} jam</span>
                           </div>
                           <table className="w-full text-xs">
-                            <thead><tr className="text-[9px] uppercase text-slate-400"><th className="px-2 py-1 text-left">Operator</th><th className="px-2 py-1 text-left">Process</th><th className="px-2 py-1 text-center">Jam Kerja</th><th className="px-2 py-1 text-center">Jam</th></tr></thead>
+                            <thead><tr className="text-[9px] uppercase text-slate-400"><th className="px-2 py-1 text-left">Operator</th><th className="px-2 py-1 text-left">Process</th><th className="px-2 py-1 text-left">Mesin</th><th className="px-2 py-1 text-center">Jam Kerja</th><th className="px-2 py-1 text-center">Jam</th></tr></thead>
                             <tbody className="divide-y divide-slate-100">
                               {d.rows.map((r, ix) => (
                                 <tr key={ix}>
                                   <td className="px-2 py-1 font-semibold text-slate-700">{r.operator_name || "—"}</td>
                                   <td className="px-2 py-1 text-slate-600">{r.process || "—"}</td>
+                                  <td className="px-2 py-1 text-slate-600">{r.machine_no || "—"}</td>
                                   <td className="px-2 py-1 text-center text-slate-500">{r.work_start || "?"}–{r.work_end || "?"}</td>
                                   <td className="px-2 py-1 text-center font-bold text-amber-700">{r.work_hours}</td>
                                 </tr>
@@ -154,6 +159,46 @@ export default function ProductionSoWorkSummaryPage() {
                         </div>
                       ))}
                       {(detail.by_date || []).length === 0 && <p className="text-xs text-slate-400">Belum ada rincian.</p>}
+                    </div>
+                  </div>
+
+                  {/* Rincian Finished Goods (FGRN) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-[11px] font-bold text-slate-600 uppercase">Rincian Finished Goods (Release Note)</div>
+                      {detail.so_qty ? (
+                        <div className="text-[11px] font-bold">
+                          <span className="text-slate-500">Qty SO: </span><span className="text-slate-800">{detail.so_qty}</span>
+                          <span className="text-slate-500 ml-2">Rilis: </span><span className="text-emerald-700">{detail.total_released}</span>
+                          <span className="text-slate-500 ml-2">Sisa: </span><span className={detail.balance <= 0 ? "text-emerald-700" : "text-rose-600"}>{detail.balance}</span>
+                          {detail.is_finished && <span className="ml-2 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px]">SELESAI</span>}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="border border-slate-200 rounded overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead><tr className="bg-slate-100 text-[9px] uppercase text-slate-500">
+                          <th className="px-2 py-1 text-left">Tanggal</th><th className="px-2 py-1 text-left">No. Release</th>
+                          <th className="px-2 py-1 text-left">Deskripsi</th><th className="px-2 py-1 text-center">Qty</th>
+                          <th className="px-2 py-1 text-center">Kumulatif</th><th className="px-2 py-1 text-center">Sisa</th>
+                          <th className="px-2 py-1 text-left">QC Comment</th>
+                        </tr></thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {(detail.finished_goods || []).length === 0 ? (
+                            <tr><td colSpan={7} className="px-2 py-4 text-center text-slate-400" data-testid="sws-fg-empty">Belum ada barang jadi dirilis untuk SO ini.</td></tr>
+                          ) : (detail.finished_goods || []).map((f, ix) => (
+                            <tr key={ix} data-testid={`sws-fg-${ix}`}>
+                              <td className="px-2 py-1 text-slate-600 whitespace-nowrap">{fmtDate(f.frn_date)}</td>
+                              <td className="px-2 py-1 font-mono font-bold text-slate-800">{f.release_no || "—"}</td>
+                              <td className="px-2 py-1 text-slate-600">{f.description || "—"}</td>
+                              <td className="px-2 py-1 text-center font-bold text-emerald-700">{f.qty}</td>
+                              <td className="px-2 py-1 text-center text-slate-600">{f.running_total}</td>
+                              <td className="px-2 py-1 text-center text-slate-500">{f.balance == null ? "—" : f.balance}</td>
+                              <td className="px-2 py-1 text-slate-500">{f.qc_comment || "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </>

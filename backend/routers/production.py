@@ -389,13 +389,16 @@ async def so_work_summary(month: Optional[str] = None, q: Optional[str] = None, 
         op = (r.get("operator_name") or "").strip()
         hrs = _work_hours(r.get("work_start") or "", r.get("work_end") or "")
         a = agg.setdefault(so, {"so_no": so, "customer": r.get("customer") or "", "dates": set(),
-                                "operators": set(), "total_hours": 0.0, "qty_ok": 0.0, "qty_ng": 0.0})
+                                "operators": set(), "machines": set(), "total_hours": 0.0, "qty_ok": 0.0, "qty_ng": 0.0})
         if not a["customer"] and r.get("customer"):
             a["customer"] = r.get("customer")
         if rd:
             a["dates"].add(rd)
         if op:
             a["operators"].add(op)
+        mc = (r.get("machine_no") or "").strip()
+        if mc:
+            a["machines"].add(mc)
         a["total_hours"] += hrs
         a["qty_ok"] += _f(r.get("qty_ok"))
         a["qty_ng"] += _f(r.get("qty_ng"))
@@ -407,6 +410,7 @@ async def so_work_summary(month: Optional[str] = None, q: Optional[str] = None, 
             "total_days": len(dts), "total_hours": round(a["total_hours"], 2),
             "operators_count": len(a["operators"]),
             "operators": sorted(a["operators"]),
+            "machines": sorted(a["machines"]),
             "first_date": dts[0] if dts else "", "last_date": dts[-1] if dts else "",
             "qty_ok": a["qty_ok"], "qty_ng": a["qty_ng"],
         })
@@ -434,12 +438,16 @@ async def so_work_summary_detail(so_no: str, current: dict = Depends(get_current
         op = (r.get("operator_name") or "").strip()
         hrs = _work_hours(r.get("work_start") or "", r.get("work_end") or "")
         total_hours += hrs
-        d = by_date.setdefault(rd, {"date": rd, "hours": 0.0, "operators": set(), "rows": []})
+        d = by_date.setdefault(rd, {"date": rd, "hours": 0.0, "operators": set(), "machines": set(), "rows": []})
         d["hours"] += hrs
         if op:
             d["operators"].add(op)
+        mc = (r.get("machine_no") or "").strip()
+        if mc:
+            d["machines"].add(mc)
         d["rows"].append({
             "operator_name": op, "process": r.get("process") or "",
+            "machine_no": mc,
             "work_start": r.get("work_start") or "", "work_end": r.get("work_end") or "",
             "work_hours": hrs, "qty_ok": _f(r.get("qty_ok")), "qty_ng": _f(r.get("qty_ng")),
         })
@@ -450,17 +458,46 @@ async def so_work_summary_detail(so_no: str, current: dict = Depends(get_current
     dates = sorted(by_date.keys())
     by_date_list = [{
         "date": by_date[k]["date"], "hours": round(by_date[k]["hours"], 2),
-        "operators": sorted(by_date[k]["operators"]), "rows": by_date[k]["rows"],
+        "operators": sorted(by_date[k]["operators"]),
+        "machines": sorted(by_date[k]["machines"]),
+        "rows": by_date[k]["rows"],
     } for k in dates]
     by_op_list = sorted(
         [{"name": o["name"], "days": len(o["days"]), "hours": round(o["hours"], 2)} for o in by_op.values()],
         key=lambda x: -x["hours"],
     )
+    # Finished Goods Release Notes untuk SO ini (dengan saldo berjalan)
+    frns = await db.fg_release_notes.find({"so_no": so}, {"_id": 0}).to_list(length=100000)
+    frns.sort(key=lambda x: (x.get("frn_date") or "", x.get("created_at") or ""))
+    # Qty total SO (jumlah semua item)
+    so_doc = await db.sales_orders.find_one({"so_no": so, "deleted_at": {"$exists": False}}, {"_id": 0, "items": 1})
+    so_qty = 0.0
+    for it in ((so_doc or {}).get("items") or []):
+        so_qty += _f(it.get("qty"))
+    running = 0.0
+    finished_goods = []
+    for fr in frns:
+        q = _f(fr.get("qty"))
+        running += q
+        finished_goods.append({
+            "frn_date": fr.get("frn_date") or "",
+            "release_no": fr.get("release_no") or "",
+            "description": fr.get("description") or "",
+            "qty": q,
+            "qc_comment": fr.get("qc_comment") or "",
+            "running_total": round(running, 2),
+            "balance": round(max(0.0, so_qty - running), 2) if so_qty else None,
+        })
+    total_released = round(running, 2)
     return {
         "so_no": so, "customer": customer,
         "total_days": len(dates), "total_hours": round(total_hours, 2),
         "first_date": dates[0] if dates else "", "last_date": dates[-1] if dates else "",
         "by_date": by_date_list, "by_operator": by_op_list,
+        "so_qty": so_qty, "total_released": total_released,
+        "balance": round(max(0.0, so_qty - total_released), 2) if so_qty else None,
+        "is_finished": bool(so_qty and total_released >= so_qty),
+        "finished_goods": finished_goods,
     }
 
 
