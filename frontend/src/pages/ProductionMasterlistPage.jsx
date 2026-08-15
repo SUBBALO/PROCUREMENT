@@ -5,7 +5,7 @@ import BackLink from "../components/BackLink";
 import api from "../lib/api";
 import {
   Factory, ListChecks, MicrosoftExcelLogo, ArrowClockwise, CheckCircle,
-  WarningCircle, ClipboardText, CalendarBlank, User, Kanban,
+  WarningCircle, ClipboardText, CalendarBlank, User, Kanban, Clock,
 } from "@phosphor-icons/react";
 
 const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -26,7 +26,7 @@ export default function ProductionMasterlistPage({ embedded = false, refreshSign
   const [operator, setOperator] = useState("");
   const [soNo, setSoNo] = useState("");
   const [items, setItems] = useState([]);
-  const [totals, setTotals] = useState({ total_ok: 0, total_ng: 0 });
+  const [totals, setTotals] = useState({ total_ok: 0, total_ng: 0, total_work_hours: 0 });
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
@@ -44,7 +44,7 @@ export default function ProductionMasterlistPage({ embedded = false, refreshSign
     try {
       const { data } = await api.get("/production/reports/masterlist", { params: buildParams() });
       setItems(data.items || []);
-      setTotals({ total_ok: data.total_ok || 0, total_ng: data.total_ng || 0 });
+      setTotals({ total_ok: data.total_ok || 0, total_ng: data.total_ng || 0, total_work_hours: data.total_work_hours || 0 });
     } catch (e) {
       setItems([]);
       toast.error(e.response?.data?.detail || "Gagal memuat masterlist");
@@ -149,7 +149,7 @@ export default function ProductionMasterlistPage({ embedded = false, refreshSign
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-white border border-slate-200 rounded-lg p-3">
           <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500 flex items-center gap-1"><ClipboardText size={13} /> Total Baris</div>
           <div className="text-2xl font-bold text-slate-900 mt-0.5" data-testid="ml-total-rows">{items.length}</div>
@@ -161,6 +161,10 @@ export default function ProductionMasterlistPage({ embedded = false, refreshSign
         <div className="bg-rose-50 border border-rose-200 rounded-lg p-3">
           <div className="text-[10px] uppercase tracking-wider font-bold text-rose-700 flex items-center gap-1"><WarningCircle size={13} weight="fill" /> Total Qty NG</div>
           <div className="text-2xl font-bold text-rose-700 mt-0.5" data-testid="ml-total-ng">{totals.total_ng}</div>
+        </div>
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-amber-700 flex items-center gap-1"><Clock size={13} weight="fill" /> Total Jam Kerja</div>
+          <div className="text-2xl font-bold text-amber-700 mt-0.5" data-testid="ml-total-hours">{totals.total_work_hours} <span className="text-sm font-semibold">jam</span></div>
         </div>
       </div>
 
@@ -177,22 +181,27 @@ export default function ProductionMasterlistPage({ embedded = false, refreshSign
                 <th className="px-3 py-2 text-center font-bold bg-emerald-50 text-emerald-700">Qty OK</th>
                 <th className="px-3 py-2 text-center font-bold bg-rose-50 text-rose-700">Qty NG</th>
                 <th className="px-3 py-2 text-left font-bold">Working Time</th>
+                <th className="px-3 py-2 text-center font-bold bg-amber-50 text-amber-700">Jam</th>
                 <th className="px-3 py-2 text-left font-bold">Machine No</th>
                 <th className="px-3 py-2 text-left font-bold">Remarks</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400">Memuat…</td></tr>
+                <tr><td colSpan={10} className="px-3 py-8 text-center text-slate-400">Memuat…</td></tr>
               ) : items.length === 0 ? (
-                <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400" data-testid="ml-empty">Tidak ada data untuk filter ini.</td></tr>
+                <tr><td colSpan={10} className="px-3 py-8 text-center text-slate-400" data-testid="ml-empty">Tidak ada data untuk filter ini.</td></tr>
               ) : (
                 grouped.map((g) => (
                   <React.Fragment key={g.date}>
                     <tr className="bg-amber-50/70">
-                      <td colSpan={9} className="px-3 py-1.5 text-[11px] font-bold text-amber-800 uppercase tracking-wider">
+                      <td colSpan={6} className="px-3 py-1.5 text-[11px] font-bold text-amber-800 uppercase tracking-wider">
                         {fmtDate(g.date)} · {g.rows.length} baris
                       </td>
+                      <td className="px-3 py-1.5 text-[11px] font-bold text-amber-800 text-center">
+                        {Math.round(g.rows.reduce((s, r) => s + (Number(r.work_hours) || 0), 0) * 100) / 100} jam
+                      </td>
+                      <td colSpan={2} className="bg-amber-50/70"></td>
                     </tr>
                     {g.rows.map((r, i) => (
                       <tr key={r.id} className="hover:bg-slate-50" data-testid={`ml-row-${g.date}-${i}`}>
@@ -208,6 +217,7 @@ export default function ProductionMasterlistPage({ embedded = false, refreshSign
                         <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
                           {r.work_start || r.work_end ? `${r.work_start || "?"} – ${r.work_end || "?"}` : "—"}
                         </td>
+                        <td className="px-3 py-2 text-center font-bold text-amber-700 bg-amber-50/40">{r.work_hours ? `${r.work_hours}` : "—"}</td>
                         <td className="px-3 py-2 text-slate-700">{r.machine_no || "—"}</td>
                         <td className="px-3 py-2 text-slate-600 max-w-[240px] truncate" title={r.remarks}>{r.remarks || "—"}</td>
                       </tr>
@@ -219,7 +229,7 @@ export default function ProductionMasterlistPage({ embedded = false, refreshSign
           </table>
         </div>
       </div>
-      <div className="text-[11px] text-slate-400">Total: {items.length} baris</div>
+      <div className="text-[11px] text-slate-400">Total: {items.length} baris · {totals.total_work_hours} jam kerja</div>
     </div>
   );
 }

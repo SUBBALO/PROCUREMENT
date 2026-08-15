@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
 import api from "../lib/api";
-import { Signature, FileText, Factory, WarningCircle, ClipboardText, Notebook, Gauge, Package, CalendarX, UsersThree, Clock } from "@phosphor-icons/react";
+import { Signature, FileText, Factory, WarningCircle, ClipboardText, Notebook, Gauge, Package, CalendarX, UsersThree, Clock, ChartBar } from "@phosphor-icons/react";
 
 export default function ProductionPortalPage() {
   const [pendingTtd, setPendingTtd] = useState(0);
@@ -47,6 +47,17 @@ export default function ProductionPortalPage() {
         "Laporan produksi harian model spreadsheet: ketik & Enter untuk baris berikutnya (auto-simpan). Catat operator, SO, proses, qty OK & NG, jam kerja, mesin. Tab Masterlist Bulanan untuk rekap & export Excel.",
       icon: Notebook,
       href: "/produksi/daily-report",
+      accent: "from-amber-500 via-orange-500 to-rose-500",
+      accentText: "text-amber-400",
+    },
+    {
+      key: "so-work-summary",
+      label: "Ringkasan Kerja SO",
+      stats: "Per SO · Berapa hari & jam · Siapa saja",
+      description:
+        "Rekap kerja tiap SO dari Daily Production Report: tanggal berapa saja dikerjakan, siapa operatornya, total hari & total jam untuk menyelesaikan 1 SO.",
+      icon: ChartBar,
+      href: "/produksi/so-work-summary",
       accent: "from-amber-500 via-orange-500 to-rose-500",
       accentText: "text-amber-400",
     },

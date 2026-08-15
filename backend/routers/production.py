@@ -250,7 +250,22 @@ def _f(v) -> float:
         return 0.0
 
 
+def _work_hours(start: str, end: str) -> float:
+    """Durasi kerja (jam) dari HH:MM start–end; lintas tengah malam didukung."""
+    try:
+        sh, sm = [int(x) for x in (start or "").split(":")[:2]]
+        eh, em = [int(x) for x in (end or "").split(":")[:2]]
+        mins = (eh * 60 + em) - (sh * 60 + sm)
+        if mins < 0:
+            mins += 24 * 60
+        return round(mins / 60.0, 2)
+    except Exception:
+        return 0.0
+
+
 def _serialize_report(r: dict) -> dict:
+    ws = r.get("work_start") or ""
+    we = r.get("work_end") or ""
     return {
         "id": r.get("id"),
         "report_date": r.get("report_date") or "",
@@ -260,8 +275,9 @@ def _serialize_report(r: dict) -> dict:
         "process": r.get("process") or "",
         "qty_ok": _f(r.get("qty_ok")),
         "qty_ng": _f(r.get("qty_ng")),
-        "work_start": r.get("work_start") or "",
-        "work_end": r.get("work_end") or "",
+        "work_start": ws,
+        "work_end": we,
+        "work_hours": _work_hours(ws, we),
         "machine_no": r.get("machine_no") or "",
         "remarks": r.get("remarks") or "",
         "created_by_username": r.get("created_by_username") or "",
@@ -335,7 +351,8 @@ async def reports_masterlist(
     items = [_serialize_report(r) for r in rows]
     total_ok = sum(i["qty_ok"] for i in items)
     total_ng = sum(i["qty_ng"] for i in items)
-    return {"items": items, "count": len(items), "total_ok": total_ok, "total_ng": total_ng}
+    total_work_hours = round(sum(i["work_hours"] for i in items), 2)
+    return {"items": items, "count": len(items), "total_ok": total_ok, "total_ng": total_ng, "total_work_hours": total_work_hours}
 
 
 def _build_report_filter(month, date, operator, so_no) -> dict:
@@ -349,6 +366,102 @@ def _build_report_filter(month, date, operator, so_no) -> dict:
     if so_no:
         filt["so_no"] = {"$regex": so_no, "$options": "i"}
     return filt
+
+
+@router.get("/so-work-summary")
+async def so_work_summary(month: Optional[str] = None, q: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Ringkasan kerja per SO dari Daily Production Report:
+    berapa hari, berapa jam, siapa saja operator yang mengerjakan 1 SO."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    filt: dict = {"so_no": {"$nin": ["", None]}}
+    if month:
+        filt["report_date"] = {"$regex": f"^{month}"}
+    if q and q.strip():
+        filt["so_no"] = {"$regex": q.strip(), "$options": "i"}
+    rows = await db.production_reports.find(filt, {"_id": 0}).to_list(length=200000)
+    agg: dict = {}
+    for r in rows:
+        so = (r.get("so_no") or "").strip()
+        if not so:
+            continue
+        rd = r.get("report_date") or ""
+        op = (r.get("operator_name") or "").strip()
+        hrs = _work_hours(r.get("work_start") or "", r.get("work_end") or "")
+        a = agg.setdefault(so, {"so_no": so, "customer": r.get("customer") or "", "dates": set(),
+                                "operators": set(), "total_hours": 0.0, "qty_ok": 0.0, "qty_ng": 0.0})
+        if not a["customer"] and r.get("customer"):
+            a["customer"] = r.get("customer")
+        if rd:
+            a["dates"].add(rd)
+        if op:
+            a["operators"].add(op)
+        a["total_hours"] += hrs
+        a["qty_ok"] += _f(r.get("qty_ok"))
+        a["qty_ng"] += _f(r.get("qty_ng"))
+    items = []
+    for a in agg.values():
+        dts = sorted(a["dates"])
+        items.append({
+            "so_no": a["so_no"], "customer": a["customer"],
+            "total_days": len(dts), "total_hours": round(a["total_hours"], 2),
+            "operators_count": len(a["operators"]),
+            "operators": sorted(a["operators"]),
+            "first_date": dts[0] if dts else "", "last_date": dts[-1] if dts else "",
+            "qty_ok": a["qty_ok"], "qty_ng": a["qty_ng"],
+        })
+    items.sort(key=lambda x: (x["last_date"] or "", x["so_no"]), reverse=True)
+    return {"items": items, "count": len(items),
+            "total_hours": round(sum(i["total_hours"] for i in items), 2)}
+
+
+@router.get("/so-work-summary/{so_no}")
+async def so_work_summary_detail(so_no: str, current: dict = Depends(get_current_user)):
+    """Detail kerja 1 SO: rincian per tanggal (siapa + jam) & rekap per operator."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    so = (so_no or "").strip()
+    rows = await db.production_reports.find({"so_no": so}, {"_id": 0}).to_list(length=200000)
+    rows.sort(key=lambda r: (r.get("report_date") or "", r.get("created_at") or ""))
+    customer = ""
+    by_date: dict = {}
+    by_op: dict = {}
+    total_hours = 0.0
+    for r in rows:
+        if not customer and r.get("customer"):
+            customer = r.get("customer")
+        rd = r.get("report_date") or ""
+        op = (r.get("operator_name") or "").strip()
+        hrs = _work_hours(r.get("work_start") or "", r.get("work_end") or "")
+        total_hours += hrs
+        d = by_date.setdefault(rd, {"date": rd, "hours": 0.0, "operators": set(), "rows": []})
+        d["hours"] += hrs
+        if op:
+            d["operators"].add(op)
+        d["rows"].append({
+            "operator_name": op, "process": r.get("process") or "",
+            "work_start": r.get("work_start") or "", "work_end": r.get("work_end") or "",
+            "work_hours": hrs, "qty_ok": _f(r.get("qty_ok")), "qty_ng": _f(r.get("qty_ng")),
+        })
+        o = by_op.setdefault(op or "-", {"name": op or "-", "days": set(), "hours": 0.0})
+        if rd:
+            o["days"].add(rd)
+        o["hours"] += hrs
+    dates = sorted(by_date.keys())
+    by_date_list = [{
+        "date": by_date[k]["date"], "hours": round(by_date[k]["hours"], 2),
+        "operators": sorted(by_date[k]["operators"]), "rows": by_date[k]["rows"],
+    } for k in dates]
+    by_op_list = sorted(
+        [{"name": o["name"], "days": len(o["days"]), "hours": round(o["hours"], 2)} for o in by_op.values()],
+        key=lambda x: -x["hours"],
+    )
+    return {
+        "so_no": so, "customer": customer,
+        "total_days": len(dates), "total_hours": round(total_hours, 2),
+        "first_date": dates[0] if dates else "", "last_date": dates[-1] if dates else "",
+        "by_date": by_date_list, "by_operator": by_op_list,
+    }
 
 
 @router.get("/reports/masterlist.xlsx")
@@ -410,7 +523,8 @@ async def list_reports(date: Optional[str] = None, current: dict = Depends(get_c
     items = [_serialize_report(r) for r in rows]
     total_ok = sum(i["qty_ok"] for i in items)
     total_ng = sum(i["qty_ng"] for i in items)
-    return {"date": d, "items": items, "count": len(items), "total_ok": total_ok, "total_ng": total_ng}
+    total_work_hours = round(sum(i["work_hours"] for i in items), 2)
+    return {"date": d, "items": items, "count": len(items), "total_ok": total_ok, "total_ng": total_ng, "total_work_hours": total_work_hours}
 
 
 @router.post("/reports")

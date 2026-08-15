@@ -1,18 +1,22 @@
 [
   {
-    "content": "Backend: endpoint bulk create overtime (multi-row per satu tanggal)",
+    "content": "Backend: work_hours per row + total_work_hours di /reports & masterlist",
     "status": "completed"
   },
   {
-    "content": "Frontend: form OT date-first multi-row (No, Name, SO, Customer auto, From, To)",
+    "content": "Backend: endpoint SO work summary + detail per SO",
     "status": "completed"
   },
   {
-    "content": "Frontend: tombol Cetak Form (print) sesuai layout Excel + tanda tangan",
+    "content": "Frontend: kolom Jam + Total Jam Kerja di masterlist Daily Report",
     "status": "completed"
   },
   {
-    "content": "Verify: py_compile, esbuild, smoke test bulk, screenshot form + print",
+    "content": "Frontend: kartu & halaman Ringkasan Kerja SO + route + portal card",
+    "status": "completed"
+  },
+  {
+    "content": "Verify: esbuild, smoke test, screenshot",
     "status": "completed"
   }
 ]
