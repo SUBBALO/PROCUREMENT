@@ -1,8 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import BackLink from "../components/BackLink";
-import api from "../lib/api";
-import { Gauge, CheckCircle, Spinner, ClipboardText, ArrowClockwise, CalendarBlank, X, CircleDashed } from "@phosphor-icons/react";
+import api, { downloadXlsx } from "../lib/api";
+import { Gauge, CheckCircle, Spinner, ClipboardText, ArrowClockwise, CalendarBlank, X, CircleDashed, WarningCircle, Clock, MagnifyingGlass, DownloadSimple, Warning } from "@phosphor-icons/react";
+
+const HEALTH = {
+  finished: { label: "Selesai", badge: "bg-emerald-100 text-emerald-700 border-emerald-200", row: "bg-emerald-50/40" },
+  late: { label: "Terlambat", badge: "bg-rose-100 text-rose-700 border-rose-300", row: "bg-rose-50/60" },
+  warning: { label: "Warning", badge: "bg-amber-100 text-amber-700 border-amber-300", row: "bg-amber-50/50" },
+  on_track: { label: "On Track", badge: "bg-sky-100 text-sky-700 border-sky-200", row: "hover:bg-slate-50" },
+};
 
 const fmtDate = (d) => { if (!d) return "—"; try { return new Date(d + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }); } catch { return d; } };
 const fmtDay = (d) => { try { return new Date(d + "T00:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "short" }); } catch { return d; } };
@@ -21,8 +28,10 @@ const editCls = "w-full h-8 px-1.5 text-xs bg-transparent outline-none focus:bg-
 
 export default function ProductionJobProgressPage() {
   const [items, setItems] = useState([]);
-  const [stats, setStats] = useState({ count: 0, finished: 0, in_progress: 0 });
+  const [stats, setStats] = useState({ count: 0, finished: 0, in_progress: 0, late: 0, warning: 0, avg_productivity: 0 });
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const dirtyRef = useRef({});
   const [detail, setDetail] = useState(null);       // row yang sedang dilihat detailnya
   const [detailRows, setDetailRows] = useState([]);
@@ -33,7 +42,7 @@ export default function ProductionJobProgressPage() {
     try {
       const { data } = await api.get("/production/job-progress");
       setItems(data.items || []);
-      setStats({ count: data.count || 0, finished: data.finished || 0, in_progress: data.in_progress || 0 });
+      setStats({ count: data.count || 0, finished: data.finished || 0, in_progress: data.in_progress || 0, late: data.late || 0, warning: data.warning || 0, avg_productivity: data.avg_productivity || 0 });
     } catch (e) {
       setItems([]);
       toast.error(e.response?.data?.detail || "Gagal memuat Job Progress");
@@ -41,6 +50,18 @@ export default function ProductionJobProgressPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const exportXlsx = async () => {
+    try { await downloadXlsx("/production/job-progress/export.xlsx", {}, `job_progress_${todayISO()}.xlsx`); toast.success("Board diexport"); }
+    catch (e) { toast.error(e.message || "Gagal export"); }
+  };
+
+  const filtered = items.filter((r) => {
+    if (statusFilter !== "all" && r.health !== statusFilter) return false;
+    const q = query.trim().toLowerCase();
+    if (q && !(`${r.so_no} ${r.customer} ${r.description}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
 
   const setField = (soId, field, value) => {
     setItems((prev) => prev.map((r) => (r.so_id === soId ? { ...r, [field]: value } : r)));
@@ -101,28 +122,43 @@ export default function ProductionJobProgressPage() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900" style={{ fontFamily: "Chivo, sans-serif" }}>Daily Monitoring Job Progress</h1>
           <p className="text-xs text-slate-500 mt-1">Semua SO yang sudah <b>Mulai Kerja</b>. Due Date otomatis dari SO · Plan Start = tgl mulai kerja · Plan Finish & Qty Finished otomatis dari Release Note (selesai saat qty rilis = SO Qty). Hanya PIC & Remarks yang diisi manual.</p>
         </div>
-        <button onClick={load} data-testid="refresh-btn" className="inline-flex items-center gap-1.5 h-9 px-3 border border-slate-300 bg-white text-sm font-bold text-slate-700 rounded hover:bg-slate-50 transition-colors">
-          <ArrowClockwise size={15} weight="bold" /> Refresh
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded px-2 h-9"><MagnifyingGlass size={15} weight="bold" className="text-slate-500" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari SO / customer…" data-testid="jp-search" className="text-sm outline-none bg-transparent w-40" /></div>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} data-testid="jp-status-filter" className="h-9 px-2 text-sm border border-slate-300 rounded bg-white font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-amber-400">
+            <option value="all">Semua Status</option>
+            <option value="on_track">On Track</option>
+            <option value="warning">Warning</option>
+            <option value="late">Terlambat</option>
+            <option value="finished">Selesai</option>
+          </select>
+          <button onClick={exportXlsx} data-testid="jp-export-btn" className="inline-flex items-center gap-1.5 h-9 px-3 border border-slate-300 bg-white text-sm font-bold text-slate-700 rounded hover:bg-slate-50 transition-colors"><DownloadSimple size={15} weight="bold" /> Export</button>
+          <button onClick={load} data-testid="refresh-btn" className="inline-flex items-center gap-1.5 h-9 px-3 border border-slate-300 bg-white text-sm font-bold text-slate-700 rounded hover:bg-slate-50 transition-colors"><ArrowClockwise size={15} weight="bold" /> Refresh</button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard testid="stat-total" icon={ClipboardText} label="Total Job Aktif" value={stats.count} cls="bg-white border-slate-200 text-slate-800" />
-        <StatCard testid="stat-progress" icon={Spinner} label="Sedang Proses" value={stats.in_progress} cls="bg-amber-50 border-amber-200 text-amber-700" />
-        <StatCard testid="stat-finished" icon={CheckCircle} label="Selesai" value={stats.finished} cls="bg-emerald-50 border-emerald-200 text-emerald-700" />
-      </div>
+      <div className="flex flex-col lg:flex-row gap-3">
+        <div className="flex flex-wrap lg:flex-col gap-2.5 lg:w-44 shrink-0" data-testid="jp-kpi-sidebar">
+          <div className="flex-1 lg:flex-none min-w-[140px]"><StatCard testid="stat-total" icon={ClipboardText} label="Total Job Aktif" value={stats.count} cls="bg-white border-slate-200 text-slate-800" /></div>
+          <div className="flex-1 lg:flex-none min-w-[140px]"><StatCard testid="stat-progress" icon={Spinner} label="Sedang Proses" value={stats.in_progress} cls="bg-sky-50 border-sky-200 text-sky-700" /></div>
+          <div className="flex-1 lg:flex-none min-w-[140px]"><StatCard testid="stat-warning" icon={Warning} label="Warning" value={stats.warning} cls="bg-amber-50 border-amber-200 text-amber-700" /></div>
+          <div className="flex-1 lg:flex-none min-w-[140px]"><StatCard testid="stat-late" icon={WarningCircle} label="Terlambat" value={stats.late} cls="bg-rose-50 border-rose-200 text-rose-700" /></div>
+          <div className="flex-1 lg:flex-none min-w-[140px]"><StatCard testid="stat-finished" icon={CheckCircle} label="Selesai" value={stats.finished} cls="bg-emerald-50 border-emerald-200 text-emerald-700" /></div>
+          <div className="flex-1 lg:flex-none min-w-[140px]"><StatCard testid="stat-avg-prod" icon={Gauge} label="Avg Produktivitas" value={`${stats.avg_productivity}%`} cls="bg-violet-50 border-violet-200 text-violet-700" /></div>
+        </div>
 
-      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="flex-1 min-w-0 bg-white border border-slate-200 rounded-lg overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse" data-testid="job-progress-table">
             <thead>
               <tr className="bg-slate-100 text-slate-600 text-[10px] uppercase tracking-wider">
+                <th className="px-2 py-2 text-center font-bold border border-slate-200 w-24">Status</th>
                 <th className="px-2 py-2 text-left font-bold border border-slate-200 min-w-[120px]">Customer</th>
                 <th className="px-2 py-2 text-left font-bold border border-slate-200 w-20">SO No</th>
                 <th className="px-2 py-2 text-left font-bold border border-slate-200 min-w-[180px]">Job Description</th>
                 <th className="px-2 py-2 text-center font-bold border border-slate-200 w-16">SO Qty</th>
                 <th className="px-2 py-2 text-center font-bold border border-slate-200 w-24">Date Received</th>
                 <th className="px-2 py-2 text-center font-bold border border-slate-200 w-28">Due Date</th>
+                <th className="px-2 py-2 text-center font-bold border border-slate-200 w-20" title="Sisa hari kerja (exclude Minggu/libur) s/d Due Date">Sisa Hari</th>
                 <th className="px-2 py-2 text-center font-bold border border-slate-200 w-28">Plan Start</th>
                 <th className="px-2 py-2 text-center font-bold border border-slate-200 w-28">Plan Finish</th>
                 <th className="px-2 py-2 text-center font-bold border border-slate-200 w-14">Days</th>
@@ -138,14 +174,19 @@ export default function ProductionJobProgressPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={17} className="px-3 py-8 text-center text-slate-400">Memuat…</td></tr>
-              ) : items.length === 0 ? (
-                <tr><td colSpan={17} className="px-3 py-10 text-center text-slate-400" data-testid="jp-empty">
-                  Belum ada SO yang dikerjakan. Tekan <b className="text-blue-600">Mulai Kerja</b> pada menu <b>SO Masuk</b> agar muncul di sini.
+                <tr><td colSpan={19} className="px-3 py-8 text-center text-slate-400">Memuat…</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={19} className="px-3 py-10 text-center text-slate-400" data-testid="jp-empty">
+                  {items.length === 0 ? (<>Belum ada SO yang dikerjakan. Tekan <b className="text-blue-600">Mulai Kerja</b> pada menu <b>SO Masuk</b> agar muncul di sini.</>) : "Tidak ada SO yang cocok dengan filter."}
                 </td></tr>
               ) : (
-                items.map((r, i) => (
-                  <tr key={r.so_id} className={`${r.finished ? "bg-emerald-50/40" : "hover:bg-slate-50"}`} data-testid={`jp-row-${r.so_no}`}>
+                filtered.map((r, i) => {
+                  const h = HEALTH[r.health] || HEALTH.on_track;
+                  return (
+                  <tr key={r.so_id} className={h.row} data-testid={`jp-row-${r.so_no}`}>
+                    <td className="border border-slate-200 px-2 py-1 text-center">
+                      <span className={`inline-block px-2 py-0.5 rounded-full border text-[9px] font-bold uppercase ${h.badge}`} data-testid={`jp-status-${r.so_no}`}>{h.label}</span>
+                    </td>
                     <td className="border border-slate-200 px-2 py-1 text-slate-800">{r.customer || "—"}</td>
                     <td className="border border-slate-200 px-2 py-1 font-mono font-bold">
                       <button onClick={() => openDetail(r)} data-testid={`jp-detail-${r.so_no}`}
@@ -157,6 +198,12 @@ export default function ProductionJobProgressPage() {
                     <td className="border border-slate-200 px-2 py-1 text-center font-bold text-slate-900">{r.so_qty}</td>
                     <td className="border border-slate-200 px-2 py-1 text-center text-slate-600 whitespace-nowrap">{fmtDate(r.date_received)}</td>
                     <td className="border border-slate-200 px-2 py-1 text-center text-slate-600 whitespace-nowrap" data-testid={`jp-due-${r.so_no}`}>{fmtDate(r.due_date)}</td>
+                    <td className="border border-slate-200 px-2 py-1 text-center whitespace-nowrap" data-testid={`jp-remain-${r.so_no}`}>
+                      {r.finished ? <span className="text-emerald-600 font-bold">selesai</span>
+                        : r.health === "late" ? <span className="text-rose-600 font-bold">telat {r.overdue_days}h</span>
+                        : r.days_remaining == null ? <span className="text-slate-300">—</span>
+                        : <span className={`font-bold ${r.days_remaining <= 3 ? "text-amber-600" : "text-slate-600"}`}>{r.days_remaining} hari</span>}
+                    </td>
                     <td className="border border-slate-200 px-2 py-1 text-center text-slate-600 whitespace-nowrap" data-testid={`jp-plan-start-${r.so_no}`}>{fmtDate(r.plan_start)}</td>
                     <td className="border border-slate-200 px-2 py-1 text-center text-slate-600 whitespace-nowrap" data-testid={`jp-plan-finish-${r.so_no}`}>{r.plan_finish ? fmtDate(r.plan_finish) : "—"}</td>
                     <td className="border border-slate-200 px-2 py-1 text-center font-bold text-slate-700">{r.days}</td>
@@ -181,10 +228,12 @@ export default function ProductionJobProgressPage() {
                       <input value={r.remarks || ""} onChange={(e) => setField(r.so_id, "remarks", e.target.value)} onBlur={() => saveRow(r.so_id)} data-testid={`jp-remarks-${r.so_no}`} placeholder="Catatan…" className={editCls} />
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
+        </div>
         </div>
       </div>
 

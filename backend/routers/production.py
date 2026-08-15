@@ -948,6 +948,24 @@ async def job_progress(current: dict = Depends(get_current_user)):
         # Productivity = Working Date Target / Actual Working Day (%)
         productivity = round((working_date_target / actual_working_days) * 100, 1) if actual_working_days > 0 else 0
 
+        # Sisa hari kerja s/d Due Date (kecualikan Minggu & libur) + status kesehatan
+        days_remaining = None
+        overdue_days = 0
+        if due_date:
+            if today <= due_date:
+                days_remaining = _working_days(today, due_date, holidays)
+            else:
+                days_remaining = 0
+                overdue_days = _days_between(due_date, today)
+        if finished:
+            health = "finished"
+        elif due_date and today > due_date:
+            health = "late"
+        elif due_date and days_remaining is not None and days_remaining <= 3:
+            health = "warning"
+        else:
+            health = "on_track"
+
         items.append({
             "so_id": so_id,
             "so_no": so_no,
@@ -959,6 +977,8 @@ async def job_progress(current: dict = Depends(get_current_user)):
             "plan_start": date_received,                       # otomatis = tgl mulai kerja produksi
             "plan_finish": finished_at if (finished and finished_at) else "",  # otomatis saat qty release completed
             "days": days,
+            "days_remaining": days_remaining,
+            "overdue_days": overdue_days,
             "working_date_target": working_date_target,
             "actual_working_days": actual_working_days,        # dari Daily Production Report
             "actual_working_dates": awd,
@@ -971,13 +991,61 @@ async def job_progress(current: dict = Depends(get_current_user)):
             "finished": finished,
             "finished_at": finished_at,
             "status": "FINISHED" if finished else "PROSES",
+            "health": health,
         })
     total = len(items)
     finished_count = sum(1 for i in items if i["finished"])
-    return {"items": items, "count": total, "finished": finished_count, "in_progress": total - finished_count}
+    late_count = sum(1 for i in items if i["health"] == "late")
+    warning_count = sum(1 for i in items if i["health"] == "warning")
+    prods = [i["productivity"] for i in items if i["productivity"] > 0]
+    avg_productivity = round(sum(prods) / len(prods), 1) if prods else 0
+    return {
+        "items": items, "count": total, "finished": finished_count,
+        "in_progress": total - finished_count, "late": late_count,
+        "warning": warning_count, "avg_productivity": avg_productivity,
+    }
+
+
+@router.get("/job-progress/export.xlsx")
+async def export_job_progress_xlsx(current: dict = Depends(get_current_user)):
+    """Export Daily Monitoring Job Progress ke Excel."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    import io
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    data = await job_progress(current)
+    HEALTH_LABEL = {"finished": "Selesai", "late": "Terlambat", "warning": "Warning", "on_track": "On Track"}
+    wb = Workbook(); ws = wb.active; ws.title = "Job Progress"
+    headers = ["SO No", "Customer", "Job Description", "Qty SO", "Mulai Kerja", "Due Date",
+               "Finished", "Days", "Sisa Hari", "Qty Finished", "Qty Balance", "% Progress",
+               "Target Hari Kerja", "Actual Working Day", "Produktivitas %", "Status"]
+    ws.append(headers)
+    hf = Font(bold=True, color="FFFFFF"); hfill = PatternFill("solid", fgColor="B45309"); center = Alignment(horizontal="center")
+    for c in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=c); cell.font = hf; cell.fill = hfill; cell.alignment = center
+    for i in data["items"]:
+        ws.append([
+            i["so_no"], i["customer"], i["description"], i["so_qty"], i["date_received"], i["due_date"],
+            i["finished_at"] or "", i["days"], (i["days_remaining"] if i["days_remaining"] is not None else ""),
+            i["qty_finished"], i["qty_balance"], i["percent"], i["working_date_target"],
+            i["actual_working_days"], i["productivity"], HEALTH_LABEL.get(i["health"], i["status"]),
+        ])
+    widths = [12, 22, 30, 8, 12, 12, 12, 7, 9, 12, 11, 10, 14, 16, 14, 12]
+    for w, col in zip(widths, range(1, len(widths) + 1)):
+        ws.column_dimensions[chr(64 + col)].width = w
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    fname = f"job_progress_{datetime.now(timezone.utc).strftime('%Y%m%d')}.xlsx"
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
 @router.put("/job-progress/{so_id}")
+async def update_job_progress(so_id: str, payload: JobProgressIn, current: dict = Depends(get_current_user)):
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengubah")
 async def update_job_progress(so_id: str, payload: JobProgressIn, current: dict = Depends(get_current_user)):
     if not _can_view(current):
         raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengubah")

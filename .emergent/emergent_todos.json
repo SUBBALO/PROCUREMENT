@@ -1,22 +1,26 @@
 [
   {
-    "content": "Backend: work_hours per row + total_work_hours di /reports & masterlist",
+    "content": "Machine + finished-goods di Ringkasan Kerja SO",
     "status": "completed"
   },
   {
-    "content": "Backend: endpoint SO work summary + detail per SO",
+    "content": "Job Progress backend: status/days_remaining/KPI + export.xlsx",
     "status": "completed"
   },
   {
-    "content": "Frontend: kolom Jam + Total Jam Kerja di masterlist Daily Report",
+    "content": "Job Progress frontend: badge status + baris merah telat, progress bar, sisa hari",
     "status": "completed"
   },
   {
-    "content": "Frontend: kartu & halaman Ringkasan Kerja SO + route + portal card",
+    "content": "Job Progress frontend: filter status/cari SO + KPI strip + Export",
     "status": "completed"
   },
   {
-    "content": "Verify: esbuild, smoke test, screenshot",
+    "content": "Layout: KPI card vertikal di kiri, tabel di kanan",
+    "status": "completed"
+  },
+  {
+    "content": "Verify esbuild + smoke test + screenshot",
     "status": "completed"
   }
 ]
