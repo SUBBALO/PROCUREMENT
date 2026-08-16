@@ -748,6 +748,63 @@ async def _gather_notifications(user: dict) -> dict:
     except Exception:
         pass
 
+    # ------------- (QC) Release Note Menunggu Persetujuan -------------
+    try:
+        if role == "qc" or admin_like:
+            rn_rows = await db.fg_release_notes.find(
+                {"status": "submitted"}, {"_id": 0},
+            ).sort("frn_date", 1).limit(30).to_list(length=30)
+            if rn_rows:
+                items = []
+                for r in rn_rows:
+                    items.append({
+                        "id": r.get("id"),
+                        "title": f"{r.get('release_no') or 'Release Note'} — menunggu TTD QC",
+                        "detail": f"{(r.get('description') or '')[:60]} · Qty {r.get('qty')}",
+                        "sub": f"SO: {r.get('so_no', '-')} · {r.get('customer') or '-'} · {(r.get('frn_date') or '')[:10]}",
+                        "link": "/qc/release-notes",
+                        "kind": "frn_pending_qc",
+                        "created_at": r.get("created_at") or r.get("updated_at"),
+                    })
+                categories.append({
+                    "key": "frn_pending_qc",
+                    "label": "Release Note Menunggu Persetujuan",
+                    "count": len(items),
+                    "severity": "warn",
+                    "items": items,
+                })
+    except Exception:
+        pass
+
+    # ------------- (Store) Barang Jadi Siap Kirim (released QC) -------------
+    try:
+        if role == "store" or admin_like:
+            ready_rows = await db.fg_release_notes.find(
+                {"status": "released", "ready_for_delivery": True, "delivered": {"$ne": True}},
+                {"_id": 0},
+            ).sort("qc_at", -1).limit(30).to_list(length=30)
+            if ready_rows:
+                items = []
+                for r in ready_rows:
+                    items.append({
+                        "id": r.get("id"),
+                        "title": f"{r.get('release_no') or 'Release Note'} — barang jadi siap kirim",
+                        "detail": f"{(r.get('description') or '')[:60]} · Qty {r.get('qty')}",
+                        "sub": f"SO: {r.get('so_no', '-')} · {r.get('customer') or '-'} · QC: {r.get('qc_by') or '-'}",
+                        "link": "/deliveries",
+                        "kind": "fg_ready_delivery",
+                        "created_at": r.get("qc_at") or r.get("updated_at"),
+                    })
+                categories.append({
+                    "key": "fg_ready_delivery",
+                    "label": "Barang Jadi Siap Kirim (Lolos QC)",
+                    "count": len(items),
+                    "severity": "info",
+                    "items": items,
+                })
+    except Exception:
+        pass
+
     total_count = sum(c["count"] for c in categories)
     return {
         "role": role,

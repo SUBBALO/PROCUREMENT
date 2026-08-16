@@ -46,14 +46,14 @@ import QuotationPage from "./pages/QuotationPage";
 import CustomerMasterPage from "./pages/CustomerMasterPage";
 import QCPage from "./pages/QCPage";
 import QCPortalPage from "./pages/QCPortalPage";
+import QcReleaseNotesPage from "./pages/QcReleaseNotesPage";
 import EcnTtdQueuePage from "./pages/EcnTtdQueuePage";
 import ProductionPortalPage from "./pages/ProductionPortalPage";
 import ProductionNewSoPage from "./pages/ProductionNewSoPage";
 import ProductionDailyReportPage from "./pages/ProductionDailyReportPage";
-import ProductionQcReleasePage from "./pages/ProductionQcReleasePage";
+import ProductionFrnPage from "./pages/ProductionFrnPage";
 import ProductionSoWorkSummaryPage from "./pages/ProductionSoWorkSummaryPage";
 import ProductionJobProgressPage from "./pages/ProductionJobProgressPage";
-import ProductionFrnPage from "./pages/ProductionFrnPage";
 import ProductionHolidayPage from "./pages/ProductionHolidayPage";
 import ProductionAttendancePage from "./pages/ProductionAttendancePage";
 import ProductionOvertimePage from "./pages/ProductionOvertimePage";
@@ -236,12 +236,12 @@ function AppRoutes() {
       <Route path="/admin/form-templates" element={<ProtectedRoute><FormTemplatesPage /></ProtectedRoute>} />
       <Route path="/admin/form-templates/:id" element={<ProtectedRoute><FormTemplateEditorPage /></ProtectedRoute>} />
       <Route path="/qc" element={<ProtectedRoute><QCPortalPage /></ProtectedRoute>} />
+      <Route path="/qc/release-notes" element={<ProtectedRoute><QcReleaseNotesPage /></ProtectedRoute>} />
       <Route path="/ecn-ttd" element={<ProtectedRoute><EcnTtdQueuePage /></ProtectedRoute>} />
       <Route path="/produksi" element={<ProtectedRoute><ProductionPortalPage /></ProtectedRoute>} />
       <Route path="/produksi/new-so" element={<ProtectedRoute><ProductionNewSoPage /></ProtectedRoute>} />
       <Route path="/produksi/daily-report" element={<ProtectedRoute><ProductionDailyReportPage /></ProtectedRoute>} />
       <Route path="/produksi/so-work-summary" element={<ProtectedRoute><ProductionSoWorkSummaryPage /></ProtectedRoute>} />
-      <Route path="/produksi/qc-release" element={<ProtectedRoute><ProductionQcReleasePage /></ProtectedRoute>} />
       <Route path="/produksi/job-progress" element={<ProtectedRoute><ProductionJobProgressPage /></ProtectedRoute>} />
       <Route path="/produksi/frn" element={<ProtectedRoute><ProductionFrnPage /></ProtectedRoute>} />
       <Route path="/produksi/holidays" element={<ProtectedRoute><ProductionHolidayPage /></ProtectedRoute>} />

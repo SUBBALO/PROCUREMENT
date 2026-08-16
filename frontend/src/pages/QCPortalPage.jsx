@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
 import api from "../lib/api";
-import { ClipboardText, Stamp, ClipboardText as ClipboardIcon, WarningCircle } from "@phosphor-icons/react";
+import { ClipboardText, Stamp, SealCheck, WarningCircle } from "@phosphor-icons/react";
 import { useNotifCount } from "../lib/useNotifCount";
 export default function QCPortalPage() {
   const pendingDrawings = useNotifCount("drawing_pending_approval");
+  const pendingReleaseNotes = useNotifCount("frn_pending_qc");
   const [pendingEcn, setPendingEcn] = useState(0);
 
   useEffect(() => {
@@ -24,6 +25,18 @@ export default function QCPortalPage() {
       accent: "from-emerald-500 via-green-500 to-teal-500",
       accentText: "text-emerald-400",
       badgeCount: pendingDrawings + pendingEcn,
+    },
+    {
+      key: "release-notes",
+      label: "Release Note Menunggu Persetujuan",
+      stats: "FGRN · Approve / Tolak · TTD QC",
+      description:
+        "Kotak masuk Finished Goods Release Note dari Produksi. Review barang jadi, beri komentar QC, lalu Approve (Release = lolos & siap kirim ke Store) atau Tolak (dikembalikan ke Produksi).",
+      icon: SealCheck,
+      href: "/qc/release-notes",
+      accent: "from-emerald-500 via-teal-500 to-cyan-500",
+      accentText: "text-emerald-400",
+      badgeCount: pendingReleaseNotes,
     },
     {
       key: "mii",

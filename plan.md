@@ -274,6 +274,136 @@ Tujuan: menghilangkan kebutuhan geser horizontal dan membuat nama barang/supplie
 
 ---
 
+## Phase 12: Production — Daily Report / Attendance / Overtime / Job Progress / FGRN (Status: IN PROGRESS)
+Ringkasan keputusan besar yang sudah berjalan di modul Produksi:
+- Daily Production Report: date-first, multi-row, spreadsheet-like, operator dari master produksi, blok input bila operator absent.
+- Attendance: calendar grid, Sunday + holiday marker merah, sticky Nama/Bagian, Night Shift = Shift 2 truth.
+- Overtime: rule tier 1.5x/2x weekdays+Sat, Sunday/holiday 2x; recap bulanan grid; export excel; print OT request signature blocks.
+- Job Progress: satu line per SO, finished otomatis dari FGRN (released saja), target working days exclude Sundays+holiday.
+- FGRN: multi-item per SO, balance per item, Draft→Submit QC→Release/Reject.
+
+Catatan status UI terakhir:
+- Ringkasan Kerja SO: kolom Operator sudah dihapus dari list view (detail tetap ada). (Belum user-confirm, tapi build lulus.)
+
+---
+
+## Phase 13: QC Ownership Fix — Relocate "Release Note Menunggu Persetujuan" to QC Portal (Status: COMPLETED)
+User feedback terbaru (governing):
+- "QC — Release Note Menunggu Persetujuan" **harus berada di menu/portal QC**, bukan di halaman/portal Produksi.
+- Produksi hanya membuat Draft + Submit ke QC.
+- QC menerima notifikasi di kartu QC, review, dan **TTD approve**/reject di area QC.
+
+Confirmed user decisions:
+- Approvers: **QC Staff & QC Head** (role `qc`) + **admin-like** (server-side enforced).
+- Signature model: **nama approver + timestamp otomatis**, plus **optional upload gambar tanda tangan** (base64 / string) untuk disimpan di record.
+- Produksi tetap bisa lihat status (Menunggu QC / Released / Ditolak QC) **read-only** di list FGRN.
+- Saat QC Release: tandai **ready_for_delivery=True** dan buat notifikasi untuk **Store**.
+- Halaman/card QC yang ada di portal Produksi: **hapus total**, pindah sepenuhnya ke QC.
+
+### Phase 13.1 — Backend: Access control + fields + workflow hooks (Status: NOT STARTED)
+Target files: `backend/routers/production.py`, `backend/routers/notifications.py`.
+
+1) **Role helper**
+- `production.py`: import `is_qc` dari `deps`.
+- Tambah helper:
+  - `_can_prod(user)` (existing `_can_view` tetap untuk produksi/admin-like)
+  - `_can_qc(user)` → `is_qc(user) or is_admin_like(user)`
+
+2) **Restrict QC actions server-side**
+- `POST /production/frn/{id}/release` dan `/reject`:
+  - Ganti guard dari `_can_view` → `_can_qc`.
+  - Terima optional body: `{ qc_comment?: str, qc_signature?: str }`.
+  - Set fields:
+    - `qc_by`, `qc_at` (existing)
+    - `qc_comment` (QC-owned)
+    - `qc_signature` (optional)
+    - `ready_for_delivery=True` saat released.
+
+3) **Submitted queues and counters**
+- `GET /production/frn/pending-qc`:
+  - Harus bisa diakses oleh **QC/admin-like** (untuk layar QC).
+- `GET /production/frn/qc-pending-count`:
+  - Diperluas agar dapat diakses oleh **QC + Production + admin-like** (badge untuk QC portal; produksi opsional untuk badge read-only bila masih dipakai).
+
+4) **Serialization extensions**
+- `_serialize_frn` tambahkan:
+  - `qc_signature`
+  - `ready_for_delivery`
+  - `delivered` (bila sudah ada/akan dipakai oleh Store/Delivery)
+
+5) **Store integration flags (minimal)**
+- Jika belum ada, tambahkan field `delivered=False` default saat create.
+- Ke depan, Store/Delivery module bisa set `delivered=True` saat barang benar-benar keluar.
+
+### Phase 13.2 — Backend: Notifications (QC inbox + Store ready-delivery) (Status: NOT STARTED)
+Target file: `backend/routers/notifications.py`.
+
+1) **QC notification category**
+- Untuk role `qc` (+ admin-like):
+  - Category key: `frn_pending_qc`
+  - Count: jumlah `fg_release_notes` dengan `status='submitted'`
+  - Items: ringkas top 20/30 (RN no, SO no, customer, qty, date) link ke `/qc/release-notes`.
+
+2) **Store notification category**
+- Untuk role `store` (+ admin-like bila perlu):
+  - Category key: `fg_ready_delivery`
+  - Count: jumlah FRN `status='released' AND ready_for_delivery=True AND delivered != True`
+  - Items link ke page store/delivery yang sesuai (sementara bisa link ke `/store` portal atau `/deliveries` sampai page khusus tersedia).
+
+### Phase 13.3 — Frontend: QC page + portal card + routing cleanup (Status: NOT STARTED)
+Target files: `frontend/src/pages/QCPortalPage.jsx`, `frontend/src/pages/ProductionPortalPage.jsx`, `frontend/src/pages/ProductionFrnPage.jsx`, `frontend/src/App.js`.
+
+1) **New QC page**
+- Buat `frontend/src/pages/QcReleaseNotesPage.jsx` (violet theme, QC-owned):
+  - Table list: data dari `GET /production/frn/pending-qc`
+  - Row action: open dialog untuk review.
+  - Dialog:
+    - input `qc_comment`
+    - optional upload signature image → store as base64 string in payload (`qc_signature`).
+    - buttons: Release / Reject.
+  - On success: toast + reload list.
+
+2) **QC Portal card**
+- `QCPortalPage.jsx`: tambah card "Release Note Menunggu Persetujuan" dengan badge count dari:
+  - either `useNotifCount('frn_pending_qc')` (preferred) or a direct endpoint
+  - link `href: /qc/release-notes`.
+
+3) **Remove QC approve UI from Production**
+- `ProductionPortalPage.jsx`:
+  - remove qcPending fetch (`/production/frn/qc-pending-count`) if no longer needed
+  - remove the `qc-release` card entirely
+  - remove badge on FGRN card if user wants QC-only notification (optional; if kept, badge should represent "menunggu QC" but no action)
+
+4) **Production FGRN becomes submit-only + status read-only**
+- `ProductionFrnPage.jsx`:
+  - For `submitted` status: remove Release/Tolak buttons → replace with read-only label "Menunggu QC".
+  - Keep: Draft → Submit QC, Rejected → Resubmit.
+  - Ensure QC comment remains visible read-only.
+
+5) **Routes**
+- `App.js`:
+  - add route: `/qc/release-notes` → `QcReleaseNotesPage`
+  - remove import + route: `/produksi/qc-release` (`ProductionQcReleasePage`)
+
+6) **Delete old page**
+- Remove `frontend/src/pages/ProductionQcReleasePage.jsx` (or leave file but unreachable; preferred delete to avoid confusion).
+
+### Phase 13.4 — Verification (no Testing Agent) (Status: NOT STARTED)
+Standing instruction: **do not run testing_agent_v3** until user explicitly allows.
+
+Verification steps (lightweight):
+- Backend: quick `python -m py_compile` or import check.
+- API smoke:
+  - Produksi user: can submit, cannot release/reject (403).
+  - QC user: can open pending list, release/reject success.
+- Notifications:
+  - QC sees `frn_pending_qc` count.
+  - Store sees `fg_ready_delivery` count after a release.
+- Frontend: `yarn build` / esbuild compile.
+- Manual preview screenshot: QC portal badge + QC release page works.
+
+---
+
 ## Notes / Current GitHub Safety
 - Perubahan terbaru masih **modified** dan belum di-commit/push.
 - Untracked report QA: `test_reports/iteration_43.json` (boleh di-commit atau di-.gitignore sesuai kebijakan).
@@ -283,4 +413,5 @@ Tujuan: menghilangkan kebutuhan geser horizontal dan membuat nama barang/supplie
   3) `Temp Transactions base (upload/review/commit per baris + /upload alias)`
   4) `Temp Transactions enhancements (kategori + commit-batch + vendor normalization + bulk-direct guard)`
   5) `Temp Transactions polish (compact table + autogrow + SO customer + export excel + portal card)`
+  6) `QC move: Release Notes approval workflow moved to QC portal (backend+frontend+notifications)`
 - Reminder: GitHub hanya backup **kode**; untuk **data** gunakan Full Backup (tar.gz).

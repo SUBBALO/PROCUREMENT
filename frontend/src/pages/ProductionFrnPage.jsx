@@ -328,12 +328,7 @@ export default function ProductionFrnPage() {
                     <td className="px-3 py-2 text-slate-600 max-w-[240px] truncate" title={r.qc_comment}>{r.qc_comment || "—"}</td>
                     <td className="px-3 py-2 text-center whitespace-nowrap">
                       {r.status === "draft" && <button onClick={() => act(r.id, "submit")} data-testid={`frn-submit-${i}`} className="px-2 py-1 text-[11px] font-bold rounded bg-amber-600 text-white hover:bg-amber-700">Submit QC</button>}
-                      {r.status === "submitted" && (
-                        <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => act(r.id, "release")} data-testid={`frn-release-${i}`} className="px-2 py-1 text-[11px] font-bold rounded bg-emerald-600 text-white hover:bg-emerald-700">Release</button>
-                          <button onClick={() => act(r.id, "reject")} data-testid={`frn-reject-${i}`} className="px-2 py-1 text-[11px] font-bold rounded bg-rose-100 text-rose-700 hover:bg-rose-200">Tolak</button>
-                        </div>
-                      )}
+                      {r.status === "submitted" && <span className="text-[11px] text-amber-600 font-bold" data-testid={`frn-waiting-qc-${i}`}>⏳ Menunggu QC</span>}
                       {r.status === "released" && <span className="text-[11px] text-emerald-600 font-bold">✓ Siap kirim</span>}
                       {r.status === "rejected" && <button onClick={() => act(r.id, "submit")} data-testid={`frn-resubmit-${i}`} className="px-2 py-1 text-[11px] font-bold rounded bg-slate-200 text-slate-700 hover:bg-slate-300">Ajukan lagi</button>}
                     </td>

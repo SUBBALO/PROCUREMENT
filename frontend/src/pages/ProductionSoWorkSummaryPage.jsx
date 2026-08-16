@@ -70,12 +70,11 @@ export default function ProductionSoWorkSummaryPage() {
               <th className="px-3 py-2 text-center font-bold text-amber-700">Total Jam</th>
               <th className="px-3 py-2 text-center font-bold text-emerald-700">Jam Normal</th>
               <th className="px-3 py-2 text-center font-bold text-orange-700">Jam Lembur</th>
-              <th className="px-3 py-2 text-left font-bold">Operator</th>
               <th className="px-3 py-2 text-left font-bold">Mesin</th>
             </tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {loading ? <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400">Memuat…</td></tr>
-                : items.length === 0 ? <tr><td colSpan={9} className="px-3 py-10 text-center text-slate-400" data-testid="sws-empty">Belum ada laporan produksi ber-SO pada periode ini.</td></tr>
+              {loading ? <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-400">Memuat…</td></tr>
+                : items.length === 0 ? <tr><td colSpan={8} className="px-3 py-10 text-center text-slate-400" data-testid="sws-empty">Belum ada laporan produksi ber-SO pada periode ini.</td></tr>
                 : items.map((s) => (
                   <tr key={s.so_no} onClick={() => openDetail(s)} className="hover:bg-amber-50/50 cursor-pointer" data-testid={`sws-row-${s.so_no}`}>
                     <td className="px-3 py-2 font-mono font-bold text-slate-900">{s.so_no}</td>
@@ -87,10 +86,6 @@ export default function ProductionSoWorkSummaryPage() {
                     <td className="px-3 py-2 text-center font-bold text-orange-700">
                       {s.ot_hours || 0}
                       {s.has_shift2 && <span className="ml-1 inline-block px-1 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[9px] font-bold align-middle" title="Ada operator Shift 2 (malam)">S2</span>}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">
-                      <span className="font-semibold">{s.operators_count} org</span>
-                      <span className="text-[11px] text-slate-400"> · {(s.operators || []).slice(0, 3).join(", ")}{(s.operators || []).length > 3 ? "…" : ""}</span>
                     </td>
                     <td className="px-3 py-2 text-slate-600">
                       {(s.machines || []).length === 0 ? <span className="text-slate-300">—</span> : (s.machines || []).map((m) => <span key={m} className="inline-block mr-1 mb-0.5 px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-600">{m}</span>)}
@@ -196,7 +191,7 @@ export default function ProductionSoWorkSummaryPage() {
                         </tr></thead>
                         <tbody className="divide-y divide-slate-100">
                           {(detail.finished_goods || []).length === 0 ? (
-                            <tr><td colSpan={9} className="px-2 py-4 text-center text-slate-400" data-testid="sws-fg-empty">Belum ada barang jadi dirilis untuk SO ini.</td></tr>
+                            <tr><td colSpan={8} className="px-2 py-4 text-center text-slate-400" data-testid="sws-fg-empty">Belum ada barang jadi dirilis untuk SO ini.</td></tr>
                           ) : (detail.finished_goods || []).map((f, ix) => (
                             <tr key={ix} data-testid={`sws-fg-${ix}`}>
                               <td className="px-2 py-1 text-slate-600 whitespace-nowrap">{fmtDate(f.frn_date)}</td>

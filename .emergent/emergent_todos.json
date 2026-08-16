@@ -1,26 +1,26 @@
 [
   {
-    "content": "Machine + finished-goods di Ringkasan Kerja SO",
+    "content": "Backend: restrict FGRN release/reject to QC, add signature/comment/ready_for_delivery, adjust pending-qc access, update serializer",
     "status": "completed"
   },
   {
-    "content": "Job Progress backend: status/days_remaining/KPI + export.xlsx",
+    "content": "Backend: add QC (pending release note) + Store (ready for delivery) notification categories",
     "status": "completed"
   },
   {
-    "content": "Job Progress frontend: badge status + baris merah telat, progress bar, sisa hari",
+    "content": "Frontend: create QcReleaseNotesPage (QC portal) with review dialog + signature upload",
     "status": "completed"
   },
   {
-    "content": "Job Progress frontend: filter status/cari SO + KPI strip + Export",
+    "content": "Frontend: add QC portal card + badge; add route; remove Production QC route/import",
     "status": "completed"
   },
   {
-    "content": "Layout: KPI card vertikal di kiri, tabel di kanan",
+    "content": "Frontend: remove Production QC card + qcPending fetch; make ProductionFrnPage status read-only",
     "status": "completed"
   },
   {
-    "content": "Verify esbuild + smoke test + screenshot",
+    "content": "Compile checks (esbuild + python), API workflow smoke test",
     "status": "completed"
   }
 ]

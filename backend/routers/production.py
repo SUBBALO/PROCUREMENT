@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from db import db
-from deps import get_current_user, log_action, is_production, is_admin_like
+from deps import get_current_user, log_action, is_production, is_admin_like, is_qc
 
 router = APIRouter(prefix="/production", tags=["production"])
 
@@ -23,6 +23,11 @@ def _now_iso() -> str:
 
 def _can_view(user: dict) -> bool:
     return is_production(user) or is_admin_like(user)
+
+
+def _can_qc(user: dict) -> bool:
+    """QC staff/head (role 'qc') atau admin-like boleh approve/reject Release Note."""
+    return is_qc(user) or is_admin_like(user)
 
 
 @router.get("/new-so")
@@ -841,6 +846,9 @@ def _serialize_frn(r: dict) -> dict:
         "status": r.get("status") or "released",  # data lama tanpa status dianggap released
         "qc_by": r.get("qc_by") or "",
         "qc_at": r.get("qc_at") or "",
+        "qc_signature": r.get("qc_signature") or "",
+        "ready_for_delivery": bool(r.get("ready_for_delivery")),
+        "delivered": bool(r.get("delivered")),
         "created_by_username": r.get("created_by_username") or "",
         "created_at": r.get("created_at") or "",
     }
@@ -968,9 +976,9 @@ async def list_frn(so_no: Optional[str] = None, month: Optional[str] = None,
 
 @router.get("/frn/pending-qc")
 async def frn_pending_qc(current: dict = Depends(get_current_user)):
-    """Daftar release note menunggu QC (submitted) untuk approve/tolak."""
-    if not _can_view(current):
-        raise HTTPException(status_code=403, detail="Tidak diizinkan")
+    """Daftar release note menunggu QC (submitted) untuk approve/tolak. QC-owned."""
+    if not _can_qc(current):
+        raise HTTPException(status_code=403, detail="Hanya QC/Admin yang bisa mengakses")
     rows = await db.fg_release_notes.find({"status": "submitted"}, {"_id": 0}).to_list(length=10000)
     rows.sort(key=lambda r: (r.get("frn_date") or "", r.get("created_at") or ""))
     return {"items": [_serialize_frn(r) for r in rows], "count": len(rows)}
@@ -978,8 +986,8 @@ async def frn_pending_qc(current: dict = Depends(get_current_user)):
 
 @router.get("/frn/qc-pending-count")
 async def frn_qc_pending_count(current: dict = Depends(get_current_user)):
-    """Jumlah release note yang menunggu QC (status submitted)."""
-    if not _can_view(current):
+    """Jumlah release note yang menunggu QC (status submitted). QC/Produksi/Admin."""
+    if not (_can_qc(current) or _can_view(current)):
         return {"count": 0}
     n = await db.fg_release_notes.count_documents({"status": "submitted"})
     return {"count": n}
@@ -1079,6 +1087,11 @@ async def _set_frn_status(frn_id: str, status: str, current: dict, extra: dict =
     return _serialize_frn({**existing, **updates})
 
 
+class QcActionIn(BaseModel):
+    qc_comment: str = ""
+    qc_signature: str = ""   # optional base64 data-url gambar tanda tangan
+
+
 @router.post("/frn/{frn_id}/submit")
 async def submit_frn(frn_id: str, current: dict = Depends(get_current_user)):
     """Produksi submit ke QC (draft → submitted)."""
@@ -1088,23 +1101,37 @@ async def submit_frn(frn_id: str, current: dict = Depends(get_current_user)):
 
 
 @router.post("/frn/{frn_id}/release")
-async def release_frn(frn_id: str, current: dict = Depends(get_current_user)):
-    """QC setujui → released (barang jadi siap dikirim)."""
-    if not _can_view(current):
-        raise HTTPException(status_code=403, detail="Tidak diizinkan")
-    return await _set_frn_status(frn_id, "released", current, {
-        "qc_by": current.get("name") or current.get("username") or "", "qc_at": _now_iso(),
-    })
+async def release_frn(frn_id: str, payload: QcActionIn = QcActionIn(), current: dict = Depends(get_current_user)):
+    """QC setujui → released (barang jadi siap dikirim → Store dinotifikasi)."""
+    if not _can_qc(current):
+        raise HTTPException(status_code=403, detail="Hanya QC/Admin yang bisa approve/tolak")
+    extra = {
+        "qc_by": current.get("name") or current.get("username") or "",
+        "qc_at": _now_iso(),
+        "ready_for_delivery": True,
+    }
+    if (payload.qc_comment or "").strip():
+        extra["qc_comment"] = payload.qc_comment.strip()
+    if (payload.qc_signature or "").strip():
+        extra["qc_signature"] = payload.qc_signature.strip()
+    return await _set_frn_status(frn_id, "released", current, extra)
 
 
 @router.post("/frn/{frn_id}/reject")
-async def reject_frn(frn_id: str, current: dict = Depends(get_current_user)):
+async def reject_frn(frn_id: str, payload: QcActionIn = QcActionIn(), current: dict = Depends(get_current_user)):
     """QC tolak → rejected (tidak dihitung sbg barang jadi)."""
-    if not _can_view(current):
-        raise HTTPException(status_code=403, detail="Tidak diizinkan")
-    return await _set_frn_status(frn_id, "rejected", current, {
-        "qc_by": current.get("name") or current.get("username") or "", "qc_at": _now_iso(),
-    })
+    if not _can_qc(current):
+        raise HTTPException(status_code=403, detail="Hanya QC/Admin yang bisa approve/tolak")
+    extra = {
+        "qc_by": current.get("name") or current.get("username") or "",
+        "qc_at": _now_iso(),
+        "ready_for_delivery": False,
+    }
+    if (payload.qc_comment or "").strip():
+        extra["qc_comment"] = payload.qc_comment.strip()
+    if (payload.qc_signature or "").strip():
+        extra["qc_signature"] = payload.qc_signature.strip()
+    return await _set_frn_status(frn_id, "rejected", current, extra)
 
 
 @router.post("/frn/submit-date")
