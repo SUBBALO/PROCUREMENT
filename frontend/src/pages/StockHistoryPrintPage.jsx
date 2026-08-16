@@ -33,9 +33,10 @@ export default function StockHistoryPrintPage() {
         try {
           const s = await api.get("/settings/company").catch(() => null);
           if (s?.data?.company_name) setMeta({ company: s.data.company_name });
-        } catch { /* silent */ }
-      } catch {
-        // silent — page still renders with empty state
+        } catch (e) { console.warn("Company setting tidak tersedia, memakai default:", e?.message); }
+      } catch (e) {
+        console.error("Gagal memuat riwayat stok untuk print:", e?.response?.status || e?.message);
+        // page still renders with empty state
       } finally { setLoading(false); }
     })();
   }, [itemName, isCust]);
@@ -69,7 +70,7 @@ export default function StockHistoryPrintPage() {
   useEffect(() => {
     // Auto-open print dialog after data loads (delay to let render finish)
     if (!loading && filteredRows.length > 0) {
-      const t = setTimeout(() => { try { window.print(); } catch { /* silent */ } }, 400);
+      const t = setTimeout(() => { try { window.print(); } catch (e) { console.warn("window.print gagal:", e?.message); } }, 400);
       return () => clearTimeout(t);
     }
   }, [loading, filteredRows.length]);

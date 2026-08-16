@@ -613,7 +613,7 @@ function StockHistoryDialog({ item, onClose }) {
                     <tr><td colSpan={showPrice ? 9 : 8} className="p-6 text-center text-slate-400">Tidak ada transaksi dalam periode ini</td></tr>
                   )}
                   {filteredRows.map((r, idx) => (
-                    <tr key={idx} className={`border-b border-slate-100 ${r.kind === "IN" ? "hover:bg-emerald-50/40" : "hover:bg-red-50/40"}`} data-testid={`history-row-${idx}`}>
+                    <tr key={r.id || `${r.kind}-${r.date}-${r.ref}-${idx}`} className={`border-b border-slate-100 ${r.kind === "IN" ? "hover:bg-emerald-50/40" : "hover:bg-red-50/40"}`} data-testid={`history-row-${idx}`}>
                       <td className="p-2 text-slate-700 whitespace-nowrap">{r.date ? formatDateID(r.date) : "-"}</td>
                       <td className="p-2">
                         <span className={`text-[9px] uppercase tracking-[0.05em] font-bold px-1.5 py-0.5 border ${r.kind === "IN" ? "bg-emerald-100 text-emerald-800 border-emerald-300" : "bg-red-100 text-red-800 border-red-300"}`}>

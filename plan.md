@@ -463,147 +463,30 @@ Acceptance:
 ---
 
 ### Phase 16.4 — Tahap 4 (QC) — Masterlist Alat Ukur + Kalibrasi (Status: COMPLETED)
-**Goal**: masterlist alat ukur produksi/QC + input sertifikat kalibrasi pihak ketiga + reminder.
-
-**Backend (implemented)**
-- File: `/app/backend/routers/tools.py` (router terdaftar di `backend/server.py`).
-- Collections:
-  - `measurement_tools`
-  - `tool_calibrations`
-- Storage sertifikat: GridFS bucket `calibration_certs`.
-- Endpoints:
-  - CRUD master alat ukur:
-    - `GET/POST/PUT/DELETE /qc/measuring-tools`
-  - Kalibrasi per alat:
-    - `GET /qc/measuring-tools/{tool_id}/calibrations`
-    - `POST /qc/measuring-tools/{tool_id}/calibrations` (multipart: vendor, cal_date, due_date, optional file PDF/PNG/JPG/WebP max 10MB; validasi due_date >= cal_date)
-    - `DELETE /qc/calibrations/{cal_id}` (refresh ringkasan di master)
-  - Sertifikat:
-    - `GET /qc/calibrations/cert/{file_id}` (stream inline)
-  - Reminder:
-    - `GET /qc/measuring-tools-reminders` (due_soon + overdue)
-- Status otomatis di list:
-  - `never / ok / due_soon (H-30) / overdue` + `days_left`.
-- Akses: QC + Produksi + admin-like (Sales 403, teruji).
-- Indexes (startup server): `measurement_tools.tool_code`, `tool_calibrations.tool_id`.
-
-**Notifikasi (implemented)**
-- `routers/notifications.py`: kategori baru `tool_calibration_due` untuk role `qc/produksi/admin-like`.
-  - Severity `danger` bila ada `overdue`.
-  - Link menuju `/qc/measuring-tools`.
-
-**Frontend (implemented)**
-- Page: `/app/frontend/src/pages/QcMeasuringToolsPage.jsx` route `/qc/measuring-tools`.
-  - Filter chips: Semua/OK/H-30/Overdue/Belum Kalibrasi.
-  - Search.
-  - Dialog tambah/edit alat.
-  - Dialog kalibrasi: input kalibrasi + upload sertifikat + list riwayat + tombol lihat sertifikat.
-- QC Portal card: “Kalibrasi Alat Ukur” (`QCPortalPage.jsx`) dengan badge `useNotifCount("tool_calibration_due")`.
-
-**Verification**
-- Smoke test backend 100%:
-  - Sales 403.
-  - due_soon/overdue benar.
-  - upload+download sertifikat OK.
-  - validasi due<cal return 400.
-  - notif count sesuai.
-- Screenshot: halaman alat ukur + QC portal badge OK.
-- Cleanup: demo data & user tes bersih (0 sisa).
+(see existing plan details; implemented in `backend/routers/tools.py`, `frontend/src/pages/QcMeasuringToolsPage.jsx`, QC portal badge `tool_calibration_due`)
 
 ---
 
 ### Phase 16.5 — Tahap 5 (Produksi) — Peminjaman Alat/Tools (Status: COMPLETED)
-**Goal**: inventory alat produksi + kontrol pinjam/kembali/hilang (cek status alat & siapa pemegang).
-
-**Backend (implemented)**
-- File: `/app/backend/routers/tools.py`.
-- Collections:
-  - `production_tools`
-  - `tool_loans`
-- Endpoints:
-  - CRUD inventory:
-    - `GET/POST/PUT/DELETE /production/tools`
-    - Delete diblok bila alat sedang dipinjam.
-  - Workflow:
-    - `POST /production/tools/{tool_id}/borrow` (tolak double-borrow; tolak borrow jika status missing)
-    - `POST /production/tools/{tool_id}/return` (kondisi rusak → status `maintenance`)
-    - `POST /production/tools/{tool_id}/missing` (set status missing; loan aktif jadi missing)
-    - `POST /production/tools/{tool_id}/found` (missing/maintenance → available)
-  - Riwayat:
-    - `GET /production/tools/{tool_id}/history`
-  - Opsi peminjam:
-    - `GET /production/tools-borrowers` (nama dari `production_employees` aktif)
-- Indexes (startup server): `production_tools.tool_code`, `production_tools.status`, `tool_loans.tool_id`, `tool_loans.status`.
-
-**Frontend (implemented)**
-- Page: `/app/frontend/src/pages/ProductionToolsPage.jsx` route `/produksi/tools`.
-  - Filter chips: Semua/Tersedia/Dipinjam/Hilang/Rusak-Servis.
-  - Search.
-  - Aksi kontekstual:
-    - Tersedia → Pinjam
-    - Dipinjam → Kembalikan / Hilang
-    - Hilang/Servis → Ditemukan / Selesai Servis
-    - Riwayat/Edit/Hapus selalu tersedia
-  - Dialog Pinjam memakai datalist opsi karyawan produksi.
-  - Dialog Kembalikan (baik/rusak), Dialog Hilang, Dialog Riwayat.
-- Production Portal card ditambahkan: “Peminjaman Alat / Tools” (grup SO & Master).
-
-**Verification**
-- Smoke test backend 100%:
-  - double-borrow 400.
-  - delete saat borrowed 400.
-  - return rusak → maintenance.
-  - missing + history OK.
-- Screenshot: halaman tools produksi OK.
-- Cleanup: demo data & user tes bersih (0 sisa).
+(see existing plan details; implemented in `backend/routers/tools.py`, `frontend/src/pages/ProductionToolsPage.jsx`)
 
 ---
 
 ### Phase 16.5b — Stok Opname Alat Produksi (Status: COMPLETED)
-Extension dari Phase 16.5 (Peminjaman Tools), diminta user agar alat hilang cepat ketahuan lewat cek fisik berkala.
+Extension dari Phase 16.5 untuk cek fisik berkala inventory tools.
 
 **Backend (implemented)**
-- File: `/app/backend/routers/tools.py` (section 3).
-- Collection: `tool_opnames` (items embedded; pola sama seperti `stock_opnames` gudang).
-- Endpoints:
-  - `POST /production/tools-opname` → buat sesi (nomor auto `OPA-YYYYMM-NNN`), snapshot semua `production_tools` (code/nama/lokasi/status sistem/pemegang). Tolak jika inventory kosong.
-  - `GET /production/tools-opname` → list sesi + summary (checked/found/not_found/pending).
-  - `GET /production/tools-opname/{sid}` → detail.
-  - `PUT /production/tools-opname/{sid}` → update hasil cek fisik per alat (`pending/found/not_found` + catatan + checked_by); draft only.
-  - `POST /production/tools-opname/{sid}/finalize` → confirm phrase `OPNAME-FINAL`; aksi otomatis:
-    - `not_found` & belum `missing` → alat jadi `missing` (loan aktif ikut `missing` dengan catatan nomor opname)
-    - `found` & sistem `missing` → alat kembali `available` (kondisi baik, holder cleared)
-    - `borrowed` & `found` → tetap `borrowed` (terverifikasi)
-    - perubahan dicatat di `changes[]` + `log_action`; sesi terkunci.
-  - `DELETE /production/tools-opname/{sid}` → draft only; finalized terkunci untuk audit.
-- Akses: `_guard` (QC/Produksi/admin-like).
+- `tool_opnames` collection + endpoints:
+  - `POST/GET/PUT/DELETE /production/tools-opname`
+  - `POST /production/tools-opname/{sid}/finalize` confirm `OPNAME-FINAL`.
+- Finalisasi:
+  - `not_found` → alat jadi `missing` (loan aktif ikut `missing` dengan catatan nomor opname)
+  - `found` atas alat `missing` → kembali `available`
+  - sesi finalized terkunci.
 
 **Frontend (implemented)**
-- Page: `/app/frontend/src/pages/ProductionToolsOpnamePage.jsx` route `/produksi/tools/opname`.
-  - List sesi: nomor, progress cek, jumlah tidak ketemu, status Draft/Final, lanjut cek/lihat, hapus draft.
-  - Detail:
-    - 4 kartu statistik live (Total/Ada/Tidak Ketemu/Belum Dicek)
-    - tabel per alat dengan toggle **ADA / TIDAK ADA** (row hijau/merah) + kolom catatan
-    - tombol **Simpan Hasil Cek**
-    - dialog **Finalisasi** (wajib ketik `OPNAME-FINAL`, tombol disabled sampai benar)
-  - Setelah final:
-    - badge **FINAL**
-    - panel kuning “Perubahan Status Saat Finalisasi” (mis. `TL-0001 ditandai HILANG`)
-    - hasil cek read-only.
-- `ProductionToolsPage`: tombol **Stok Opname** di header (navigate ke `/produksi/tools/opname`).
-- Route ditambahkan di `App.js`.
-
-**Verification**
-- Smoke test backend 100%:
-  - create snapshot 3 alat; update summary benar
-  - wrong phrase 400
-  - finalize → `available+not_found→missing`, `missing+found→available`, `borrowed+found` tetap
-  - edit/delete finalized 400
-  - loan borrowed tetap `out`
-- Screenshot UI:
-  - cek fisik live (toggle + stats) OK
-  - finalisasi via UI OK (badge FINAL + panel perubahan)
-- esbuild clean; semua data demo/tes dibersihkan (0 sisa).
+- Page: `frontend/src/pages/ProductionToolsOpnamePage.jsx` route `/produksi/tools/opname`.
+- Button: di `ProductionToolsPage` header: **Stok Opname**.
 
 ---
 
@@ -621,17 +504,51 @@ If user still needs Tahap 6:
 
 ---
 
+## Phase 17 — Code Quality Review Fixes (Status: COMPLETED)
+External code review report diterima; diterapkan secara pragmatis (fix kritis & aman, hindari refactor masif berisiko pada app yang sudah berjalan).
+
+### FIXED
+1) **XSS (kritis)** — `frontend/src/pages/ProductionOvertimePage.jsx` (doPrint)
+- Semua data user (name, so_no, customer, ot_start, ot_end) **di-escape HTML** (`esc()` helper).
+- `document.write()` dihapus → diganti **Blob URL + window.open**.
+
+2) **Security: Dynamic import** — `backend/tests/test_iter9.py`
+- `__import__('uuid')` → `import uuid` statis.
+
+3) **Empty catch blocks** (minimal log) — sekarang `console.warn/error` dengan konteks
+- `frontend/src/pages/TransferRequestPage.jsx` (loadNextNo)
+- `frontend/src/pages/StoreIssuePage.jsx` (loadRecent)
+- `frontend/src/pages/StockHistoryPrintPage.jsx` (company setting, load history, window.print)
+
+4) **Array index keys** (read-only lists dengan data stabil)
+- `WorkOrderEngineeringPage.jsx` riwayat TTD → `key={h.id || `${drawing_no}-${stage}-${signed_at}`}`
+- `StoreStockPage.jsx` riwayat stok → `key={r.id || `${kind}-${date}-${ref}-${idx}`}`
+
+### VERIFIED AS FALSE POSITIVE / NOT CHANGED
+- **Backend undefined variables**: pyflakes scan seluruh `/app/backend` = **0 undefined name**.
+- **`is` vs `==` literal**: AST scan pada `utils/pdf_stamper.py`, `utils/render_cache.py`, `utils/office_render.py` = **0 pelanggaran**. Yang ada adalah `is None`/`is not None` (benar) dan beberapa `is True/False` tri-state yang disengaja.
+- **localStorage security**: `frontend/src/lib/tableResize.js` hanya simpan **lebar kolom (angka)**; auth token sudah httpOnly cookie; tidak ada data sensitif.
+- **Hook deps warnings** (contoh diverifikasi):
+  - `TvSoProgressPage.jsx` deps benar (imports & setter stabil).
+  - `WorkOrderEngineeringPage.jsx` hooks sudah memakai dependency arrays yang benar.
+
+### DEFERRED (by design; to avoid regression)
+- Mass-fix “382 hook deps” (banyak false-positive; risiko infinite loop/regresi).
+- Ganti index keys pada form arrays dinamis (Sales/SO items) butuh refactor state/handler agar punya `row_id` stabil.
+- Refactor besar untuk split komponen (AppShell, DrawingRequestFormDialog, dll) + turunkan kompleksitas fungsi backend (parse_po, full_restore, dll) + tingkatkan type hints.
+
+### Verification
+- Frontend esbuild clean.
+- Backend+frontend services running.
+- Overtime page load OK (screenshot) dan printing flow tidak memakai `document.write` lagi.
+- Temp user testing dibersihkan.
+
+---
+
 ## Notes / Current GitHub Safety
 - Perubahan terbaru masih **modified** dan belum di-commit/push.
 - Untracked report QA: `test_reports/iteration_43.json` (boleh di-commit atau di-.gitignore sesuai kebijakan).
 - Disarankan commit bertahap (agar jelas dan mudah rollback):
-  1) `Store role helpers + pemakaian (admin-like consistency)`
-  2) `Stock Opname + Stock history icon` (backend+frontend)
-  3) `Temp Transactions base (upload/review/commit per baris + /upload alias)`
-  4) `Temp Transactions enhancements (kategori + commit-batch + vendor normalization + bulk-direct guard)`
-  5) `Temp Transactions polish (compact table + autogrow + SO customer + export excel + portal card)`
-  6) `QC move: Release Notes approval workflow moved to QC portal (backend+frontend+notifications)`
-  7) `Tahap 1 fondasi (login logs + active sessions + snapshot recycle bin produksi + update_job_progress fix)`
-  8) `Tahap 4-5 tools (measuring tools calibration + production tool lending + notifications + pages)`
-  9) `Tahap 5b tools opname (tools opname session + UI + wiring)`
+  1) `Phase 17 code-quality fixes (XSS print OT + empty catches + test import + stable keys)`
+  2) (existing recommended sequence from plan) `Store role helpers`, `Stock Opname`, `Temp Transactions`, `QC move`, `Tahap 1 fondasi`, `Tahap 4-5 tools`, `Tahap 5b tools opname`.
 - Reminder: GitHub hanya backup **kode**; untuk **data** gunakan Full Backup (tar.gz) dan/atau Tahap 6 data-only backup bila sudah dibuat.

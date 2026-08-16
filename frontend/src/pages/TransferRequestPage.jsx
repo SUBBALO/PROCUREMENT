@@ -162,7 +162,8 @@ function CreateTrf({ onSaved, editDoc, onDone }) {
   const [editId, setEditId] = useState(null);
 
   const loadNextNo = useCallback(async () => {
-    try { const { data } = await api.get("/transfer-requests/next-no"); setNextNo(data.form_no); } catch {}
+    try { const { data } = await api.get("/transfer-requests/next-no"); setNextNo(data.form_no); }
+    catch (e) { console.warn("Gagal memuat nomor form berikutnya:", e?.response?.status || e?.message); }
   }, []);
 
   useEffect(() => {

@@ -92,15 +92,17 @@ export default function ProductionOvertimePage() {
   const [printDate, setPrintDate] = useState(todayStr());
   const printRows = useMemo(() => (data.items || []).filter((r) => r.ot_date === printDate), [data.items, printDate]);
   const doPrint = () => {
+    // Escape data user agar aman dari injeksi HTML (XSS) saat dicetak
+    const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     const rowsHtml = printRows.length === 0
       ? `<tr><td colspan="6" style="text-align:center;padding:16px;color:#888">Tidak ada data OT pada tanggal ini</td></tr>`
       : printRows.map((r, i) => `<tr>
           <td style="text-align:center">${i + 1}</td>
-          <td>${r.name || ""}</td>
-          <td style="text-align:center">${r.so_no || ""}</td>
-          <td>${r.customer || ""}</td>
-          <td style="text-align:center">${r.ot_start || ""}</td>
-          <td style="text-align:center">${r.ot_end || ""}</td>
+          <td>${esc(r.name)}</td>
+          <td style="text-align:center">${esc(r.so_no)}</td>
+          <td>${esc(r.customer)}</td>
+          <td style="text-align:center">${esc(r.ot_start)}</td>
+          <td style="text-align:center">${esc(r.ot_end)}</td>
         </tr>`).join("");
     // padding rows biar form penuh
     const pad = Math.max(0, 12 - printRows.length);
@@ -137,9 +139,12 @@ export default function ProductionOvertimePage() {
       </div>
       <script>window.onload=function(){window.print();}</script>
       </body></html>`;
-    const w = window.open("", "_blank");
-    if (!w) { toast.error("Popup diblokir browser. Izinkan popup untuk mencetak."); return; }
-    w.document.open(); w.document.write(html); w.document.close();
+    // Blob URL menggantikan document.write (lebih aman, tanpa manipulasi DOM langsung)
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const w = window.open(url, "_blank");
+    if (!w) { URL.revokeObjectURL(url); toast.error("Popup diblokir browser. Izinkan popup untuk mencetak."); return; }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
   const openRules = async () => {

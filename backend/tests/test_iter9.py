@@ -1,5 +1,6 @@
 """Iter-9 tests: approval pill pending-count endpoint + full request → review flow."""
 import os
+import uuid
 import pytest
 import requests
 
@@ -57,7 +58,7 @@ class TestApprovalFlow:
             "receive_date": "2026-01-15",
             "source_type": "supplier",
             "source_name": "TEST_iter9_supplier",
-            "do_no": f"TEST_DO_iter9_{__import__('uuid').uuid4().hex[:6]}",
+            "do_no": f"TEST_DO_iter9_{uuid.uuid4().hex[:6]}",
             "po_no": "",
             "items": [{"item_name": "TEST_iter9_ItemA", "qty": 3, "unit": "Ea",
                        "add_to_stock": True, "unit_price": 100.0, "remark": "iter9"}],

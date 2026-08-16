@@ -338,7 +338,7 @@ export default function WorkOrderEngineeringPage() {
                 {!subLoading && history.length === 0 && <tr><td colSpan={6} className="p-12 text-center text-slate-400">Belum ada riwayat TTD.</td></tr>}
                 {!subLoading && history.length > 0 && histFiltered.length === 0 && <tr><td colSpan={6} className="p-12 text-center text-slate-400">Tidak ada hasil untuk pencarian ini.</td></tr>}
                 {pagHist.pagedData.map((h, i) => (
-                  <tr key={i} className="border-b border-slate-100 hover:bg-slate-50" data-testid={`wo-hist-row-${i}`}>
+                  <tr key={h.id || `${h.drawing_no}-${h.stage}-${h.signed_at}`} className="border-b border-slate-100 hover:bg-slate-50" data-testid={`wo-hist-row-${i}`}>
                     <td className="p-3 text-xs">{h.signed_at ? new Date(h.signed_at).toLocaleString("id-ID") : "-"}</td>
                     <td className="p-3 font-mono font-bold text-xs">{h.drawing_no}</td>
                     <td className="p-3 text-xs uppercase">{h.stage}</td>

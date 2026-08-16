@@ -33,7 +33,8 @@ export default function StoreIssuePage() {
     catch { toast.error("Gagal memuat stok"); }
   }, []);
   const loadRecent = useCallback(async () => {
-    try { const { data } = await api.get("/store/issuances", { params: { page: 1, page_size: 10 } }); setRecent(data.items || []); } catch {}
+    try { const { data } = await api.get("/store/issuances", { params: { page: 1, page_size: 10 } }); setRecent(data.items || []); }
+    catch (e) { console.warn("Gagal memuat riwayat pengeluaran:", e?.response?.status || e?.message); }
   }, []);
   useEffect(() => { loadStock(); loadRecent(); }, [loadStock, loadRecent]);
   useEffect(() => { api.get("/sales-orders").then((r) => setSos(r.data || [])).catch(() => {}); }, []);
