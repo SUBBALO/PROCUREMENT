@@ -95,8 +95,41 @@ async def _clear_failed_login(username: str) -> None:
 
 
 # ---------------- Auth ----------------
+def _client_ip(request: Request) -> str:
+    """Ambil IP asli klien (dukung reverse proxy via X-Forwarded-For)."""
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    real = request.headers.get("x-real-ip", "")
+    if real:
+        return real.strip()
+    return request.client.host if request.client else "-"
+
+
+def _client_ua(request: Request) -> str:
+    return (request.headers.get("user-agent") or "-")[:300]
+
+
+async def _record_login_log(username: str, request: Request, success: bool, user: dict = None) -> None:
+    """Append-only login log (sukses & gagal) + IP + perangkat."""
+    try:
+        await db.login_logs.insert_one({
+            "id": str(uuid.uuid4()),
+            "ts": _now_iso(),
+            "username": username,
+            "user_id": (user or {}).get("id"),
+            "name": (user or {}).get("name", ""),
+            "role": (user or {}).get("role", ""),
+            "success": bool(success),
+            "ip": _client_ip(request),
+            "user_agent": _client_ua(request),
+        })
+    except Exception as e:
+        logger.warning(f"login log failed: {e}")
+
+
 @router.post("/auth/login")
-async def login(payload: LoginRequest, response: Response):
+async def login(payload: LoginRequest, response: Response, request: Request):
     username = payload.username.lower().strip()
 
     # Iter 22 — Cek lockout brute force dulu
@@ -110,6 +143,7 @@ async def login(payload: LoginRequest, response: Response):
     user = await db.users.find_one(merged({"username": username}, NOT_DELETED_FILTER))
     if not user or not verify_password(payload.password, user["password_hash"]):
         await _record_failed_login(username)
+        await _record_login_log(username, request, success=False, user=user)
         rem = await _get_lockout_remaining(username)
         if rem > 0:
             raise HTTPException(
@@ -127,10 +161,29 @@ async def login(payload: LoginRequest, response: Response):
     must_change = bool(user.get("must_change_password")) or \
                   (payload.password.lower() in DEFAULT_PASSWORDS)
 
-    access = create_access_token(user["id"], username)
-    refresh = create_refresh_token(user["id"])
+    # Session tracking (Feb 2026) — buat sesi aktif + login log dengan IP/perangkat
+    sid = str(uuid.uuid4())
+    try:
+        await db.active_sessions.insert_one({
+            "id": sid,
+            "user_id": user["id"],
+            "username": username,
+            "name": user.get("name", ""),
+            "role": user.get("role", ""),
+            "login_at": _now_iso(),
+            "last_seen": _now_iso(),
+            "ip": _client_ip(request),
+            "user_agent": _client_ua(request),
+            "revoked": False,
+        })
+    except Exception as e:
+        logger.warning(f"active session insert failed: {e}")
+    await _record_login_log(username, request, success=True, user=user)
+
+    access = create_access_token(user["id"], username, sid=sid)
+    refresh = create_refresh_token(user["id"], sid=sid)
     set_auth_cookies(response, access, refresh)
-    await log_action(user, "login", "auth", user["id"], {"username": username})
+    await log_action(user, "login", "auth", user["id"], {"username": username, "ip": _client_ip(request)})
     return {
         "id": user["id"],
         "username": user["username"],
@@ -150,6 +203,10 @@ async def logout(request: Request, response: Response):
     if token:
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            # Akhiri sesi aktif (kalau token membawa sid)
+            sid = payload.get("sid")
+            if sid:
+                await db.active_sessions.delete_one({"id": sid})
             u = await db.users.find_one({"id": payload.get("sub")})
             if u:
                 await log_action(u, "logout", "auth", u["id"], {})
@@ -244,7 +301,13 @@ async def refresh_token(request: Request, response: Response):
         user = await db.users.find_one({"id": payload["sub"]})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
-        access = create_access_token(user["id"], user.get("username", ""))
+        # Bawa sid dari refresh token supaya sesi tetap terlacak setelah refresh
+        sid = payload.get("sid")
+        if sid:
+            sess = await db.active_sessions.find_one({"id": sid})
+            if sess and sess.get("revoked"):
+                raise HTTPException(status_code=401, detail="Sesi Anda telah diakhiri oleh admin. Silakan login ulang.")
+        access = create_access_token(user["id"], user.get("username", ""), sid=sid)
         response.set_cookie("access_token", access, httponly=True, secure=False,
                             samesite="lax", max_age=8 * 3600, path="/")
         return {"ok": True}
@@ -385,6 +448,85 @@ async def list_logs(
     cursor = db.activity_logs.find(filt, {"_id": 0}).sort("timestamp", -1).skip((page - 1) * page_size).limit(page_size)
     items = await cursor.to_list(length=page_size)
     return {"total": total, "page": page, "page_size": page_size, "items": items}
+
+
+# ---------------- Login Log & Sesi Aktif (Feb 2026) ----------------
+@router.get("/admin/login-logs")
+async def list_login_logs(
+    current: dict = Depends(require_admin),
+    username: Optional[str] = None,
+    success: Optional[bool] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+):
+    """Riwayat login (sukses & gagal) lengkap dengan IP + perangkat."""
+    filt: dict = {}
+    if username:
+        filt["username"] = {"$regex": re.escape(username.strip()), "$options": "i"}
+    if success is not None:
+        filt["success"] = success
+    if start_date or end_date:
+        ts: dict = {}
+        if start_date:
+            ts["$gte"] = start_date
+        if end_date:
+            ts["$lte"] = end_date + "T23:59:59"
+        filt["ts"] = ts
+    total = await db.login_logs.count_documents(filt)
+    page_size = min(max(page_size, 1), 200)
+    cursor = db.login_logs.find(filt, {"_id": 0}).sort("ts", -1).skip((page - 1) * page_size).limit(page_size)
+    items = await cursor.to_list(length=page_size)
+    return {"total": total, "page": page, "page_size": page_size, "items": items}
+
+
+@router.get("/admin/active-sessions")
+async def list_active_sessions(current: dict = Depends(require_admin)):
+    """Sesi aktif (login ≤ 8 jam terakhir, belum logout/revoke). Online = last_seen ≤ 5 menit."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=8)).isoformat()
+    online_cutoff = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    sessions = await db.active_sessions.find(
+        {"revoked": {"$ne": True}, "last_seen": {"$gte": cutoff}},
+        {"_id": 0},
+    ).sort("last_seen", -1).to_list(length=300)
+    for s in sessions:
+        s["online"] = (s.get("last_seen") or "") >= online_cutoff
+    # Bersihkan sesi basi (>8 jam) agar koleksi tetap ringan
+    try:
+        await db.active_sessions.delete_many({"last_seen": {"$lt": cutoff}})
+    except Exception:
+        pass
+    return {"items": sessions, "total": len(sessions)}
+
+
+@router.post("/admin/sessions/{sid}/revoke")
+async def revoke_session(sid: str, request: Request, current: dict = Depends(require_super_admin)):
+    """Akhiri paksa sesi user (super admin). User akan diminta login ulang."""
+    # Cegah revoke sesi sendiri yang sedang dipakai
+    token = request.cookies.get("access_token")
+    if not token:
+        auth_hdr = request.headers.get("Authorization", "")
+        if auth_hdr.startswith("Bearer "):
+            token = auth_hdr[7:]
+    if token:
+        try:
+            my_sid = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM]).get("sid")
+            if my_sid == sid:
+                raise HTTPException(status_code=400, detail="Tidak bisa mengakhiri sesi Anda sendiri — gunakan Logout")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+    sess = await db.active_sessions.find_one({"id": sid})
+    if not sess:
+        raise HTTPException(status_code=404, detail="Sesi tidak ditemukan (mungkin sudah berakhir)")
+    await db.active_sessions.update_one(
+        {"id": sid},
+        {"$set": {"revoked": True, "revoked_at": _now_iso(), "revoked_by": current.get("username")}},
+    )
+    await log_action(current, "revoke_session", "session", sid, {"target": sess.get("username")})
+    return {"ok": True, "message": f"Sesi {sess.get('username')} diakhiri"}
 
 
 # ---------------- Permission Registry (Accurate-style granular access) ----------------

@@ -1,26 +1,30 @@
 [
   {
-    "content": "Fix attendance sticky header (Nama/Bagian) — thead sticky",
+    "content": "Explore backend structure (server.py, auth.py, deps.py, admin routers)",
     "status": "completed"
   },
   {
-    "content": "SO Progress + TV: reflect Daily Production Reports & Release Notes in Produksi stage",
+    "content": "Backend: audit trail — sudah ada (activity_logs + log_action + tab Log Aktivitas); coverage produksi OK",
     "status": "completed"
   },
   {
-    "content": "Provision temp test users per role for testing agent",
+    "content": "Backend: login_logs + active sessions + revoke + admin endpoints",
     "status": "completed"
   },
   {
-    "content": "Run comprehensive testing agent (Sales -> Produksi)",
+    "content": "Backend: Recycle Bin snapshot untuk modul Produksi (laporan, FGRN, lembur)",
     "status": "completed"
   },
   {
-    "content": "Fix bugs reported by testing agent (none real; verified)",
+    "content": "Frontend: tab Sesi & Login + label trash Produksi di AdminPage",
     "status": "completed"
   },
   {
-    "content": "Cleanup temp test users/data + tester temp file",
+    "content": "Compile check + smoke test + screenshot + cleanup data tes",
+    "status": "completed"
+  },
+  {
+    "content": "Bonus bugfix: duplikasi fungsi update_job_progress (PIC/remarks tidak tersimpan)",
     "status": "completed"
   }
 ]

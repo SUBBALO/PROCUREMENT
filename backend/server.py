@@ -383,6 +383,16 @@ async def startup():
     await db.transactions.create_index("invoice_no")
     await db.activity_logs.create_index("timestamp")
     await db.activity_logs.create_index("user_id")
+    # Login log & sesi aktif + trash snapshot (Feb 2026)
+    try:
+        await db.login_logs.create_index("ts")
+        await db.login_logs.create_index("username")
+        await db.active_sessions.create_index("last_seen")
+        await db.active_sessions.create_index("user_id")
+        await db.trash_snapshots.create_index("collection")
+        await db.trash_snapshots.create_index("deleted_at")
+    except Exception as e:
+        logger.warning(f"session/trash index skip: {e}")
     await db.store_receipts.create_index("item_name")
     await db.store_receipts.create_index("transaction_id")
     await db.store_receipts.create_index("qty_remaining")

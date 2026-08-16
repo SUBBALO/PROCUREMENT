@@ -15,9 +15,15 @@ from db import db
 from deps import log_action, require_super_admin
 from services.soft_delete import (
     AUTO_PURGE_DAYS,
+    SNAPSHOT_COLLECTIONS,
     TRASH_COLLECTIONS,
+    TRASH_SNAPSHOT_COLL,
     purge_expired,
     restore_many,
+    snapshot_purge,
+    snapshot_purge_expired,
+    snapshot_restore,
+    snapshot_summary,
     trash_summary,
 )
 
@@ -36,7 +42,13 @@ DISPLAY_FIELDS = {
     "quotations": ["id", "quotation_no", "customer_name", "total_amount", "currency", "created_at"],
     "customers": ["id", "name", "address", "pic"],
     "users": ["id", "username", "full_name", "role"],
+    # Snapshot-based (modul Produksi)
+    "production_reports": ["id", "report_date", "operator_name", "so_no", "customer", "process", "qty_ok", "qty_ng", "machine_no"],
+    "fg_release_notes": ["id", "frn_date", "release_no", "so_no", "customer", "qty", "status"],
+    "production_overtime": ["id", "ot_date", "ot_no", "name", "so_no", "ot_start", "ot_end", "ot_hours"],
 }
+
+ALL_TRASH_COLLECTIONS = set(TRASH_COLLECTIONS) | set(SNAPSHOT_COLLECTIONS)
 
 
 class RestoreRequest(BaseModel):
@@ -53,6 +65,7 @@ class PurgeRequest(BaseModel):
 @router.get("/summary")
 async def get_trash_summary(current: dict = Depends(require_super_admin)):
     counts = await trash_summary()
+    counts.update(await snapshot_summary())
     return {"collections": counts, "total": sum(counts.values()), "auto_purge_days": AUTO_PURGE_DAYS}
 
 
@@ -63,8 +76,25 @@ async def list_trash(
     limit: int = 200,
     current: dict = Depends(require_super_admin),
 ):
-    if collection not in TRASH_COLLECTIONS:
+    if collection not in ALL_TRASH_COLLECTIONS:
         raise HTTPException(status_code=400, detail=f"Collection tidak didukung: {collection}")
+    fields = DISPLAY_FIELDS.get(collection, ["id"])
+    # Snapshot-based collections: baca dari trash_snapshots
+    if collection in SNAPSHOT_COLLECTIONS:
+        snap_filt: dict = {"collection": collection}
+        if q and q.strip():
+            rx = {"$regex": re.escape(q.strip()), "$options": "i"}
+            snap_filt["$or"] = [{f"doc.{f}": rx} for f in fields]
+        snaps = await db[TRASH_SNAPSHOT_COLL].find(snap_filt).sort("deleted_at", -1).limit(limit).to_list(length=limit)
+        out = []
+        for s in snaps:
+            doc = s.get("doc") or {}
+            row = {f: doc.get(f) for f in fields}
+            row["id"] = s.get("id")
+            row["deleted_at"] = s.get("deleted_at")
+            row["deleted_by_name"] = s.get("deleted_by_name")
+            out.append(row)
+        return {"collection": collection, "fields": fields, "items": out, "total": len(out)}
     filt: dict = {"deleted_at": {"$exists": True, "$ne": None}}
     if q and q.strip():
         rx = {"$regex": re.escape(q.strip()), "$options": "i"}
@@ -86,11 +116,14 @@ async def list_trash(
 
 @router.post("/restore")
 async def restore_docs(payload: RestoreRequest, current: dict = Depends(require_super_admin)):
-    if payload.collection not in TRASH_COLLECTIONS:
+    if payload.collection not in ALL_TRASH_COLLECTIONS:
         raise HTTPException(status_code=400, detail=f"Collection tidak didukung: {payload.collection}")
     if not payload.ids:
         raise HTTPException(status_code=400, detail="ids kosong")
-    n = await restore_many(payload.collection, {"id": {"$in": payload.ids}})
+    if payload.collection in SNAPSHOT_COLLECTIONS:
+        n = await snapshot_restore(payload.collection, payload.ids)
+    else:
+        n = await restore_many(payload.collection, {"id": {"$in": payload.ids}})
     await log_action(current, "restore_trash", payload.collection, "-", {"count": n, "ids": payload.ids[:20]})
     return {"restored": n}
 
@@ -100,19 +133,26 @@ async def purge_docs(payload: PurgeRequest, current: dict = Depends(require_supe
     """Hard-delete specific items in trash — irreversible. Requires PURGE-FOREVER phrase."""
     if payload.confirm_phrase != "PURGE-FOREVER":
         raise HTTPException(status_code=400, detail="Konfirmasi tidak valid. Ketik 'PURGE-FOREVER' (case-sensitive).")
-    if payload.collection not in TRASH_COLLECTIONS:
+    if payload.collection not in ALL_TRASH_COLLECTIONS:
         raise HTTPException(status_code=400, detail=f"Collection tidak didukung: {payload.collection}")
     if not payload.ids:
         raise HTTPException(status_code=400, detail="ids kosong")
-    res = await db[payload.collection].delete_many({"id": {"$in": payload.ids}, "deleted_at": {"$exists": True, "$ne": None}})
-    await log_action(current, "purge_trash", payload.collection, "-", {"count": res.deleted_count, "ids": payload.ids[:20]})
-    return {"purged": res.deleted_count}
+    if payload.collection in SNAPSHOT_COLLECTIONS:
+        purged = await snapshot_purge(payload.collection, payload.ids)
+    else:
+        res = await db[payload.collection].delete_many({"id": {"$in": payload.ids}, "deleted_at": {"$exists": True, "$ne": None}})
+        purged = res.deleted_count
+    await log_action(current, "purge_trash", payload.collection, "-", {"count": purged, "ids": payload.ids[:20]})
+    return {"purged": purged}
 
 
 @router.post("/auto-purge")
 async def auto_purge(current: dict = Depends(require_super_admin)):
     """Trigger auto-purge for all docs older than AUTO_PURGE_DAYS."""
     report = await purge_expired()
+    snap_report = await snapshot_purge_expired()
+    for k, v in snap_report.items():
+        report[k] = report.get(k, 0) + v
     total = sum(report.values())
     await log_action(current, "auto_purge_trash", "trash", "-", {"total": total, "breakdown": report})
     return {"purged": total, "breakdown": report, "cutoff_days": AUTO_PURGE_DAYS}

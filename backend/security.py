@@ -21,15 +21,19 @@ def verify_password(pw: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(user_id: str, email: str) -> str:
+def create_access_token(user_id: str, email: str, sid: str = None) -> str:
     payload = {"sub": user_id, "email": email, "type": "access",
                "exp": datetime.now(timezone.utc) + timedelta(hours=8)}
+    if sid:
+        payload["sid"] = sid
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-def create_refresh_token(user_id: str) -> str:
+def create_refresh_token(user_id: str, sid: str = None) -> str:
     payload = {"sub": user_id, "type": "refresh",
                "exp": datetime.now(timezone.utc) + timedelta(days=7)}
+    if sid:
+        payload["sid"] = sid
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 

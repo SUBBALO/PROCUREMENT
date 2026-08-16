@@ -871,7 +871,8 @@ async def delete_report(report_id: str, current: dict = Depends(get_current_user
     existing = await db.production_reports.find_one({"id": report_id})
     if not existing:
         raise HTTPException(status_code=404, detail="Report tidak ditemukan")
-    await db.production_reports.delete_one({"id": report_id})
+    from services.soft_delete import snapshot_delete
+    await snapshot_delete("production_reports", existing, current)
     await log_action(current, "delete_production_report", "production_report", report_id, {"so_no": existing.get("so_no")})
     return {"ok": True}
 
@@ -1185,7 +1186,8 @@ async def delete_frn(frn_id: str, current: dict = Depends(get_current_user)):
     existing = await db.fg_release_notes.find_one({"id": frn_id})
     if not existing:
         raise HTTPException(status_code=404, detail="Release note tidak ditemukan")
-    await db.fg_release_notes.delete_one({"id": frn_id})
+    from services.soft_delete import snapshot_delete
+    await snapshot_delete("fg_release_notes", existing, current)
     await log_action(current, "delete_frn", "fg_release_note", frn_id, {"so_no": existing.get("so_no")})
     return {"ok": True}
 
@@ -1437,9 +1439,6 @@ async def export_job_progress_xlsx(current: dict = Depends(get_current_user)):
 
 
 @router.put("/job-progress/{so_id}")
-async def update_job_progress(so_id: str, payload: JobProgressIn, current: dict = Depends(get_current_user)):
-    if not _can_view(current):
-        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengubah")
 async def update_job_progress(so_id: str, payload: JobProgressIn, current: dict = Depends(get_current_user)):
     if not _can_view(current):
         raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengubah")
@@ -2182,6 +2181,11 @@ async def create_overtime_bulk(payload: OvertimeBulkIn, current: dict = Depends(
 async def delete_overtime(ot_id: str, current: dict = Depends(get_current_user)):
     if not _can_view(current):
         raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa menghapus")
-    await db.production_overtime.delete_one({"id": ot_id})
+    existing = await db.production_overtime.find_one({"id": ot_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Data lembur tidak ditemukan")
+    from services.soft_delete import snapshot_delete
+    await snapshot_delete("production_overtime", existing, current)
+    await log_action(current, "delete_overtime", "overtime", ot_id, {"name": existing.get("name"), "ot_date": existing.get("ot_date")})
     return {"ok": True}
 

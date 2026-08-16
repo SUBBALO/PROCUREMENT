@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import {
   UsersThree, Plus, PencilSimple, Trash, Key, ShieldStar, Clock, FunnelSimple, CheckCircle, XCircle, ChatCircleDots,
   Database, DownloadSimple, UploadSimple, Warning, TrashSimple, ArrowCounterClockwise, HardDrives,
+  Desktop, Prohibit, SignIn,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
@@ -116,6 +117,9 @@ export default function AdminPage() {
           <TabsTrigger data-testid="tab-logs" value="logs" className="rounded-none data-[state=active]:bg-slate-900 data-[state=active]:text-white text-xs uppercase tracking-[0.1em] font-semibold h-9 px-4">
             <Clock size={14} weight="bold" className="mr-1.5" /> Log Aktivitas
           </TabsTrigger>
+          <TabsTrigger data-testid="tab-sessions" value="sessions" className="rounded-none data-[state=active]:bg-slate-900 data-[state=active]:text-white text-xs uppercase tracking-[0.1em] font-semibold h-9 px-4">
+            <Desktop size={14} weight="bold" className="mr-1.5" /> Sesi & Login
+          </TabsTrigger>
           {isSuperAdmin && (
             <TabsTrigger data-testid="tab-backup" value="backup" className="rounded-none data-[state=active]:bg-slate-900 data-[state=active]:text-white text-xs uppercase tracking-[0.1em] font-semibold h-9 px-4">
               <Database size={14} weight="bold" className="mr-1.5" /> Backup & Reset
@@ -131,6 +135,7 @@ export default function AdminPage() {
         <TabsContent value="users" className="mt-4">{isSuperAdmin && <UsersTab me={me} />}</TabsContent>
         {canApprove && <TabsContent value="approvals" className="mt-4"><ApprovalsTab onReviewed={refreshPending} /></TabsContent>}
         <TabsContent value="logs" className="mt-4"><LogsTab /></TabsContent>
+        <TabsContent value="sessions" className="mt-4"><SessionsTab /></TabsContent>
         {isSuperAdmin && <TabsContent value="backup" className="mt-4"><BackupTab /></TabsContent>}
         {isSuperAdmin && <TabsContent value="trash" className="mt-4"><TrashTab /></TabsContent>}
       </Tabs>
@@ -1405,6 +1410,9 @@ const TRASH_COLLECTION_LABELS = {
   quotations: "Quotations",
   customers: "Master Customer",
   users: "Users",
+  production_reports: "Laporan Produksi",
+  fg_release_notes: "Release Note (FGRN)",
+  production_overtime: "Lembur Produksi",
 };
 
 function TrashTab() {
@@ -1608,3 +1616,227 @@ function TrashTab() {
   );
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Sesi & Login — sesi aktif (online/idle, IP, perangkat, akhiri sesi) + riwayat login
+// ═══════════════════════════════════════════════════════════════════════════
+function parseDevice(ua) {
+  if (!ua || ua === "-") return "-";
+  let os = "";
+  if (/windows/i.test(ua)) os = "Windows";
+  else if (/android/i.test(ua)) os = "Android";
+  else if (/iphone|ipad|ios/i.test(ua)) os = "iPhone/iPad";
+  else if (/mac os|macintosh/i.test(ua)) os = "Mac";
+  else if (/linux/i.test(ua)) os = "Linux";
+  let br = "";
+  if (/edg\//i.test(ua)) br = "Edge";
+  else if (/chrome/i.test(ua)) br = "Chrome";
+  else if (/firefox/i.test(ua)) br = "Firefox";
+  else if (/safari/i.test(ua)) br = "Safari";
+  else if (/python|curl|postman/i.test(ua)) br = "API Client";
+  const s = [br, os].filter(Boolean).join(" · ");
+  return s || ua.slice(0, 30);
+}
+
+function SessionsTab() {
+  const { user: me } = useAuth();
+  const isSuperAdmin = !!me?.is_super_admin;
+  const [sessions, setSessions] = useState([]);
+  const [sessLoading, setSessLoading] = useState(false);
+  const [logs, setLogs] = useState([]);
+  const [logsTotal, setLogsTotal] = useState(0);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
+  const [fUser, setFUser] = useState("");
+  const [fStatus, setFStatus] = useState("all");
+  const [revokeTarget, setRevokeTarget] = useState(null);
+  const [revoking, setRevoking] = useState(false);
+
+  const loadSessions = useCallback(async () => {
+    setSessLoading(true);
+    try { const { data } = await api.get("/admin/active-sessions"); setSessions(data.items || []); }
+    catch (e) { /* silent */ }
+    finally { setSessLoading(false); }
+  }, []);
+  useEffect(() => { loadSessions(); const t = setInterval(loadSessions, 30000); return () => clearInterval(t); }, [loadSessions]);
+
+  const loadLogs = useCallback(async () => {
+    setLogsLoading(true);
+    try {
+      const params = { page, page_size: pageSize };
+      if (fUser.trim()) params.username = fUser.trim();
+      if (fStatus === "ok") params.success = true;
+      if (fStatus === "fail") params.success = false;
+      const { data } = await api.get("/admin/login-logs", { params });
+      setLogs(data.items || []); setLogsTotal(data.total || 0);
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal memuat login log"); }
+    finally { setLogsLoading(false); }
+  }, [page, fUser, fStatus]);
+  useEffect(() => { loadLogs(); }, [loadLogs]);
+
+  const doRevoke = async () => {
+    if (!revokeTarget) return;
+    setRevoking(true);
+    try {
+      const { data } = await api.post(`/admin/sessions/${revokeTarget.id}/revoke`);
+      toast.success(data.message || "Sesi diakhiri");
+      setRevokeTarget(null);
+      await loadSessions();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal mengakhiri sesi"); }
+    finally { setRevoking(false); }
+  };
+
+  const totalPages = Math.max(1, Math.ceil(logsTotal / pageSize));
+
+  return (
+    <div className="space-y-5" data-testid="sessions-tab">
+      {/* ---- Sesi Aktif ---- */}
+      <Card className="rounded-none border-slate-200">
+        <div className="p-3 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500 flex items-center gap-1.5">
+              <Desktop size={14} weight="bold" /> Sesi Aktif
+            </div>
+            <div className="text-[11px] text-slate-500 mt-0.5">Siapa yang sedang login (8 jam terakhir). <span className="text-emerald-600 font-semibold">Online</span> = aktivitas ≤ 5 menit terakhir.</div>
+          </div>
+          <Button data-testid="sessions-refresh" variant="outline" onClick={loadSessions} className="rounded-none text-xs h-8">Refresh</Button>
+        </div>
+        <div className="overflow-x-auto">
+          {sessLoading && sessions.length === 0 ? (
+            <div className="p-6 text-center text-sm text-slate-400">Memuat…</div>
+          ) : sessions.length === 0 ? (
+            <div className="p-6 text-center text-sm text-slate-400">Tidak ada sesi aktif.</div>
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  {["Status", "User", "Role", "Login", "Aktivitas Terakhir", "IP", "Perangkat", ""].map((h) => (
+                    <th key={h} className="p-2 text-left uppercase text-[10px] tracking-[0.08em] text-slate-500 font-semibold">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sessions.map((s) => (
+                  <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50" data-testid={`session-row-${s.username}`}>
+                    <td className="p-2">
+                      {s.online ? (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" /> Online</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold uppercase bg-slate-50 text-slate-500 border border-slate-200"><span className="w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" /> Idle</span>
+                      )}
+                    </td>
+                    <td className="p-2 font-semibold text-slate-800">{s.name || s.username}<div className="text-[10px] font-normal text-slate-400">{s.username}</div></td>
+                    <td className="p-2 text-slate-600 uppercase text-[10px] font-semibold">{s.role}</td>
+                    <td className="p-2 text-slate-600 tabular-nums">{fmtDT(s.login_at)}</td>
+                    <td className="p-2 text-slate-600 tabular-nums">{fmtDT(s.last_seen)}</td>
+                    <td className="p-2 text-slate-600 font-mono text-[11px]">{s.ip || "-"}</td>
+                    <td className="p-2 text-slate-600">{parseDevice(s.user_agent)}</td>
+                    <td className="p-2 text-right">
+                      {isSuperAdmin && (
+                        <Button data-testid={`revoke-session-${s.username}`} variant="outline" onClick={() => setRevokeTarget(s)}
+                          className="rounded-none h-7 text-[11px] border-red-300 text-red-700 hover:bg-red-50 px-2">
+                          <Prohibit size={12} weight="bold" className="mr-1" /> Akhiri Sesi
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </Card>
+
+      {/* ---- Login Log ---- */}
+      <Card className="rounded-none border-slate-200">
+        <div className="p-3 border-b border-slate-200 flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <div className="text-xs uppercase tracking-[0.15em] font-bold text-slate-500 flex items-center gap-1.5">
+              <SignIn size={14} weight="bold" /> Riwayat Login
+            </div>
+            <div className="text-[11px] text-slate-500 mt-0.5">Semua percobaan login (sukses & gagal) dengan IP + perangkat. Total: <b className="tabular-nums">{logsTotal}</b></div>
+          </div>
+          <div className="flex items-end gap-2">
+            <div>
+              <Label className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Username</Label>
+              <Input data-testid="loginlog-filter-user" value={fUser} onChange={(e) => { setFUser(e.target.value); setPage(1); }} placeholder="Cari user…" className="h-8 rounded-none w-44 text-sm" />
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Status</Label>
+              <Select value={fStatus} onValueChange={(v) => { setFStatus(v); setPage(1); }}>
+                <SelectTrigger data-testid="loginlog-filter-status" className="h-8 rounded-none w-32 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent className="rounded-none">
+                  <SelectItem value="all">Semua</SelectItem>
+                  <SelectItem value="ok">Sukses</SelectItem>
+                  <SelectItem value="fail">Gagal</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          {logsLoading ? (
+            <div className="p-6 text-center text-sm text-slate-400">Memuat…</div>
+          ) : logs.length === 0 ? (
+            <div className="p-6 text-center text-sm text-slate-400">Belum ada riwayat login.</div>
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  {["Waktu", "User", "Status", "IP", "Perangkat"].map((h) => (
+                    <th key={h} className="p-2 text-left uppercase text-[10px] tracking-[0.08em] text-slate-500 font-semibold">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((l) => (
+                  <tr key={l.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="p-2 text-slate-600 tabular-nums whitespace-nowrap">{fmtDT(l.ts)}</td>
+                    <td className="p-2 font-semibold text-slate-800">{l.name || l.username}<span className="ml-1 text-[10px] font-normal text-slate-400">{l.username}</span></td>
+                    <td className="p-2">
+                      {l.success ? (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200"><CheckCircle size={11} weight="fill" /> Sukses</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold uppercase bg-red-50 text-red-700 border border-red-200"><XCircle size={11} weight="fill" /> Gagal</span>
+                      )}
+                    </td>
+                    <td className="p-2 text-slate-600 font-mono text-[11px]">{l.ip || "-"}</td>
+                    <td className="p-2 text-slate-600">{parseDevice(l.user_agent)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        {totalPages > 1 && (
+          <div className="p-2 border-t border-slate-200 flex items-center justify-between text-xs">
+            <span className="text-slate-500">Halaman {page} / {totalPages}</span>
+            <div className="flex gap-1">
+              <Button variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="rounded-none h-7 text-[11px] px-2">Sebelumnya</Button>
+              <Button variant="outline" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} className="rounded-none h-7 text-[11px] px-2">Berikutnya</Button>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Revoke confirm dialog */}
+      <Dialog open={!!revokeTarget} onOpenChange={(o) => !o && setRevokeTarget(null)}>
+        <DialogContent className="rounded-none max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-700"><Prohibit size={20} weight="fill" /> Akhiri Sesi</DialogTitle>
+            <DialogDescription>
+              Sesi <b>{revokeTarget?.name || revokeTarget?.username}</b> ({revokeTarget?.ip}) akan diakhiri paksa. User harus login ulang untuk melanjutkan.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRevokeTarget(null)} disabled={revoking} className="rounded-none">Batal</Button>
+            <Button data-testid="revoke-session-confirm" onClick={doRevoke} disabled={revoking} className="rounded-none bg-red-600 hover:bg-red-700 text-white">
+              {revoking ? "Mengakhiri…" : "Ya, Akhiri Sesi"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

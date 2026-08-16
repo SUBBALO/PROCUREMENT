@@ -98,3 +98,78 @@ async def trash_summary() -> Dict[str, int]:
         if n:
             out[coll] = n
     return out
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Snapshot-based trash (Feb 2026) — untuk koleksi yang query bacanya banyak
+# dan belum memakai NOT_DELETED_FILTER (mis. modul Produksi). Saat delete,
+# dokumen DIPINDAH ke `trash_snapshots` lalu dihapus dari koleksi sumber,
+# sehingga tidak ada risiko dokumen terhapus masih muncul di laporan.
+# ═══════════════════════════════════════════════════════════════════════════
+SNAPSHOT_COLLECTIONS: List[str] = [
+    "production_reports", "fg_release_notes", "production_overtime",
+]
+TRASH_SNAPSHOT_COLL = "trash_snapshots"
+
+
+async def snapshot_delete(collection: str, doc: dict, current: dict) -> bool:
+    """Move a document into trash_snapshots then hard-delete the original."""
+    if not doc or not doc.get("id"):
+        return False
+    clean = {k: v for k, v in doc.items() if k != "_id"}
+    await db[TRASH_SNAPSHOT_COLL].insert_one({
+        "id": clean.get("id"),
+        "collection": collection,
+        "doc": clean,
+        "deleted_at": datetime.now(timezone.utc).isoformat(),
+        "deleted_by": current.get("id"),
+        "deleted_by_name": current.get("name") or current.get("full_name") or current.get("username"),
+    })
+    res = await db[collection].delete_one({"id": clean.get("id")})
+    return res.deleted_count > 0
+
+
+async def snapshot_restore(collection: str, ids: List[str]) -> int:
+    """Re-insert snapshotted docs back into their source collection."""
+    restored = 0
+    snaps = await db[TRASH_SNAPSHOT_COLL].find(
+        {"collection": collection, "id": {"$in": ids}}
+    ).to_list(length=len(ids))
+    for s in snaps:
+        doc = s.get("doc") or {}
+        if not doc.get("id"):
+            continue
+        exists = await db[collection].find_one({"id": doc["id"]})
+        if not exists:
+            await db[collection].insert_one(dict(doc))
+        await db[TRASH_SNAPSHOT_COLL].delete_one({"collection": collection, "id": doc["id"]})
+        restored += 1
+    return restored
+
+
+async def snapshot_purge(collection: str, ids: List[str]) -> int:
+    res = await db[TRASH_SNAPSHOT_COLL].delete_many({"collection": collection, "id": {"$in": ids}})
+    return res.deleted_count
+
+
+async def snapshot_summary() -> Dict[str, int]:
+    out: Dict[str, int] = {}
+    agg = await db[TRASH_SNAPSHOT_COLL].aggregate([
+        {"$group": {"_id": "$collection", "n": {"$sum": 1}}},
+    ]).to_list(length=100)
+    for row in agg:
+        out[row["_id"]] = row["n"]
+    return out
+
+
+async def snapshot_purge_expired(days: int = AUTO_PURGE_DAYS) -> Dict[str, int]:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    report: Dict[str, int] = {}
+    agg = await db[TRASH_SNAPSHOT_COLL].aggregate([
+        {"$match": {"deleted_at": {"$lte": cutoff}}},
+        {"$group": {"_id": "$collection", "n": {"$sum": 1}}},
+    ]).to_list(length=100)
+    for row in agg:
+        report[row["_id"]] = row["n"]
+    await db[TRASH_SNAPSHOT_COLL].delete_many({"deleted_at": {"$lte": cutoff}})
+    return report

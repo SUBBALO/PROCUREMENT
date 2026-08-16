@@ -151,6 +151,16 @@ async def get_current_user(request: Request) -> dict:
             raise HTTPException(status_code=401, detail="User not found")
         if user.get("active") is False:
             raise HTTPException(status_code=403, detail="Akun user dinonaktifkan")
+        # Session tracking (Feb 2026): token baru membawa `sid`. Update last_seen
+        # + tolak kalau sesi sudah di-revoke admin. Token lama tanpa sid tetap valid.
+        sid = payload.get("sid")
+        if sid:
+            sess = await db.active_sessions.find_one_and_update(
+                {"id": sid},
+                {"$set": {"last_seen": _now_iso()}},
+            )
+            if sess and sess.get("revoked"):
+                raise HTTPException(status_code=401, detail="Sesi Anda telah diakhiri oleh admin. Silakan login ulang.")
         user.pop("password_hash", None)
         user.pop("_id", None)
         return user
