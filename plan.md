@@ -327,9 +327,9 @@ Governing request: user mengunci backlog final dan meminta coding sesuai urutan 
 ### Backlog (Confirmed by user)
 - **Tahap 1 (fondasi)**: Audit Trail → Login Log & Sesi Aktif → Recycle Bin (**Status: COMPLETED**)
 - **Tahap 2 (akses & navigasi)**: Manajemen Hak Akses Detail (per user per menu) → Pencarian Global di header (**Status: COMPLETED / ALREADY EXISTED**)
-- **Tahap 3 (engineering/doccon)**: Reminder Drawing Belum Release → Revisi Drawing Berantai (notif ke Produksi “pakai revisi terbaru”) (**Status: NOT STARTED — NEXT**) 
-- **Tahap 4 (QC)**: Masterlist Alat Ukur + input sertifikat kalibrasi pihak ke-3 + reminder H-30 & overdue merah (**Status: NOT STARTED**)
-- **Tahap 5 (produksi)**: Peminjaman Alat/Tools (inventory alat + status pinjam/kembali/hilang) (**Status: NOT STARTED**)
+- **Tahap 3 (engineering/doccon)**: Reminder Drawing Belum Release → Revisi Drawing Berantai (notif ke Produksi “pakai revisi terbaru”) (**Status: NOT STARTED — NEXT**)
+- **Tahap 4 (QC)**: Masterlist Alat Ukur + input sertifikat kalibrasi pihak ke-3 + reminder H-30 & overdue merah (**Status: COMPLETED**)
+- **Tahap 5 (produksi)**: Peminjaman Alat/Tools (inventory alat + status pinjam/kembali/hilang) (**Status: COMPLETED**)
 - **Tahap 6 (data)**: Backup & Restore database (**Status: NEEDS CONFIRMATION**; full backup code+data already exists in Phase 5)
 
 > Catatan konsistensi: sistem sudah punya Full Backup/Restore (code+data) (Phase 5). Tahap 6 hanya dikerjakan bila user butuh versi **data-only** yang lebih operasional (retensi/scheduling/collection selection/anonymize).
@@ -436,7 +436,7 @@ Revised approach (align dengan sistem sekarang):
 
 Implementation steps (planned):
 - Backend:
-  - Endpoint “watchlist” (mis. `/doc-control/drawing-release-watchlist`) atau integrasi ke notifications scheduler.
+  - Endpoint “watchlist” (mis. `/doc-control/drawing-release-watchlist`) atau integrasi ke notifications.
   - Notification category baru: `drawing_not_released`.
 - Frontend:
   - Card/Badge di portal DocCon/Engineering.
@@ -461,51 +461,100 @@ Acceptance:
 
 ---
 
-### Phase 16.4 — Tahap 4 (QC) — Masterlist Alat Ukur + Kalibrasi (Status: NOT STARTED)
+### Phase 16.4 — Tahap 4 (QC) — Masterlist Alat Ukur + Kalibrasi (Status: COMPLETED)
 **Goal**: masterlist alat ukur produksi/QC + input sertifikat kalibrasi pihak ketiga + reminder.
 
-Revised scope (confirmed by user):
-- Masterlist alat ukur yang ada di Produksi.
-- Input hasil sertifikat kalibrasi dari 3rd party:
-  - vendor, tanggal kalibrasi, tanggal jatuh tempo
-  - upload file sertifikat (PDF/JPG)
-- Reminder:
-  - H-30 (configurable)
-  - overdue merah
-
-Implementation steps (planned):
-- Backend collections:
+**Backend (implemented)**
+- File: `/app/backend/routers/tools.py` (router terdaftar di `backend/server.py`).
+- Collections:
   - `measurement_tools`
-  - `tool_calibrations` (history per tool)
-  - Storage: GridFS bucket `calibration_certificates` (atau reuse `storage.py` bila cocok)
+  - `tool_calibrations`
+- Storage sertifikat: GridFS bucket `calibration_certs`.
 - Endpoints:
-  - CRUD master tool
-  - CRUD kalibrasi + upload/download sertifikat
-  - endpoint reminder (due_soon/overdue)
-- Frontend:
-  - Page QC/Produksi (final placement menunggu user): masterlist + status kolom (OK/Warning/Overdue)
-  - Dialog upload sertifikat + preview
+  - CRUD master alat ukur:
+    - `GET/POST/PUT/DELETE /qc/measuring-tools`
+  - Kalibrasi per alat:
+    - `GET /qc/measuring-tools/{tool_id}/calibrations`
+    - `POST /qc/measuring-tools/{tool_id}/calibrations` (multipart: vendor, cal_date, due_date, optional file PDF/PNG/JPG/WebP max 10MB; validasi due_date >= cal_date)
+    - `DELETE /qc/calibrations/{cal_id}` (refresh ringkasan di master)
+  - Sertifikat:
+    - `GET /qc/calibrations/cert/{file_id}` (stream inline)
+  - Reminder:
+    - `GET /qc/measuring-tools-reminders` (due_soon + overdue)
+- Status otomatis di list:
+  - `never / ok / due_soon (H-30) / overdue` + `days_left`.
+- Akses: QC + Produksi + admin-like (Sales 403, teruji).
+- Indexes (startup server): `measurement_tools.tool_code`, `tool_calibrations.tool_id`.
 
-Acceptance:
-- Tool bisa dibuat + kalibrasi dicatat + reminder muncul.
+**Notifikasi (implemented)**
+- `routers/notifications.py`: kategori baru `tool_calibration_due` untuk role `qc/produksi/admin-like`.
+  - Severity `danger` bila ada `overdue`.
+  - Link menuju `/qc/measuring-tools`.
+
+**Frontend (implemented)**
+- Page: `/app/frontend/src/pages/QcMeasuringToolsPage.jsx` route `/qc/measuring-tools`.
+  - Filter chips: Semua/OK/H-30/Overdue/Belum Kalibrasi.
+  - Search.
+  - Dialog tambah/edit alat.
+  - Dialog kalibrasi: input kalibrasi + upload sertifikat + list riwayat + tombol lihat sertifikat.
+- QC Portal card: “Kalibrasi Alat Ukur” (`QCPortalPage.jsx`) dengan badge `useNotifCount("tool_calibration_due")`.
+
+**Verification**
+- Smoke test backend 100%:
+  - Sales 403.
+  - due_soon/overdue benar.
+  - upload+download sertifikat OK.
+  - validasi due<cal return 400.
+  - notif count sesuai.
+- Screenshot: halaman alat ukur + QC portal badge OK.
+- Cleanup: demo data & user tes bersih (0 sisa).
 
 ---
 
-### Phase 16.5 — Tahap 5 (Produksi) — Peminjaman Alat/Tools (Status: NOT STARTED)
+### Phase 16.5 — Tahap 5 (Produksi) — Peminjaman Alat/Tools (Status: COMPLETED)
 **Goal**: inventory alat produksi + kontrol pinjam/kembali/hilang (cek status alat & siapa pemegang).
 
-Implementation steps (planned):
-- Reuse sebagian model dari masterlist alat ukur (atau collection baru `production_tools`).
-- Transaksi:
-  - `tool_borrowings`: siapa pinjam, tgl pinjam, estimasi kembali, kondisi, lokasi/keperluan
-  - pengembalian: tgl kembali, kondisi kembali
-  - status: available/borrowed/missing/maintenance
-- UI:
-  - dashboard inventory alat: filter status, quick search
-  - action cepat: Pinjam / Kembalikan / Tandai Hilang
+**Backend (implemented)**
+- File: `/app/backend/routers/tools.py`.
+- Collections:
+  - `production_tools`
+  - `tool_loans`
+- Endpoints:
+  - CRUD inventory:
+    - `GET/POST/PUT/DELETE /production/tools`
+    - Delete diblok bila alat sedang dipinjam.
+  - Workflow:
+    - `POST /production/tools/{tool_id}/borrow` (tolak double-borrow; tolak borrow jika status missing)
+    - `POST /production/tools/{tool_id}/return` (kondisi rusak → status `maintenance`)
+    - `POST /production/tools/{tool_id}/missing` (set status missing; loan aktif jadi missing)
+    - `POST /production/tools/{tool_id}/found` (missing/maintenance → available)
+  - Riwayat:
+    - `GET /production/tools/{tool_id}/history`
+  - Opsi peminjam:
+    - `GET /production/tools-borrowers` (nama dari `production_employees` aktif)
+- Indexes (startup server): `production_tools.tool_code`, `production_tools.status`, `tool_loans.tool_id`, `tool_loans.status`.
 
-Acceptance:
-- Admin/Produksi bisa melacak alat yang sedang dipinjam dan siapa pemegangnya.
+**Frontend (implemented)**
+- Page: `/app/frontend/src/pages/ProductionToolsPage.jsx` route `/produksi/tools`.
+  - Filter chips: Semua/Tersedia/Dipinjam/Hilang/Rusak-Servis.
+  - Search.
+  - Aksi kontekstual:
+    - Tersedia → Pinjam
+    - Dipinjam → Kembalikan / Hilang
+    - Hilang/Servis → Ditemukan / Selesai Servis
+    - Riwayat/Edit/Hapus selalu tersedia
+  - Dialog Pinjam memakai datalist opsi karyawan produksi.
+  - Dialog Kembalikan (baik/rusak), Dialog Hilang, Dialog Riwayat.
+- Production Portal card ditambahkan: “Peminjaman Alat / Tools” (grup SO & Master).
+
+**Verification**
+- Smoke test backend 100%:
+  - double-borrow 400.
+  - delete saat borrowed 400.
+  - return rusak → maintenance.
+  - missing + history OK.
+- Screenshot: halaman tools produksi OK.
+- Cleanup: demo data & user tes bersih (0 sisa).
 
 ---
 
@@ -534,4 +583,5 @@ If user still needs Tahap 6:
   5) `Temp Transactions polish (compact table + autogrow + SO customer + export excel + portal card)`
   6) `QC move: Release Notes approval workflow moved to QC portal (backend+frontend+notifications)`
   7) `Tahap 1 fondasi (login logs + active sessions + snapshot recycle bin produksi + update_job_progress fix)`
+  8) `Tahap 4-5 tools (measuring tools calibration + production tool lending + notifications + pages)`
 - Reminder: GitHub hanya backup **kode**; untuk **data** gunakan Full Backup (tar.gz) dan/atau Tahap 6 data-only backup bila sudah dibuat.

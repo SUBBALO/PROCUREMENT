@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
 import api from "../lib/api";
-import { ClipboardText, Stamp, SealCheck, WarningCircle } from "@phosphor-icons/react";
+import { ClipboardText, Stamp, SealCheck, WarningCircle, Ruler } from "@phosphor-icons/react";
 import { useNotifCount } from "../lib/useNotifCount";
 export default function QCPortalPage() {
   const pendingDrawings = useNotifCount("drawing_pending_approval");
   const pendingReleaseNotes = useNotifCount("frn_pending_qc");
+  const calibrationDue = useNotifCount("tool_calibration_due");
   const [pendingEcn, setPendingEcn] = useState(0);
 
   useEffect(() => {
@@ -48,6 +49,18 @@ export default function QCPortalPage() {
       href: "/qc/mii",
       accent: "from-violet-500 via-purple-500 to-fuchsia-500",
       accentText: "text-violet-400",
+    },
+    {
+      key: "measuring-tools",
+      label: "Kalibrasi Alat Ukur",
+      stats: "Masterlist · Sertifikat · Reminder H-30",
+      description:
+        "Masterlist alat ukur di produksi + input hasil kalibrasi pihak ke-3 (upload sertifikat PDF/JPG). Alat yang mendekati jatuh tempo (H-30) atau overdue otomatis muncul peringatan.",
+      icon: Ruler,
+      href: "/qc/measuring-tools",
+      accent: "from-violet-500 via-purple-500 to-fuchsia-500",
+      accentText: "text-violet-400",
+      badgeCount: calibrationDue,
     },
   ];
 

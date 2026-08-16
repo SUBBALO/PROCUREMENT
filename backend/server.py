@@ -98,6 +98,10 @@ api_router.include_router(nonconformance_router.router)
 from routers import production as production_router  # noqa: E402
 api_router.include_router(production_router.router)
 
+# Alat Ukur (kalibrasi) + Tools Produksi (peminjaman)
+from routers import tools as tools_router  # noqa: E402
+api_router.include_router(tools_router.router)
+
 
 @api_router.get("/")
 async def root():
@@ -391,6 +395,12 @@ async def startup():
         await db.active_sessions.create_index("user_id")
         await db.trash_snapshots.create_index("collection")
         await db.trash_snapshots.create_index("deleted_at")
+        await db.measurement_tools.create_index("tool_code")
+        await db.tool_calibrations.create_index("tool_id")
+        await db.production_tools.create_index("tool_code")
+        await db.production_tools.create_index("status")
+        await db.tool_loans.create_index("tool_id")
+        await db.tool_loans.create_index("status")
     except Exception as e:
         logger.warning(f"session/trash index skip: {e}")
     await db.store_receipts.create_index("item_name")

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import DeptPortal from "../components/DeptPortal";
 import ProductionJobProgressPage from "./ProductionJobProgressPage";
 import api from "../lib/api";
-import { Signature, FileText, Factory, WarningCircle, ClipboardText, Notebook, Gauge, Package, CalendarX, UsersThree, Clock, ChartBar, CheckCircle, ArrowRight, CalendarCheck } from "@phosphor-icons/react";
+import { Signature, FileText, Factory, WarningCircle, ClipboardText, Notebook, Gauge, Package, CalendarX, UsersThree, Clock, ChartBar, CheckCircle, ArrowRight, CalendarCheck, Toolbox } from "@phosphor-icons/react";
 
 export default function ProductionPortalPage() {
   const [pendingTtd, setPendingTtd] = useState(0);
@@ -97,6 +97,17 @@ export default function ProductionPortalPage() {
       accentText: "text-rose-400",
     },
     {
+      key: "tools",
+      label: "Peminjaman Alat / Tools",
+      stats: "Inventory · Pinjam/Kembali · Alat hilang",
+      description:
+        "Inventory alat produksi: siapa pinjam alat apa, kapan dikembalikan, dan alat hilang langsung ketahuan. Cek status & pemegang alat kapan saja.",
+      icon: Toolbox,
+      href: "/produksi/tools",
+      accent: "from-amber-500 via-orange-500 to-rose-500",
+      accentText: "text-amber-400",
+    },
+    {
       key: "new-so",
       label: "SO Masuk (Baru)",
       stats: "Sales Order baru · siapkan produksi",
@@ -143,6 +154,7 @@ export default function ProductionPortalPage() {
     "attendance": "harian",
     "new-so": "so",
     "holidays": "so",
+    "tools": "so",
     "ecn-ttd": "drawing",
     "controlled": "drawing",
   };

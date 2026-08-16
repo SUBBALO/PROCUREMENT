@@ -1,30 +1,30 @@
 [
   {
-    "content": "Explore backend structure (server.py, auth.py, deps.py, admin routers)",
+    "content": "Explore pola integrasi (notifications, portal, App.js)",
     "status": "completed"
   },
   {
-    "content": "Backend: audit trail — sudah ada (activity_logs + log_action + tab Log Aktivitas); coverage produksi OK",
+    "content": "Backend: masterlist alat ukur + kalibrasi + upload sertifikat GridFS + reminder H-30/overdue",
     "status": "completed"
   },
   {
-    "content": "Backend: login_logs + active sessions + revoke + admin endpoints",
+    "content": "Backend: inventory tools produksi + pinjam/kembali/hilang/ditemukan + riwayat",
     "status": "completed"
   },
   {
-    "content": "Backend: Recycle Bin snapshot untuk modul Produksi (laporan, FGRN, lembur)",
+    "content": "Backend: notifikasi kalibrasi due/overdue (QC/Produksi/Admin)",
     "status": "completed"
   },
   {
-    "content": "Frontend: tab Sesi & Login + label trash Produksi di AdminPage",
+    "content": "Frontend: QcMeasuringToolsPage + card QC portal dengan badge",
     "status": "completed"
   },
   {
-    "content": "Compile check + smoke test + screenshot + cleanup data tes",
+    "content": "Frontend: ProductionToolsPage + card portal Produksi",
     "status": "completed"
   },
   {
-    "content": "Bonus bugfix: duplikasi fungsi update_job_progress (PIC/remarks tidak tersimpan)",
+    "content": "Routes + compile + smoke test 100% + screenshot 3 halaman + cleanup 0 sisa",
     "status": "completed"
   }
 ]

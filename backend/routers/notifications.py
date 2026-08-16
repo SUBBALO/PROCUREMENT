@@ -805,6 +805,42 @@ async def _gather_notifications(user: dict) -> dict:
     except Exception:
         pass
 
+    # ------------- (QC/Produksi) Kalibrasi Alat Ukur — H-30 & Overdue -------------
+    try:
+        if role in ("qc", "produksi", "production") or admin_like:
+            mtools = await db.measurement_tools.find({}, {"_id": 0}).to_list(length=1000)
+            from routers.tools import _serialize_mtool
+            due_items, overdue_any = [], False
+            for t in mtools:
+                s = _serialize_mtool(t)
+                if s["cal_status"] in ("due_soon", "overdue"):
+                    is_over = s["cal_status"] == "overdue"
+                    overdue_any = overdue_any or is_over
+                    dl = s.get("days_left")
+                    sub = (f"TERLAMBAT {abs(dl)} hari" if (is_over and dl is not None)
+                           else (f"Jatuh tempo {dl} hari lagi" if dl is not None else ""))
+                    due_items.append({
+                        "id": s["id"],
+                        "title": ("OVERDUE · " if is_over else "") + f"{s['tool_code']} {s['name']} perlu kalibrasi",
+                        "detail": f"Jatuh tempo: {s['due_date']} · Vendor terakhir: {s['last_cal_vendor'] or '-'}",
+                        "sub": sub + (f" · Lokasi: {s['location']}" if s.get("location") else ""),
+                        "link": "/qc/measuring-tools",
+                        "kind": "tool_calibration_due",
+                        "overdue": is_over,
+                        "created_at": s.get("due_date"),
+                    })
+            if due_items:
+                due_items.sort(key=lambda x: (not x.get("overdue"), x.get("created_at") or ""))
+                categories.append({
+                    "key": "tool_calibration_due",
+                    "label": "Alat Ukur Perlu Kalibrasi" + (" (ada OVERDUE)" if overdue_any else " (H-30)"),
+                    "count": len(due_items),
+                    "severity": "danger" if overdue_any else "warn",
+                    "items": due_items[:20],
+                })
+    except Exception:
+        pass
+
     total_count = sum(c["count"] for c in categories)
     return {
         "role": role,

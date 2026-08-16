@@ -47,6 +47,8 @@ import CustomerMasterPage from "./pages/CustomerMasterPage";
 import QCPage from "./pages/QCPage";
 import QCPortalPage from "./pages/QCPortalPage";
 import QcReleaseNotesPage from "./pages/QcReleaseNotesPage";
+import QcMeasuringToolsPage from "./pages/QcMeasuringToolsPage";
+import ProductionToolsPage from "./pages/ProductionToolsPage";
 import EcnTtdQueuePage from "./pages/EcnTtdQueuePage";
 import ProductionPortalPage from "./pages/ProductionPortalPage";
 import ProductionNewSoPage from "./pages/ProductionNewSoPage";
@@ -237,6 +239,8 @@ function AppRoutes() {
       <Route path="/admin/form-templates/:id" element={<ProtectedRoute><FormTemplateEditorPage /></ProtectedRoute>} />
       <Route path="/qc" element={<ProtectedRoute><QCPortalPage /></ProtectedRoute>} />
       <Route path="/qc/release-notes" element={<ProtectedRoute><QcReleaseNotesPage /></ProtectedRoute>} />
+      <Route path="/qc/measuring-tools" element={<ProtectedRoute><QcMeasuringToolsPage /></ProtectedRoute>} />
+      <Route path="/produksi/tools" element={<ProtectedRoute><ProductionToolsPage /></ProtectedRoute>} />
       <Route path="/ecn-ttd" element={<ProtectedRoute><EcnTtdQueuePage /></ProtectedRoute>} />
       <Route path="/produksi" element={<ProtectedRoute><ProductionPortalPage /></ProtectedRoute>} />
       <Route path="/produksi/new-so" element={<ProtectedRoute><ProductionNewSoPage /></ProtectedRoute>} />
