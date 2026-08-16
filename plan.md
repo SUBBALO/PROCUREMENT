@@ -287,6 +287,11 @@ Catatan status UI terakhir:
 
 ---
 
+## Phase 15: Attendance sticky header fix + SO Progress/TV production reflect + Full Testing (Status: COMPLETED)
+- Fix: header Nama/Bagian di grid Absensi tetap menempel saat scroll (thead sticky top) — screenshot-verified.
+- SO Progress & TV: stage "Produksi" kini mencerminkan Daily Production Report (in_progress + hari kerja) & Finished Goods Release Note (progress X/Y pcs; done bila qty rilis >= qty SO). Dashboard & public/TV pakai data sama.
+- Comprehensive testing (Sales->Produksi) via testing agent: 90% overall, semua alur kritikal QC Release Note PASS. Tidak ada bug nyata (2 temuan minor = false negative & path BOM salah tebak). Temp users/data dibersihkan.
+
 ## Phase 14: Usability — Panel "Hari Ini" + Quick Wins Produksi (Status: COMPLETED)
 Tujuan: mempermudah akses harian agar user rajin pakai.
 - Backend (`production.py`): `GET /production/today-summary` (belum absen X/Y, laporan hari ini, Release Note ditolak QC) + `GET /production/present-operators?date=` (operator hadir, default hadir bila belum diabsen). Keduanya guard Produksi/Admin.

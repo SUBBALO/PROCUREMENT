@@ -177,12 +177,12 @@ export default function ProductionAttendancePage() {
       <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
         <div className="overflow-auto max-h-[72vh]">
           <table className="text-xs border-separate border-spacing-0" data-testid="attendance-month-table">
-            <thead>
+            <thead className="sticky top-0 z-40">
               <tr className="bg-slate-100 text-slate-600">
-                <th className="px-2 py-2 text-left font-bold border border-slate-200 sticky left-0 top-0 bg-slate-100 z-30 min-w-[160px] w-[160px]">Nama</th>
-                <th className="px-2 py-2 text-left font-bold border border-slate-200 sticky left-[160px] top-0 bg-slate-100 z-30 min-w-[90px] w-[90px]">Bagian</th>
+                <th className="px-2 py-2 text-left font-bold border border-slate-200 sticky left-0 bg-slate-100 z-50 min-w-[160px] w-[160px]">Nama</th>
+                <th className="px-2 py-2 text-left font-bold border border-slate-200 sticky left-[160px] bg-slate-100 z-50 min-w-[90px] w-[90px]">Bagian</th>
                 {grid.days.map((d) => { const dw = dowOf(d); const sun = dw === 0; const hol = !!holidays[d]; const red = sun || hol; return (
-                  <th key={d} data-testid={`att-day-head-${d.slice(8)}`} title={hol ? holidays[d] : (sun ? "Minggu" : "")} className={`px-1 py-1 text-center font-bold border border-slate-200 w-8 sticky top-0 z-20 ${red ? "bg-rose-100 border-l-2 border-l-rose-500 text-rose-600" : "bg-slate-100"}`}>
+                  <th key={d} data-testid={`att-day-head-${d.slice(8)}`} title={hol ? holidays[d] : (sun ? "Minggu" : "")} className={`px-1 py-1 text-center font-bold border border-slate-200 w-8 ${red ? "bg-rose-100 border-l-2 border-l-rose-500 text-rose-600" : "bg-slate-100"}`}>
                     <div className={`text-[8px] font-bold leading-none ${red ? "text-rose-500" : "text-slate-400"}`}>{DOW_ABBR[dw] || ""}</div>
                     <div className="leading-tight">{Number(d.slice(8))}</div>
                     {hol && <div className="text-[7px] font-bold text-rose-500 leading-none">L</div>}
@@ -198,8 +198,8 @@ export default function ProductionAttendancePage() {
               ) : (
                 grid.employees.map((e) => (
                   <tr key={e.id} data-testid={`att-emp-${e.id}`} className="group">
-                    <td className="px-2 py-1 font-semibold text-slate-800 border border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 z-10 min-w-[160px] w-[160px]">{e.name}</td>
-                    <td className="px-2 py-1 text-[10px] text-slate-500 border border-slate-200 sticky left-[160px] bg-white group-hover:bg-slate-50 z-10 min-w-[90px] w-[90px]">{e.designation || "—"}</td>
+                    <td className="px-2 py-1 font-semibold text-slate-800 border border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 z-20 min-w-[160px] w-[160px]">{e.name}</td>
+                    <td className="px-2 py-1 text-[10px] text-slate-500 border border-slate-200 sticky left-[160px] bg-white group-hover:bg-slate-50 z-20 min-w-[90px] w-[90px]">{e.designation || "—"}</td>
                     {grid.days.map((d) => {
                       const st = (grid.records[e.id] || {})[d];
                       const sun = dowOf(d) === 0;

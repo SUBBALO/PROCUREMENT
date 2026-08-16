@@ -1,26 +1,26 @@
 [
   {
-    "content": "Backend: restrict FGRN release/reject to QC, add signature/comment/ready_for_delivery, adjust pending-qc access, update serializer",
+    "content": "Fix attendance sticky header (Nama/Bagian) — thead sticky",
     "status": "completed"
   },
   {
-    "content": "Backend: add QC (pending release note) + Store (ready for delivery) notification categories",
+    "content": "SO Progress + TV: reflect Daily Production Reports & Release Notes in Produksi stage",
     "status": "completed"
   },
   {
-    "content": "Frontend: create QcReleaseNotesPage (QC portal) with review dialog + signature upload",
+    "content": "Provision temp test users per role for testing agent",
     "status": "completed"
   },
   {
-    "content": "Frontend: add QC portal card + badge; add route; remove Production QC route/import",
+    "content": "Run comprehensive testing agent (Sales -> Produksi)",
     "status": "completed"
   },
   {
-    "content": "Frontend: remove Production QC card + qcPending fetch; make ProductionFrnPage status read-only",
+    "content": "Fix bugs reported by testing agent (none real; verified)",
     "status": "completed"
   },
   {
-    "content": "Compile checks (esbuild + python), API workflow smoke test",
+    "content": "Cleanup temp test users/data + tester temp file",
     "status": "completed"
   }
 ]

@@ -220,6 +220,8 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
     deliveries = await db.deliveries.find({"so_no": {"$in": so_nos}}, {"_id": 0, "so_no": 1, "delivery_date": 1}).to_list(length=5000)
     issuances = await db.store_issuances.find({"so_no": {"$in": so_nos}}, {"_id": 0, "so_no": 1, "issue_date": 1, "created_at": 1}).to_list(length=5000)
     qc_insp = await db.qc_inspections.find({"so_no": {"$in": so_nos}, "deleted_at": {"$exists": False}}, {"_id": 0, "so_no": 1, "status": 1, "inspected_at": 1, "created_at": 1}).to_list(length=5000)
+    prod_reports = await db.production_reports.find({"so_no": {"$in": so_nos}}, {"_id": 0, "so_no": 1, "report_date": 1, "created_at": 1}).to_list(length=50000)
+    frns = await db.fg_release_notes.find({"so_no": {"$in": so_nos}}, {"_id": 0, "so_no": 1, "qty": 1, "status": 1, "frn_date": 1}).to_list(length=50000)
 
     def group(rows, key):
         g = {}
@@ -232,6 +234,32 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
     iss_by = group(issuances, "so_no")
     qc_by = group(qc_insp, "so_no")
     drf_by = group(drfs, "so_no")
+    prod_by = group(prod_reports, "so_no")
+    frn_by = group(frns, "so_no")
+
+    def _num(v):
+        try:
+            return float(v or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _so_qty_total(sn):
+        s = so_map.get(sn) or {}
+        t = sum(_num(it.get("qty")) for it in (s.get("items") or []))
+        if t == 0:
+            t = _num(s.get("qty"))
+        return t
+
+    def _prod_metrics(sn):
+        reports = prod_by.get(sn, [])
+        frns_so = [f for f in frn_by.get(sn, []) if (f.get("status") or "released") != "rejected"]
+        released_qty = sum(_num(f.get("qty")) for f in frns_so if (f.get("status") or "released") == "released")
+        so_qty = _so_qty_total(sn)
+        work_days = len({(r.get("report_date") or "")[:10] for r in reports if r.get("report_date")})
+        dates = [((r.get("report_date") or r.get("created_at") or "")[:10]) for r in reports]
+        dates += [((f.get("frn_date") or "")[:10]) for f in frns_so]
+        last_act = max([d for d in dates if d], default="")
+        return reports, frns_so, released_qty, so_qty, work_days, last_act
 
     APPROVED = {"approved", "controlled", "released"}
     DC_DONE = {"controlled", "released"}
@@ -264,11 +292,25 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
         else:
             st_doccon = _stage("pending")
 
-        # 3) Produksi — material sudah di-issue dari Store (indikasi produksi berjalan)
+        # 3) Produksi — refleksi aktivitas produksi nyata:
+        #    - ada Daily Production Report (produksi mulai/berjalan)
+        #    - ada Finished Goods Release Note (barang jadi dirilis)
+        #    - material di-issue dari Store (indikasi tambahan)
+        #    Selesai bila total qty RELEASE (lolos QC) >= qty SO.
         isss = iss_by.get(sono, [])
-        if isss:
-            _idate = isss[0].get("issue_date") or isss[0].get("created_at") or ""
-            st_prod = _stage("done", _idate)
+        _reports, _frns_so, _released_qty, _so_qty, _work_days, _last_act = _prod_metrics(sono)
+        _prod_active = bool(_reports or _frns_so or isss)
+        if _last_act == "" and isss:
+            _last_act = isss[0].get("issue_date") or isss[0].get("created_at") or ""
+        if _so_qty > 0 and _released_qty >= _so_qty:
+            st_prod = _stage("done", _last_act, extra={"progress": f"{_released_qty:g}/{_so_qty:g} pcs"})
+        elif _prod_active:
+            _ex = {}
+            if _so_qty > 0:
+                _ex["progress"] = f"{_released_qty:g}/{_so_qty:g} pcs"
+            elif _released_qty > 0:
+                _ex["progress"] = f"{_released_qty:g} pcs rilis"
+            st_prod = _stage("in_progress", _last_act, extra=_ex)
         else:
             st_prod = _stage("pending")
 
@@ -348,7 +390,14 @@ async def _compute_so_progress(q: str = "", limit: int = 60):
         elif current_stage == "DocCon":
             status_now, status_kind = f"Menunggu Stamp Document Control ({controlled}/{total})", "waiting"
         elif current_stage == "Produksi":
-            status_now, status_kind = "Menunggu / Proses Produksi", "pending"
+            if _released_qty > 0:
+                status_now = f"Release Note {_released_qty:g}" + (f"/{_so_qty:g}" if _so_qty > 0 else "") + " pcs (lolos QC)"
+                status_kind = "progress"
+            elif _reports:
+                status_now = f"Produksi berjalan — {_work_days} hari kerja"
+                status_kind = "progress"
+            else:
+                status_now, status_kind = "Menunggu / Proses Produksi", "pending"
         elif current_stage == "QC":
             status_now = "Inspeksi QC berjalan" if qcs else "Menunggu QC Final"
             status_kind = "progress" if qcs else "pending"
