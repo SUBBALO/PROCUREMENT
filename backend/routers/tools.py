@@ -630,3 +630,202 @@ async def tool_borrower_options(current: dict = Depends(get_current_user)):
         {"active": {"$ne": False}}, {"_id": 0, "name": 1}
     ).sort("name", 1).to_list(length=500)
     return {"names": [r.get("name") for r in rows if r.get("name")]}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 3) STOK OPNAME ALAT PRODUKSI — cek fisik berkala supaya alat hilang cepat ketahuan
+#    Pola sesi (seperti Stock Opname gudang): buat sesi (snapshot) → cek fisik
+#    per alat (Ada / Tidak Ada) → finalisasi (OPNAME-FINAL) → alat tidak ketemu
+#    otomatis HILANG, alat hilang yang ketemu otomatis TERSEDIA lagi.
+# ═══════════════════════════════════════════════════════════════════════════
+class OpnameCreateIn(BaseModel):
+    title: str = ""
+    note: str = ""
+
+
+class OpnameItemUpdate(BaseModel):
+    tool_id: str
+    physical: str = "pending"   # pending / found / not_found
+    note: str = ""
+
+
+class OpnameUpdateIn(BaseModel):
+    items: List[OpnameItemUpdate] = []
+    note: str = ""
+
+
+class OpnameFinalizeIn(BaseModel):
+    confirm_phrase: str = ""
+
+
+def _serialize_opname(o: dict, with_items: bool = True) -> dict:
+    items = o.get("items") or []
+    checked = [i for i in items if i.get("physical") in ("found", "not_found")]
+    out = {
+        "id": o.get("id"),
+        "opname_no": o.get("opname_no"),
+        "title": o.get("title") or "",
+        "note": o.get("note") or "",
+        "status": o.get("status") or "draft",   # draft / finalized
+        "created_by": o.get("created_by"),
+        "created_at": o.get("created_at"),
+        "finalized_by": o.get("finalized_by"),
+        "finalized_at": o.get("finalized_at"),
+        "summary": {
+            "total": len(items),
+            "checked": len(checked),
+            "found": len([i for i in items if i.get("physical") == "found"]),
+            "not_found": len([i for i in items if i.get("physical") == "not_found"]),
+            "pending": len([i for i in items if i.get("physical") not in ("found", "not_found")]),
+        },
+        "changes": o.get("changes") or [],
+    }
+    if with_items:
+        out["items"] = items
+    return out
+
+
+@router.post("/production/tools-opname")
+async def create_tools_opname(payload: OpnameCreateIn, current: dict = Depends(get_current_user)):
+    _guard(current)
+    tools = await db.production_tools.find({}, {"_id": 0}).sort("tool_code", 1).to_list(length=2000)
+    if not tools:
+        raise HTTPException(status_code=400, detail="Inventory alat masih kosong — tambahkan alat dulu")
+    n = await db.tool_opnames.count_documents({})
+    doc = {
+        "id": str(uuid.uuid4()),
+        "opname_no": f"OPA-{datetime.now(timezone.utc).strftime('%Y%m')}-{n + 1:03d}",
+        "title": (payload.title or "").strip() or f"Opname Alat {_today()}",
+        "note": (payload.note or "").strip(),
+        "status": "draft",
+        "items": [{
+            "tool_id": t.get("id"),
+            "tool_code": t.get("tool_code"),
+            "name": t.get("name"),
+            "brand": t.get("brand") or "",
+            "location": t.get("location") or "",
+            "system_status": t.get("status") or "available",
+            "holder_name": t.get("holder_name") or "",
+            "physical": "pending",
+            "note": "",
+        } for t in tools],
+        "changes": [],
+        "created_by": current.get("name") or current.get("username"),
+        "created_at": _now_iso(),
+        "finalized_by": None,
+        "finalized_at": None,
+    }
+    await db.tool_opnames.insert_one(doc.copy())
+    await log_action(current, "create_tools_opname", "tools_opname", doc["id"], {"opname_no": doc["opname_no"], "items": len(tools)})
+    return _serialize_opname(doc)
+
+
+@router.get("/production/tools-opname")
+async def list_tools_opname(current: dict = Depends(get_current_user)):
+    _guard(current)
+    rows = await db.tool_opnames.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=100)
+    return {"items": [_serialize_opname(o, with_items=False) for o in rows]}
+
+
+@router.get("/production/tools-opname/{sid}")
+async def get_tools_opname(sid: str, current: dict = Depends(get_current_user)):
+    _guard(current)
+    o = await db.tool_opnames.find_one({"id": sid}, {"_id": 0})
+    if not o:
+        raise HTTPException(status_code=404, detail="Sesi opname tidak ditemukan")
+    return _serialize_opname(o)
+
+
+@router.put("/production/tools-opname/{sid}")
+async def update_tools_opname(sid: str, payload: OpnameUpdateIn, current: dict = Depends(get_current_user)):
+    _guard(current)
+    o = await db.tool_opnames.find_one({"id": sid})
+    if not o:
+        raise HTTPException(status_code=404, detail="Sesi opname tidak ditemukan")
+    if o.get("status") == "finalized":
+        raise HTTPException(status_code=400, detail="Sesi sudah difinalisasi — tidak bisa diubah")
+    upd_map = {u.tool_id: u for u in payload.items}
+    items = o.get("items") or []
+    for it in items:
+        u = upd_map.get(it.get("tool_id"))
+        if u:
+            if u.physical not in ("pending", "found", "not_found"):
+                raise HTTPException(status_code=400, detail=f"Status fisik tidak valid: {u.physical}")
+            it["physical"] = u.physical
+            it["note"] = (u.note or "").strip()
+            it["checked_by"] = current.get("name") or current.get("username")
+    sets = {"items": items, "updated_at": _now_iso()}
+    if payload.note is not None:
+        sets["note"] = (payload.note or "").strip()
+    await db.tool_opnames.update_one({"id": sid}, {"$set": sets})
+    o.update(sets)
+    return _serialize_opname(o)
+
+
+@router.post("/production/tools-opname/{sid}/finalize")
+async def finalize_tools_opname(sid: str, payload: OpnameFinalizeIn, current: dict = Depends(get_current_user)):
+    _guard(current)
+    if payload.confirm_phrase != "OPNAME-FINAL":
+        raise HTTPException(status_code=400, detail="Konfirmasi tidak valid. Ketik 'OPNAME-FINAL' (case-sensitive).")
+    o = await db.tool_opnames.find_one({"id": sid})
+    if not o:
+        raise HTTPException(status_code=404, detail="Sesi opname tidak ditemukan")
+    if o.get("status") == "finalized":
+        raise HTTPException(status_code=400, detail="Sesi sudah difinalisasi")
+
+    changes = []
+    for it in (o.get("items") or []):
+        tool = await db.production_tools.find_one({"id": it.get("tool_id")})
+        if not tool:
+            continue
+        cur_status = tool.get("status") or "available"
+        phys = it.get("physical")
+        # Tidak ketemu → tandai HILANG (kecuali sudah hilang)
+        if phys == "not_found" and cur_status != "missing":
+            loan = await db.tool_loans.find_one({"tool_id": tool["id"], "status": "out"})
+            if loan:
+                await db.tool_loans.update_one({"id": loan["id"]}, {"$set": {
+                    "status": "missing",
+                    "note": f"Opname {o.get('opname_no')}: tidak ditemukan. {it.get('note') or ''}".strip(),
+                }})
+            await db.production_tools.update_one({"id": tool["id"]}, {"$set": {"status": "missing"}})
+            changes.append({
+                "tool_code": tool.get("tool_code"), "name": tool.get("name"),
+                "action": "marked_missing", "from": cur_status, "to": "missing",
+                "last_holder": tool.get("holder_name") or "",
+            })
+        # Ketemu padahal sistem bilang HILANG → kembali TERSEDIA
+        elif phys == "found" and cur_status == "missing":
+            await db.production_tools.update_one({"id": tool["id"]}, {"$set": {
+                "status": "available", "condition": "baik",
+                "holder_name": "", "held_since": "", "est_return_date": "", "current_loan_id": None,
+            }})
+            changes.append({
+                "tool_code": tool.get("tool_code"), "name": tool.get("name"),
+                "action": "marked_found", "from": "missing", "to": "available",
+            })
+
+    sets = {
+        "status": "finalized",
+        "changes": changes,
+        "finalized_by": current.get("name") or current.get("username"),
+        "finalized_at": _now_iso(),
+    }
+    await db.tool_opnames.update_one({"id": sid}, {"$set": sets})
+    o.update(sets)
+    await log_action(current, "finalize_tools_opname", "tools_opname", sid,
+                     {"opname_no": o.get("opname_no"), "changes": len(changes)})
+    return _serialize_opname(o)
+
+
+@router.delete("/production/tools-opname/{sid}")
+async def delete_tools_opname(sid: str, current: dict = Depends(get_current_user)):
+    _guard(current)
+    o = await db.tool_opnames.find_one({"id": sid})
+    if not o:
+        raise HTTPException(status_code=404, detail="Sesi opname tidak ditemukan")
+    if o.get("status") == "finalized":
+        raise HTTPException(status_code=400, detail="Sesi finalized terkunci untuk audit — tidak bisa dihapus")
+    await db.tool_opnames.delete_one({"id": sid})
+    await log_action(current, "delete_tools_opname", "tools_opname", sid, {"opname_no": o.get("opname_no")})
+    return {"ok": True}

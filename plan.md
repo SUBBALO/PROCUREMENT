@@ -330,6 +330,7 @@ Governing request: user mengunci backlog final dan meminta coding sesuai urutan 
 - **Tahap 3 (engineering/doccon)**: Reminder Drawing Belum Release → Revisi Drawing Berantai (notif ke Produksi “pakai revisi terbaru”) (**Status: NOT STARTED — NEXT**)
 - **Tahap 4 (QC)**: Masterlist Alat Ukur + input sertifikat kalibrasi pihak ke-3 + reminder H-30 & overdue merah (**Status: COMPLETED**)
 - **Tahap 5 (produksi)**: Peminjaman Alat/Tools (inventory alat + status pinjam/kembali/hilang) (**Status: COMPLETED**)
+- **Tahap 5b (produksi)**: **Stok Opname Alat Produksi** (cek fisik berkala, finalisasi tandai hilang) (**Status: COMPLETED**)
 - **Tahap 6 (data)**: Backup & Restore database (**Status: NEEDS CONFIRMATION**; full backup code+data already exists in Phase 5)
 
 > Catatan konsistensi: sistem sudah punya Full Backup/Restore (code+data) (Phase 5). Tahap 6 hanya dikerjakan bila user butuh versi **data-only** yang lebih operasional (retensi/scheduling/collection selection/anonymize).
@@ -558,6 +559,54 @@ Acceptance:
 
 ---
 
+### Phase 16.5b — Stok Opname Alat Produksi (Status: COMPLETED)
+Extension dari Phase 16.5 (Peminjaman Tools), diminta user agar alat hilang cepat ketahuan lewat cek fisik berkala.
+
+**Backend (implemented)**
+- File: `/app/backend/routers/tools.py` (section 3).
+- Collection: `tool_opnames` (items embedded; pola sama seperti `stock_opnames` gudang).
+- Endpoints:
+  - `POST /production/tools-opname` → buat sesi (nomor auto `OPA-YYYYMM-NNN`), snapshot semua `production_tools` (code/nama/lokasi/status sistem/pemegang). Tolak jika inventory kosong.
+  - `GET /production/tools-opname` → list sesi + summary (checked/found/not_found/pending).
+  - `GET /production/tools-opname/{sid}` → detail.
+  - `PUT /production/tools-opname/{sid}` → update hasil cek fisik per alat (`pending/found/not_found` + catatan + checked_by); draft only.
+  - `POST /production/tools-opname/{sid}/finalize` → confirm phrase `OPNAME-FINAL`; aksi otomatis:
+    - `not_found` & belum `missing` → alat jadi `missing` (loan aktif ikut `missing` dengan catatan nomor opname)
+    - `found` & sistem `missing` → alat kembali `available` (kondisi baik, holder cleared)
+    - `borrowed` & `found` → tetap `borrowed` (terverifikasi)
+    - perubahan dicatat di `changes[]` + `log_action`; sesi terkunci.
+  - `DELETE /production/tools-opname/{sid}` → draft only; finalized terkunci untuk audit.
+- Akses: `_guard` (QC/Produksi/admin-like).
+
+**Frontend (implemented)**
+- Page: `/app/frontend/src/pages/ProductionToolsOpnamePage.jsx` route `/produksi/tools/opname`.
+  - List sesi: nomor, progress cek, jumlah tidak ketemu, status Draft/Final, lanjut cek/lihat, hapus draft.
+  - Detail:
+    - 4 kartu statistik live (Total/Ada/Tidak Ketemu/Belum Dicek)
+    - tabel per alat dengan toggle **ADA / TIDAK ADA** (row hijau/merah) + kolom catatan
+    - tombol **Simpan Hasil Cek**
+    - dialog **Finalisasi** (wajib ketik `OPNAME-FINAL`, tombol disabled sampai benar)
+  - Setelah final:
+    - badge **FINAL**
+    - panel kuning “Perubahan Status Saat Finalisasi” (mis. `TL-0001 ditandai HILANG`)
+    - hasil cek read-only.
+- `ProductionToolsPage`: tombol **Stok Opname** di header (navigate ke `/produksi/tools/opname`).
+- Route ditambahkan di `App.js`.
+
+**Verification**
+- Smoke test backend 100%:
+  - create snapshot 3 alat; update summary benar
+  - wrong phrase 400
+  - finalize → `available+not_found→missing`, `missing+found→available`, `borrowed+found` tetap
+  - edit/delete finalized 400
+  - loan borrowed tetap `out`
+- Screenshot UI:
+  - cek fisik live (toggle + stats) OK
+  - finalisasi via UI OK (badge FINAL + panel perubahan)
+- esbuild clean; semua data demo/tes dibersihkan (0 sisa).
+
+---
+
 ### Phase 16.6 — Tahap 6 (Data) — Backup & Restore Database (Status: NEEDS CONFIRMATION)
 **Current state**
 - Full backup/restore code+data sudah ada (Phase 5).
@@ -584,4 +633,5 @@ If user still needs Tahap 6:
   6) `QC move: Release Notes approval workflow moved to QC portal (backend+frontend+notifications)`
   7) `Tahap 1 fondasi (login logs + active sessions + snapshot recycle bin produksi + update_job_progress fix)`
   8) `Tahap 4-5 tools (measuring tools calibration + production tool lending + notifications + pages)`
+  9) `Tahap 5b tools opname (tools opname session + UI + wiring)`
 - Reminder: GitHub hanya backup **kode**; untuk **data** gunakan Full Backup (tar.gz) dan/atau Tahap 6 data-only backup bila sudah dibuat.

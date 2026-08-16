@@ -49,6 +49,7 @@ import QCPortalPage from "./pages/QCPortalPage";
 import QcReleaseNotesPage from "./pages/QcReleaseNotesPage";
 import QcMeasuringToolsPage from "./pages/QcMeasuringToolsPage";
 import ProductionToolsPage from "./pages/ProductionToolsPage";
+import ProductionToolsOpnamePage from "./pages/ProductionToolsOpnamePage";
 import EcnTtdQueuePage from "./pages/EcnTtdQueuePage";
 import ProductionPortalPage from "./pages/ProductionPortalPage";
 import ProductionNewSoPage from "./pages/ProductionNewSoPage";
@@ -241,6 +242,7 @@ function AppRoutes() {
       <Route path="/qc/release-notes" element={<ProtectedRoute><QcReleaseNotesPage /></ProtectedRoute>} />
       <Route path="/qc/measuring-tools" element={<ProtectedRoute><QcMeasuringToolsPage /></ProtectedRoute>} />
       <Route path="/produksi/tools" element={<ProtectedRoute><ProductionToolsPage /></ProtectedRoute>} />
+      <Route path="/produksi/tools/opname" element={<ProtectedRoute><ProductionToolsOpnamePage /></ProtectedRoute>} />
       <Route path="/ecn-ttd" element={<ProtectedRoute><EcnTtdQueuePage /></ProtectedRoute>} />
       <Route path="/produksi" element={<ProtectedRoute><ProductionPortalPage /></ProtectedRoute>} />
       <Route path="/produksi/new-so" element={<ProtectedRoute><ProductionNewSoPage /></ProtectedRoute>} />

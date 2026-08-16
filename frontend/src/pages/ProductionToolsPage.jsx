@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../lib/api";
 import BackLink from "../components/BackLink";
 import { Card } from "../components/ui/card";
@@ -11,7 +12,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import {
   Toolbox, Plus, PencilSimple, Trash, MagnifyingGlass, HandGrabbing, ArrowUUpLeft,
-  WarningCircle, CheckCircle, ClockCounterClockwise, Wrench,
+  WarningCircle, CheckCircle, ClockCounterClockwise, Wrench, ClipboardText,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
@@ -37,6 +38,7 @@ function StatusBadge({ status }) {
 }
 
 export default function ProductionToolsPage() {
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [summary, setSummary] = useState({});
   const [loading, setLoading] = useState(true);
@@ -111,9 +113,14 @@ export default function ProductionToolsPage() {
             <p className="text-sm text-slate-500">Inventory alat produksi · siapa pinjam · kapan kembali · alat hilang ketahuan.</p>
           </div>
         </div>
-        <Button data-testid="add-ptool-btn" onClick={() => setToolDialog({ mode: "add", data: { ...EMPTY_TOOL } })} className="rounded-none bg-slate-900 hover:bg-slate-800 text-white h-9">
-          <Plus size={14} weight="bold" className="mr-1.5" /> Tambah Alat
-        </Button>
+        <div className="flex gap-2">
+          <Button data-testid="tools-opname-btn" variant="outline" onClick={() => navigate("/produksi/tools/opname")} className="rounded-none h-9 border-amber-300 text-amber-700 hover:bg-amber-50">
+            <ClipboardText size={14} weight="bold" className="mr-1.5" /> Stok Opname
+          </Button>
+          <Button data-testid="add-ptool-btn" onClick={() => setToolDialog({ mode: "add", data: { ...EMPTY_TOOL } })} className="rounded-none bg-slate-900 hover:bg-slate-800 text-white h-9">
+            <Plus size={14} weight="bold" className="mr-1.5" /> Tambah Alat
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
