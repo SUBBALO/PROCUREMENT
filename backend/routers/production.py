@@ -412,6 +412,62 @@ async def report_options(current: dict = Depends(get_current_user)):
     }
 
 
+@router.get("/today-summary")
+async def today_summary(current: dict = Depends(get_current_user)):
+    """Ringkasan 'Hari Ini' untuk panel portal Produksi:
+    - berapa karyawan belum diabsen hari ini
+    - apakah sudah ada laporan produksi hari ini
+    - berapa Release Note ditolak QC (perlu diajukan ulang)."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    emps = await db.production_employees.find({"active": {"$ne": False}}, {"_id": 0, "id": 1}).to_list(length=5000)
+    total_emp = len(emps)
+    emp_ids = {e.get("id") for e in emps}
+    att = await db.production_attendance.find({"date": today}, {"_id": 0, "employee_id": 1}).to_list(length=50000)
+    att_ids = {a.get("employee_id") for a in att if a.get("employee_id") in emp_ids}
+    attendance_done = len(att_ids)
+    attendance_missing = max(0, total_emp - attendance_done)
+
+    report_count = await db.production_reports.count_documents({"report_date": today})
+    frn_rejected = await db.fg_release_notes.count_documents({"status": "rejected"})
+
+    return {
+        "date": today,
+        "total_employees": total_emp,
+        "attendance_done": attendance_done,
+        "attendance_missing": attendance_missing,
+        "report_count": report_count,
+        "frn_rejected": frn_rejected,
+    }
+
+
+@router.get("/present-operators")
+async def present_operators(date: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Nama operator yang HADIR/bekerja pada tanggal tsb (status tidak diblok).
+    Karyawan tanpa record dianggap default Hadir. Dipakai untuk auto-isi baris
+    Daily Production Report."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    d = date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    emps = await db.production_employees.find({"active": {"$ne": False}}, {"_id": 0, "id": 1, "name": 1}).to_list(length=5000)
+    emps.sort(key=lambda r: (r.get("name") or "").lower())
+    att = await db.production_attendance.find({"date": d}, {"_id": 0, "employee_id": 1, "status": 1}).to_list(length=50000)
+    status_map = {a.get("employee_id"): (a.get("status") or "hadir") for a in att}
+    names = []
+    for e in emps:
+        nm = (e.get("name") or "").strip()
+        if not nm:
+            continue
+        st = status_map.get(e.get("id"), "hadir")  # default hadir bila belum diabsen
+        if st in ATTEND_BLOCKED:
+            continue
+        names.append(nm)
+    return {"date": d, "operators": names}
+
+
+
 @router.get("/reports/masterlist")
 async def reports_masterlist(
     month: Optional[str] = None,       # YYYY-MM

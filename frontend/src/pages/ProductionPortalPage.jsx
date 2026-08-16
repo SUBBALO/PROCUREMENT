@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import DeptPortal from "../components/DeptPortal";
 import ProductionJobProgressPage from "./ProductionJobProgressPage";
 import api from "../lib/api";
-import { Signature, FileText, Factory, WarningCircle, ClipboardText, Notebook, Gauge, Package, CalendarX, UsersThree, Clock, ChartBar } from "@phosphor-icons/react";
+import { Signature, FileText, Factory, WarningCircle, ClipboardText, Notebook, Gauge, Package, CalendarX, UsersThree, Clock, ChartBar, CheckCircle, ArrowRight, CalendarCheck } from "@phosphor-icons/react";
 
 export default function ProductionPortalPage() {
   const [pendingTtd, setPendingTtd] = useState(0);
@@ -166,7 +167,97 @@ export default function ProductionPortalPage() {
       sidebarMenu
       cardsLabel="Menu Produksi"
     >
+      <TodayPanel />
       <ProductionJobProgressPage embedded />
     </DeptPortal>
+  );
+}
+
+function TodayPanel() {
+  const navigate = useNavigate();
+  const [sum, setSum] = useState(null);
+
+  const load = () => {
+    api.get("/production/today-summary")
+      .then(({ data }) => setSum(data))
+      .catch(() => setSum(null));
+  };
+  useEffect(() => { load(); const id = setInterval(load, 60000); return () => clearInterval(id); }, []);
+
+  const dateLabel = (() => {
+    try { return new Date((sum?.date || new Date().toISOString().slice(0, 10)) + "T00:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }); }
+    catch { return sum?.date || ""; }
+  })();
+
+  const attMissing = sum?.attendance_missing ?? 0;
+  const attTotal = sum?.total_employees ?? 0;
+  const reportCount = sum?.report_count ?? 0;
+  const rejected = sum?.frn_rejected ?? 0;
+
+  return (
+    <section className="mb-4 rounded-xl border border-slate-200 bg-white/80 backdrop-blur-[2px]" data-testid="today-panel">
+      <div className="px-4 pt-3 pb-1.5 flex items-center gap-2">
+        <CalendarCheck size={15} weight="fill" className="text-amber-500" />
+        <h2 className="text-[10.5px] font-bold tracking-[0.16em] uppercase text-slate-500">Hari Ini</h2>
+        <span className="text-[11px] text-slate-400">· {dateLabel}</span>
+        <div className="flex-1 h-px bg-slate-100" />
+      </div>
+      <div className="px-3 pb-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <TodayTile
+          testId="today-attendance"
+          done={attTotal > 0 && attMissing === 0}
+          icon={UsersThree}
+          warnLabel={attTotal === 0 ? "Belum ada karyawan produksi" : `${attMissing} dari ${attTotal} belum diabsen`}
+          doneLabel="Absensi hari ini beres"
+          actionLabel="Isi Absensi"
+          onClick={() => navigate("/produksi/attendance?input=today")}
+        />
+        <TodayTile
+          testId="today-report"
+          done={reportCount > 0}
+          icon={Notebook}
+          warnLabel="Belum ada laporan produksi hari ini"
+          doneLabel={`${reportCount} baris laporan hari ini`}
+          actionLabel="Input Produksi"
+          onClick={() => navigate("/produksi/daily-report?input=today")}
+        />
+        <TodayTile
+          testId="today-rejected"
+          done={rejected === 0}
+          icon={Package}
+          warnLabel={`${rejected} Release Note ditolak QC`}
+          doneLabel="Tidak ada Release Note ditolak"
+          actionLabel="Ajukan Ulang"
+          onClick={() => navigate("/produksi/frn")}
+        />
+      </div>
+    </section>
+  );
+}
+
+function TodayTile({ done, icon: Icon, warnLabel, doneLabel, actionLabel, onClick, testId }) {
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${done ? "border-emerald-200 bg-emerald-50/60" : "border-amber-300 bg-amber-50/70"}`}
+      data-testid={testId}
+    >
+      <span className={`grid place-items-center w-9 h-9 rounded-md shrink-0 ${done ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"}`}>
+        {done ? <CheckCircle size={20} weight="fill" /> : <Icon size={19} weight="duotone" />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className={`text-[13px] font-semibold leading-tight ${done ? "text-emerald-800" : "text-slate-900"}`} style={{ fontFamily: "Chivo, sans-serif" }}>
+          {done ? doneLabel : warnLabel}
+        </div>
+        {!done && (
+          <button
+            onClick={onClick}
+            data-testid={`${testId}-action`}
+            className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.08em] text-amber-700 hover:text-amber-900 transition-colors"
+          >
+            {actionLabel} <ArrowRight size={12} weight="bold" />
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

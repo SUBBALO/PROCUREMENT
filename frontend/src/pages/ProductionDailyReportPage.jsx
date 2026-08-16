@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import BackLink from "../components/BackLink";
 import api from "../lib/api";
@@ -35,9 +36,30 @@ const cellCls =
 function SpreadsheetEditor({ date, opts, soMap, onSaved }) {
   const [rows, setRows] = useState([emptyRow()]);
   const [loading, setLoading] = useState(true);
+  const [presentOps, setPresentOps] = useState([]);
   const rowsRef = useRef(rows);
   const inputRefs = useRef({});
   useEffect(() => { rowsRef.current = rows; }, [rows]);
+
+  useEffect(() => {
+    api.get("/production/present-operators", { params: { date } })
+      .then(({ data }) => setPresentOps(data.operators || []))
+      .catch(() => setPresentOps([]));
+  }, [date]);
+
+  const fillPresentOperators = () => {
+    if (presentOps.length === 0) { toast.error("Tidak ada operator hadir pada tanggal ini"); return; }
+    setRows((prev) => {
+      const kept = prev.filter((r) => r.id || (r.operator_name || "").trim() || r._dirty);
+      const existing = new Set(kept.map((r) => (r.operator_name || "").trim().toLowerCase()).filter(Boolean));
+      const additions = presentOps
+        .filter((nm) => !existing.has(nm.trim().toLowerCase()))
+        .map((nm) => ({ ...emptyRow(), operator_name: nm }));
+      if (additions.length === 0) { toast.info("Semua operator hadir sudah ada di tabel"); return prev; }
+      toast.success(`${additions.length} operator hadir ditambahkan — tinggal isi qty & jam`);
+      return [...kept, ...additions, emptyRow()];
+    });
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -149,8 +171,21 @@ function SpreadsheetEditor({ date, opts, soMap, onSaved }) {
   );
 
   return (
-    <div className="overflow-x-auto border border-slate-200 rounded-lg">
-      <table className="w-full text-sm border-collapse" data-testid="report-table">
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <button
+          type="button"
+          onClick={fillPresentOperators}
+          data-testid="fill-present-operators-btn"
+          className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-bold text-emerald-700 border border-emerald-300 bg-emerald-50 rounded hover:bg-emerald-100 transition-colors"
+          title="Tambahkan otomatis semua operator yang hadir hari ini"
+        >
+          <Plus size={14} weight="bold" /> Isi Operator Hadir ({presentOps.length})
+        </button>
+        <span className="text-[11px] text-slate-400">Operator yang hadir bisa diisi otomatis, tinggal ketik qty &amp; jam.</span>
+      </div>
+      <div className="overflow-x-auto border border-slate-200 rounded-lg">
+        <table className="w-full text-sm border-collapse" data-testid="report-table">
         <thead>
           <tr className="bg-slate-100 text-slate-600 text-[11px] uppercase tracking-wider">
             <th className="px-2 py-2 text-left font-bold w-8 border border-slate-200">#</th>
@@ -204,6 +239,7 @@ function SpreadsheetEditor({ date, opts, soMap, onSaved }) {
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -229,6 +265,16 @@ export default function ProductionDailyReportPage() {
   }, [opts.sos]);
 
   const openInput = () => { setModalDate(todayStr()); setModalOpen(true); };
+
+  // Deep-link dari Panel "Hari Ini": /produksi/daily-report?input=today → langsung buka Input
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get("input") === "today") {
+      openInput();
+      searchParams.delete("input");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, []); // eslint-disable-line
   const closeInput = () => {
     setModalOpen(false);
     loadOpts();

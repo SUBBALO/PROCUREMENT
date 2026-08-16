@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import BackLink from "../components/BackLink";
 import api from "../lib/api";
@@ -64,6 +65,17 @@ export default function ProductionAttendancePage() {
   };
   const reloadModal = async (d) => { try { const { data } = await api.get("/production/attendance", { params: { date: d } }); setRows(data.items || []); } catch { setRows([]); } };
   const setField = (id, f, v) => setRows((prev) => prev.map((r) => (r.employee_id === id ? { ...r, [f]: v } : r)));
+  const markAllPresent = () => setRows((prev) => prev.map((r) => ({ ...r, status: "hadir" })));
+
+  // Deep-link dari Panel "Hari Ini": /produksi/attendance?input=today → langsung buka Input Presensi
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get("input") === "today") {
+      openInput();
+      searchParams.delete("input");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, []); // eslint-disable-line
 
   const saveAtt = async () => {
     setSavingAtt(true);
@@ -219,9 +231,14 @@ export default function ProductionAttendancePage() {
                 </tbody>
               </table>
             </div>
-            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200 shrink-0 bg-slate-50">
-              <button onClick={() => setModalOpen(false)} className="h-9 px-4 text-sm font-bold text-slate-600 border border-slate-300 bg-white rounded hover:bg-slate-100">Batal</button>
-              <button onClick={saveAtt} disabled={savingAtt} data-testid="att-save-btn" className="inline-flex items-center gap-1.5 h-9 px-5 bg-indigo-600 text-white text-sm font-bold rounded hover:bg-indigo-700 disabled:opacity-60"><FloppyDisk size={16} weight="bold" /> {savingAtt ? "Menyimpan…" : "Simpan Presensi"}</button>
+            <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-slate-200 shrink-0 bg-slate-50">
+              <button onClick={markAllPresent} data-testid="att-mark-all-present" className="inline-flex items-center gap-1.5 h-9 px-4 text-sm font-bold text-emerald-700 border border-emerald-300 bg-emerald-50 rounded hover:bg-emerald-100">
+                <FloppyDisk size={15} weight="bold" /> Tandai Semua Hadir
+              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setModalOpen(false)} className="h-9 px-4 text-sm font-bold text-slate-600 border border-slate-300 bg-white rounded hover:bg-slate-100">Batal</button>
+                <button onClick={saveAtt} disabled={savingAtt} data-testid="att-save-btn" className="inline-flex items-center gap-1.5 h-9 px-5 bg-indigo-600 text-white text-sm font-bold rounded hover:bg-indigo-700 disabled:opacity-60"><FloppyDisk size={16} weight="bold" /> {savingAtt ? "Menyimpan…" : "Simpan Presensi"}</button>
+              </div>
             </div>
           </div>
         </div>

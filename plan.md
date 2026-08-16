@@ -287,6 +287,15 @@ Catatan status UI terakhir:
 
 ---
 
+## Phase 14: Usability — Panel "Hari Ini" + Quick Wins Produksi (Status: COMPLETED)
+Tujuan: mempermudah akses harian agar user rajin pakai.
+- Backend (`production.py`): `GET /production/today-summary` (belum absen X/Y, laporan hari ini, Release Note ditolak QC) + `GET /production/present-operators?date=` (operator hadir, default hadir bila belum diabsen). Keduanya guard Produksi/Admin.
+- Frontend Panel "Hari Ini" di atas Job Progress (portal Produksi): 3 tile status + tombol aksi cepat (Isi Absensi / Input Produksi / Ajukan Ulang) via deep-link.
+- Quick win Absensi: tombol **"Tandai Semua Hadir"** di modal; deep-link `?input=today` auto-buka Input Presensi.
+- Quick win Daily Report: tombol **"Isi Operator Hadir"** (auto-tambah baris operator yang hadir); deep-link `?input=today` auto-buka Input.
+- Catatan: dropdown SO sudah menampilkan customer & auto-fill (sudah ada sebelumnya).
+- Verifikasi: esbuild clean; API smoke — today-summary 200 (78 emp, 0 absen/laporan), present-operators 200 (78), sales 403. Screenshot portal belum diambil (butuh login role Produksi).
+
 ## Phase 13: QC Ownership Fix — Relocate "Release Note Menunggu Persetujuan" to QC Portal (Status: COMPLETED)
 User feedback terbaru (governing):
 - "QC — Release Note Menunggu Persetujuan" **harus berada di menu/portal QC**, bukan di halaman/portal Produksi.
