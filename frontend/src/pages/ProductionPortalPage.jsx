@@ -215,19 +215,21 @@ function TodayPanel() {
         <TodayTile
           testId="today-report"
           done={reportCount > 0}
+          actionAlways
           icon={Notebook}
           warnLabel="Belum ada laporan produksi hari ini"
           doneLabel={`${reportCount} baris laporan hari ini`}
-          actionLabel="Input Produksi"
+          actionLabel={reportCount > 0 ? "Input Lagi" : "Input Produksi"}
           onClick={() => navigate("/produksi/daily-report?input=today")}
         />
         <TodayTile
           testId="today-rejected"
           done={rejected === 0}
+          actionAlways
           icon={Package}
           warnLabel={`${rejected} Release Note ditolak QC`}
-          doneLabel="Tidak ada Release Note ditolak"
-          actionLabel="Ajukan Ulang"
+          doneLabel="Kelola Release Note"
+          actionLabel={rejected > 0 ? "Ajukan Ulang" : "Buka Release Note"}
           onClick={() => navigate("/produksi/frn")}
         />
       </div>
@@ -235,7 +237,8 @@ function TodayPanel() {
   );
 }
 
-function TodayTile({ done, icon: Icon, warnLabel, doneLabel, actionLabel, onClick, testId }) {
+function TodayTile({ done, icon: Icon, warnLabel, doneLabel, actionLabel, onClick, testId, actionAlways = false }) {
+  const showAction = !done || actionAlways;
   return (
     <div
       className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${done ? "border-emerald-200 bg-emerald-50/60" : "border-amber-300 bg-amber-50/70"}`}
@@ -248,11 +251,11 @@ function TodayTile({ done, icon: Icon, warnLabel, doneLabel, actionLabel, onClic
         <div className={`text-[13px] font-semibold leading-tight ${done ? "text-emerald-800" : "text-slate-900"}`} style={{ fontFamily: "Chivo, sans-serif" }}>
           {done ? doneLabel : warnLabel}
         </div>
-        {!done && (
+        {showAction && (
           <button
             onClick={onClick}
             data-testid={`${testId}-action`}
-            className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.08em] text-amber-700 hover:text-amber-900 transition-colors"
+            className={`mt-1 inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.08em] transition-colors ${done ? "text-emerald-700 hover:text-emerald-900" : "text-amber-700 hover:text-amber-900"}`}
           >
             {actionLabel} <ArrowRight size={12} weight="bold" />
           </button>

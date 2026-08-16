@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import BackLink from "../components/BackLink";
 import api from "../lib/api";
-import { UsersThree, Plus, Trash, FloppyDisk, CalendarBlank, UserPlus, X, PencilSimple } from "@phosphor-icons/react";
+import { UsersThree, Plus, Trash, FloppyDisk, CalendarBlank, UserPlus, X, PencilSimple, DownloadSimple } from "@phosphor-icons/react";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -67,6 +67,16 @@ export default function ProductionAttendancePage() {
   const setField = (id, f, v) => setRows((prev) => prev.map((r) => (r.employee_id === id ? { ...r, [f]: v } : r)));
   const markAllPresent = () => setRows((prev) => prev.map((r) => ({ ...r, status: "hadir" })));
 
+  const exportXlsx = async () => {
+    try {
+      const res = await api.get("/production/attendance/month.xlsx", { params: { month }, responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a"); a.href = url; a.download = `Absensi_${month}.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      toast.success("Export absensi berhasil");
+    } catch { toast.error("Gagal export absensi"); }
+  };
+
   // Deep-link dari Panel "Hari Ini": /produksi/attendance?input=today → langsung buka Input Presensi
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
@@ -125,6 +135,7 @@ export default function ProductionAttendancePage() {
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded px-2 h-9"><CalendarBlank size={16} weight="bold" className="text-slate-500" /><input type="month" value={month} onChange={(e) => setMonth(e.target.value)} data-testid="att-month-input" className="text-sm outline-none bg-transparent" /></div>
           <button onClick={() => setShowMaster((s) => !s)} data-testid="toggle-master-btn" className="inline-flex items-center gap-1.5 h-9 px-3 border border-slate-300 bg-white text-sm font-bold text-slate-700 rounded hover:bg-slate-50"><UserPlus size={16} weight="bold" /> Daftar Karyawan</button>
+          <button onClick={exportXlsx} data-testid="att-export-btn" className="inline-flex items-center gap-1.5 h-9 px-3 border border-emerald-300 bg-emerald-50 text-sm font-bold text-emerald-700 rounded hover:bg-emerald-100"><DownloadSimple size={16} weight="bold" /> Export Excel</button>
           <button onClick={openInput} data-testid="input-presensi-btn" className="inline-flex items-center gap-1.5 h-9 px-4 bg-indigo-600 text-white text-sm font-bold rounded hover:bg-indigo-700"><Plus size={16} weight="bold" /> Input Presensi</button>
         </div>
       </div>

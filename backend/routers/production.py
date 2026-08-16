@@ -743,6 +743,50 @@ async def list_reports(date: Optional[str] = None, current: dict = Depends(get_c
     return {"date": d, "items": items, "count": len(items), "total_ok": total_ok, "total_ng": total_ng, "total_work_hours": total_work_hours}
 
 
+async def _attendance_arrival(op_name: str, rd: str):
+    """Kembalikan (menit_masuk, jam_masuk_str, label_status) bila operator punya
+    batas jam masuk pada tanggal tsb (terlambat / night shift / in-situ). None bila
+    tidak ada batasan (default Hadir tanpa record → tidak dibatasi)."""
+    op_name = (op_name or "").strip()
+    if not op_name:
+        return None
+    emp = await db.production_employees.find_one({"name": {"$regex": f"^{op_name}$", "$options": "i"}, "active": {"$ne": False}})
+    if not emp:
+        return None
+    att = await db.production_attendance.find_one({"date": rd, "employee_id": emp.get("id")})
+    if not att:
+        return None
+    status = att.get("status") or "hadir"
+    s = await _get_shift_settings()
+    if status == "terlambat":
+        t = (att.get("actual_in_time") or "").strip()
+        return (_min_of(t), t, "Terlambat") if t else None
+    if status == "night_shift":
+        t = s.get("shift2_start", "16:00")
+        return (_min_of(t), t, "Night Shift (Shift 2)")
+    if status == "insitu":
+        t = (att.get("insitu_start") or "").strip()
+        return (_min_of(t), t, "In-situ") if t else None
+    return None
+
+
+async def _validate_work_start(op_name: str, rd: str, work_start: str):
+    """Tolak bila jam mulai kerja lebih awal dari jam masuk operator (mis. terlambat)."""
+    ws = (work_start or "").strip()
+    if not ws:
+        return
+    info = await _attendance_arrival(op_name, rd)
+    if not info:
+        return
+    amin, atime, label = info
+    if _min_of(ws) < amin:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{op_name} berstatus {label}, masuk jam {atime} pada {rd}. "
+                   f"Jam mulai kerja tidak boleh sebelum jam masuk ({atime}).",
+        )
+
+
 @router.post("/reports")
 async def create_report(payload: ProductionReportIn, current: dict = Depends(get_current_user)):
     if not _can_view(current):
@@ -757,6 +801,8 @@ async def create_report(payload: ProductionReportIn, current: dict = Depends(get
             if att and att.get("status") in ATTEND_BLOCKED:
                 label = "MC/Sakit" if att.get("status") == "mc_sakit" else "Tidak Hadir"
                 raise HTTPException(status_code=400, detail=f"{op_name} berstatus {label} pada {rd}. Tidak bisa input Daily Production untuk operator ini.")
+    # Validasi jam mulai kerja tidak boleh sebelum jam masuk (terlambat/night shift/in-situ)
+    await _validate_work_start(op_name, rd, payload.work_start)
     doc = {
         "id": str(uuid.uuid4()),
         "report_date": rd,
@@ -787,9 +833,20 @@ async def update_report(report_id: str, payload: ProductionReportIn, current: di
     existing = await db.production_reports.find_one({"id": report_id})
     if not existing:
         raise HTTPException(status_code=404, detail="Report tidak ditemukan")
+    rd = (payload.report_date or existing.get("report_date") or "").strip()
+    op_name = (payload.operator_name or "").strip()
+    # Blok operator absen + validasi jam mulai vs jam masuk (terlambat/night shift/in-situ)
+    if op_name:
+        emp = await db.production_employees.find_one({"name": {"$regex": f"^{op_name}$", "$options": "i"}, "active": {"$ne": False}})
+        if emp:
+            att = await db.production_attendance.find_one({"date": rd, "employee_id": emp.get("id")})
+            if att and att.get("status") in ATTEND_BLOCKED:
+                label = "MC/Sakit" if att.get("status") == "mc_sakit" else "Tidak Hadir"
+                raise HTTPException(status_code=400, detail=f"{op_name} berstatus {label} pada {rd}. Tidak bisa input Daily Production untuk operator ini.")
+    await _validate_work_start(op_name, rd, payload.work_start)
     updates = {
-        "report_date": (payload.report_date or existing.get("report_date") or "").strip(),
-        "operator_name": (payload.operator_name or "").strip(),
+        "report_date": rd,
+        "operator_name": op_name,
         "so_no": (payload.so_no or "").strip(),
         "customer": (payload.customer or "").strip(),
         "process": (payload.process or "").strip(),
@@ -1584,6 +1641,110 @@ async def attendance_month(month: Optional[str] = None, current: dict = Depends(
         "employees": [{"id": e.get("id"), "name": e.get("name") or "", "designation": e.get("designation") or ""} for e in emps],
         "records": records, "statuses": ATTEND_STATUSES,
     }
+
+
+@router.get("/attendance/month.xlsx")
+async def attendance_month_xlsx(month: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Export absensi 1 bulan ke Excel:
+    - Sheet 'Rekap Absensi': karyawan x tanggal (singkatan status)
+    - Sheet 'Detail Jam Masuk': daftar yang telat/izin/in-situ + jam masuk aktual."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    import calendar as _cal
+    import io
+
+    _ABBR = {"hadir": "H", "terlambat": "T", "ijin_keluar": "IK", "ijin_pulang": "IP",
+             "night_shift": "N", "mc_sakit": "S", "tidak_hadir": "A", "insitu": "IS"}
+    _LABEL = {"hadir": "Hadir", "terlambat": "Terlambat", "ijin_keluar": "Ijin Keluar",
+              "ijin_pulang": "Ijin Pulang", "night_shift": "Night Shift", "mc_sakit": "MC / Sakit",
+              "tidak_hadir": "Tidak Hadir (Mangkir)", "insitu": "In-situ Work"}
+
+    m = month or datetime.now(timezone.utc).strftime("%Y-%m")
+    try:
+        yy, mm = int(m[:4]), int(m[5:7]); ndays = _cal.monthrange(yy, mm)[1]
+    except Exception:
+        yy = datetime.now(timezone.utc).year; mm = datetime.now(timezone.utc).month
+        ndays = _cal.monthrange(yy, mm)[1]; m = f"{yy:04d}-{mm:02d}"
+
+    emps = await db.production_employees.find({"active": {"$ne": False}}, {"_id": 0}).to_list(length=5000)
+    emps.sort(key=lambda r: (r.get("name") or "").lower())
+    att = await db.production_attendance.find({"date": {"$regex": f"^{m}"}}, {"_id": 0}).to_list(length=50000)
+    rec = {}
+    for a in att:
+        rec.setdefault(a.get("employee_id"), {})[(a.get("date") or "")[:10]] = a
+
+    thin = Side(style="thin", color="D0D0D0")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    hdr_fill = PatternFill("solid", fgColor="1F2937")
+    hdr_font = Font(bold=True, color="FFFFFF", size=9)
+    center = Alignment(horizontal="center", vertical="center")
+
+    wb = Workbook()
+    ws = wb.active; ws.title = "Rekap Absensi"
+    header = ["No", "Nama", "Bagian"] + [str(d) for d in range(1, ndays + 1)]
+    ws.append(header)
+    for ci in range(1, len(header) + 1):
+        c = ws.cell(row=1, column=ci); c.fill = hdr_fill; c.font = hdr_font; c.alignment = center; c.border = border
+    for idx, e in enumerate(emps, start=1):
+        row = [idx, e.get("name") or "", e.get("designation") or ""]
+        emp_rec = rec.get(e.get("id"), {})
+        for d in range(1, ndays + 1):
+            ds = f"{m}-{d:02d}"
+            a = emp_rec.get(ds)
+            row.append(_ABBR.get((a or {}).get("status", "hadir"), "H") if a else "")
+        ws.append(row)
+        r = ws.max_row
+        for ci in range(1, len(header) + 1):
+            cc = ws.cell(row=r, column=ci); cc.border = border
+            if ci >= 4:
+                cc.alignment = center; cc.font = Font(size=9)
+    ws.freeze_panes = "D2"
+    ws.column_dimensions["A"].width = 5; ws.column_dimensions["B"].width = 26; ws.column_dimensions["C"].width = 16
+    for d in range(1, ndays + 1):
+        ws.column_dimensions[ws.cell(row=1, column=3 + d).column_letter].width = 4
+    # Legenda
+    ws.append([]); ws.append(["Keterangan:"] + [f"{v} = {_LABEL[k]}" for k, v in _ABBR.items()])
+
+    # Sheet Detail Jam Masuk
+    ws2 = wb.create_sheet("Detail Jam Masuk")
+    dh = ["Tanggal", "Nama", "Bagian", "Status", "Jam Masuk (Aktual)", "Jam Keluar", "Jam Pulang", "Lokasi In-situ", "Catatan"]
+    ws2.append(dh)
+    for ci in range(1, len(dh) + 1):
+        c = ws2.cell(row=1, column=ci); c.fill = hdr_fill; c.font = hdr_font; c.alignment = center; c.border = border
+    emp_by_id = {e.get("id"): e for e in emps}
+    detail_rows = []
+    for a in att:
+        st = a.get("status") or "hadir"
+        if st == "hadir":
+            continue  # hanya tampilkan yang tidak normal (telat/izin/night/in-situ/absen)
+        e = emp_by_id.get(a.get("employee_id"), {})
+        detail_rows.append([
+            (a.get("date") or "")[:10], e.get("name") or a.get("name") or "", e.get("designation") or "",
+            _LABEL.get(st, st), a.get("actual_in_time") or "", a.get("out_time") or "",
+            a.get("home_time") or "", a.get("insitu_location") or "", a.get("note") or "",
+        ])
+    detail_rows.sort(key=lambda x: (x[0], x[1].lower()))
+    for dr in detail_rows:
+        ws2.append(dr)
+        r = ws2.max_row
+        for ci in range(1, len(dh) + 1):
+            ws2.cell(row=r, column=ci).border = border
+    if not detail_rows:
+        ws2.append(["(Tidak ada catatan telat/izin/in-situ pada bulan ini)"])
+    widths2 = [12, 26, 16, 20, 18, 12, 12, 20, 30]
+    for i, w in enumerate(widths2, start=1):
+        ws2.column_dimensions[ws2.cell(row=1, column=i).column_letter].width = w
+    ws2.freeze_panes = "A2"
+
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    return StreamingResponse(
+        buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=Absensi_{m}.xlsx"},
+    )
+
 
 
 @router.get("/attendance")
