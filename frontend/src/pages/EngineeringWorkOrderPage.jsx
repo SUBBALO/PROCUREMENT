@@ -66,8 +66,15 @@ export default function EngineeringWorkOrderPage() {
 
 function DrfItemPicker({ drawing, onSaved, editable }) {
   const [items, setItems] = React.useState([]);
-  const [name, setName] = React.useState(drawing.item_name || "");
-  const [qty, setQty] = React.useState(drawing.item_qty || "");
+  const initRows = React.useCallback(() => {
+    if (Array.isArray(drawing.drf_items) && drawing.drf_items.length > 0) {
+      return drawing.drf_items.map((r) => ({ name: r.item_name || "", qty: r.item_qty ?? "" }));
+    }
+    // Legacy: drawing lama dengan 1 item → otomatis jadi baris pertama
+    if (drawing.item_name) return [{ name: drawing.item_name, qty: drawing.item_qty ?? "" }];
+    return [{ name: "", qty: "" }];
+  }, [drawing.drf_items, drawing.item_name, drawing.item_qty]);
+  const [rows, setRows] = React.useState(initRows);
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
@@ -77,60 +84,106 @@ function DrfItemPicker({ drawing, onSaved, editable }) {
       .catch(() => setItems([]));
   }, [drawing.from_drf_id]);
 
-  const pickItem = (val) => {
-    setName(val);
+  const setRow = (idx, patch) => setRows((p) => p.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  const pickItem = (idx, val) => {
     const it = items.find((i) => i.name === val);
-    if (it && !qty) setQty(it.qty);
+    setRows((p) => p.map((r, i) => (i === idx ? { name: val, qty: r.qty || (it ? it.qty : "") } : r)));
   };
+  const addRow = () => setRows((p) => [...p, { name: "", qty: "" }]);
+  const removeRow = (idx) => setRows((p) => (p.length > 1 ? p.filter((_, i) => i !== idx) : p));
+  const totalQty = rows.reduce((s, r) => s + (Number(r.qty) || 0), 0);
 
   const save = async () => {
+    const clean = rows.filter((r) => (r.name || "").trim());
+    if (clean.length === 0) { toast.error("Pilih minimal 1 item"); return; }
     setSaving(true);
     try {
-      await api.post(`/drawings/${drawing.id}/drf-item`, { item_name: name, item_qty: Number(qty) || 0 });
-      toast.success("Item & qty drawing tersimpan");
+      await api.post(`/drawings/${drawing.id}/drf-item`, {
+        items: clean.map((r) => ({ item_name: r.name.trim(), item_qty: Number(r.qty) || 0 })),
+      });
+      toast.success(`${clean.length} item tersimpan · total qty ${totalQty} (dipakai stamp SO)`);
       onSaved?.();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal simpan item");
     } finally { setSaving(false); }
   };
 
+  const savedRows = Array.isArray(drawing.drf_items) && drawing.drf_items.length > 0
+    ? drawing.drf_items
+    : (drawing.item_name ? [{ item_name: drawing.item_name, item_qty: drawing.item_qty }] : []);
+
   return (
     <div className="border-2 border-indigo-400" data-testid="wo-drf-item-picker">
       <div className="px-4 py-2.5 bg-indigo-600 text-white flex items-center gap-2 text-[13px] uppercase tracking-widest font-bold">
         <ClipboardText size={16} weight="fill" /> Item &amp; Qty Drawing
-        <span className="text-[10px] normal-case tracking-normal opacity-90">— dari daftar item DRF (qty bisa beda/partial, auto-isi qty stamp SO)</span>
+        <span className="text-[10px] normal-case tracking-normal opacity-90">— 1 drawing bisa mencakup &gt;1 item · stamp SO memakai TOTAL qty</span>
       </div>
-      <div className="p-3 bg-indigo-50 flex flex-wrap items-end gap-3">
-        <div className="flex-1 min-w-[220px]">
-          <label className="text-[10px] uppercase tracking-wider font-bold text-slate-600">Nama Item</label>
-          {items.length > 0 ? (
-            <select
-              value={name} onChange={(e) => pickItem(e.target.value)} disabled={!editable}
-              className="w-full h-9 rounded-none border border-slate-300 bg-white px-2 text-sm disabled:opacity-60"
-              data-testid="wo-item-select"
+      {editable ? (
+        <div className="p-3 bg-indigo-50 space-y-2">
+          {rows.map((r, idx) => (
+            <div key={idx} className="flex flex-wrap items-end gap-2" data-testid={`wo-item-row-${idx}`}>
+              <div className="flex-1 min-w-[220px]">
+                {idx === 0 && <label className="text-[10px] uppercase tracking-wider font-bold text-slate-600">Nama Item</label>}
+                {items.length > 0 ? (
+                  <select
+                    value={r.name} onChange={(e) => pickItem(idx, e.target.value)}
+                    className="w-full h-9 rounded-none border border-slate-300 bg-white px-2 text-sm"
+                    data-testid={`wo-item-select-${idx}`}
+                  >
+                    <option value="">— pilih item —</option>
+                    {items.map((it, i) => <option key={i} value={it.name}>{it.name} (DRF: {it.qty} {it.unit})</option>)}
+                  </select>
+                ) : (
+                  <input value={r.name} onChange={(e) => setRow(idx, { name: e.target.value })} placeholder="Nama item"
+                    className="w-full h-9 rounded-none border border-slate-300 px-2 text-sm" data-testid={`wo-item-name-${idx}`} />
+                )}
+              </div>
+              <div className="w-28">
+                {idx === 0 && <label className="text-[10px] uppercase tracking-wider font-bold text-slate-600">Qty Drawing</label>}
+                <input type="number" min="0" value={r.qty} onChange={(e) => setRow(idx, { qty: e.target.value })}
+                  className="w-full h-9 rounded-none border border-slate-300 px-2 text-sm" data-testid={`wo-item-qty-${idx}`} />
+              </div>
+              <button
+                onClick={() => removeRow(idx)} disabled={rows.length <= 1} title="Hapus baris item"
+                className="h-9 px-2 border border-rose-300 text-rose-600 bg-white hover:bg-rose-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                data-testid={`wo-item-remove-row-${idx}`}
+              >
+                <XCircle size={16} weight="bold" />
+              </button>
+            </div>
+          ))}
+          <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-indigo-200">
+            <button
+              onClick={addRow}
+              className="inline-flex items-center gap-1 px-3 h-9 border border-indigo-400 bg-white text-indigo-700 text-[11px] font-bold uppercase tracking-wider hover:bg-indigo-100"
+              data-testid="wo-item-add-row"
             >
-              <option value="">— pilih item —</option>
-              {items.map((it, i) => <option key={i} value={it.name}>{it.name} (DRF: {it.qty} {it.unit})</option>)}
-            </select>
+              + Tambah Item
+            </button>
+            <div className="text-[12px] text-slate-600" data-testid="wo-item-total">
+              Total Qty (dipakai stamp SO): <b className="text-indigo-800">{totalQty}</b>
+            </div>
+            <Button onClick={save} disabled={saving} className="ml-auto rounded-none bg-indigo-700 hover:bg-indigo-800 text-white h-9" data-testid="wo-item-save">
+              {saving ? <ArrowClockwise size={15} className="animate-spin" /> : "Simpan"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="p-3 bg-indigo-50 text-sm text-slate-700 space-y-0.5" data-testid="wo-item-readonly">
+          {savedRows.length === 0 ? (
+            <span className="italic text-slate-400">Belum ada item dipilih.</span>
           ) : (
-            <input value={name} onChange={(e) => setName(e.target.value)} disabled={!editable} placeholder="Nama item"
-              className="w-full h-9 rounded-none border border-slate-300 px-2 text-sm disabled:opacity-60" data-testid="wo-item-name" />
+            <>
+              {savedRows.map((r, i) => (
+                <div key={i}>Item: <b>{r.item_name}</b> · Qty: <b>{r.item_qty}</b></div>
+              ))}
+              {savedRows.length > 1 && (
+                <div className="pt-1 border-t border-indigo-200 text-indigo-800">Total Qty (stamp SO): <b>{savedRows.reduce((s, r) => s + (Number(r.item_qty) || 0), 0)}</b></div>
+              )}
+            </>
           )}
         </div>
-        <div className="w-28">
-          <label className="text-[10px] uppercase tracking-wider font-bold text-slate-600">Qty Drawing</label>
-          <input type="number" min="0" value={qty} onChange={(e) => setQty(e.target.value)} disabled={!editable}
-            className="w-full h-9 rounded-none border border-slate-300 px-2 text-sm disabled:opacity-60" data-testid="wo-item-qty" />
-        </div>
-        {editable && (
-          <Button onClick={save} disabled={saving} className="rounded-none bg-indigo-700 hover:bg-indigo-800 text-white h-9" data-testid="wo-item-save">
-            {saving ? <ArrowClockwise size={15} className="animate-spin" /> : "Simpan"}
-          </Button>
-        )}
-        {!editable && drawing.item_name && (
-          <div className="text-sm text-slate-700">Item: <b>{drawing.item_name}</b> · Qty: <b>{drawing.item_qty}</b></div>
-        )}
-      </div>
+      )}
     </div>
   );
 }

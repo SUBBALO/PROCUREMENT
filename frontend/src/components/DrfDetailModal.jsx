@@ -40,6 +40,7 @@ export default function DrfDetailModal({ drf, isHead, onClose, onChanged }) {
   const [drawings, setDrawings] = useState([]);
   const [engineers, setEngineers] = useState([]);
   const [assignId, setAssignId] = useState("");
+  const [assignPrio, setAssignPrio] = useState("normal"); // Prioritas tugas saat assign
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(null); // { mode:'attachment'|'drawing', ... }
   const [imgPreview, setImgPreview] = useState(null); // { url, name }
@@ -104,8 +105,10 @@ export default function DrfDetailModal({ drf, isHead, onClose, onChanged }) {
       await api.post(`/drawing-requests/${detail.id}/accept-assign`, {
         assigned_engineer_id: assignId,
         assigned_engineer_name: eng?.name || eng?.username || "",
+        priority: assignPrio,
       });
-      toast.success(`✓ DRF diterima & ditugaskan ke ${eng?.name || eng?.username}`);
+      const pl = { high: " · Prioritas TINGGI", low: " · prioritas low" }[assignPrio] || "";
+      toast.success(`✓ DRF diterima & ditugaskan ke ${eng?.name || eng?.username}${pl}`);
       onChanged?.();
       onClose?.();
     } catch (e) {
@@ -322,6 +325,20 @@ export default function DrfDetailModal({ drf, isHead, onClose, onChanged }) {
                 {engineers.map((e) => (
                   <option key={e.id} value={e.id}>{e.name || e.username} ({e.role})</option>
                 ))}
+              </select>
+              <select
+                value={assignPrio}
+                onChange={(e) => setAssignPrio(e.target.value)}
+                className={`h-9 border text-sm px-2 rounded-none font-semibold focus:outline-none ${
+                  assignPrio === "high" ? "border-rose-400 bg-rose-50 text-rose-700"
+                  : assignPrio === "low" ? "border-slate-300 bg-slate-50 text-slate-500"
+                  : "border-slate-300 bg-white text-slate-700"}`}
+                title="Prioritas tugas"
+                data-testid="drf-detail-priority-select"
+              >
+                <option value="high">Prioritas: High</option>
+                <option value="normal">Prioritas: Normal</option>
+                <option value="low">Prioritas: Low</option>
               </select>
               <Button onClick={doAcceptAssign} disabled={busy || !assignId} className="rounded-none bg-amber-700 hover:bg-amber-800 text-white h-9" data-testid="drf-detail-accept-assign">
                 <PaperPlaneTilt size={14} weight="bold" className="mr-1" /> {busy ? "Memproses..." : "Terima & Assign"}

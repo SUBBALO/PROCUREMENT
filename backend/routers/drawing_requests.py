@@ -798,6 +798,13 @@ async def my_job_queue(current: dict = Depends(get_current_user)):
             diterima.append(d)
         else:
             antri.append(d)
+    # Urut otomatis berdasarkan PRIORITAS (high dulu), lalu yang paling lama ditugaskan.
+    _prio_rank = {"high": 0, "normal": 1, "low": 2}
+    def _prio_key(d):
+        return (_prio_rank.get((d.get("priority") or "normal").lower(), 1), d.get("assigned_at") or "")
+    antri.sort(key=_prio_key)
+    diterima.sort(key=_prio_key)
+    proses.sort(key=_prio_key)
     # Inquiry costing yang di-assign ke engineer ini (belum selesai)
     inq_docs = await db.inquiries.find(
         {"assigned_to_id": uid,
@@ -874,6 +881,72 @@ async def my_job_history(month: Optional[str] = None, current: dict = Depends(ge
         iq["lead_days"] = _lead_days(iq.get("assigned_at") or iq.get("created_at"), iq.get("completed_at"))
     return {"drf": drfs, "inquiries": inqs,
             "drf_count": len(drfs), "inquiry_count": len(inqs), "month": month or ""}
+
+
+@router.get("/drawing-requests/my-stats")
+async def my_monthly_stats(month: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Statistik pribadi mini per bulan untuk engineer yang login:
+    - completed_count : DRF + Inquiry selesai pada bulan tsb
+    - avg_lead_days   : rata-rata lead time (assign → selesai)
+    - on_time_count / on_time_total / on_time_rate :
+        DRF on-time bila completed_at <= expected_due_date;
+        Inquiry on-time bila completed_at <= customer_deadline.
+        Hanya record yang PUNYA deadline dihitung dalam on_time_total."""
+    uid = current.get("id")
+    if not uid:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    m = (month or "").strip()
+    if not (len(m) == 7 and m[4] == "-"):
+        m = datetime.now(timezone.utc).strftime("%Y-%m")
+
+    def _lead_days(start: str, end: str):
+        try:
+            d1 = datetime.fromisoformat((start or "")[:19])
+            d2 = datetime.fromisoformat((end or "")[:19])
+            return max(0.0, (d2 - d1).total_seconds() / 86400)
+        except Exception:
+            return None
+
+    leads, on_time, with_deadline = [], 0, 0
+    drf_done = inq_done = 0
+    async for d in db.drawing_requests.find(
+            {"assigned_engineer_id": uid, "status": "completed",
+             "completed_at": {"$regex": f"^{m}"}, "deleted_at": {"$exists": False}},
+            {"_id": 0, "assigned_at": 1, "created_at": 1, "completed_at": 1, "expected_due_date": 1}):
+        drf_done += 1
+        ld = _lead_days(d.get("assigned_at") or d.get("created_at"), d.get("completed_at"))
+        if ld is not None:
+            leads.append(ld)
+        due = (d.get("expected_due_date") or "")[:10]
+        if due:
+            with_deadline += 1
+            if (d.get("completed_at") or "")[:10] <= due:
+                on_time += 1
+    async for iq in db.inquiries.find(
+            {"assigned_to_id": uid, "status": "completed",
+             "completed_at": {"$regex": f"^{m}"}, "deleted_at": {"$exists": False}},
+            {"_id": 0, "assigned_at": 1, "created_at": 1, "completed_at": 1, "customer_deadline": 1}):
+        inq_done += 1
+        ld = _lead_days(iq.get("assigned_at") or iq.get("created_at"), iq.get("completed_at"))
+        if ld is not None:
+            leads.append(ld)
+        due = (iq.get("customer_deadline") or "")[:10]
+        if due:
+            with_deadline += 1
+            if (iq.get("completed_at") or "")[:10] <= due:
+                on_time += 1
+
+    total = drf_done + inq_done
+    return {
+        "month": m,
+        "completed_count": total,
+        "drf_done": drf_done,
+        "inquiry_done": inq_done,
+        "avg_lead_days": round(sum(leads) / len(leads), 1) if leads else None,
+        "on_time_count": on_time,
+        "on_time_total": with_deadline,
+        "on_time_rate": round(on_time * 100 / with_deadline, 1) if with_deadline else None,
+    }
 
 
 async def _compute_monthly_recap(m: str) -> dict:
@@ -1858,6 +1931,7 @@ async def reject_drf_revision(drf_id: str, payload: RevisionReqIn, current: dict
 class AcceptAssignIn(BaseModel):
     assigned_engineer_id: str
     assigned_engineer_name: Optional[str] = ""
+    priority: Optional[str] = "normal"  # high | normal | low — diset Leader saat assign
 
 
 @router.post("/drawing-requests/{drf_id}/accept-assign")
@@ -1889,12 +1963,19 @@ async def accept_and_assign_drf(
         "assigned_at": _now_iso(),
         "updated_at": _now_iso(),
     }
+    # Prioritas tugas (High/Normal/Low) — dipakai urutan antrian staff + badge
+    prio = (payload.priority or "normal").strip().lower()
+    if prio not in ("high", "normal", "low"):
+        prio = "normal"
+    upd["priority"] = prio
+    upd["priority_set_by"] = current.get("name") or current.get("username")
+    upd["priority_set_at"] = _now_iso()
     if not doc.get("received_by"):
         upd["received_by"] = _sig(current)
         upd["accepted_at"] = _now_iso()
     await db.drawing_requests.update_one({"id": drf_id}, {"$set": upd})
     await log_action(current, "drf_accept_assign", "drawing_requests", drf_id,
-                     {"form_no": doc.get("form_no"), "engineer": upd["assigned_engineer_name"]})
+                     {"form_no": doc.get("form_no"), "engineer": upd["assigned_engineer_name"], "priority": prio})
     out = await db.drawing_requests.find_one({"id": drf_id}, {"_id": 0})
     return _clean(out)
 

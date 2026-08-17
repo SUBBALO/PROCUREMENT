@@ -2,6 +2,7 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import SoProgressTracker from "../components/SoProgressTracker";
+import BossApprovalPanel from "../components/BossApprovalPanel";
 import {
   Storefront, Wrench, ShoppingBag, Package, ClipboardText, FileText, Factory, ArrowRight, Sparkle, Stamp, WarningCircle, Bank
 } from "@phosphor-icons/react";
@@ -212,8 +213,9 @@ export default function LandingPage() {
             </nav>
           </aside>
 
-          {/* Area utama — SO Progress Tracker */}
+          {/* Area utama — Approval Direktur (di atas) + SO Progress Tracker */}
           <main>
+            {role === "sales_head" && <BossApprovalPanel />}
             <SoProgressTracker />
           </main>
         </div>

@@ -23,6 +23,16 @@ export default function MyJobQueuePanel({ compact = false }) {
   const [hist, setHist] = useState(null);    // {drf, inquiries}
   const [histMonth, setHistMonth] = useState("");
   const [histLoading, setHistLoading] = useState(false);
+  // Statistik pribadi mini (per bulan)
+  const [stats, setStats] = useState(null);
+
+  const loadStats = useCallback(async (month) => {
+    try {
+      const { data } = await api.get("/drawing-requests/my-stats", { params: month ? { month } : {} });
+      setStats(data);
+    } catch (e) { setStats(null); }
+  }, []);
+  useEffect(() => { loadStats(view === "riwayat" ? histMonth : ""); }, [view, histMonth, loadStats]);
 
   const loadHistory = useCallback(async (month) => {
     setHistLoading(true);
@@ -116,9 +126,21 @@ export default function MyJobQueuePanel({ compact = false }) {
   if (compact && nothing) return null;
 
   const JobRow = ({ drf, mode }) => (
-    <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-white border border-slate-200" data-testid={`myqueue-row-${drf.id}`}>
+    <div className={`flex flex-wrap items-center gap-3 px-4 py-3 bg-white border ${drf.priority === "high" ? "border-rose-400 border-l-4" : "border-slate-200"}`} data-testid={`myqueue-row-${drf.id}`}>
       <div className="flex-1 min-w-[220px]">
-        <div className="font-mono font-bold text-slate-900 text-sm">{drf.form_no}</div>
+        <div className="font-mono font-bold text-slate-900 text-sm flex items-center flex-wrap gap-1.5">
+          {drf.form_no}
+          {drf.priority === "high" && (
+            <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-rose-600 text-white" data-testid={`myqueue-prio-high-${drf.id}`}>
+              Prioritas Tinggi
+            </span>
+          )}
+          {drf.priority === "low" && (
+            <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-slate-200 text-slate-600" data-testid={`myqueue-prio-low-${drf.id}`}>
+              Low
+            </span>
+          )}
+        </div>
         <div className="text-[12px] text-slate-600">
           SO <b className="font-mono">{drf.so_no || "-"}</b> · {drf.project_name || "-"} · {drf.customer_name || "-"}
         </div>
@@ -245,6 +267,20 @@ export default function MyJobQueuePanel({ compact = false }) {
           <span className="px-2 py-0.5 bg-white/25" data-testid="myqueue-proses-count">Proses: {proses.length + inqProses.length}</span>
         </div>
       </div>
+
+      {/* Statistik Pribadi Mini — performa bulan berjalan (atau bulan yang dipilih di Riwayat) */}
+      {stats && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 bg-white border-b-2 border-teal-100 text-[11px] text-slate-600" data-testid="myqueue-stats">
+          <span className="text-[9px] uppercase tracking-widest font-bold text-teal-700">Statistik Saya · {stats.month}</span>
+          <span data-testid="myqueue-stats-done">Selesai: <b className="text-slate-900">{stats.completed_count}</b>
+            {stats.completed_count > 0 && <span className="text-slate-400"> ({stats.drf_done} DRF · {stats.inquiry_done} Inquiry)</span>}
+          </span>
+          <span data-testid="myqueue-stats-lead">Rata-rata lead time: <b className="text-slate-900">{stats.avg_lead_days != null ? `${stats.avg_lead_days} hari` : "—"}</b></span>
+          <span data-testid="myqueue-stats-ontime">On-time: <b className={stats.on_time_rate != null && stats.on_time_rate < 80 ? "text-rose-700" : "text-emerald-700"}>
+            {stats.on_time_total ? `${stats.on_time_count}/${stats.on_time_total}` : "—"}
+          </b>{stats.on_time_rate != null && <span className="text-slate-400"> ({stats.on_time_rate}%)</span>}</span>
+        </div>
+      )}
 
       {view === "riwayat" ? (
         <div className="p-3 space-y-3" data-testid="myqueue-history">

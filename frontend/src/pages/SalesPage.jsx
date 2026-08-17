@@ -15,7 +15,7 @@ import {
   Storefront, Wrench, ArrowLeft, Plus, PaperPlaneTilt, Trash, Paperclip, DownloadSimple,
   FileText, ClockCounterClockwise, ChatCircleDots, Check, X, MagnifyingGlass,
   CircleNotch, Warning, ArrowClockwise, PencilSimple, Receipt, MicrosoftExcelLogo,
-  UserPlus, UserCircle, CalendarBlank, ClipboardText,
+  UserPlus, UserCircle, CalendarBlank, ClipboardText, PlayCircle, CheckCircle,
 } from "@phosphor-icons/react";
 import { SortDropdown, sortItems, cmpStr, cmpDateStr } from "../components/SortDropdown";
 import PaginationBar, { usePagination } from "../components/PaginationBar";
@@ -48,7 +48,21 @@ const STATUS_META = {
   closed: { label: "Ditutup", cls: "bg-slate-200 text-slate-600 border-slate-400" },
 };
 
-function StatusBadge({ status }) {
+function StatusBadge({ status, item }) {
+  // Kolom status IKUT KEADAAN AKTUAL (pola DRF), bukan status mentah DB:
+  // - ditugaskan tapi belum diterima  → Antri — Belum Diterima
+  // - diterima tapi belum dikerjakan  → Diterima — Belum Dikerjakan
+  // - benar-benar mulai dikerjakan    → Dikerjakan (work_started_at terisi)
+  // Berlaku juga utk data lama yang statusnya terlanjur "in_progress" karena auto-assign lama.
+  if (item && ["submitted", "in_progress"].includes(status) && item.assigned_to_id) {
+    if (item.work_started_at) {
+      return <span className="inline-block px-2 py-0.5 text-[10px] uppercase tracking-[0.05em] font-bold border bg-sky-100 text-sky-800 border-sky-300">Dikerjakan</span>;
+    }
+    if (item.accepted_at) {
+      return <span className="inline-block px-2 py-0.5 text-[10px] uppercase tracking-[0.05em] font-bold border bg-indigo-100 text-indigo-800 border-indigo-300">Diterima — Belum Dikerjakan</span>;
+    }
+    return <span className="inline-block px-2 py-0.5 text-[10px] uppercase tracking-[0.05em] font-bold border bg-amber-100 text-amber-800 border-amber-400">Antri — Belum Diterima</span>;
+  }
   const m = STATUS_META[status] || STATUS_META.draft;
   return <span className={`inline-block px-2 py-0.5 text-[10px] uppercase tracking-[0.05em] font-bold border ${m.cls}`}>{m.label}</span>;
 }
@@ -486,7 +500,7 @@ export default function SalesPage() {
                       <div>{r.customer_deadline || "-"}</div>
                       {dlActive && <div className={dInfo.cls}>⏱ {dInfo.label}</div>}
                     </td>
-                    <td className="p-3"><StatusBadge status={r.status} /></td>
+                    <td className="p-3"><StatusBadge status={r.status} item={r} /></td>
                     <td className="p-3 text-xs text-slate-600 whitespace-nowrap" data-testid={`inq-req-date-${r.inquiry_no}`}>
                       {(r.submitted_at || r.created_at) ? formatDateID((r.submitted_at || r.created_at).slice(0, 10)) : <span className="text-slate-300">-</span>}
                     </td>
@@ -987,7 +1001,7 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <span className="font-mono">{data.inquiry_no}</span>
-                <StatusBadge status={data.status} />
+                <StatusBadge status={data.status} item={data} />
               </DialogTitle>
               <DialogDescription>{data.title}</DialogDescription>
             </DialogHeader>
@@ -1225,8 +1239,59 @@ function InquiryDetailDialog({ inquiryId, user, onClose, onChanged, onEditDraft 
                 </>
               )}
 
+              {/* Assignee: Terima → Kerjakan (pola DRF — status ikut aksi aktual) */}
+              {isAssignee && ["submitted", "in_progress"].includes(data.status) && !data.work_started_at && !action && (
+                <div className="p-3 border-2 border-teal-400 bg-teal-50 space-y-2" data-testid="inq-stage-actions">
+                  {!data.accepted_at ? (
+                    <>
+                      <div className="text-xs text-teal-900">
+                        Inquiry ini ditugaskan ke Anda dan masih <b>ANTRI</b>. Klik <b>Terima</b> untuk mengakui tugas ini.
+                      </div>
+                      <Button
+                        data-testid="btn-inq-terima"
+                        disabled={processing}
+                        onClick={async () => {
+                          setProcessing(true);
+                          try {
+                            await api.post(`/inquiries/${inquiryId}/receive-job`);
+                            toast.success("Tugas diterima — status: Diterima (belum dikerjakan)");
+                            await reload(); onChanged();
+                          } catch (e) { toast.error(e.response?.data?.detail || "Gagal menerima tugas"); }
+                          finally { setProcessing(false); }
+                        }}
+                        className="rounded-none bg-amber-500 hover:bg-amber-600 text-white text-xs uppercase tracking-[0.1em]"
+                      >
+                        <CheckCircle size={13} weight="bold" className="mr-1" /> {processing ? "Memproses..." : "Terima Tugas"}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-xs text-teal-900">
+                        Tugas sudah Anda terima. Klik <b>Mulai Kerjakan</b> saat mulai mengerjakan costing (tanggal mulai tercatat).
+                      </div>
+                      <Button
+                        data-testid="btn-inq-kerjakan"
+                        disabled={processing}
+                        onClick={async () => {
+                          setProcessing(true);
+                          try {
+                            await api.post(`/inquiries/${inquiryId}/start-job`);
+                            toast.success("Mulai dikerjakan — status: Dikerjakan");
+                            await reload(); onChanged();
+                          } catch (e) { toast.error(e.response?.data?.detail || "Gagal memulai tugas"); }
+                          finally { setProcessing(false); }
+                        }}
+                        className="rounded-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs uppercase tracking-[0.1em]"
+                      >
+                        <PlayCircle size={13} weight="bold" className="mr-1" /> {processing ? "Memproses..." : "Mulai Kerjakan"}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* Engineer (assignee ONLY): Selesai Costing → Kirim ke Engineering Leader */}
-              {canEngAct && (data.status === "in_progress" || data.status === "head_revision") && !action && (
+              {canEngAct && ((data.status === "in_progress" && data.work_started_at) || data.status === "head_revision") && !action && (
                 <div className="space-y-2">
                   <Button data-testid="btn-complete-inquiry" onClick={() => setAction("complete")} className="rounded-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs uppercase tracking-[0.1em]">
                     <Check size={13} weight="bold" className="mr-1" />

@@ -1192,15 +1192,26 @@ async def set_work_category(drawing_id: str, payload: WorkCategoryIn, current: d
     return {"success": True, "work_category": cat}
 
 
-class DrfItemIn(BaseModel):
+class DrfItemRow(BaseModel):
     item_name: str = ""
     item_qty: float = 0
 
 
+class DrfItemIn(BaseModel):
+    item_name: str = ""
+    item_qty: float = 0
+    # Multi-item: 1 drawing bisa mencakup >1 item (mis. 2 item). Bila `items` dikirim,
+    # legacy item_name/item_qty diabaikan dan dihitung otomatis (qty stamp = TOTAL).
+    items: Optional[List[DrfItemRow]] = None
+
+
 @router.post("/drawings/{drawing_id}/drf-item")
 async def set_drawing_drf_item(drawing_id: str, payload: DrfItemIn, current: dict = Depends(get_current_user)):
-    """Engineer pilih Nama Item (dari daftar item DRF) & Qty untuk drawing ini.
-    Qty bisa beda/partial per drawing. Dipakai auto-isi qty stamping SO (Sales tetap bisa ubah)."""
+    """Engineer pilih item (dari daftar item DRF) & qty untuk drawing ini.
+    Mendukung MULTI-ITEM: payload.items = [{item_name, item_qty}, ...].
+    - drf_items  : daftar kanonik item per drawing
+    - item_name  : gabungan nama item (legacy display)
+    - item_qty   : TOTAL qty semua item — dipakai auto-isi qty stamping SO (Sales tetap bisa ubah)."""
     existing = await db.drawings.find_one({"id": drawing_id, "deleted_at": {"$exists": False}})
     if not existing:
         raise HTTPException(status_code=404, detail="Drawing tidak ditemukan")
@@ -1208,18 +1219,32 @@ async def set_drawing_drf_item(drawing_id: str, payload: DrfItemIn, current: dic
         raise HTTPException(status_code=403, detail="Engineering/Admin only")
     if not _can_modify_drawing(current, existing):
         raise HTTPException(status_code=403, detail=f"Drawing di-assign ke {existing.get('assigned_to_name','-')}. Hanya orang tsb / Eng Head yang bisa ubah.")
-    item_name = (payload.item_name or "").strip()
-    try:
-        item_qty = float(payload.item_qty or 0)
-    except (TypeError, ValueError):
-        item_qty = 0
+
+    def _f(v):
+        try:
+            return max(0.0, float(v or 0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    if payload.items is not None:
+        rows = [{"item_name": (r.item_name or "").strip(), "item_qty": _f(r.item_qty)}
+                for r in payload.items if (r.item_name or "").strip()]
+    else:
+        # Legacy single-item payload → jadikan baris pertama
+        nm = (payload.item_name or "").strip()
+        rows = [{"item_name": nm, "item_qty": _f(payload.item_qty)}] if nm else []
+
+    total_qty = round(sum(r["item_qty"] for r in rows), 4)
+    joined_name = ", ".join(r["item_name"] for r in rows)
     await db.drawings.update_one(
         {"id": drawing_id},
-        {"$set": {"item_name": item_name, "item_qty": item_qty, "updated_at": _now_iso(),
+        {"$set": {"drf_items": rows, "item_name": joined_name, "item_qty": total_qty,
+                  "updated_at": _now_iso(),
                   "updated_by": current.get("username") or current.get("name")}},
     )
-    await log_action(current, "drawing_set_drf_item", "drawings", drawing_id, {"item_name": item_name, "item_qty": item_qty})
-    return {"success": True, "item_name": item_name, "item_qty": item_qty}
+    await log_action(current, "drawing_set_drf_item", "drawings", drawing_id,
+                     {"items": rows, "total_qty": total_qty})
+    return {"success": True, "items": rows, "item_name": joined_name, "item_qty": total_qty}
 
 
 

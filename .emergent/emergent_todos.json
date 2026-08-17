@@ -1,34 +1,46 @@
 [
   {
-    "content": "Explore file terkait (queue panel, my-queue endpoint, work orders page)",
-    "status": "in_progress"
+    "content": "Eksplorasi: panel Item & Qty Drawing, endpoint save item drawing, logika stamp qty",
+    "status": "completed"
   },
   {
-    "content": "A. Gabung tab New Order + Repeat Order jadi 'Drawing Request'",
-    "status": "pending"
+    "content": "Backend: multi-item per drawing (items array + total qty utk stamp)",
+    "status": "completed"
   },
   {
-    "content": "B. Riwayat Pekerjaan staff di panel Tugas Saya (tab Riwayat + endpoint)",
-    "status": "pending"
+    "content": "Frontend: UI baris item + tombol Tambah Item di Work Order",
+    "status": "completed"
   },
   {
-    "content": "C. Reminder Drawing Belum Release + notif + card portal",
-    "status": "pending"
+    "content": "Backend: priority di accept-assign + sort my-queue",
+    "status": "completed"
   },
   {
-    "content": "D. Revisi Drawing Berantai — notif ke Produksi",
-    "status": "pending"
+    "content": "Frontend: selector priority di EngineeringQueuePanel + DrfDetailModal + badge High di MyJobQueuePanel",
+    "status": "completed"
   },
   {
-    "content": "E. Antrian polish: overdue merah + umur antrian + assign inline",
-    "status": "pending"
+    "content": "Backend: endpoint statistik pribadi bulanan staff (my-stats)",
+    "status": "completed"
   },
   {
-    "content": "F. KPI mingguan + badge card portal",
-    "status": "pending"
+    "content": "Frontend: kartu Statistik Pribadi Mini di Tugas Saya",
+    "status": "completed"
   },
   {
-    "content": "Compile + smoke + screenshot + cleanup",
-    "status": "pending"
+    "content": "Frontend: Checklist Deliverable 4 kotak upload di SubmitToLeaderPanel",
+    "status": "completed"
+  },
+  {
+    "content": "Fix flow Inquiry: assign tanpa auto-start, Terima/Kerjakan, status label aktual di semua tampilan",
+    "status": "completed"
+  },
+  {
+    "content": "Panel Butuh Approval Anda utk Direktur di halaman utama (di atas Progress SO)",
+    "status": "completed"
+  },
+  {
+    "content": "Compile check + smoke test backend + verifikasi visual testing agent + cleanup data test",
+    "status": "completed"
   }
 ]

@@ -27,6 +27,17 @@ const STATUS_LABELS = {
   closed: { t: "Selesai/Closed", c: "bg-emerald-100 text-emerald-800 border-emerald-300" },
 };
 
+// Status IKUT KEADAAN AKTUAL (pola DRF): ditugaskan-belum diterima → Antri;
+// diterima-belum dikerjakan → Diterima; work_started_at terisi → Dikerjakan.
+const stageLabel = (it) => {
+  if (["submitted", "in_progress"].includes(it.status) && it.assigned_to_id) {
+    if (it.work_started_at) return { t: "Dikerjakan", c: "bg-sky-100 text-sky-800 border-sky-300" };
+    if (it.accepted_at) return { t: "Diterima — Belum Dikerjakan", c: "bg-indigo-100 text-indigo-800 border-indigo-300" };
+    return { t: "Antri — Belum Diterima", c: "bg-amber-100 text-amber-800 border-amber-400" };
+  }
+  return STATUS_LABELS[it.status] || { t: it.status, c: "bg-slate-100 text-slate-600 border-slate-300" };
+};
+
 const CAT_STYLE = {
   simple: "bg-emerald-100 text-emerald-800 border-emerald-300",
   moderate: "bg-amber-100 text-amber-800 border-amber-300",
@@ -171,7 +182,7 @@ export default function EngineeringInquiryMasterlistPage() {
             {loading && (<tr><td colSpan={8} className="p-8 text-center text-slate-400"><ArrowClockwise size={18} className="inline animate-spin mr-1" /> Memuat...</td></tr>)}
             {!loading && items.length === 0 && (<tr><td colSpan={8} className="p-8 text-center text-slate-400">Belum ada inquiry.</td></tr>)}
             {!loading && items.map((it) => {
-              const st = STATUS_LABELS[it.status] || { t: it.status, c: "bg-slate-100 text-slate-600 border-slate-300" };
+              const st = stageLabel(it);
               const cat = (it.work_category || "").toLowerCase();
               const attCount = (it.attachments?.length || 0) + (it.engineer_response_files?.length || 0);
               return (
@@ -228,7 +239,7 @@ export default function EngineeringInquiryMasterlistPage() {
               <ClipboardText size={18} weight="bold" className="text-amber-600" />
               <span className="font-mono">{detail?.inquiry_no || "Detail Inquiry"}</span>
               {detail?.status && (() => {
-                const st = STATUS_LABELS[detail.status] || { t: detail.status, c: "bg-slate-100 text-slate-600 border-slate-300" };
+                const st = stageLabel(detail);
                 return <span className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${st.c}`}>{st.t}</span>;
               })()}
               {detail?.work_category && (

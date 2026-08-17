@@ -78,6 +78,7 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
   const [kpis, setKpis] = useState(null);
   const [engineers, setEngineers] = useState([]);
   const [assigning, setAssigning] = useState(null); // drf id yang sedang di-assign inline
+  const [prio, setPrio] = useState({});             // drf id → prioritas (high|normal|low) sebelum assign
   useEffect(() => {
     if (!isHead) return;
     api.get("/engineering/queue-kpis").then(({ data }) => setKpis(data)).catch(() => {});
@@ -88,9 +89,13 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
     if (!engineerId) return;
     setAssigning(r.id);
     try {
-      await api.post(`/drawing-requests/${r.id}/accept-assign`, { assigned_engineer_id: engineerId });
+      await api.post(`/drawing-requests/${r.id}/accept-assign`, {
+        assigned_engineer_id: engineerId,
+        priority: prio[r.id] || "normal",
+      });
       const eng = engineers.find((e) => e.id === engineerId);
-      toast.success(`${r.form_no} ditugaskan ke ${eng?.name || eng?.username || "engineer"}`);
+      const pl = { high: " (Prioritas TINGGI)", low: " (prioritas low)" }[prio[r.id]] || "";
+      toast.success(`${r.form_no} ditugaskan ke ${eng?.name || eng?.username || "engineer"}${pl}`);
       fetchAll();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal assign engineer");
@@ -151,14 +156,16 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
     customer_name: d.customer_name, project_name: d.project_name,
     engineer: d.assigned_engineer_name,
     status: d.status,
+    priority: d.priority || "",
     due: d.expected_due_date || d.due_date,
     created: d.created_at || d.submitted_at || "",
   }));
   const normInqStatus = (q) => {
     if (q.work_started_at) return "in_progress";   // Proses
     if (q.accepted_at) return "received";          // Diterima (belum dikerjakan)
+    if (q.assigned_to_id) return "accepted";       // ditugaskan, belum diterima = Antri
     if (q.status === "submitted") return "submitted";
-    return "accepted";                              // ditugaskan, belum diterima = Antri
+    return "accepted";
   };
   const inqRows = inquiries
     .filter((q) => !["draft", "completed", "rejected", "cancelled"].includes(q.status))
@@ -383,6 +390,12 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
                           <td className="py-1.5 px-2 font-mono text-xs font-semibold whitespace-nowrap">
                             {isOverdue && <span className="mr-1 text-rose-600" title="Lewat due date">⚠</span>}
                             <span className={isOverdue ? "text-rose-800" : "text-slate-800"}>{r.form_no}</span>
+                            {r.priority === "high" && (
+                              <span className="ml-1 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider bg-rose-600 text-white align-middle" data-testid={`eng-queue-prio-high-${r.form_no}`}>High</span>
+                            )}
+                            {r.priority === "low" && (
+                              <span className="ml-1 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider bg-slate-200 text-slate-500 align-middle">Low</span>
+                            )}
                           </td>
                           <td className="py-1.5 px-2 whitespace-nowrap"><AgeBadge createdAt={r.created} /></td>
                           <td className="py-1.5 px-2 whitespace-nowrap"><DueBadge value={r.due} /></td>
@@ -399,19 +412,34 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
                           </td>
                           <td className="py-1.5 px-2 text-xs text-slate-600 whitespace-nowrap">
                             {r.status === "submitted" && !isInquiry ? (
-                              <select
-                                value=""
-                                disabled={assigning === r.id}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) => inlineAssign(r, e.target.value)}
-                                className="h-6 text-[11px] border border-amber-300 bg-amber-50 text-amber-800 font-semibold max-w-[140px] cursor-pointer"
-                                data-testid={`eng-queue-inline-assign-${r.form_no}`}
-                              >
-                                <option value="">{assigning === r.id ? "Menugaskan…" : "+ Assign engineer"}</option>
-                                {engineers.map((e) => (
-                                  <option key={e.id} value={e.id}>{e.name || e.username}</option>
-                                ))}
-                              </select>
+                              <span className="inline-flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                <select
+                                  value={prio[r.id] || "normal"}
+                                  onChange={(e) => setPrio((p) => ({ ...p, [r.id]: e.target.value }))}
+                                  className={`h-6 text-[10px] border font-bold cursor-pointer ${
+                                    (prio[r.id] || "normal") === "high" ? "border-rose-400 bg-rose-50 text-rose-700"
+                                    : (prio[r.id] || "normal") === "low" ? "border-slate-300 bg-slate-50 text-slate-500"
+                                    : "border-slate-300 bg-white text-slate-600"}`}
+                                  title="Prioritas tugas"
+                                  data-testid={`eng-queue-prio-select-${r.form_no}`}
+                                >
+                                  <option value="high">High</option>
+                                  <option value="normal">Normal</option>
+                                  <option value="low">Low</option>
+                                </select>
+                                <select
+                                  value=""
+                                  disabled={assigning === r.id}
+                                  onChange={(e) => inlineAssign(r, e.target.value)}
+                                  className="h-6 text-[11px] border border-amber-300 bg-amber-50 text-amber-800 font-semibold max-w-[140px] cursor-pointer"
+                                  data-testid={`eng-queue-inline-assign-${r.form_no}`}
+                                >
+                                  <option value="">{assigning === r.id ? "Menugaskan…" : "+ Assign engineer"}</option>
+                                  {engineers.map((e) => (
+                                    <option key={e.id} value={e.id}>{e.name || e.username}</option>
+                                  ))}
+                                </select>
+                              </span>
                             ) : (
                               r.engineer || <span className="text-slate-300">—</span>
                             )}

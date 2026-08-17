@@ -510,13 +510,9 @@ async def assign_inquiry(inq_id: str, payload: InquiryAssign, current: dict = De
     now = datetime.utcnow().isoformat()
     who = current.get("name") or current.get("username")
     hist = {"at": now, "by": who, "action": f"assigned to {engineer_name}"}
-    # Auto-transition status to in_progress on first assign (Accept step is now merged into Assign).
+    # Alur mengikuti pola DRF: assign → ANTRI (belum diterima) → engineer klik TERIMA → klik KERJAKAN.
+    # TIDAK ada auto-start "engineering started" di sini — status baru jadi in_progress saat start-job.
     new_status = d.get("status")
-    if new_status == "submitted":
-        new_status = "in_progress"
-        hist_start = {"at": now, "by": who, "action": "engineering started (auto via assign)"}
-    else:
-        hist_start = None
     set_updates = {
         "assigned_to_id": target.get("id"),
         "assigned_to_name": engineer_name,
@@ -524,16 +520,23 @@ async def assign_inquiry(inq_id: str, payload: InquiryAssign, current: dict = De
         "assigned_by_name": who,
         "assigned_at": now,
         "updated_at": now,
-        "status": new_status,
         # Set PIC engineer to the assignee name for backward compatibility
         "pic_engineer_name": engineer_name if not d.get("pic_engineer_name") else d.get("pic_engineer_name"),
     }
-    history_push = [hist] + ([hist_start] if hist_start else [])
-    await db.inquiries.update_one(
-        {"id": inq_id},
-        {"$set": set_updates,
-         "$push": {"history": {"$each": history_push}}},
-    )
+    history_push = [hist]
+    prev_assignee = d.get("assigned_to_id")
+    unset_fields = {}
+    if prev_assignee and prev_assignee != target.get("id"):
+        # RE-ASSIGN ke engineer berbeda → engineer baru harus Terima & Kerjakan lagi (antri ulang).
+        unset_fields = {"accepted_at": "", "accepted_by_name": "", "work_started_at": "", "work_started_by": ""}
+        if d.get("status") == "in_progress":
+            new_status = "submitted"
+        history_push.append({"at": now, "by": who, "action": f"re-assign — menunggu diterima oleh {engineer_name}"})
+    set_updates["status"] = new_status
+    upd_ops = {"$set": set_updates, "$push": {"history": {"$each": history_push}}}
+    if unset_fields:
+        upd_ops["$unset"] = unset_fields
+    await db.inquiries.update_one({"id": inq_id}, upd_ops)
     await log_action(current, "assign_inquiry", "inquiry", inq_id,
                      {"engineer_id": target.get("id"), "engineer_name": engineer_name, "status": new_status})
     updated = await db.inquiries.find_one({"id": inq_id})
@@ -627,6 +630,9 @@ async def start_inquiry_job(inq_id: str, current: dict = Depends(get_current_use
     if not d.get("accepted_at"):
         upd["accepted_at"] = now
         upd["accepted_by_name"] = who
+    # Status resmi baru jadi in_progress SAAT engineer mulai kerjakan (bukan saat assign).
+    if d.get("status") == "submitted":
+        upd["status"] = "in_progress"
     await db.inquiries.update_one({"id": inq_id}, {
         "$set": upd,
         "$push": {"history": {"at": now, "by": who, "action": "mulai kerjakan inquiry"}},

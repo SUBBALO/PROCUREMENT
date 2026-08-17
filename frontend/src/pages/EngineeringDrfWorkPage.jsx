@@ -22,7 +22,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs"
 import { WorkOrderView } from "./BomEntryGridPage";
 import {
   Wrench, ArrowClockwise, Plus, Trash, FileText, Package,
-  CheckCircle, PaperPlaneRight, PencilSimple, Lock, ArrowRight, Eye, ClipboardText,
+  CheckCircle, PaperPlaneRight, PencilSimple, Lock, ArrowRight, Eye, ClipboardText, XCircle, ListChecks,
 } from "@phosphor-icons/react";
 
 /**
@@ -1034,6 +1034,9 @@ function SubmitToLeaderPanel({ drawings, soNo, onDone }) {
   const [selBom, setSelBom] = useState({});
   const [busy, setBusy] = useState(false);
   const [boms, setBoms] = useState([]);
+  // Checklist Deliverable — status 4 kotak upload (PDF Drawing MKS, Nesting, CAD, Costing)
+  const [deliv, setDeliv] = useState({ nesting: 0, cad: 0, costing: 0, canCosting: true, loaded: false });
+  const [delivConfirm, setDelivConfirm] = useState(false);
 
   const loadBoms = useCallback(() => {
     if (!soNo) { setBoms([]); return; }
@@ -1042,6 +1045,26 @@ function SubmitToLeaderPanel({ drawings, soNo, onDone }) {
       .catch(() => setBoms([]));
   }, [soNo]);
   useEffect(() => { loadBoms(); }, [loadBoms]);
+
+  // Cek kelengkapan deliverable dari attachments BOM (nesting / cad / costing)
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      let nesting = 0, cad = 0, costing = 0, canCosting = true;
+      for (const b of boms) {
+        try {
+          const { data } = await api.get(`/bom/${b.id}/attachments`);
+          const g = data.attachments || {};
+          nesting += (g.nesting || []).length;
+          cad += (g.cad || []).length;
+          costing += (g.costing || []).length;
+          if (data.can_view_costing === false) canCosting = false;
+        } catch (e) { /* panel opsional — biarkan hitungan 0 */ }
+      }
+      if (alive) setDeliv({ nesting, cad, costing, canCosting, loaded: true });
+    })();
+    return () => { alive = false; };
+  }, [boms]);
 
   const drawEligible = (d) =>
     !!d.file_id &&
@@ -1200,13 +1223,60 @@ function SubmitToLeaderPanel({ drawings, soNo, onDone }) {
         {/* BOM */}
         <BomSection />
 
+        {/* ── CHECKLIST DELIVERABLE — 4 kotak upload wajib dicek sebelum submit ── */}
+        {(() => {
+          const dwgTotal = (drawings || []).length;
+          const dwgWithFile = (drawings || []).filter((d) => d.file_id).length;
+          const rows = [
+            { key: "drawing", label: "PDF Drawing (MKS)", ok: dwgTotal > 0 && dwgWithFile === dwgTotal, detail: `${dwgWithFile}/${dwgTotal} drawing` },
+            { key: "nesting", label: "File Nesting", ok: deliv.nesting > 0, detail: `${deliv.nesting} file` },
+            { key: "cad", label: "File AutoCAD (DWG)", ok: deliv.cad > 0, detail: `${deliv.cad} file` },
+            ...(deliv.canCosting ? [{ key: "costing", label: "File Costing / Price", ok: deliv.costing > 0, detail: `${deliv.costing} file` }] : []),
+          ];
+          const missing = rows.filter((r) => !r.ok);
+          return (
+            <div className="border border-indigo-300 bg-white" data-testid="wg-deliv-checklist">
+              <div className="px-3 py-1.5 bg-indigo-500/90 text-white flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold">
+                <ListChecks size={13} weight="bold" /> Checklist Deliverable — kelengkapan 4 kotak upload
+                {!deliv.loaded && <span className="ml-2 normal-case font-normal animate-pulse">memuat…</span>}
+              </div>
+              <div className="divide-y divide-slate-100">
+                {rows.map((r) => (
+                  <div key={r.key} className="flex items-center gap-2 px-3 py-1.5 text-xs" data-testid={`wg-deliv-item-${r.key}`}>
+                    {r.ok
+                      ? <CheckCircle size={15} weight="fill" className="text-emerald-600 shrink-0" />
+                      : <XCircle size={15} weight="fill" className="text-rose-500 shrink-0" />}
+                    <span className={`font-semibold ${r.ok ? "text-slate-800" : "text-rose-700"}`}>{r.label}</span>
+                    <span className="ml-auto text-[10px] text-slate-400">{r.detail}</span>
+                  </div>
+                ))}
+              </div>
+              <label className={`flex items-start gap-2 px-3 py-2 border-t text-[11px] cursor-pointer ${missing.length > 0 ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-emerald-50 border-emerald-200 text-emerald-900"}`}>
+                <input
+                  type="checkbox"
+                  className="accent-indigo-600 mt-0.5"
+                  checked={delivConfirm}
+                  onChange={(e) => setDelivConfirm(e.target.checked)}
+                  data-testid="wg-deliv-confirm"
+                />
+                <span>
+                  {missing.length > 0
+                    ? <><b>Saya paham deliverable belum lengkap</b> ({missing.map((m) => m.label).join(", ")}) namun tetap submit ke Eng Leader.</>
+                    : <>Saya sudah cek — <b>semua deliverable lengkap</b>, siap submit ke Eng Leader.</>}
+                </span>
+              </label>
+            </div>
+          );
+        })()}
+
         <div className="flex items-center justify-end gap-2">
           <div className="text-[10px] text-slate-500 mr-auto">
             Terpilih: {selectedDrawIds.length} drawing · {selectedBomIds.length} BOM
+            {!delivConfirm && <span className="text-amber-700 font-semibold"> — centang checklist deliverable dulu</span>}
           </div>
           <Button
             onClick={submit}
-            disabled={busy || (selectedDrawIds.length === 0 && selectedBomIds.length === 0)}
+            disabled={busy || !delivConfirm || (selectedDrawIds.length === 0 && selectedBomIds.length === 0)}
             className="rounded-none bg-indigo-700 hover:bg-indigo-800 text-white h-10 px-6 disabled:opacity-40 transition-colors duration-150 active:translate-y-[1px]"
             data-testid="wg-submit-btn"
           >
