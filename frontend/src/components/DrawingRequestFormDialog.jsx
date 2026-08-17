@@ -559,9 +559,9 @@ export default function DrawingRequestFormDialog({ initial, onClose, onSaved }) 
               <div className="text-[10px] text-slate-500 mt-0.5">Tanggal PO customer diterima. Wajib diisi.</div>
             </div>
             <div>
-              <Label className="text-xs font-bold text-amber-700">Deadline Drawing</Label>
+              <Label className="text-xs font-bold text-amber-700">Deadline Drawing <span className="text-red-500">*</span></Label>
               <Input type="date" value={form.expected_due_date} onChange={(e) => setForm((f) => ({ ...f, expected_due_date: e.target.value }))} disabled={isLocked} className="rounded-none border-amber-300 focus-visible:ring-amber-400" data-testid="drf-due-date" />
-              <div className="text-[10px] text-slate-500 mt-0.5">Target selesai gambar. Otomatis terisi 5 hari dari hari ini — boleh diubah manual (opsional).</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">Target selesai gambar. Otomatis terisi 5 hari dari hari ini — boleh diubah. <b>Wajib diisi sebelum submit</b> (dasar KPI on-time).</div>
             </div>
             <div>
               <Label className="text-xs font-bold text-teal-700">Deadline Pengiriman Barang <span className="text-red-500">*</span></Label>

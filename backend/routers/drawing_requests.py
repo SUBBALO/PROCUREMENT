@@ -1719,6 +1719,12 @@ async def submit_drawing_request(drf_id: str, current: dict = Depends(get_curren
         raise HTTPException(status_code=400, detail=f"DRF sudah {doc['status']}")
     if doc["created_by"] != current["id"] and not is_admin_like(current):
         raise HTTPException(status_code=403, detail="Bukan pemilik DRF")
+    # Deadline Drawing WAJIB sebelum submit (dasar KPI on-time Engineering)
+    if not (doc.get("expected_due_date") or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Deadline Drawing (expected due date) wajib diisi sebelum submit — dasar perhitungan KPI on-time Engineering.",
+        )
 
     upd = {
         "status": "submitted",

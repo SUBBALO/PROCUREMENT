@@ -43,7 +43,7 @@ KPI_DEFS = [
      "formula_num": "Number of Drawings Release Without Non-Conformity (NC)",
      "formula_den": "Total Drawings Release",
      "target": "100%", "weight": 20,
-     "source": "drawings status='Issued' pada bulan tsb; drawing dianggap ber-NC bila ada record Nonconformance (CAR) yang diterbitkan (issued_at) pada bulan yang sama, menautkan drawing_no tsb."},
+     "source": "drawings status='Issued' pada bulan tsb; drawing dianggap ber-NC bila ada Nonconformance (CAR) terbit (issued_at) di bulan laporan. Drawing rilis bulan sebelumnya yang kena NC bulan ini ikut masuk denominator sebagai gagal (NC dinilai pada bulan NC diterbitkan)."},
     {"key": "drawing_no_revision", "no": 2,
      "name_id": "Drawing complies to customer requirements",
      "description": "Minimized Drawing Revision",
@@ -132,7 +132,7 @@ async def _load_ctx():
                 continue
             nc_by_dwg.setdefault(dno, []).append({
                 "nc_no": nc.get("nc_no"), "ym": ym, "id": nc.get("id"),
-                "severity": nc.get("severity"),
+                "severity": nc.get("severity"), "issued_at": nc.get("issued_at"),
             })
     due_by_dwg: dict = {}
     for r in drfs:
@@ -193,10 +193,14 @@ def _kpi_records(ctx: dict, key: str, ym: str) -> list:
         # KPI #1: Drawing tanpa NC. Basis = record Nonconformance (CAR) yang
         # DITERBITKAN pada bulan tsb (issued_at bulan = ym) — sesuai kesepakatan
         # "dinilai pada bulan NC diterbitkan". Auditable via nc_no.
+        # Drawing LAMA (rilis bulan sebelumnya) yang kena NC bulan ini juga ikut
+        # menurunkan KPI bulan ini (masuk denominator sebagai gagal).
         nc_by_dwg = ctx.get("nc_by_dwg", {})
         out = []
+        issued_nos = set()
         for d in issued:
             dno = d.get("drawing_no")
+            issued_nos.add(dno)
             ncs_this_month = [n for n in nc_by_dwg.get(dno, []) if n.get("ym") == ym]
             has_nc = bool(ncs_this_month)
             if has_nc:
@@ -207,6 +211,21 @@ def _kpi_records(ctx: dict, key: str, ym: str) -> list:
             out.append({
                 "ref": dno, "ok": not has_nc, "note": note,
                 "date": (_dwg_date(d) or "")[:10],
+                "nc_ids": [n.get("id") for n in ncs_this_month],
+                "nc_nos": [n.get("nc_no") for n in ncs_this_month],
+            })
+        # NC bulan ini untuk drawing yang TIDAK rilis bulan ini (rilis bulan lama)
+        for dno, ncs in nc_by_dwg.items():
+            if dno in issued_nos:
+                continue
+            ncs_this_month = [n for n in ncs if n.get("ym") == ym]
+            if not ncs_this_month:
+                continue
+            nc_refs = ", ".join(n.get("nc_no") or "-" for n in ncs_this_month)
+            out.append({
+                "ref": dno, "ok": False,
+                "note": f"Ada NC ({nc_refs}) — drawing rilis bulan sebelumnya",
+                "date": (ncs_this_month[0].get("issued_at") or "")[:10],
                 "nc_ids": [n.get("id") for n in ncs_this_month],
                 "nc_nos": [n.get("nc_no") for n in ncs_this_month],
             })

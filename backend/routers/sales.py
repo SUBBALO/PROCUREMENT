@@ -150,6 +150,9 @@ async def create_inquiry(payload: InquiryCreate, current: dict = Depends(get_cur
         raise HTTPException(status_code=400, detail="Judul wajib diisi")
     if not payload.customer_name.strip():
         raise HTTPException(status_code=400, detail="Nama customer wajib diisi")
+    # Deadline customer WAJIB saat kirim (boleh kosong hanya untuk draft) — dasar KPI on-time costing
+    if not payload.save_as_draft and not (payload.customer_deadline or "").strip():
+        raise HTTPException(status_code=400, detail="Customer Deadline wajib diisi sebelum inquiry dikirim — dasar perhitungan KPI on-time costing Engineering.")
 
     now = datetime.utcnow().isoformat()
     # Alur baru (Feb 2026): inquiry dari Sales TIDAK langsung ke Engineering.
@@ -405,6 +408,9 @@ async def submit_inquiry(inq_id: str, current: dict = Depends(get_current_user))
         raise HTTPException(status_code=400, detail="Hanya draft yang bisa disubmit")
     if current.get("id") != d.get("created_by_id") and not is_admin_like(current):
         raise HTTPException(status_code=403, detail="Bukan Inquiry Anda")
+    # Deadline customer WAJIB sebelum draft dikirim — dasar KPI on-time costing
+    if not (d.get("customer_deadline") or "").strip():
+        raise HTTPException(status_code=400, detail="Customer Deadline wajib diisi sebelum inquiry dikirim — edit inquiry dan isi deadline dulu.")
 
     now = datetime.utcnow().isoformat()
     # Direktur/Admin submit sendiri → langsung ke Engineering (skip review). Sales → review Direktur.

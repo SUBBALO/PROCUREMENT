@@ -347,21 +347,78 @@ User request: audit validitas summary, traceability per item, dan kebenaran rumu
 - Test data cleaned (0 remaining), backend syntax OK, esbuild OK.
 
 ### 23.4 — Business-policy notes (flagged; not changed)
-- KPI 1 (NC): current policy only counts NC in the same month as drawing release; NC created in later months won’t reduce prior-month KPI.
-  - Optional policy improvement: consider NC up to report end date.
+- KPI 1 (NC): optional policy improvement was discussed (NC up to report end date).
 - KPI 4/5: strict policy retained (no due date/deadline = fail) → requires discipline in filling DRF expected_due_date and inquiry customer_deadline.
 - Category cutoff has a gap around 70–71 (e.g., 70.5 stays PERLU PERBAIKAN because threshold is ≥71).
+
+---
+
+## Phase 24 — Keputusan Bisnis KPI Diterapkan (Status: COMPLETED)
+User decisions:
+1) **KPI 1**: NC dihitung sesuai **bulan NC diterbitkan** (bulan laporan).
+2) **KPI 4/5**: DRF dan Inquiry **wajib mengisi deadline**; jika belum ada deadline tidak boleh submit/kirim (boleh simpan draft).
+
+### 24.1 — KPI 1 policy change (Status: COMPLETED)
+**Backend: `backend/routers/kpi.py` KPI key `drawing_customer_nc`**
+- Basis denominator bulan laporan =
+  - Semua drawing status='Issued' pada bulan laporan (issued month)
+  - Ditambah drawing yang rilis bulan sebelumnya tetapi memiliki NC terbit pada bulan laporan (masuk denominator sebagai gagal)
+- Implementasi:
+  - `nc_by_dwg` sekarang menyimpan `issued_at` agar record “drawing rilis bulan sebelumnya” bisa diberi tanggal NC.
+  - NC dinilai tepat sekali pada bulan diterbitkan (bulan sebelumnya tidak berubah oleh NC bulan setelahnya) — period stable.
+- Source text KPI 1 diperbarui agar sesuai rumus.
+
+### 24.2 — DRF deadline required before submit (Status: COMPLETED)
+**Backend: `backend/routers/drawing_requests.py`**
+- `POST /drawing-requests/{drf_id}/submit` kini menolak 400 bila `expected_due_date` kosong:
+  - pesan: "Deadline Drawing wajib diisi sebelum submit — dasar KPI on-time Engineering."
+- Draft DRF tetap boleh tanpa deadline.
+
+**Frontend: `frontend/src/components/DrawingRequestFormDialog.jsx`**
+- Label deadline menjadi **Deadline Drawing \*** + hint "Wajib diisi sebelum submit".
+
+### 24.3 — Inquiry customer deadline required before submit/send (Status: COMPLETED)
+**Backend: `backend/routers/sales.py`**
+- Create inquiry:
+  - jika `save_as_draft=false` dan `customer_deadline` kosong → 400.
+  - draft boleh kosong.
+- Submit draft to head (`POST /inquiries/{inq_id}/submit-to-head`):
+  - jika `customer_deadline` kosong → 400.
+
+**Frontend: `frontend/src/pages/SalesPage.jsx`**
+- Pre-check saat kirim (submitNow=true): toast error bila deadline kosong.
+- Label menjadi **Deadline Costing \*** + hint dasar KPI.
+
+### 24.4 — Verification (Status: COMPLETED)
+- KPI 1:
+  - Bulan Agustus: drawing lama kena NC bulan ini ikut masuk denominator → 50% (1/2)
+  - Bulan Juli: tidak retroaktif → 100% (1/1)
+- DRF submit:
+  - tanpa deadline → 400
+  - dengan deadline → 200
+- Inquiry:
+  - kirim langsung tanpa deadline → 400
+  - draft tanpa deadline → 200
+  - draft kirim ke head tanpa deadline → 400
+- Data uji dibersihkan (0 sisa), python compile + esbuild clean.
 
 ---
 
 ## Notes / Current GitHub Safety
 - Perubahan terbaru masih **modified** dan belum di-commit/push.
 - Disarankan commit bertahap (agar jelas dan mudah rollback):
-  1) `Phase 23 KPI engineering audit + formula fixes`
-  2) `Phase 22 engineering recap ongoing + excel export`
-  3) `Phase 21 daily production qty validation + UI guard`
-  4) `Phase 20 engineering portal upgrade batch`
-  5) `Phase 18 daily production attendance required`
-  6) `Phase 19 deployment readiness .gitignore env fix`
-  7) `Phase 17 code-quality fixes`
+  1) `Phase 24 KPI decisions: KPI1 NC-by-report-month + deadline required on submit`
+  2) `Phase 23 KPI engineering audit + formula fixes`
+  3) `Phase 22 engineering recap ongoing + excel export`
+  4) `Phase 21 daily production qty validation + UI guard`
+  5) `Phase 20 engineering portal upgrade batch`
+  6) `Phase 18 daily production attendance required`
+  7) `Phase 19 deployment readiness .gitignore env fix`
+  8) `Phase 17 code-quality fixes`
 - Reminder: GitHub hanya backup **kode**; untuk **data** gunakan Full Backup (tar.gz) dan/atau Tahap 6 data-only backup bila sudah dibuat.
+
+---
+
+## Open Items (not requested yet)
+- **Category threshold gap** around 70–71% (business rule): decide if boundary should be inclusive at 70 or 71.
+- **Export KPI Engineering to Excel** (similar format to recap export).

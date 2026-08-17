@@ -615,6 +615,7 @@ function CreateInquiryDialog({ onClose, onCreated, initial = null, existingId = 
   const doSave = async (submitNow = false) => {
     if (!title.trim()) return toast.error("Nama Project wajib diisi");
     if (!customer.trim()) return toast.error("Customer wajib diisi");
+    if (submitNow && !deadline) return toast.error("Deadline Costing wajib diisi sebelum inquiry dikirim (dasar KPI on-time). Simpan sebagai draft jika belum ada.");
     // Guard: kalau user ketik nama customer tapi belum di-confirm dari master, tolak dan minta register
     if (!customerConfirmed && !exactMatch) {
       setShowRegisterCust(true);
@@ -719,8 +720,9 @@ function CreateInquiryDialog({ onClose, onCreated, initial = null, existingId = 
               )}
             </div>
             <div>
-              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Deadline Costing</Label>
+              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Deadline Costing <span className="text-red-500">*</span></Label>
               <Input data-testid="inq-deadline" type="date" className={inputCls} value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+              <div className="text-[10px] text-slate-400 mt-0.5">Wajib diisi sebelum kirim — dasar KPI on-time costing.</div>
             </div>
           </div>
           <div>
