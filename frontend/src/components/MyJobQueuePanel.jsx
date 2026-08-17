@@ -18,6 +18,21 @@ export default function MyJobQueuePanel({ compact = false }) {
   const [data, setData] = useState({ antri: [], diterima: [], proses: [] });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(null); // drf.id sedang diproses
+  // Riwayat pekerjaan selesai
+  const [view, setView] = useState("aktif"); // aktif | riwayat
+  const [hist, setHist] = useState(null);    // {drf, inquiries}
+  const [histMonth, setHistMonth] = useState("");
+  const [histLoading, setHistLoading] = useState(false);
+
+  const loadHistory = useCallback(async (month) => {
+    setHistLoading(true);
+    try {
+      const { data } = await api.get("/drawing-requests/my-history", { params: month ? { month } : {} });
+      setHist(data);
+    } catch (e) { setHist({ drf: [], inquiries: [] }); }
+    finally { setHistLoading(false); }
+  }, []);
+  useEffect(() => { if (view === "riwayat") loadHistory(histMonth); }, [view, histMonth, loadHistory]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -213,6 +228,16 @@ export default function MyJobQueuePanel({ compact = false }) {
         <div className="flex items-center gap-2">
           <Tray size={18} weight="fill" />
           <span className="text-sm font-bold uppercase tracking-[0.15em]">Tugas Saya</span>
+          <div className="flex ml-2">
+            <button onClick={() => setView("aktif")} data-testid="myqueue-view-aktif"
+              className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border border-white/40 ${view === "aktif" ? "bg-white text-teal-700" : "bg-transparent text-white hover:bg-white/15"}`}>
+              Aktif
+            </button>
+            <button onClick={() => setView("riwayat")} data-testid="myqueue-view-riwayat"
+              className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border border-white/40 border-l-0 ${view === "riwayat" ? "bg-white text-teal-700" : "bg-transparent text-white hover:bg-white/15"}`}>
+              Riwayat
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-2 text-[11px] font-bold">
           <span className="px-2 py-0.5 bg-amber-400/90 text-amber-950" data-testid="myqueue-antri-count">Antri: {antri.length + inqAntri.length}</span>
@@ -221,6 +246,66 @@ export default function MyJobQueuePanel({ compact = false }) {
         </div>
       </div>
 
+      {view === "riwayat" ? (
+        <div className="p-3 space-y-3" data-testid="myqueue-history">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="text-[11px] text-slate-500">Pekerjaan yang sudah Anda selesaikan (Drawing Request & Inquiry).</div>
+            <input type="month" value={histMonth} onChange={(e) => setHistMonth(e.target.value)}
+              className="h-8 px-2 border border-slate-300 text-xs bg-white" data-testid="myqueue-history-month" />
+          </div>
+          {histLoading ? (
+            <div className="text-center py-5 text-sm text-slate-400">Memuat…</div>
+          ) : !hist || (hist.drf.length === 0 && hist.inquiries.length === 0) ? (
+            <div className="text-center py-5 text-sm text-slate-400">
+              Belum ada pekerjaan selesai{histMonth ? " pada bulan ini" : ""}.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {hist.drf.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400 border-b border-slate-200 pb-1 mb-1">
+                    Drawing Request Selesai ({hist.drf.length})
+                  </div>
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {hist.drf.map((d) => (
+                        <tr key={d.id} className="border-b border-slate-100">
+                          <td className="py-1.5 pr-2 font-mono text-[11px] font-semibold text-slate-800">
+                            {d.form_no}
+                            {d.request_type === "repeat_order" && <span className="ml-1 px-1 text-[9px] font-bold uppercase bg-sky-50 text-sky-700 border border-sky-200">Repeat</span>}
+                          </td>
+                          <td className="py-1.5 pr-2 text-slate-600">SO {d.so_no || "-"} · {d.customer_name || "-"}</td>
+                          <td className="py-1.5 pr-2 text-slate-500 whitespace-nowrap">Selesai {(d.completed_at || "").slice(0, 10)}</td>
+                          <td className="py-1.5 text-right text-slate-500 whitespace-nowrap">{d.lead_days != null ? `${d.lead_days} hari` : "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {hist.inquiries.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400 border-b border-slate-200 pb-1 mb-1">
+                    Inquiry Selesai ({hist.inquiries.length})
+                  </div>
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {hist.inquiries.map((iq) => (
+                        <tr key={iq.id} className="border-b border-slate-100">
+                          <td className="py-1.5 pr-2 font-mono text-[11px] font-semibold text-slate-800">{iq.inquiry_no}</td>
+                          <td className="py-1.5 pr-2 text-slate-600">{iq.customer_name || "-"} · {iq.title || iq.project_name || "-"}</td>
+                          <td className="py-1.5 pr-2 text-slate-500 whitespace-nowrap">Selesai {(iq.completed_at || "").slice(0, 10)}</td>
+                          <td className="py-1.5 text-right text-slate-500 whitespace-nowrap">{iq.lead_days != null ? `${iq.lead_days} hari` : "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="p-3 space-y-4">
         {nothing && (
           <div className="text-center py-6 text-sm text-slate-500">
@@ -257,6 +342,7 @@ export default function MyJobQueuePanel({ compact = false }) {
           </button>
         )}
       </div>
+      )}
     </div>
   );
 }

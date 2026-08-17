@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import api from "../lib/api";
 import DrfDetailModal from "./DrfDetailModal";
 import EngLeaderReviewDialog from "./EngLeaderReviewDialog";
@@ -10,6 +11,18 @@ import {
 } from "@phosphor-icons/react";
 
 const TYPE_LABEL = { new_order: "New", repeat_order: "Repeat" };
+
+// Umur antrian: berapa hari sejak form dibuat/masuk (mengendap ketahuan).
+function AgeBadge({ createdAt }) {
+  if (!createdAt) return <span className="text-[11px] text-slate-300">—</span>;
+  const t = Date.parse(createdAt);
+  if (isNaN(t)) return <span className="text-[11px] text-slate-300">—</span>;
+  const days = Math.floor((Date.now() - t) / 86400000);
+  let cls = "text-slate-500";
+  if (days >= 14) cls = "text-rose-700 font-bold";
+  else if (days >= 7) cls = "text-amber-700 font-semibold";
+  return <span className={`text-[11px] tabular-nums ${cls}`} title={`Masuk: ${new Date(t).toLocaleDateString("id-ID")}`}>{days}h</span>;
+}
 
 // Badge Due Date: merah = lewat/overdue, kuning = ≤3 hari lagi, hijau = masih lama.
 function DueBadge({ value }) {
@@ -60,6 +73,29 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
   const [leaderRows, setLeaderRows] = useState([]);
   const [leaderLoading, setLeaderLoading] = useState(true);
   const [reviewTarget, setReviewTarget] = useState(null); // {drf_id, bom_id, bom_no, so_no}
+
+  // KPI ringkas + daftar engineer untuk assign inline
+  const [kpis, setKpis] = useState(null);
+  const [engineers, setEngineers] = useState([]);
+  const [assigning, setAssigning] = useState(null); // drf id yang sedang di-assign inline
+  useEffect(() => {
+    if (!isHead) return;
+    api.get("/engineering/queue-kpis").then(({ data }) => setKpis(data)).catch(() => {});
+    api.get("/drawing-requests/engineering-users").then(({ data }) => setEngineers(data.items || data.users || data || [])).catch(() => {});
+  }, [isHead]);
+
+  const inlineAssign = async (r, engineerId) => {
+    if (!engineerId) return;
+    setAssigning(r.id);
+    try {
+      await api.post(`/drawing-requests/${r.id}/accept-assign`, { assigned_engineer_id: engineerId });
+      const eng = engineers.find((e) => e.id === engineerId);
+      toast.success(`${r.form_no} ditugaskan ke ${eng?.name || eng?.username || "engineer"}`);
+      fetchAll();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal assign engineer");
+    } finally { setAssigning(null); }
+  };
 
   const fetchAll = useCallback(async () => {
     try {
@@ -116,6 +152,7 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
     engineer: d.assigned_engineer_name,
     status: d.status,
     due: d.expected_due_date || d.due_date,
+    created: d.created_at || d.submitted_at || "",
   }));
   const normInqStatus = (q) => {
     if (q.work_started_at) return "in_progress";   // Proses
@@ -134,6 +171,7 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
       engineer: q.assigned_to_name,
       status: normInqStatus(q),
       due: q.due_date || q.target_date || "",
+      created: q.created_at || "",
     }));
   const rows = [...drfRows, ...inqRows];
 
@@ -248,6 +286,15 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
       {/* ── TAB 1: Antrian Drawing Request & Inquiry ── */}
       {tab === "incoming" && (
         <div data-testid="eng-queue-incoming">
+          {/* KPI ringkas mingguan */}
+          {kpis && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-1.5 bg-slate-900 text-white text-[11px]" data-testid="eng-queue-kpis">
+              <span className="uppercase tracking-[0.12em] font-bold text-slate-400 text-[9px]">KPI</span>
+              <span>Selesai 7 hari: <b className="text-emerald-400 tabular-nums" data-testid="kpi-done-week">{kpis.done_week}</b></span>
+              <span>Overdue aktif: <b className={`tabular-nums ${kpis.overdue > 0 ? "text-rose-400" : "text-slate-300"}`} data-testid="kpi-overdue">{kpis.overdue}</b></span>
+              <span>Rata-rata lead time bulan ini: <b className="text-sky-300 tabular-nums" data-testid="kpi-lead">{kpis.avg_lead_days != null ? `${kpis.avg_lead_days} hari` : "—"}</b>{kpis.lead_samples ? <span className="text-slate-400"> ({kpis.lead_samples} DRF)</span> : null}</span>
+            </div>
+          )}
           {/* Filter tiles */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-px bg-slate-200" data-testid="eng-queue-filters">
             {FILTERS.map((f) => {
@@ -308,6 +355,7 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
                   <thead className="sticky top-0 bg-white z-[1]">
                     <tr className="text-[9px] uppercase tracking-[0.1em] font-bold text-slate-400 border-b border-slate-100">
                       <th className="text-left py-1.5 px-2">Form / No</th>
+                      <th className="text-left py-1.5 px-2" title="Umur antrian sejak masuk">Umur</th>
                       <th className="text-left py-1.5 px-2">Due Date</th>
                       <th className="text-left py-1.5 px-2">Jenis / Tipe</th>
                       <th className="text-left py-1.5 px-2">SO</th>
@@ -336,6 +384,7 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
                             {isOverdue && <span className="mr-1 text-rose-600" title="Lewat due date">⚠</span>}
                             <span className={isOverdue ? "text-rose-800" : "text-slate-800"}>{r.form_no}</span>
                           </td>
+                          <td className="py-1.5 px-2 whitespace-nowrap"><AgeBadge createdAt={r.created} /></td>
                           <td className="py-1.5 px-2 whitespace-nowrap"><DueBadge value={r.due} /></td>
                           <td className="py-1.5 px-2 whitespace-nowrap">
                             <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${isInquiry ? "bg-sky-50 text-sky-700 border-sky-300" : "bg-amber-50 text-amber-700 border-amber-300"}`}>
@@ -348,7 +397,25 @@ export default function EngineeringQueuePanel({ isHead, isEngUser }) {
                             <span className="font-medium">{r.customer_name || "-"}</span>
                             {r.project_name ? <span className="text-slate-400"> · {r.project_name}</span> : null}
                           </td>
-                          <td className="py-1.5 px-2 text-xs text-slate-600 whitespace-nowrap">{r.engineer || <span className="text-slate-300">—</span>}</td>
+                          <td className="py-1.5 px-2 text-xs text-slate-600 whitespace-nowrap">
+                            {r.status === "submitted" && !isInquiry ? (
+                              <select
+                                value=""
+                                disabled={assigning === r.id}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => inlineAssign(r, e.target.value)}
+                                className="h-6 text-[11px] border border-amber-300 bg-amber-50 text-amber-800 font-semibold max-w-[140px] cursor-pointer"
+                                data-testid={`eng-queue-inline-assign-${r.form_no}`}
+                              >
+                                <option value="">{assigning === r.id ? "Menugaskan…" : "+ Assign engineer"}</option>
+                                {engineers.map((e) => (
+                                  <option key={e.id} value={e.id}>{e.name || e.username}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              r.engineer || <span className="text-slate-300">—</span>
+                            )}
+                          </td>
                           <td className="py-1.5 px-2">
                             <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${meta.cls}`}>{meta.label}</span>
                           </td>

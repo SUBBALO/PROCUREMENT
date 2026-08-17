@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import DeptPortal from "../components/DeptPortal";
 import EngineeringQueuePanel from "../components/EngineeringQueuePanel";
 import MyJobQueuePanel from "../components/MyJobQueuePanel";
+import UnreleasedDrawingStrip from "../components/UnreleasedDrawingStrip";
 import api from "../lib/api";
 import {
   Wrench, Package, CurrencyCircleDollar, FileText, Kanban, ClipboardText as ClipboardIcon,
@@ -54,8 +55,8 @@ export default function EngineeringPortalPage() {
     ...(isHead ? [{
       key: "work-orders",
       label: "Pekerjaan Masuk (Work Order)",
-      stats: "Inquiry · New Order · Repeat Order",
-      description: "Satu pintu Engineering Leader: tab Inquiry (costing), New Order & Repeat Order (Drawing Request). Terima DRF, tunjuk engineer, dan pantau progres.",
+      stats: "Inquiry · Drawing Request",
+      description: "Satu pintu Engineering Leader: tab Inquiry (costing) & Drawing Request. Terima DRF, tunjuk engineer, dan pantau progres.",
       icon: Kanban,
       href: "/engineering/work-orders",
       badgeCount: drfPending,
@@ -138,6 +139,7 @@ export default function EngineeringPortalPage() {
       sidebarMenu
       cardsLabel="Menu Engineering"
     >
+      {(isHead || isEngUser) && <UnreleasedDrawingStrip />}
       {isHead && <EngineeringQueuePanel isHead={isHead} isEngUser={isEngUser} />}
       {isEngUser && <MyJobQueuePanel compact={isHead} />}
     </DeptPortal>

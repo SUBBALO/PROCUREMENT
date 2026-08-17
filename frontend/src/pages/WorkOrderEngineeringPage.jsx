@@ -38,7 +38,7 @@ export default function WorkOrderEngineeringPage() {
   const [inquiries, setInquiries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
-  const [tab, setTab] = useState("new_order");
+  const [tab, setTab] = useState("drawing");
   const [subStatus, setSubStatus] = useState("all"); // all | submitted | working (untuk tab New/Repeat)
   const [assignDrf, setAssignDrf] = useState(null);
   const [pendingTtd, setPendingTtd] = useState([]);
@@ -83,9 +83,8 @@ export default function WorkOrderEngineeringPage() {
 
   const matchQ = (d) => !q.trim() || `${d.form_no} ${d.so_no} ${d.customer_name} ${d.project_name}`.toLowerCase().includes(q.toLowerCase());
 
-  // DRF untuk tab tipe tertentu (new_order / repeat_order), gabungan assign + in-progress
-  const drfForType = (type) => items.filter((d) => {
-    if ((d.request_type || "new_order") !== type) return false;
+  // DRF gabungan (New Order + Repeat Order jadi satu tab "Drawing Request"), gabungan assign + in-progress
+  const drfCombined = () => items.filter((d) => {
     if (!matchQ(d)) return false;
     const isAssign = d.status === "submitted";
     const isWorking = ["accepted", "in_progress"].includes(d.status) && (isLeader || d.assigned_engineer_id === user?.id);
@@ -95,12 +94,10 @@ export default function WorkOrderEngineeringPage() {
     return isAssign || isWorking;
   });
 
-  const currentType = tab === "repeat_order" ? "repeat_order" : "new_order";
-  const shown = (tab === "new_order" || tab === "repeat_order") ? drfForType(currentType) : [];
+  const shown = tab === "drawing" ? drfCombined() : [];
 
-  // Counts untuk badge tab
-  const countNew = items.filter((d) => (d.request_type || "new_order") === "new_order" && (d.status === "submitted" || (["accepted", "in_progress"].includes(d.status) && (isLeader || d.assigned_engineer_id === user?.id)))).length;
-  const countRepeat = items.filter((d) => d.request_type === "repeat_order" && (d.status === "submitted" || (["accepted", "in_progress"].includes(d.status) && (isLeader || d.assigned_engineer_id === user?.id)))).length;
+  // Counts untuk badge tab (gabungan semua DRF)
+  const countDrf = items.filter((d) => (d.status === "submitted" || (["accepted", "in_progress"].includes(d.status) && (isLeader || d.assigned_engineer_id === user?.id)))).length;
   const activeInq = inquiries.filter((i) => !["draft", "completed", "rejected", "cancelled"].includes(i.status));
 
   // Riwayat TTD — search + pagination
@@ -130,7 +127,7 @@ export default function WorkOrderEngineeringPage() {
           Pekerjaan Masuk
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Satu pintu pekerjaan Engineering: <b>Inquiry</b> (costing dari Sales), <b>New Order</b> &amp; <b>Repeat Order</b> (Drawing Request).
+          Satu pintu pekerjaan Engineering: <b>Inquiry</b> (costing dari Sales) &amp; <b>Drawing Request</b>.
           {isLeader ? " Terima & tunjuk engineer, lalu pantau progres." : " Buka DRF yang ditugaskan untuk mulai bekerja."}
         </p>
       </div>
@@ -140,8 +137,7 @@ export default function WorkOrderEngineeringPage() {
       {/* Tabs utama */}
       <div className="flex gap-1 border-b border-slate-200 flex-wrap">
         <TabBtn active={tab === "inquiry"} onClick={() => setTab("inquiry")} icon={ClipboardText} label="Inquiry" count={activeInq.length} testid="hub-tab-inquiry" />
-        <TabBtn active={tab === "new_order"} onClick={() => { setTab("new_order"); setSubStatus("all"); }} icon={FilePlus} label="New Order" count={countNew} testid="hub-tab-new-order" />
-        <TabBtn active={tab === "repeat_order"} onClick={() => { setTab("repeat_order"); setSubStatus("all"); }} icon={ArrowsClockwise} label="Repeat Order" count={countRepeat} testid="hub-tab-repeat-order" />
+        <TabBtn active={tab === "drawing"} onClick={() => { setTab("drawing"); setSubStatus("all"); }} icon={FilePlus} label="Drawing Request" count={countDrf} testid="hub-tab-drawing" />
         <div className="flex-1 min-w-[8px]" />
         <TabBtn active={tab === "pendingttd"} onClick={() => setTab("pendingttd")} icon={PencilSimple} label="Perlu TTD Saya" count={pendingTtd.length} testid="hub-tab-pendingttd" />
         <TabBtn active={tab === "history"} onClick={() => setTab("history")} icon={ClockCounterClockwise} label="Riwayat TTD" testid="hub-tab-history" />
@@ -194,8 +190,8 @@ export default function WorkOrderEngineeringPage() {
         </Card>
       )}
 
-      {/* TAB NEW ORDER / REPEAT ORDER (DRF) */}
-      {(tab === "new_order" || tab === "repeat_order") && (
+      {/* TAB DRAWING REQUEST (gabungan New Order + Repeat Order) */}
+      {tab === "drawing" && (
         <Card className="rounded-none border-slate-200 overflow-hidden">
           <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2 flex-wrap">
             <MagnifyingGlass size={14} className="text-slate-500" />
@@ -230,12 +226,17 @@ export default function WorkOrderEngineeringPage() {
                 {loading && <tr><td colSpan={7} className="p-8 text-center text-slate-400">Memuat...</td></tr>}
                 {!loading && shown.length === 0 && (
                   <tr><td colSpan={7} className="p-12 text-center text-slate-400">
-                    {tab === "new_order" ? "Tidak ada New Order pada filter ini." : "Tidak ada Repeat Order pada filter ini."}
+                    Tidak ada Drawing Request pada filter ini.
                   </td></tr>
                 )}
                 {pagShown.pagedData.map((d) => (
                   <tr key={d.id} className="border-b border-slate-100 hover:bg-teal-50/40" data-testid={`wo-row-${d.form_no}`}>
-                    <td className="p-3 font-mono font-semibold text-slate-900 text-xs">{d.form_no}</td>
+                    <td className="p-3 font-mono font-semibold text-slate-900 text-xs">
+                      {d.form_no}
+                      {d.request_type === "repeat_order" && (
+                        <span className="ml-1.5 px-1 py-0.5 text-[9px] font-bold uppercase bg-sky-50 text-sky-700 border border-sky-200 align-middle">Repeat</span>
+                      )}
+                    </td>
                     <td className="p-3 font-mono text-xs">{d.so_no || "-"}</td>
                     <td className="p-3 text-xs">{d.project_name || "-"}</td>
                     <td className="p-3 text-xs">{d.customer_name || "-"}</td>

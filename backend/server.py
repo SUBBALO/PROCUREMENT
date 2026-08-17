@@ -401,6 +401,7 @@ async def startup():
         await db.production_tools.create_index("status")
         await db.tool_loans.create_index("tool_id")
         await db.tool_loans.create_index("status")
+        await db.drawing_revision_events.create_index("at")
     except Exception as e:
         logger.warning(f"session/trash index skip: {e}")
     await db.store_receipts.create_index("item_name")

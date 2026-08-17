@@ -841,6 +841,56 @@ async def _gather_notifications(user: dict) -> dict:
     except Exception:
         pass
 
+    # ------------- (Produksi) Revisi Drawing Terbaru — pakai revisi terbaru -------------
+    try:
+        if role in ("produksi", "production") or admin_like:
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
+            evs = await db.drawing_revision_events.find(
+                {"at": {"$gte": cutoff}}, {"_id": 0},
+            ).sort("at", -1).to_list(length=30)
+            if evs:
+                categories.append({
+                    "key": "drawing_new_revision",
+                    "label": "Revisi Drawing Terbaru — pakai revisi terbaru",
+                    "count": len(evs),
+                    "severity": "warn",
+                    "items": [{
+                        "id": e.get("id"),
+                        "title": f"{e.get('drawing_no')} Rev-{e.get('rev_no')} sudah release — PAKAI REVISI TERBARU",
+                        "detail": f"SO {e.get('so_no') or '-'} · {e.get('customer_name') or '-'}" + (f" · Alasan: {e.get('reason')}" if e.get("reason") else ""),
+                        "sub": f"Di-stamp {(e.get('at') or '')[:10]} oleh {e.get('stamped_by') or '-'} — gambar revisi lama jangan dipakai lagi",
+                        "link": "/engineering/drawings",
+                        "kind": "drawing_new_revision",
+                        "created_at": e.get("at"),
+                    } for e in evs],
+                })
+    except Exception:
+        pass
+
+    # ------------- (Engineering/DocCon) SO jalan produksi tapi drawing belum release -------------
+    try:
+        if role in ("engineering", "eng_staff", "eng_head", "eng_leader", "doc_control", "document_control") or admin_like:
+            from routers.drawing_requests import compute_unreleased_so
+            unrel = await compute_unreleased_so()
+            if unrel:
+                categories.append({
+                    "key": "so_drawing_not_released",
+                    "label": "SO Jalan Produksi — Drawing BELUM Release",
+                    "count": len(unrel),
+                    "severity": "danger",
+                    "items": [{
+                        "id": u["so_no"],
+                        "title": f"SO {u['so_no']} sudah jalan produksi tanpa drawing release",
+                        "detail": f"{u.get('customer') or '-'} · {u.get('note')}",
+                        "sub": "Segera proses approval & stamp DocCon",
+                        "link": "/engineering/drawings",
+                        "kind": "so_drawing_not_released",
+                        "created_at": None,
+                    } for u in unrel[:20]],
+                })
+    except Exception:
+        pass
+
     total_count = sum(c["count"] for c in categories)
     return {
         "role": role,

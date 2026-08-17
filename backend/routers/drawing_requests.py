@@ -42,7 +42,8 @@ from pydantic import BaseModel, Field
 from db import db
 from deps import (
     ENGINEERING_HEAD_ROLES, SALES_ROLES,
-    get_current_user, is_admin_like, is_eng_head, is_engineering, is_sales_head, log_action,
+    get_current_user, is_admin_like, is_doc_control, is_eng_head, is_engineering,
+    is_production, is_sales_head, log_action,
 )
 
 router = APIRouter(tags=["drawing_request"])
@@ -834,6 +835,180 @@ async def my_job_queue(current: dict = Depends(get_current_user)):
         "pending": antri, "in_progress": proses,
         "pending_count": len(antri), "in_progress_count": len(proses),
     }
+
+
+@router.get("/drawing-requests/my-history")
+async def my_job_history(month: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Riwayat pekerjaan yang SUDAH SELESAI milik engineer yang login:
+    DRF completed + Inquiry completed. Filter opsional per bulan (YYYY-MM)."""
+    uid = current.get("id")
+    if not uid:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    drf_filt = {"assigned_engineer_id": uid, "status": "completed", "deleted_at": {"$exists": False}}
+    inq_filt = {"assigned_to_id": uid, "status": "completed", "deleted_at": {"$exists": False}}
+    if month and len(month) == 7:
+        drf_filt["completed_at"] = {"$regex": f"^{month}"}
+        inq_filt["completed_at"] = {"$regex": f"^{month}"}
+
+    def _lead_days(start: str, end: str):
+        try:
+            d1 = datetime.fromisoformat((start or "")[:19])
+            d2 = datetime.fromisoformat((end or "")[:19])
+            return max(0, round((d2 - d1).total_seconds() / 86400, 1))
+        except Exception:
+            return None
+
+    drfs = await db.drawing_requests.find(
+        drf_filt,
+        {"_id": 0, "id": 1, "form_no": 1, "so_no": 1, "customer_name": 1, "project_name": 1,
+         "request_type": 1, "assigned_at": 1, "created_at": 1, "completed_at": 1},
+    ).sort("completed_at", -1).to_list(length=150)
+    for d in drfs:
+        d["lead_days"] = _lead_days(d.get("assigned_at") or d.get("created_at"), d.get("completed_at"))
+    inqs = await db.inquiries.find(
+        inq_filt,
+        {"_id": 0, "id": 1, "inquiry_no": 1, "title": 1, "customer_name": 1, "project_name": 1,
+         "assigned_at": 1, "created_at": 1, "completed_at": 1},
+    ).sort("completed_at", -1).to_list(length=150)
+    for iq in inqs:
+        iq["lead_days"] = _lead_days(iq.get("assigned_at") or iq.get("created_at"), iq.get("completed_at"))
+    return {"drf": drfs, "inquiries": inqs,
+            "drf_count": len(drfs), "inquiry_count": len(inqs), "month": month or ""}
+
+
+@router.get("/engineering/monthly-recap")
+async def engineering_monthly_recap(month: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Rekap produktivitas bulanan per engineer:
+    - inquiry_done : Inquiry selesai (assigned ke dia, completed bulan tsb)
+    - drf_done     : Drawing Request selesai
+    - revisi       : Revisi drawing yang dia kerjakan (revision_opened pada drawing miliknya)
+    - ecn          : ECN/ECR yang dia ajukan (log drawing_request_revision_ecn)
+    """
+    if not (is_engineering(current) or is_admin_like(current) or is_sales_head(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering / Leader / Direktur")
+    m = (month or "").strip()[:7] or datetime.now(timezone.utc).strftime("%Y-%m")
+    from deps import ENGINEERING_ROLES
+    users = await db.users.find(
+        {"role": {"$in": list(ENGINEERING_ROLES)}, "active": {"$ne": False}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "username": 1, "name": 1, "role": 1},
+    ).sort("name", 1).to_list(length=200)
+    per = {u["id"]: {"user_id": u["id"], "name": u.get("name") or u.get("username"),
+                     "username": u.get("username"), "role": u.get("role"),
+                     "inquiry_done": 0, "drf_done": 0, "revisi": 0, "ecn": 0, "total": 0}
+           for u in users}
+    uname_to_id = {u.get("username"): u["id"] for u in users}
+
+    # Inquiry selesai
+    async for iq in db.inquiries.find(
+            {"status": "completed", "completed_at": {"$regex": f"^{m}"}, "deleted_at": {"$exists": False}},
+            {"_id": 0, "assigned_to_id": 1}):
+        t = per.get(iq.get("assigned_to_id"))
+        if t:
+            t["inquiry_done"] += 1
+    # DRF selesai
+    async for d in db.drawing_requests.find(
+            {"status": "completed", "completed_at": {"$regex": f"^{m}"}, "deleted_at": {"$exists": False}},
+            {"_id": 0, "assigned_engineer_id": 1}):
+        t = per.get(d.get("assigned_engineer_id"))
+        if t:
+            t["drf_done"] += 1
+    # Revisi dikerjakan (drawing revision_opened_at bulan tsb → engineer via DRF)
+    rev_drws = await db.drawings.find(
+        {"revision_opened_at": {"$regex": f"^{m}"}, "deleted_at": {"$exists": False}},
+        {"_id": 0, "from_drf_id": 1, "assigned_to": 1},
+    ).to_list(length=2000)
+    drf_ids = [r.get("from_drf_id") for r in rev_drws if r.get("from_drf_id")]
+    drf_eng = {}
+    if drf_ids:
+        async for d in db.drawing_requests.find({"id": {"$in": drf_ids}}, {"_id": 0, "id": 1, "assigned_engineer_id": 1}):
+            drf_eng[d["id"]] = d.get("assigned_engineer_id")
+    for r in rev_drws:
+        eng_id = drf_eng.get(r.get("from_drf_id")) or r.get("assigned_to")
+        t = per.get(eng_id)
+        if t:
+            t["revisi"] += 1
+    # ECN/ECR diajukan (dari audit log)
+    async for lg in db.activity_logs.find(
+            {"action": "drawing_request_revision_ecn", "timestamp": {"$regex": f"^{m}"}},
+            {"_id": 0, "user_id": 1, "username": 1}):
+        t = per.get(lg.get("user_id")) or per.get(uname_to_id.get(lg.get("username")))
+        if t:
+            t["ecn"] += 1
+
+    items = list(per.values())
+    for t in items:
+        t["total"] = t["inquiry_done"] + t["drf_done"] + t["revisi"] + t["ecn"]
+    items.sort(key=lambda x: x["total"], reverse=True)
+    totals = {k: sum(t[k] for t in items) for k in ("inquiry_done", "drf_done", "revisi", "ecn", "total")}
+    return {"month": m, "items": items, "totals": totals}
+
+
+@router.get("/engineering/queue-kpis")
+async def engineering_queue_kpis(current: dict = Depends(get_current_user)):
+    """KPI ringkas antrian Engineering: selesai 7 hari terakhir, overdue aktif,
+    rata-rata lead time DRF selesai bulan berjalan."""
+    if not (is_engineering(current) or is_admin_like(current) or is_sales_head(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering / Leader / Direktur")
+    now = datetime.now(timezone.utc)
+    week_ago = (now - timedelta(days=7)).isoformat()
+    today = now.strftime("%Y-%m-%d")
+    m = now.strftime("%Y-%m")
+    done_week = await db.drawing_requests.count_documents(
+        {"status": "completed", "completed_at": {"$gte": week_ago}, "deleted_at": {"$exists": False}})
+    overdue = await db.drawing_requests.count_documents(
+        {"status": {"$in": ["submitted", "accepted", "received", "in_progress"]},
+         "expected_due_date": {"$gt": "", "$lt": today}, "deleted_at": {"$exists": False}})
+    lead, n = 0.0, 0
+    async for d in db.drawing_requests.find(
+            {"status": "completed", "completed_at": {"$regex": f"^{m}"}, "deleted_at": {"$exists": False}},
+            {"_id": 0, "created_at": 1, "assigned_at": 1, "completed_at": 1}):
+        try:
+            d1 = datetime.fromisoformat((d.get("assigned_at") or d.get("created_at") or "")[:19])
+            d2 = datetime.fromisoformat((d.get("completed_at") or "")[:19])
+            lead += max(0.0, (d2 - d1).total_seconds() / 86400)
+            n += 1
+        except Exception:
+            pass
+    return {"done_week": done_week, "overdue": overdue,
+            "avg_lead_days": round(lead / n, 1) if n else None, "lead_samples": n, "month": m}
+
+
+async def compute_unreleased_so() -> List[dict]:
+    """SO yang SUDAH jalan di Produksi (ada Daily Report / Release Note)
+    tapi belum punya drawing ter-release (controlled/released) di Drawing Register."""
+    so_rep = await db.production_reports.distinct("so_no")
+    so_frn = await db.fg_release_notes.distinct("so_no")
+    actives = sorted({str(s).strip() for s in (list(so_rep) + list(so_frn)) if s and str(s).strip()})
+    out = []
+    for so in actives:
+        dws = await db.drawings.find(
+            {"so_no": so, "deleted_at": {"$exists": False}},
+            {"_id": 0, "drawing_no": 1, "approval_status": 1},
+        ).to_list(length=300)
+        if any((d.get("approval_status") or "") in ("controlled", "released") for d in dws):
+            continue
+        so_doc = await db.sales_orders.find_one(
+            {"so_no": so, "deleted_at": {"$exists": False}},
+            {"_id": 0, "customer": 1, "customer_name": 1})
+        statuses = sorted({(d.get("approval_status") or "draft") for d in dws})
+        out.append({
+            "so_no": so,
+            "customer": (so_doc or {}).get("customer") or (so_doc or {}).get("customer_name") or "",
+            "drawing_count": len(dws),
+            "statuses": statuses,
+            "note": "Belum ada drawing sama sekali" if not dws
+                    else f"{len(dws)} drawing, status: {', '.join(statuses)} — belum release",
+        })
+    return out
+
+
+@router.get("/engineering/so-unreleased-drawings")
+async def so_unreleased_drawings(current: dict = Depends(get_current_user)):
+    """Reminder: SO sudah jalan produksi tapi drawing belum release (DocCon belum stamp)."""
+    if not (is_engineering(current) or is_admin_like(current) or is_doc_control(current) or is_production(current)):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    items = await compute_unreleased_so()
+    return {"items": items, "count": len(items)}
 
 
 @router.get("/drawing-requests/stage-board")

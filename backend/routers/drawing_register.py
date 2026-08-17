@@ -3415,6 +3415,21 @@ async def drawing_stamp_controlled(
                     }},
                     array_filters=[{"e.id": target["id"]}],
                 )
+            # Revisi Drawing Berantai — event untuk notifikasi Produksi "pakai revisi terbaru"
+            try:
+                await db.drawing_revision_events.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "drawing_id": drawing_id,
+                    "drawing_no": drawing.get("drawing_no"),
+                    "so_no": (drawing.get("so_no") or "").strip(),
+                    "customer_name": drawing.get("customer_name") or "",
+                    "rev_no": new_rev_no,
+                    "reason": drawing.get("revision_reason") or "",
+                    "stamped_by": current.get("name") or current.get("username"),
+                    "at": _now_iso(),
+                })
+            except Exception:
+                pass
 
     await log_action(current, "drawing_stamp_controlled", "drawings", drawing_id,
                      {"drawing_no": drawing.get("drawing_no"), "target": target,

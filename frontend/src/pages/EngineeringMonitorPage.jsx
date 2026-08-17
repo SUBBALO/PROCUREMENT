@@ -3,12 +3,14 @@ import BackLink from "../components/BackLink";
 import EngineeringWorkloadPage from "./EngineeringWorkloadPage";
 import SoTrackerListPage from "./SoTrackerListPage";
 import EngineeringKpiPage from "./EngineeringKpiPage";
-import { Gauge, Kanban, ChartLineUp } from "@phosphor-icons/react";
+import EngineeringMonthlyRecapPage from "./EngineeringMonthlyRecapPage";
+import { Gauge, Kanban, ChartLineUp, UsersThree } from "@phosphor-icons/react";
 
 const TABS = [
   { key: "workload", label: "Beban Kerja", icon: Gauge, Comp: EngineeringWorkloadPage },
   { key: "so-tracker", label: "SO Tracker", icon: Kanban, Comp: SoTrackerListPage },
   { key: "kpi", label: "KPI", icon: ChartLineUp, Comp: EngineeringKpiPage },
+  { key: "recap", label: "Rekap Bulanan", icon: UsersThree, Comp: EngineeringMonthlyRecapPage },
 ];
 
 export default function EngineeringMonitorPage() {
