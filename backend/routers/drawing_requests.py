@@ -876,17 +876,8 @@ async def my_job_history(month: Optional[str] = None, current: dict = Depends(ge
             "drf_count": len(drfs), "inquiry_count": len(inqs), "month": month or ""}
 
 
-@router.get("/engineering/monthly-recap")
-async def engineering_monthly_recap(month: Optional[str] = None, current: dict = Depends(get_current_user)):
-    """Rekap produktivitas bulanan per engineer:
-    - inquiry_done : Inquiry selesai (assigned ke dia, completed bulan tsb)
-    - drf_done     : Drawing Request selesai
-    - revisi       : Revisi drawing yang dia kerjakan (revision_opened pada drawing miliknya)
-    - ecn          : ECN/ECR yang dia ajukan (log drawing_request_revision_ecn)
-    """
-    if not (is_engineering(current) or is_admin_like(current) or is_sales_head(current)):
-        raise HTTPException(status_code=403, detail="Hanya Engineering / Leader / Direktur")
-    m = (month or "").strip()[:7] or datetime.now(timezone.utc).strftime("%Y-%m")
+async def _compute_monthly_recap(m: str) -> dict:
+    """Hitung rekap produktivitas bulanan per engineer (dipakai endpoint JSON & Excel)."""
     from deps import ENGINEERING_ROLES
     users = await db.users.find(
         {"role": {"$in": list(ENGINEERING_ROLES)}, "active": {"$ne": False}, "deleted_at": {"$exists": False}},
@@ -894,7 +885,8 @@ async def engineering_monthly_recap(month: Optional[str] = None, current: dict =
     ).sort("name", 1).to_list(length=200)
     per = {u["id"]: {"user_id": u["id"], "name": u.get("name") or u.get("username"),
                      "username": u.get("username"), "role": u.get("role"),
-                     "inquiry_done": 0, "drf_done": 0, "revisi": 0, "ecn": 0, "total": 0}
+                     "inquiry_done": 0, "drf_done": 0, "revisi": 0, "ecn": 0, "total": 0,
+                     "inquiry_ongoing": 0, "drf_ongoing": 0, "ongoing": 0}
            for u in users}
     uname_to_id = {u.get("username"): u["id"] for u in users}
 
@@ -934,13 +926,140 @@ async def engineering_monthly_recap(month: Optional[str] = None, current: dict =
         t = per.get(lg.get("user_id")) or per.get(uname_to_id.get(lg.get("username")))
         if t:
             t["ecn"] += 1
+    # SEDANG ONGOING (kondisi saat ini, bukan per bulan)
+    async for iq in db.inquiries.find(
+            {"status": {"$nin": ["completed", "cancelled", "closed"]},
+             "assigned_to_id": {"$nin": [None, ""]}, "deleted_at": {"$exists": False}},
+            {"_id": 0, "assigned_to_id": 1}):
+        t = per.get(iq.get("assigned_to_id"))
+        if t:
+            t["inquiry_ongoing"] += 1
+    async for d in db.drawing_requests.find(
+            {"status": {"$in": ["accepted", "received", "in_progress"]}, "deleted_at": {"$exists": False}},
+            {"_id": 0, "assigned_engineer_id": 1}):
+        t = per.get(d.get("assigned_engineer_id"))
+        if t:
+            t["drf_ongoing"] += 1
 
     items = list(per.values())
     for t in items:
         t["total"] = t["inquiry_done"] + t["drf_done"] + t["revisi"] + t["ecn"]
-    items.sort(key=lambda x: x["total"], reverse=True)
-    totals = {k: sum(t[k] for t in items) for k in ("inquiry_done", "drf_done", "revisi", "ecn", "total")}
+        t["ongoing"] = t["inquiry_ongoing"] + t["drf_ongoing"]
+    items.sort(key=lambda x: (x["total"], x["ongoing"]), reverse=True)
+    totals = {k: sum(t[k] for t in items)
+              for k in ("inquiry_done", "drf_done", "revisi", "ecn", "total",
+                        "inquiry_ongoing", "drf_ongoing", "ongoing")}
     return {"month": m, "items": items, "totals": totals}
+
+
+def _recap_guard(current: dict):
+    if not (is_engineering(current) or is_admin_like(current) or is_sales_head(current)):
+        raise HTTPException(status_code=403, detail="Hanya Engineering / Leader / Direktur")
+
+
+@router.get("/engineering/monthly-recap")
+async def engineering_monthly_recap(month: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Rekap produktivitas bulanan per engineer:
+    - inquiry_done : Inquiry selesai (assigned ke dia, completed bulan tsb)
+    - drf_done     : Drawing Request selesai
+    - revisi       : Revisi drawing yang dia kerjakan (revision_opened pada drawing miliknya)
+    - ecn          : ECN/ECR yang dia ajukan (log drawing_request_revision_ecn)
+    """
+    _recap_guard(current)
+    m = (month or "").strip()[:7] or datetime.now(timezone.utc).strftime("%Y-%m")
+    return await _compute_monthly_recap(m)
+
+
+@router.get("/engineering/monthly-recap/export")
+async def engineering_monthly_recap_export(month: Optional[str] = None, current: dict = Depends(get_current_user)):
+    """Export rekap produktivitas bulanan per engineer ke Excel (lampiran penilaian)."""
+    _recap_guard(current)
+    m = (month or "").strip()[:7] or datetime.now(timezone.utc).strftime("%Y-%m")
+    data = await _compute_monthly_recap(m)
+
+    import io as _io
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+    try:
+        month_label = datetime.strptime(m + "-01", "%Y-%m-%d").strftime("%B %Y")
+    except Exception:
+        month_label = m
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Rekap Engineer"
+
+    thin = Side(style="thin", color="B0B0B0")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    head_fill = PatternFill("solid", fgColor="1E293B")
+    total_fill = PatternFill("solid", fgColor="0F172A")
+    zebra_fill = PatternFill("solid", fgColor="F1F5F9")
+    center = Alignment(horizontal="center", vertical="center")
+    left = Alignment(horizontal="left", vertical="center")
+
+    # Judul
+    ws.merge_cells("A1:G1")
+    c = ws["A1"]
+    c.value = f"REKAP PRODUKTIVITAS ENGINEERING — {month_label}"
+    c.font = Font(bold=True, size=13)
+    c.alignment = left
+    ws.merge_cells("A2:G2")
+    ws["A2"] = "Inquiry/DRF selesai dihitung dari tanggal selesai · Revisi = drawing yang dibuka revisinya bulan tsb · ECN/ECR = pengajuan revisi · Ongoing = pekerjaan yang sedang berjalan saat export"
+    ws["A2"].font = Font(size=9, italic=True, color="666666")
+
+    headers = ["No", "Engineer", "Role", "Inquiry Selesai", "Drawing Request Selesai", "Revisi Dikerjakan",
+               "ECN/ECR Diajukan", "Total Selesai", "Inquiry Ongoing", "DRF Ongoing", "Total Ongoing"]
+    ws.append([])
+    ws.append(headers)
+    hr = ws.max_row
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=hr, column=col)
+        cell.font = Font(bold=True, color="FFFFFF", size=10)
+        cell.fill = head_fill
+        cell.border = border
+        cell.alignment = center
+
+    for i, t in enumerate(data["items"], start=1):
+        ws.append([i, t["name"], (t.get("role") or "").upper(),
+                   t["inquiry_done"], t["drf_done"], t["revisi"], t["ecn"], t["total"],
+                   t.get("inquiry_ongoing", 0), t.get("drf_ongoing", 0), t.get("ongoing", 0)])
+        r = ws.max_row
+        for col in range(1, len(headers) + 1):
+            cell = ws.cell(row=r, column=col)
+            cell.border = border
+            cell.alignment = left if col == 2 else center
+            cell.font = Font(size=10, bold=(col in (8, 11)))
+            if i % 2 == 0:
+                cell.fill = zebra_fill
+
+    tot = data["totals"]
+    ws.append(["", "TOTAL DEPARTEMEN", "", tot.get("inquiry_done", 0), tot.get("drf_done", 0),
+               tot.get("revisi", 0), tot.get("ecn", 0), tot.get("total", 0),
+               tot.get("inquiry_ongoing", 0), tot.get("drf_ongoing", 0), tot.get("ongoing", 0)])
+    r = ws.max_row
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=r, column=col)
+        cell.font = Font(bold=True, color="FFFFFF", size=10)
+        cell.fill = total_fill
+        cell.border = border
+        cell.alignment = left if col == 2 else center
+
+    widths = [5, 26, 14, 15, 22, 18, 17, 13, 15, 13, 14]
+    for idx, w in enumerate(widths, start=1):
+        ws.column_dimensions[ws.cell(row=hr, column=idx).column_letter].width = w
+    ws.freeze_panes = ws.cell(row=hr + 1, column=1)
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    await log_action(current, "export_engineering_recap", "engineering", m, {"month": m})
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="rekap_engineering_{m}.xlsx"'},
+    )
 
 
 @router.get("/engineering/queue-kpis")

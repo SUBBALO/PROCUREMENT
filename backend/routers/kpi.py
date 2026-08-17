@@ -1,13 +1,15 @@
 """Engineering KPI — laporan bulanan (format form resmi, mengikuti gaya KPI Purchasing).
 
-Catatan: Form Excel Engineering TIDAK memakai kolom Bobot (semua KPI setara, target ≥95%).
-SKOR KPI = Capaian Aktual (%). Total = rata-rata capaian KPI otomatis.
+Metodologi (sesuai form): tiap KPI punya BOBOT (Achievement Weight, total 100%).
+SKOR KPI = Capaian Aktual (%) × Bobot / 100. TOTAL = Σ skor, dinormalisasi terhadap
+bobot KPI yang punya data (agar bulan dengan data parsial tidak salah kategori).
 
 Semua angka dihitung dari data ERP nyata (auditable) — tiap KPI bisa ditelusur ke record aslinya.
 Sumber data:
 - drawings          : status='Issued' (drawing rilis), pdf_match_status (validasi MKS),
-                      revision, revision_request (NC/reject), updated_at (tgl rilis).
-- ecns (kind='ecn') : sumber REVISI drawing/BOM (drawing_no / bom_no yang direvisi).
+                      revision, tanggal rilis = controlled_at (stamp DocCon; beku) → drawing_date → updated_at.
+- ecns (kind='ecn') : sumber REVISI drawing/BOM — hanya ECN yang terbit ≤ akhir bulan pelaporan
+                      (laporan bulan lama tidak berubah karena ECN baru).
 - boms              : engineering_status='approved', rev_no.
 - drawing_requests  : expected_due_date (jadwal) + linked_drawing_ids.
 - inquiries         : completed_at vs customer_deadline (on-time costing).
@@ -48,28 +50,28 @@ KPI_DEFS = [
      "formula_num": "Number of Drawings Release Without Revision",
      "formula_den": "Total Drawings Release",
      "target": "≥ 95%", "weight": 15,
-     "source": "drawings.revision (harus Rev-0) DAN drawing_no tidak ada di ecns(kind='ecn')."},
+     "source": "drawings.revision (harus Rev-0) DAN drawing_no tidak ada di ecns(kind='ecn') yang terbit ≤ akhir bulan pelaporan."},
     {"key": "bom_no_revision", "no": 3,
      "name_id": "BOM compliance rate with project requirements",
      "description": "Minimized BOM Revision & Nesting Error",
      "formula_num": "Number of BOMs Release Without Revision",
      "formula_den": "Total BOMs Release",
      "target": "≥ 95%", "weight": 15,
-     "source": "boms.engineering_status='approved', rev_no=0, DAN bom_no tidak ada di ecns(kind='ecn')."},
+     "source": "boms.engineering_status='approved', rev_no=0, DAN bom_no tidak ada di ecns(kind='ecn') yang terbit ≤ akhir bulan pelaporan."},
     {"key": "drawing_ontime", "no": 4,
      "name_id": "On Time Drawing completion against plan schedule",
      "description": "Minimized Drawing Lateness Issued",
      "formula_num": "Number of Drawings On Time (meet schedule)",
      "formula_den": "Total Drawings Release",
      "target": "≥ 95%", "weight": 25,
-     "source": "Numerator = drawing rilis yang tgl selesainya ≤ drawing_requests.expected_due_date; Denominator = total drawing status='Issued' bulan tsb (drawing tanpa jadwal DRF tidak dihitung on-time)."},
+     "source": "Numerator = drawing rilis yang tgl selesainya ≤ drawing_requests.expected_due_date; Denominator = total drawing status='Issued' bulan tsb. Drawing tanpa jadwal DRF dihitung TIDAK on-time (masuk denominator, gagal)."},
     {"key": "costing_ontime", "no": 5,
      "name_id": "On Time Costing Completion against due date schedule",
      "description": "Minimized Costing Lateness Issued",
      "formula_num": "Number of Costings Release On Time",
      "formula_den": "Total Costings Completed",
      "target": "≥ 95%", "weight": 15,
-     "source": "Numerator = inquiry selesai (completed_at) yang ≤ customer_deadline; Denominator = total inquiry selesai (completed_at) bulan tsb (tanpa deadline tidak dihitung on-time)."},
+     "source": "Numerator = inquiry selesai (completed_at) yang ≤ customer_deadline; Denominator = total inquiry selesai (completed_at) bulan tsb. Inquiry tanpa deadline customer dihitung TIDAK on-time (masuk denominator, gagal) — pastikan Sales mengisi Customer Deadline."},
     {"key": "drawing_template_mks", "no": 6,
      "name_id": "Drawing complies with the standardized template",
      "description": "Drawing compliance with Standards template",
@@ -113,8 +115,10 @@ async def _load_ctx():
     boms = await db.boms.find({}).to_list(length=None)
     inquiries = await db.inquiries.find({}).to_list(length=None)
     drfs = await db.drawing_requests.find({}).to_list(length=None)
-    ecn_dwg = set(x for x in await db.ecns.distinct("drawing_no", {"kind": "ecn"}) if x)
-    ecn_bom = set(x for x in await db.ecns.distinct("bom_no", {"kind": "ecn"}) if x)
+    ecn_docs = await db.ecns.find(
+        {"kind": "ecn"},
+        {"_id": 0, "drawing_no": 1, "bom_no": 1, "created_at": 1},
+    ).to_list(length=None)
     # Nonconformance (CAR) — untuk KPI #1. Map: drawing_no → list {nc_no, ym, id, severity}.
     nc_by_dwg: dict = {}
     ncs = await db.nonconformances.find(
@@ -141,12 +145,39 @@ async def _load_ctx():
         for did in ids:
             due_by_dwg[did] = due
     return {"drawings": drawings, "boms": boms, "inquiries": inquiries,
-            "ecn_dwg": ecn_dwg, "ecn_bom": ecn_bom, "due_by_dwg": due_by_dwg,
+            "ecn_docs": ecn_docs, "due_by_dwg": due_by_dwg,
             "nc_by_dwg": nc_by_dwg}
 
 
+def _ecn_sets(ctx: dict, ym: str):
+    """ECN yang terbit ≤ akhir bulan pelaporan (period-stable: ECN baru tidak
+    mengubah laporan bulan lama). ECN tanpa tanggal ikut dihitung (konservatif)."""
+    dwg, bom = set(), set()
+    for e in ctx.get("ecn_docs", []):
+        created = str(e.get("created_at") or "")[:7]
+        if created and created > ym:
+            continue
+        if e.get("drawing_no"):
+            dwg.add(e["drawing_no"])
+        if e.get("bom_no"):
+            bom.add(e["bom_no"])
+    return dwg, bom
+
+
+def _is_rev0(rev_val) -> bool:
+    """Normalisasi nilai revisi: '', '0', '00', 'Rev-0', 'REV 0', 'rev.0' → revisi awal."""
+    s = str(rev_val or "").strip().lower()
+    for pref in ("rev", "revision"):
+        if s.startswith(pref):
+            s = s[len(pref):]
+    s = s.strip(" .-_")
+    return s in ("", "0", "00")
+
+
 def _dwg_date(d):
-    return _date_of(d.get("updated_at"), d.get("drawing_date"), d.get("created_at"))
+    # Tanggal rilis BEKU: controlled_at (stamp DocCon) → drawing_date → updated_at → created_at.
+    # (updated_at sengaja bukan prioritas — berubah tiap edit sehingga drawing bisa "pindah bulan".)
+    return _date_of(d.get("controlled_at"), d.get("drawing_date"), d.get("updated_at"), d.get("created_at"))
 
 
 def _bom_date(b):
@@ -156,6 +187,7 @@ def _bom_date(b):
 def _kpi_records(ctx: dict, key: str, ym: str) -> list:
     drawings = ctx["drawings"]
     issued = [d for d in drawings if str(d.get("status") or "").lower() == "issued" and _in_period(_dwg_date(d), ym)]
+    ecn_dwg, ecn_bom = _ecn_sets(ctx, ym)
 
     if key == "drawing_customer_nc":
         # KPI #1: Drawing tanpa NC. Basis = record Nonconformance (CAR) yang
@@ -184,9 +216,9 @@ def _kpi_records(ctx: dict, key: str, ym: str) -> list:
         out = []
         for d in issued:
             rev = str(d.get("revision") or "").strip()
-            revised = (rev not in ("", "Rev-0", "REV-0", "rev-0")) or (d.get("drawing_no") in ctx["ecn_dwg"])
+            revised = (not _is_rev0(rev)) or (d.get("drawing_no") in ecn_dwg)
             out.append({"ref": d.get("drawing_no"), "ok": not revised,
-                        "note": f"revision={rev or '-'}" + (" · ada ECN" if d.get("drawing_no") in ctx["ecn_dwg"] else ""),
+                        "note": f"revision={rev or '-'}" + (" · ada ECN" if d.get("drawing_no") in ecn_dwg else ""),
                         "date": (_dwg_date(d) or "")[:10]})
         return out
 
@@ -194,9 +226,9 @@ def _kpi_records(ctx: dict, key: str, ym: str) -> list:
         approved = [b for b in ctx["boms"] if str(b.get("engineering_status") or "").lower() == "approved" and _in_period(_bom_date(b), ym)]
         out = []
         for b in approved:
-            revised = (int(b.get("rev_no") or 0) > 0) or (b.get("bom_no") in ctx["ecn_bom"])
+            revised = (int(b.get("rev_no") or 0) > 0) or (b.get("bom_no") in ecn_bom)
             out.append({"ref": b.get("bom_no"), "ok": not revised,
-                        "note": f"rev_no={b.get('rev_no', 0)}" + (" · ada ECN" if b.get("bom_no") in ctx["ecn_bom"] else ""),
+                        "note": f"rev_no={b.get('rev_no', 0)}" + (" · ada ECN" if b.get("bom_no") in ecn_bom else ""),
                         "date": (_bom_date(b) or "")[:10]})
         return out
 
@@ -210,7 +242,7 @@ def _kpi_records(ctx: dict, key: str, ym: str) -> list:
                 note = f"selesai {done} vs due {str(due)[:10]}"
             else:
                 ok = False
-                note = f"selesai {done} · tanpa jadwal DRF (tidak dihitung on-time)"
+                note = f"selesai {done} · tanpa jadwal DRF → dihitung TIDAK on-time"
             out.append({"ref": d.get("drawing_no"), "ok": ok, "note": note, "date": done})
         return out
 
@@ -226,7 +258,7 @@ def _kpi_records(ctx: dict, key: str, ym: str) -> list:
                 note = f"selesai {str(comp)[:10]} vs deadline {str(dl)[:10]}"
             else:
                 ok = False
-                note = f"selesai {str(comp)[:10]} · tanpa deadline (tidak dihitung on-time)"
+                note = f"selesai {str(comp)[:10]} · tanpa deadline customer → dihitung TIDAK on-time"
             out.append({"ref": i.get("inquiry_no"), "ok": ok, "note": note, "date": str(comp)[:10]})
         return out
 
@@ -262,12 +294,13 @@ async def _compute_month(year: int, month: int) -> dict:
             "score": score,
             "category": _category(ach),
         })
-    total = round(total_score, 2) if have_data else None
+    total = round(total_score / total_weight * 100, 2) if (have_data and total_weight) else None
     last_day = calendar.monthrange(year, month)[1]
     return {
         "year": year, "month": month,
         "period": {"start_date": f"{ym}-01", "end_date": f"{year:04d}-{month:02d}-{last_day:02d}"},
         "total_weight": sum(d["weight"] for d in KPI_DEFS),
+        "counted_weight": total_weight,  # bobot KPI yang punya data — dasar normalisasi Total
         "kpis": kpis,
         "total_score": total,
         "category": _category(total),

@@ -176,7 +176,11 @@ export default function EngineeringKpiPage({ embedded = false }) {
                 <tr>
                   <td colSpan={4} className="border border-slate-400 p-2 text-right font-bold uppercase text-xs tracking-wider text-slate-600">Total</td>
                   <td className="border border-slate-400 p-2 text-center font-black bg-yellow-200 tabular-nums" data-testid="kpi-total-weight">{data.total_weight}%</td>
-                  <td className="border border-slate-400"></td>
+                  <td className="border border-slate-400 text-center text-[10px] text-slate-500 align-middle">
+                    {data.counted_weight != null && data.counted_weight < data.total_weight ? (
+                      <span className="text-amber-600 font-semibold" data-testid="kpi-counted-weight">bobot terisi {data.counted_weight}% — total dinormalisasi</span>
+                    ) : null}
+                  </td>
                   <td className="border border-slate-400 p-2 text-center font-black bg-yellow-300 tabular-nums text-lg" data-testid="kpi-total-score" style={{ fontFamily: "Chivo, sans-serif" }}>
                     {data.total_score == null ? "–" : `${data.total_score.toFixed(2)} %`}
                   </td>

@@ -101,10 +101,8 @@ Perbaikan:
 Current state (sebelumnya sudah ada):
 - Backend: `GET /store/stock/history` (ledger IN/OUT + running balance).
 - Frontend: klik nama item → membuka `StockHistoryDialog` (filter tanggal, print/PDF).
-
 Update baru:
 - Menambahkan ikon/tombol **Riwayat** yang selalu terlihat di kolom **Aksi** pada `StoreStockPage` (icon `ClockCounterClockwise`) agar fitur history mudah ditemukan.
-- Verified via screenshot: dialog riwayat terbuka dari tombol ikon.
 
 ### Phase 8.3 — Stock Opname (session-based) (Status: COMPLETED)
 User request: fitur hitung fisik vs sistem + penyesuaian selisih untuk audit gudang berkala.
@@ -221,14 +219,12 @@ Key applied fixes:
 ---
 
 ## Phase 20 — Engineering Portal Upgrade Batch (Status: COMPLETED)
-User approved: implement **all** engineering-card recommendations + requested changes:
-- Merge DRF tabs (New/Repeat) because staff no longer uses the split.
-- Provide staff history (riwayat pekerjaan) and department monthly recap (per engineer).
+User approved: implement **all** engineering-card recommendations + requested changes.
 
 ### 20.A — Merge tab "New Order" + "Repeat Order" → "Drawing Request" (Status: COMPLETED)
 **Frontend: `frontend/src/pages/WorkOrderEngineeringPage.jsx`**
 - Default tab now `drawing`.
-- New unified tab **Drawing Request** (combines New+Repeat) with badge count = total DRF requiring assignment or in-progress visibility.
+- Unified tab **Drawing Request** (combines New+Repeat) with badge count = total DRF requiring assignment or in-progress visibility.
 - Legacy `request_type=repeat_order` still preserved; shown as small badge **Repeat** in the row.
 
 **Frontend: `frontend/src/pages/EngineeringPortalPage.jsx`**
@@ -236,78 +232,44 @@ User approved: implement **all** engineering-card recommendations + requested ch
 
 ### 20.B — Staff Work History in portal "Tugas Saya" (Status: COMPLETED)
 **Backend: `GET /drawing-requests/my-history?month=YYYY-MM`**
-- Returns:
-  - DRF completed by logged-in engineer (`assigned_engineer_id`)
-  - Inquiry completed by logged-in engineer (`assigned_to_id`)
-  - Includes `lead_days` (assigned/created → completed)
+- Returns completed DRF + completed Inquiry for logged-in engineer (includes lead_days).
 
 **Frontend: `frontend/src/components/MyJobQueuePanel.jsx`**
-- Toggle view **Aktif | Riwayat**.
-- History view:
-  - Month filter (input type month)
-  - Lists completed DRF + completed Inquiries with completion date and lead time.
+- Toggle view **Aktif | Riwayat** + month filter.
 
 ### 20.C — Reminder "SO jalan produksi tapi drawing belum release" (Status: COMPLETED)
-**Backend:**
-- Helper `compute_unreleased_so()`:
-  - Finds SO with production activity (`production_reports` or `fg_release_notes`)
-  - Flags SO without any drawing `approval_status in (controlled, released)` in Drawing Register.
-- Endpoint `GET /engineering/so-unreleased-drawings` (Engineering/DocCon/Produksi/Admin).
+**Backend**
+- `compute_unreleased_so()` + endpoint `GET /engineering/so-unreleased-drawings`.
 
-**Frontend:**
-- New component: `frontend/src/components/UnreleasedDrawingStrip.jsx`.
-- Strip appears on Engineering portal; collapsible; refresh 60s.
-- Verified with real data: SO `005200` flagged.
+**Frontend**
+- `frontend/src/components/UnreleasedDrawingStrip.jsx` strip peringatan di portal engineering.
 
-**Notifications:**
-- New category `so_drawing_not_released` (severity danger) for engineering/doccon/admin.
+**Notifications**
+- Category `so_drawing_not_released` (severity danger) for engineering/doccon/admin.
 
 ### 20.D — Revisi Drawing Berantai → notif ke Produksi "pakai revisi terbaru" (Status: COMPLETED)
-**Backend:**
-- On Drawing Register stamp-controlled (new revision): inserts `drawing_revision_events`.
+**Backend**
+- Insert `drawing_revision_events` on stamp-controlled new revision.
 
-**Notifications:**
-- New category `drawing_new_revision` for produksi/admin (events within last 14 days).
+**Notifications**
+- Category `drawing_new_revision` for produksi/admin (events ≤ 14 days).
 
 ### 20.E — Queue polish (Status: COMPLETED)
 **Frontend: `frontend/src/components/EngineeringQueuePanel.jsx`**
-- Added KPI bar (from `/engineering/queue-kpis`).
-- Added "Umur" column (AgeBadge days since created) to reveal stagnant items.
-- Inline assign for DRF `status=submitted`:
-  - dropdown `+ Assign engineer` using `/drawing-requests/engineering-users`
-  - calls `POST /drawing-requests/{id}/accept-assign`
-- Overdue red highlighting already existed and retained.
+- KPI bar (from `/engineering/queue-kpis`).
+- "Umur" column (AgeBadge days since created) to reveal stagnant items.
+- Inline assign for DRF submitted (dropdown engineer → `POST /drawing-requests/{id}/accept-assign`).
 
 ### 20.F — KPI endpoint for queue (Status: COMPLETED)
 **Backend: `GET /engineering/queue-kpis`**
-- done_week (DRF completed last 7 days)
-- overdue (active rows with expected_due_date < today)
-- avg_lead_days for completed DRF in current month
+- done_week, overdue, avg_lead_days.
 
 ### 20.G — Monthly productivity recap (Status: COMPLETED)
 **Backend: `GET /engineering/monthly-recap?month=YYYY-MM`**
-- Per engineer:
-  - `inquiry_done` (inquiries completed)
-  - `drf_done` (DRF completed)
-  - `revisi` (drawings with revision_opened_at in month → engineer derived from from_drf_id)
-  - `ecn` (activity_logs action `drawing_request_revision_ecn`)
-- Guarded to engineering/leader/admin/sales_head. Sales biasa 403.
+- Per engineer: inquiry_done, drf_done, revisi, ecn.
 
-**Frontend:**
-- New page `frontend/src/pages/EngineeringMonthlyRecapPage.jsx`.
-- Wired into `EngineeringMonitorPage.jsx` as new tab: **Rekap Bulanan**.
-
-### Verification (Status: COMPLETED)
-- Backend smoke tests:
-  - `/engineering/queue-kpis`, `/engineering/monthly-recap`, `/drawing-requests/my-history`, `/engineering/so-unreleased-drawings` return 200 for allowed roles; Sales 403.
-  - Notifications contain `so_drawing_not_released` for engineering.
-- Frontend compile: esbuild clean.
-- Screenshots verified:
-  - Engineering portal: strip + KPI bar + Umur column + inline assign.
-  - Work Orders: merged Drawing Request tab.
-  - Monitor: Rekap Bulanan tab.
-- Temp test users cleaned (0 `zz_*` remaining).
-- Note: KPI/recap counts currently 0 because no DRF has `status=completed` in live data yet; will fill automatically as the team starts completing jobs.
+**Frontend**
+- `frontend/src/pages/EngineeringMonthlyRecapPage.jsx` tab **Rekap Bulanan** in Monitor.
 
 ---
 
@@ -315,28 +277,91 @@ User approved: implement **all** engineering-card recommendations + requested ch
 User report: report could be saved even if qty empty.
 
 **Backend: `backend/routers/production.py`**
-- Added `_validate_qty(qty_ok, qty_ng)`:
-  - qty cannot be negative
-  - requires at least one positive qty: OK mandatory (NG optional); special case allowed: OK=0 if NG>0 (reject-all).
-- Enforced on:
-  - `POST /production/reports`
-  - `PUT /production/reports/{id}`
+- Added `_validate_qty(qty_ok, qty_ng)` and enforced on create/update.
 
 **Frontend: `frontend/src/pages/ProductionDailyReportPage.jsx`**
-- Autosave now waits until Qty OK entered (or NG>0 reject-all).
-- Header shows Qty OK as required (`*`).
+- Autosave waits until Qty OK entered (or NG>0 reject-all) + header shows required marker.
 
-**Verification:**
-- Smoke test: empty qty → 400; negative → 400; ok>0 → 200; ok=0/ng>0 → 200.
+---
+
+## Phase 22 — Rekap Engineer: Ongoing + Export Excel (Status: COMPLETED)
+User requests:
+1) Rekap bulanan juga mencantumkan pekerjaan **ONGOING** selain selesai.
+2) Rekap produktivitas bulanan bisa diunduh sebagai **Excel** untuk lampiran penilaian.
+
+### Phase 22.1 — Backend recap refactor + ongoing metrics (Status: COMPLETED)
+- Added `inquiry_ongoing`, `drf_ongoing`, `ongoing` and extended totals.
+
+### Phase 22.2 — Excel export (Status: COMPLETED)
+- Endpoint `GET /engineering/monthly-recap/export?month=YYYY-MM` (openpyxl formatted, zebra, freeze panes, totals).
+
+### Phase 22.3 — Frontend rekap UI + tombol export (Status: COMPLETED)
+- Button Export Excel + ongoing columns.
+
+---
+
+## Phase 23 — Audit & Fix KPI Engineering (Status: COMPLETED)
+User request: audit validitas summary, traceability per item, dan kebenaran rumus (bobot × capaian, target achievement).
+
+### 23.1 — KPI structure validation (Status: VERIFIED)
+- 6 KPI with weights 20+15+15+25+15+10 = 100% ✅
+- Per KPI:
+  - `achievement = numerator/denominator × 100` (if denominator>0)
+  - `score = achievement × weight / 100`
+- Category legend:
+  - ≤70 PERLU PERBAIKAN, 71–79 CUKUP, 80–89 BAIK, ≥90 SANGAT BAIK ✅
+- Traceability:
+  - Each KPI has `/engineering/kpi/{key}/records?year&month` returning records with `ref/date/note/ok` for audit drill-down ✅
+
+### 23.2 — Bugs fixed in backend KPI computation (`backend/routers/kpi.py`)
+1) **Wrong Total calculation (no normalization)**
+   - Old: `total_score = Σ(score)` → bulan parsial jadi tampak sangat rendah.
+   - New: `total = (Σ(score) / Σ(weight_of_KPIs_with_data)) × 100`
+   - Added response field: `counted_weight` (bobot KPI yang punya data) + UI hint "bobot terisi X% — total dinormalisasi".
+
+2) **ECN retroactive instability**
+   - Old: ECN distinct all-time → laporan bulan lama berubah kalau ECN baru terbit.
+   - New: `_ecn_sets(ctx, ym)` only counts ECN with `created_at[:7] <= ym` (ECN tanpa tanggal tetap dihitung; konservatif).
+
+3) **Drawing release date not stable**
+   - Old: `_dwg_date` used `updated_at` (bisa berubah karena edit).
+   - New: `_dwg_date` uses `controlled_at` (stamp DocCon; beku) → `drawing_date` → `updated_at` → `created_at`.
+
+4) **Revision parsing too fragile**
+   - Old: only recognized a few strings like `Rev-0`.
+   - New: `_is_rev0()` normalizes revision values ("0", "00", "REV 0", "rev.0", empty) as revision-0.
+
+5) **Documentation contradiction**
+   - Docstring updated: KPI memang berbobot, bukan rata-rata.
+
+6) **Misleading wording (KPI 4/5)**
+   - Clarified: without DRF due date / without customer deadline is treated as **NOT on-time** (included in denominator, fails).
+   - Source text + audit note updated to match the actual formula.
+
+### 23.3 — Verification (Status: COMPLETED)
+- Synthetic data simulation (month 2026-08) matched manual math:
+  - All KPI numerator/denominator/achievement/score correct.
+  - Total = 75.00% → category CUKUP.
+- Partial-data test: only KPI5 has data (weight 15) with achievement 50%:
+  - New total = 50.0% (normalized), previously would appear as 7.5%.
+- Test data cleaned (0 remaining), backend syntax OK, esbuild OK.
+
+### 23.4 — Business-policy notes (flagged; not changed)
+- KPI 1 (NC): current policy only counts NC in the same month as drawing release; NC created in later months won’t reduce prior-month KPI.
+  - Optional policy improvement: consider NC up to report end date.
+- KPI 4/5: strict policy retained (no due date/deadline = fail) → requires discipline in filling DRF expected_due_date and inquiry customer_deadline.
+- Category cutoff has a gap around 70–71 (e.g., 70.5 stays PERLU PERBAIKAN because threshold is ≥71).
 
 ---
 
 ## Notes / Current GitHub Safety
 - Perubahan terbaru masih **modified** dan belum di-commit/push.
 - Disarankan commit bertahap (agar jelas dan mudah rollback):
-  1) `Phase 21 daily production qty validation + UI guard`
-  2) `Phase 20 engineering portal upgrade batch`
-  3) `Phase 18 daily production attendance required`
-  4) `Phase 19 deployment readiness .gitignore env fix`
-  5) `Phase 17 code-quality fixes`
+  1) `Phase 23 KPI engineering audit + formula fixes`
+  2) `Phase 22 engineering recap ongoing + excel export`
+  3) `Phase 21 daily production qty validation + UI guard`
+  4) `Phase 20 engineering portal upgrade batch`
+  5) `Phase 18 daily production attendance required`
+  6) `Phase 19 deployment readiness .gitignore env fix`
+  7) `Phase 17 code-quality fixes`
 - Reminder: GitHub hanya backup **kode**; untuk **data** gunakan Full Backup (tar.gz) dan/atau Tahap 6 data-only backup bila sudah dibuat.
