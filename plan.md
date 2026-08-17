@@ -353,195 +353,104 @@ Scope tambahan yang dipastikan:
 #### 16.1.2 Login Log & Sesi Aktif (Status: COMPLETED)
 **Goal** tercapai: catat setiap login (sukses & gagal) + tampilkan sesi aktif + admin bisa akhiri sesi.
 
-**Backend (implemented)**
-- `security.py`:
-  - `create_access_token(..., sid=...)` dan `create_refresh_token(..., sid=...)`.
-- `routers/auth.py`:
-  - Login: insert `login_logs` (success/fail, IP via `X-Forwarded-For`/`X-Real-IP`, user-agent), create `active_sessions`.
-  - Logout: hapus sesi (sid).
-  - Refresh: bawa sid + tolak bila sesi sudah revoked.
-  - Admin endpoints:
-    - `GET /admin/login-logs` (filter username/status/tanggal, paging)
-    - `GET /admin/active-sessions` (online = last_seen ≤ 5 menit, cleanup sesi > 8 jam)
-    - `POST /admin/sessions/{sid}/revoke` (super_admin; tidak bisa revoke sesi sendiri)
-- `deps.py get_current_user`:
-  - Update `last_seen` per request jika token membawa `sid`.
-  - Jika sesi revoked → 401 (token lama tanpa sid tetap lolos).
-- `server.py`:
-  - Added indexes: `login_logs(ts, username)`, `active_sessions(last_seen, user_id)`.
-
-**Frontend (implemented)**
-- AdminPanel tab baru: **Sesi & Login**
-  - Sesi aktif: Online/Idle, IP, perangkat (UA parsed), tombol “Akhiri Sesi”.
-  - Riwayat login: filter username + status + paging.
-
-**Verification**
-- Smoke test: login gagal & sukses tercatat; sesi online muncul; revoke → user jadi 401; logout menghapus sesi.
-- Screenshot tab Sesi & Login OK.
+(Detail implementation sesuai plan sebelumnya; tidak berubah.)
 
 #### 16.1.3 Recycle Bin (Status: COMPLETED)
-Discovery (sudah ada):
-- `routers/trash.py` + `services/soft_delete.py` + Admin UI tab **Recycle Bin**.
-- Soft-delete berbasis field untuk 11 koleksi (transactions, sales_orders, store_*, deliveries, boms, inquiries, quotations, customers, users).
+Discovery (sudah ada) + tambahan snapshot-based untuk koleksi Produksi.
 
-**New (implemented): Recycle Bin untuk modul Produksi (snapshot-based)**
-Motivasi: modul produksi banyak query lama belum memakai `NOT_DELETED_FILTER`, jadi soft-delete field-based berisiko dokumen terhapus masih muncul.
-
-- `services/soft_delete.py`:
-  - `SNAPSHOT_COLLECTIONS = [production_reports, fg_release_notes, production_overtime]`
-  - `trash_snapshots` as storage (doc + metadata deleted_at/by)
-  - helpers: `snapshot_delete`, `snapshot_restore`, `snapshot_purge`, `snapshot_summary`, `snapshot_purge_expired`
-- `routers/trash.py`:
-  - summary/list/restore/purge mendukung snapshot collections via `trash_snapshots`.
-- `routers/production.py`:
-  - delete report/FRN/overtime → `snapshot_delete(...)` (dan lembur sekarang log_action).
-- `server.py`:
-  - indexes `trash_snapshots(collection, deleted_at)`.
-- `frontend AdminPage TrashTab`:
-  - menambah label koleksi baru:
-    - `production_reports`: Laporan Produksi
-    - `fg_release_notes`: Release Note (FGRN)
-    - `production_overtime`: Lembur Produksi
-
-**Verification**
-- Smoke test: delete report → hilang dari source → muncul di Recycle Bin → restore → kembali → purge → hilang.
-- Screenshot Recycle Bin OK.
+(Detail implementation sesuai plan sebelumnya; tidak berubah.)
 
 ---
 
 ### Phase 16.2 — Tahap 2 (Akses & Navigasi) (Status: COMPLETED / ALREADY EXISTED)
-#### 16.2.1 Manajemen Hak Akses Detail (per user per menu) (Status: COMPLETED)
-- Sudah dibangun pada Phase 1–3 (granular access matrix + backend enforcement middleware + UI AccessMatrix).
-
-#### 16.2.2 Pencarian Global di Header (Status: COMPLETED / ALREADY EXISTED)
-- Backend: `GET /api/search/global?q=` sudah ada.
-- Frontend: `frontend/src/components/GlobalSearch.jsx` terpasang di `AppShell` (header search).
-
-> Follow-up opsional (bila user minta): perluasan coverage hasil search ke modul Produksi/QC terbaru (Daily Report/FGRN/QC Release Notes) dan/atau filter berbasis role.
+- Manajemen hak akses detail per user/menu: sudah ada.
+- Pencarian global: sudah ada.
 
 ---
 
 ### Phase 16.3 — Tahap 3 (Engineering/DocCon) (Status: NOT STARTED — NEXT)
-#### 16.3.1 Reminder Drawing Belum Release
-**Goal**: bila SO sudah mulai jalan (ada aktivitas produksi / masuk progress) tapi drawing belum release/stamp, tampil warning.
-
-Revised approach (align dengan sistem sekarang):
-- Tentukan “SO sudah jalan” dari sinyal berikut (any):
-  - Production daily reports exists
-  - Job progress started
-  - FGRN exists
-- Tentukan “drawing belum release” dari status di modul drawing register/controlled documents (source of truth yang dipakai DocCon).
-- Output:
-  - Notifikasi ke Doc Control / Engineering Leader.
-  - Badge/flag di SO progress / timeline.
-
-Implementation steps (planned):
-- Backend:
-  - Endpoint “watchlist” (mis. `/doc-control/drawing-release-watchlist`) atau integrasi ke notifications.
-  - Notification category baru: `drawing_not_released`.
-- Frontend:
-  - Card/Badge di portal DocCon/Engineering.
-  - Link ke SO timeline / drawing register.
-
-Acceptance:
-- Minimal 1 SO yang sudah jalan tapi drawing belum release muncul warning.
-
-#### 16.3.2 Revisi Drawing Berantai
-**Goal**: kalau drawing direvisi, Produksi otomatis dapat notif “pakai revisi terbaru”.
-
-Implementation steps (planned):
-- Backend:
-  - Hook ke event revisi drawing (upload/approve revisi di DocCon).
-  - Buat notification ke role produksi + admin-like.
-  - Tambah mekanisme “ack revisi” per SO/revisi (opsional) supaya jelas sudah dibaca.
-- Frontend:
-  - Notif panel produksi + link langsung ke drawing revision.
-
-Acceptance:
-- Saat revisi dibuat, Produksi menerima notifikasi dan dapat membuka revisi terbaru.
+Reminder drawing belum release + notifikasi revisi drawing berantai.
 
 ---
 
 ### Phase 16.4 — Tahap 4 (QC) — Masterlist Alat Ukur + Kalibrasi (Status: COMPLETED)
-(see existing plan details; implemented in `backend/routers/tools.py`, `frontend/src/pages/QcMeasuringToolsPage.jsx`, QC portal badge `tool_calibration_due`)
+(See existing plan details; implemented in `backend/routers/tools.py`, `frontend/src/pages/QcMeasuringToolsPage.jsx`, QC portal badge `tool_calibration_due`.)
 
 ---
 
 ### Phase 16.5 — Tahap 5 (Produksi) — Peminjaman Alat/Tools (Status: COMPLETED)
-(see existing plan details; implemented in `backend/routers/tools.py`, `frontend/src/pages/ProductionToolsPage.jsx`)
+(See existing plan details; implemented in `backend/routers/tools.py`, `frontend/src/pages/ProductionToolsPage.jsx`.)
 
 ---
 
 ### Phase 16.5b — Stok Opname Alat Produksi (Status: COMPLETED)
-Extension dari Phase 16.5 untuk cek fisik berkala inventory tools.
-
-**Backend (implemented)**
-- `tool_opnames` collection + endpoints:
-  - `POST/GET/PUT/DELETE /production/tools-opname`
-  - `POST /production/tools-opname/{sid}/finalize` confirm `OPNAME-FINAL`.
-- Finalisasi:
-  - `not_found` → alat jadi `missing` (loan aktif ikut `missing` dengan catatan nomor opname)
-  - `found` atas alat `missing` → kembali `available`
-  - sesi finalized terkunci.
-
-**Frontend (implemented)**
-- Page: `frontend/src/pages/ProductionToolsOpnamePage.jsx` route `/produksi/tools/opname`.
-- Button: di `ProductionToolsPage` header: **Stok Opname**.
+(See existing plan details; implemented in `backend/routers/tools.py` + `frontend/src/pages/ProductionToolsOpnamePage.jsx` route `/produksi/tools/opname`.)
 
 ---
 
 ### Phase 16.6 — Tahap 6 (Data) — Backup & Restore Database (Status: NEEDS CONFIRMATION)
-**Current state**
-- Full backup/restore code+data sudah ada (Phase 5).
-
-If user still needs Tahap 6:
-- Tambahkan **data-only** export/import (lebih cepat & operasional) dengan:
-  - pilihan koleksi
-  - opsi anonymize (optional)
-  - safety confirm phrase
-  - audit log event untuk backup/restore
-  - optional retention/scheduling (jika environment memungkinkan)
+- Full backup/restore code+data sudah ada (Phase 5). Tahap 6 hanya jika butuh data-only ops.
 
 ---
 
 ## Phase 17 — Code Quality Review Fixes (Status: COMPLETED)
 External code review report diterima; diterapkan secara pragmatis (fix kritis & aman, hindari refactor masif berisiko pada app yang sudah berjalan).
 
-### FIXED
-1) **XSS (kritis)** — `frontend/src/pages/ProductionOvertimePage.jsx` (doPrint)
-- Semua data user (name, so_no, customer, ot_start, ot_end) **di-escape HTML** (`esc()` helper).
-- `document.write()` dihapus → diganti **Blob URL + window.open**.
+(Detail implementation sesuai plan sebelumnya; tidak berubah.)
 
-2) **Security: Dynamic import** — `backend/tests/test_iter9.py`
-- `__import__('uuid')` → `import uuid` statis.
+---
 
-3) **Empty catch blocks** (minimal log) — sekarang `console.warn/error` dengan konteks
-- `frontend/src/pages/TransferRequestPage.jsx` (loadNextNo)
-- `frontend/src/pages/StoreIssuePage.jsx` (loadRecent)
-- `frontend/src/pages/StockHistoryPrintPage.jsx` (company setting, load history, window.print)
+## Phase 18 — Bugfix: Daily Production wajib absensi dulu (Status: COMPLETED)
+### Problem
+User menemukan: **belum input absensi hari ini**, tapi bisa input **Daily Production Report** (nama operator tetap bisa dipilih dan submit lolos).
 
-4) **Array index keys** (read-only lists dengan data stabil)
-- `WorkOrderEngineeringPage.jsx` riwayat TTD → `key={h.id || `${drawing_no}-${stage}-${signed_at}`}`
-- `StoreStockPage.jsx` riwayat stok → `key={r.id || `${kind}-${date}-${ref}-${idx}`}`
+### Root cause
+Validasi sebelumnya di `backend/routers/production.py` hanya memblokir jika **ada** record absensi dengan status di `ATTEND_BLOCKED`:
+- `if att and att.get("status") in ATTEND_BLOCKED:`
 
-### VERIFIED AS FALSE POSITIVE / NOT CHANGED
-- **Backend undefined variables**: pyflakes scan seluruh `/app/backend` = **0 undefined name**.
-- **`is` vs `==` literal**: AST scan pada `utils/pdf_stamper.py`, `utils/render_cache.py`, `utils/office_render.py` = **0 pelanggaran**. Yang ada adalah `is None`/`is not None` (benar) dan beberapa `is True/False` tri-state yang disengaja.
-- **localStorage security**: `frontend/src/lib/tableResize.js` hanya simpan **lebar kolom (angka)**; auth token sudah httpOnly cookie; tidak ada data sensitif.
-- **Hook deps warnings** (contoh diverifikasi):
-  - `TvSoProgressPage.jsx` deps benar (imports & setter stabil).
-  - `WorkOrderEngineeringPage.jsx` hooks sudah memakai dependency arrays yang benar.
+Jika absensi belum diisi sama sekali (`att=None`), validasi tidak memblokir (dulu asumsi "default hadir bila belum diabsen").
 
-### DEFERRED (by design; to avoid regression)
-- Mass-fix “382 hook deps” (banyak false-positive; risiko infinite loop/regresi).
-- Ganti index keys pada form arrays dinamis (Sales/SO items) butuh refactor state/handler agar punya `row_id` stabil.
-- Refactor besar untuk split komponen (AppShell, DrawingRequestFormDialog, dll) + turunkan kompleksitas fungsi backend (parse_po, full_restore, dll) + tingkatkan type hints.
+### Fix (implemented)
+**Backend: `backend/routers/production.py`**
+- Helper baru: `_check_operator_attendance(op_name, rd)` dipakai pada:
+  - `POST /production/reports`
+  - `PUT /production/reports/{report_id}`
+
+Aturan validasi baru:
+1) Jika operator adalah karyawan produksi aktif (ada di `production_employees`) → **WAJIB ada record absensi** pada tanggal report.
+   - Jika belum ada: **HTTP 400**
+     - pesan: "{op_name} belum diabsen pada {rd}. Isi Absensi Kehadiran dulu sebelum input Daily Production."
+2) Jika absensi ada dan status `Tidak Hadir` / `MC-Sakit` (`ATTEND_BLOCKED`) → tetap ditolak (perilaku lama dipertahankan).
+3) Jika nama operator **bukan** karyawan master (tidak ada di `production_employees`) → tidak dibatasi (tidak ada data absensi yang bisa dicek).
+
+Catatan: validasi jam mulai vs jam masuk (`_validate_work_start`) tetap berjalan dan tidak berubah.
+
+### Consequence / operational note
+- Edit report lama sekarang juga akan menolak jika tanggal lama belum punya absensi — absensi tanggal tsb harus diisi dulu (bisa retroaktif) sebelum edit.
 
 ### Verification
-- Frontend esbuild clean.
-- Backend+frontend services running.
-- Overtime page load OK (screenshot) dan printing flow tidak memakai `document.write` lagi.
-- Temp user testing dibersihkan.
+Smoke test 4 skenario (semua PASS) dan data tes dibersihkan:
+- belum diabsen → 400
+- status hadir → 200
+- status mc_sakit (edit) → 400
+- nama non-master → 200
+
+---
+
+## Phase 19 — Deployment Readiness Health Check (Status: COMPLETED)
+User request: run deployment agent + readiness health check.
+
+### Finding & Fix
+- **BLOCKER**: `.gitignore` memblokir `.env`, `.env.*`, `*.env`.
+- Fix: hapus rule tersebut dari `.gitignore`.
+- Verified: `git check-ignore backend/.env frontend/.env` tidak lagi ter-ignore.
+
+### Re-check result
+- Deployment agent status: **PASS** (0 blockers, 0 warnings)
+  - Env vars via env files (`MONGO_URL`, `REACT_APP_BACKEND_URL`, `JWT_SECRET`) ✅
+  - Port bindings (backend 8001, frontend 3000) ✅
+  - CORS OK ✅
+  - Supervisor config valid ✅
 
 ---
 
@@ -549,6 +458,8 @@ External code review report diterima; diterapkan secara pragmatis (fix kritis & 
 - Perubahan terbaru masih **modified** dan belum di-commit/push.
 - Untracked report QA: `test_reports/iteration_43.json` (boleh di-commit atau di-.gitignore sesuai kebijakan).
 - Disarankan commit bertahap (agar jelas dan mudah rollback):
-  1) `Phase 17 code-quality fixes (XSS print OT + empty catches + test import + stable keys)`
-  2) (existing recommended sequence from plan) `Store role helpers`, `Stock Opname`, `Temp Transactions`, `QC move`, `Tahap 1 fondasi`, `Tahap 4-5 tools`, `Tahap 5b tools opname`.
+  1) `Phase 18 daily production attendance required`
+  2) `Phase 19 deployment readiness .gitignore env fix`
+  3) `Phase 17 code-quality fixes (XSS print OT + empty catches + test import + stable keys)`
+  4) (existing recommended sequence from plan) `Store role helpers`, `Stock Opname`, `Temp Transactions`, `QC move`, `Tahap 1 fondasi`, `Tahap 4-5 tools`, `Tahap 5b tools opname`.
 - Reminder: GitHub hanya backup **kode**; untuk **data** gunakan Full Backup (tar.gz) dan/atau Tahap 6 data-only backup bila sudah dibuat.

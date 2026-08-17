@@ -787,20 +787,37 @@ async def _validate_work_start(op_name: str, rd: str, work_start: str):
         )
 
 
+async def _check_operator_attendance(op_name: str, rd: str):
+    """Validasi absensi operator sebelum input Daily Production:
+    - Karyawan produksi terdaftar WAJIB sudah diabsen pada tanggal tsb
+      (belum diabsen → tolak, supaya tidak bisa lolos tanpa absensi).
+    - Status Tidak Hadir / MC-Sakit → tolak.
+    - Nama di luar master karyawan produksi tidak dibatasi (tidak ada data absensi)."""
+    op_name = (op_name or "").strip()
+    if not op_name:
+        return
+    emp = await db.production_employees.find_one({"name": {"$regex": f"^{op_name}$", "$options": "i"}, "active": {"$ne": False}})
+    if not emp:
+        return
+    att = await db.production_attendance.find_one({"date": rd, "employee_id": emp.get("id")})
+    if not att:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{op_name} belum diabsen pada {rd}. Isi Absensi Kehadiran dulu sebelum input Daily Production.",
+        )
+    if att.get("status") in ATTEND_BLOCKED:
+        label = "MC/Sakit" if att.get("status") == "mc_sakit" else "Tidak Hadir"
+        raise HTTPException(status_code=400, detail=f"{op_name} berstatus {label} pada {rd}. Tidak bisa input Daily Production untuk operator ini.")
+
+
 @router.post("/reports")
 async def create_report(payload: ProductionReportIn, current: dict = Depends(get_current_user)):
     if not _can_view(current):
         raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa input")
     rd = (payload.report_date or "").strip() or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    # Blok operator yang absen (Tidak Hadir / MC-Sakit) pada tanggal tsb
+    # Wajib sudah diabsen + blok operator absen (Tidak Hadir / MC-Sakit) pada tanggal tsb
     op_name = (payload.operator_name or "").strip()
-    if op_name:
-        emp = await db.production_employees.find_one({"name": {"$regex": f"^{op_name}$", "$options": "i"}, "active": {"$ne": False}})
-        if emp:
-            att = await db.production_attendance.find_one({"date": rd, "employee_id": emp.get("id")})
-            if att and att.get("status") in ATTEND_BLOCKED:
-                label = "MC/Sakit" if att.get("status") == "mc_sakit" else "Tidak Hadir"
-                raise HTTPException(status_code=400, detail=f"{op_name} berstatus {label} pada {rd}. Tidak bisa input Daily Production untuk operator ini.")
+    await _check_operator_attendance(op_name, rd)
     # Validasi jam mulai kerja tidak boleh sebelum jam masuk (terlambat/night shift/in-situ)
     await _validate_work_start(op_name, rd, payload.work_start)
     doc = {
@@ -835,14 +852,8 @@ async def update_report(report_id: str, payload: ProductionReportIn, current: di
         raise HTTPException(status_code=404, detail="Report tidak ditemukan")
     rd = (payload.report_date or existing.get("report_date") or "").strip()
     op_name = (payload.operator_name or "").strip()
-    # Blok operator absen + validasi jam mulai vs jam masuk (terlambat/night shift/in-situ)
-    if op_name:
-        emp = await db.production_employees.find_one({"name": {"$regex": f"^{op_name}$", "$options": "i"}, "active": {"$ne": False}})
-        if emp:
-            att = await db.production_attendance.find_one({"date": rd, "employee_id": emp.get("id")})
-            if att and att.get("status") in ATTEND_BLOCKED:
-                label = "MC/Sakit" if att.get("status") == "mc_sakit" else "Tidak Hadir"
-                raise HTTPException(status_code=400, detail=f"{op_name} berstatus {label} pada {rd}. Tidak bisa input Daily Production untuk operator ini.")
+    # Wajib sudah diabsen + blok operator absen + validasi jam mulai vs jam masuk
+    await _check_operator_attendance(op_name, rd)
     await _validate_work_start(op_name, rd, payload.work_start)
     updates = {
         "report_date": rd,
