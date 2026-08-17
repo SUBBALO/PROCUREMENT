@@ -106,6 +106,10 @@ function SpreadsheetEditor({ date, opts, soMap, onSaved }) {
     const row = rowsRef.current[idx];
     if (!row || !row._dirty) return;
     if (!(row.operator_name || "").trim()) return;
+    // Qty OK wajib diisi (NG opsional) — baris belum lengkap, tunggu qty terisi
+    const okEmpty = String(row.qty_ok ?? "").trim() === "";
+    const ngVal = Number(row.qty_ng) || 0;
+    if (okEmpty && ngVal <= 0) return;
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, _saving: true } : r)));
     try {
       if (row.id) {
@@ -193,7 +197,7 @@ function SpreadsheetEditor({ date, opts, soMap, onSaved }) {
             <th className="px-2 py-2 text-left font-bold border border-slate-200 min-w-[110px]">SO No</th>
             <th className="px-2 py-2 text-left font-bold border border-slate-200 min-w-[140px]">Customer</th>
             <th className="px-2 py-2 text-left font-bold border border-slate-200 min-w-[120px]">Process</th>
-            <th className="px-2 py-2 text-center font-bold border border-slate-200 bg-emerald-50 text-emerald-700 w-20">Qty OK</th>
+            <th className="px-2 py-2 text-center font-bold border border-slate-200 bg-emerald-50 text-emerald-700 w-20">Qty OK <span className="text-red-500">*</span></th>
             <th className="px-2 py-2 text-center font-bold border border-slate-200 bg-rose-50 text-rose-700 w-20">Qty NG</th>
             <th className="px-2 py-2 text-center font-bold border border-slate-200 w-24">Jam Mulai</th>
             <th className="px-2 py-2 text-center font-bold border border-slate-200 w-24">Jam Selesai</th>

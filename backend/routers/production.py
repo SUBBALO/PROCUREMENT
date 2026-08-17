@@ -810,6 +810,15 @@ async def _check_operator_attendance(op_name: str, rd: str):
         raise HTTPException(status_code=400, detail=f"{op_name} berstatus {label} pada {rd}. Tidak bisa input Daily Production untuk operator ini.")
 
 
+def _validate_qty(qty_ok, qty_ng):
+    """Qty OK wajib diisi (NG opsional). Qty OK boleh 0 hanya jika ada Qty NG (kasus semua reject)."""
+    ok, ng = _f(qty_ok), _f(qty_ng)
+    if ok < 0 or ng < 0:
+        raise HTTPException(status_code=400, detail="Qty tidak boleh negatif")
+    if ok <= 0 and ng <= 0:
+        raise HTTPException(status_code=400, detail="Qty OK wajib diisi (Qty NG opsional). Isi Qty OK, atau Qty NG jika hasilnya reject semua.")
+
+
 @router.post("/reports")
 async def create_report(payload: ProductionReportIn, current: dict = Depends(get_current_user)):
     if not _can_view(current):
@@ -818,6 +827,8 @@ async def create_report(payload: ProductionReportIn, current: dict = Depends(get
     # Wajib sudah diabsen + blok operator absen (Tidak Hadir / MC-Sakit) pada tanggal tsb
     op_name = (payload.operator_name or "").strip()
     await _check_operator_attendance(op_name, rd)
+    # Qty OK wajib diisi (NG opsional)
+    _validate_qty(payload.qty_ok, payload.qty_ng)
     # Validasi jam mulai kerja tidak boleh sebelum jam masuk (terlambat/night shift/in-situ)
     await _validate_work_start(op_name, rd, payload.work_start)
     doc = {
@@ -854,6 +865,8 @@ async def update_report(report_id: str, payload: ProductionReportIn, current: di
     op_name = (payload.operator_name or "").strip()
     # Wajib sudah diabsen + blok operator absen + validasi jam mulai vs jam masuk
     await _check_operator_attendance(op_name, rd)
+    # Qty OK wajib diisi (NG opsional)
+    _validate_qty(payload.qty_ok, payload.qty_ng)
     await _validate_work_start(op_name, rd, payload.work_start)
     updates = {
         "report_date": rd,
