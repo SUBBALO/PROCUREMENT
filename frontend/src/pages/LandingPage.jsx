@@ -151,16 +151,39 @@ const DEPARTMENTS = [
   },
 ];
 
+// Peta kartu departemen -> menu_key granular (untuk menghormati "Hak Akses Granular / Atur manual")
+const DEPT_MENU_KEYS = {
+  sales: ["sales_inquiry", "sales_quotation", "sales_order", "sales_customer"],
+  engineering: ["eng_drawing_request", "eng_drawing_register", "eng_ecn"],
+  "controlled-drawings": ["eng_drawing_register"],
+  purchasing: ["pur_transfer_request", "pur_order"],
+  "transfer-request": ["pur_transfer_request"],
+  store: ["store_stock", "store_consumable"],
+  qc: ["qc_mii", "qc_ncr"],
+  "document-control": ["doc_controlled", "doc_forms"],
+  produksi: ["prod_bom", "prod_costing"],
+};
+
+// True bila user punya izin granular apa pun (view/list/create/edit/delete/report) untuk salah satu menu_key
+function hasGranularForKeys(access, keys) {
+  if (!access || !keys) return false;
+  return keys.some((k) => {
+    const node = access[k];
+    return node && (node.view || node.list || node.create || node.edit || node.delete || node.report);
+  });
+}
+
 export default function LandingPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const role = user?.role || "";
+  const access = user?.access || {};
 
-  // Filter departments visible to this user.
-  // Direktur (sales_head / Asiong) = akses view semua modul → tampilkan semua kartu.
+  // Kartu tampil bila: (a) Direktur sales_head (lihat semua), ATAU
+  // (b) role default punya akses, ATAU (c) diberi izin granular manual utk modul itu.
   const visible = role === "sales_head"
     ? DEPARTMENTS
-    : DEPARTMENTS.filter((d) => d.roles.includes(role));
+    : DEPARTMENTS.filter((d) => d.roles.includes(role) || hasGranularForKeys(access, DEPT_MENU_KEYS[d.key]));
 
   const now = new Date();
   const greeting = now.getHours() < 11 ? "Selamat pagi" : now.getHours() < 15 ? "Selamat siang" : now.getHours() < 18 ? "Selamat sore" : "Selamat malam";
