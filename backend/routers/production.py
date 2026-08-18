@@ -355,7 +355,42 @@ def _serialize_report(r: dict) -> dict:
         "created_by_username": r.get("created_by_username") or "",
         "created_at": r.get("created_at") or "",
         "updated_at": r.get("updated_at") or "",
+        "history": r.get("history") or [],
     }
+
+
+# Field yang dilacak untuk revisi history (key -> label ramah)
+_REPORT_TRACK_FIELDS = {
+    "report_date": "Tanggal",
+    "operator_name": "Operator",
+    "so_no": "SO No",
+    "customer": "Customer",
+    "process": "Process",
+    "qty_ok": "Qty OK",
+    "qty_ng": "Qty NG",
+    "work_start": "Jam Mulai",
+    "work_end": "Jam Selesai",
+    "machine_no": "Machine No",
+    "remarks": "Remarks",
+}
+
+
+def _diff_report_changes(existing: dict, updates: dict) -> list:
+    """Bandingkan nilai lama vs baru pada field yang dilacak, kembalikan daftar perubahan."""
+    changes = []
+    for key, label in _REPORT_TRACK_FIELDS.items():
+        if key not in updates:
+            continue
+        old_v = existing.get(key, "")
+        new_v = updates.get(key, "")
+        # Normalisasi angka agar 5 == 5.0 tidak dianggap berubah
+        if key in ("qty_ok", "qty_ng"):
+            old_v, new_v = _f(old_v), _f(new_v)
+        else:
+            old_v, new_v = ("" if old_v is None else str(old_v)), ("" if new_v is None else str(new_v))
+        if old_v != new_v:
+            changes.append({"field": key, "label": label, "from": old_v, "to": new_v})
+    return changes
 
 
 @router.get("/report-options")
@@ -848,6 +883,13 @@ async def create_report(payload: ProductionReportIn, current: dict = Depends(get
         "created_by_username": current.get("name") or current.get("username") or "",
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
+        "history": [{
+            "action": "create",
+            "by": current.get("id"),
+            "by_name": current.get("name") or current.get("username") or "",
+            "at": _now_iso(),
+            "changes": [],
+        }],
     }
     await db.production_reports.insert_one(doc)
     await log_action(current, "create_production_report", "production_report", doc["id"], {"date": rd, "so_no": doc["so_no"]})
@@ -882,9 +924,27 @@ async def update_report(report_id: str, payload: ProductionReportIn, current: di
         "remarks": (payload.remarks or "").strip(),
         "updated_at": _now_iso(),
     }
-    await db.production_reports.update_one({"id": report_id}, {"$set": updates})
-    await log_action(current, "update_production_report", "production_report", report_id, {"so_no": updates["so_no"]})
+    changes = _diff_report_changes(existing, updates)
+    set_ops = {"$set": updates}
+    if changes:
+        set_ops["$push"] = {"history": {
+            "action": "edit",
+            "by": current.get("id"),
+            "by_name": current.get("name") or current.get("username") or "",
+            "at": _now_iso(),
+            "changes": changes,
+        }}
+    await db.production_reports.update_one({"id": report_id}, set_ops)
+    await log_action(current, "update_production_report", "production_report", report_id, {"so_no": updates["so_no"], "changes": changes})
     merged = {**existing, **updates}
+    if changes:
+        merged["history"] = (existing.get("history") or []) + [{
+            "action": "edit",
+            "by": current.get("id"),
+            "by_name": current.get("name") or current.get("username") or "",
+            "at": updates["updated_at"],
+            "changes": changes,
+        }]
     return _serialize_report(merged)
 
 

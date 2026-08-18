@@ -1,26 +1,14 @@
 [
   {
-    "content": "Backend: tambah filter so_no di GET /drawing-requests agar SO detail bisa ambil DR-nya",
+    "content": "Backend: revisi history (create + edit diff field lama→baru) di production_reports + serialize",
     "status": "completed"
   },
   {
-    "content": "SO Form & Detail: ganti label 'Tanggal SO' -> 'Tanggal PO'",
+    "content": "Frontend: kolom Aksi (Edit/Hapus/Riwayat) di masterlist + modal Edit, konfirmasi Hapus, modal Riwayat",
     "status": "completed"
   },
   {
-    "content": "DR form: auto-isi Tanggal Terima PO (dari Tanggal PO SO) & Deadline Pengiriman (dari Due Date SO)",
-    "status": "completed"
-  },
-  {
-    "content": "SO detail: tampilkan DR terkait + lampiran (PO dll) + tombol Edit(draft)/Lihat, dan sembunyikan 'Ajukan DR' bila DR sudah ada",
-    "status": "completed"
-  },
-  {
-    "content": "Modal SO detail scroll fix (tidak kepotong)",
-    "status": "completed"
-  },
-  {
-    "content": "Verify compile + test flow",
+    "content": "Test end-to-end edit/hapus/history",
     "status": "completed"
   }
 ]
