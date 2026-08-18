@@ -98,6 +98,9 @@ api_router.include_router(nonconformance_router.router)
 from routers import production as production_router  # noqa: E402
 api_router.include_router(production_router.router)
 
+from routers import finance as finance_router  # noqa: E402
+api_router.include_router(finance_router.router)
+
 # Alat Ukur (kalibrasi) + Tools Produksi (peminjaman)
 from routers import tools as tools_router  # noqa: E402
 api_router.include_router(tools_router.router)

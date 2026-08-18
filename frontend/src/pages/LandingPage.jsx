@@ -4,7 +4,7 @@ import { useAuth } from "../lib/auth";
 import SoProgressTracker from "../components/SoProgressTracker";
 import BossApprovalPanel from "../components/BossApprovalPanel";
 import {
-  Storefront, Wrench, ShoppingBag, Package, ClipboardText, FileText, Factory, ArrowRight, Sparkle, Stamp, WarningCircle, Bank
+  Storefront, Wrench, ShoppingBag, Package, ClipboardText, FileText, Factory, ArrowRight, Sparkle, Stamp, WarningCircle, Bank, Coins
 } from "@phosphor-icons/react";
 
 /* -------------------- Department Definitions -------------------- */
@@ -134,6 +134,20 @@ const DEPARTMENTS = [
     accentBorder: "border-sky-300",
     stats: "TRF · Vendor Bank · PDF",
     roles: ["admin", "super_admin", "sales_head", "finance"],
+  },
+  {
+    key: "finance",
+    label: "Finance",
+    tagline: "Departemen Finance",
+    description: "Portal Finance. Untuk sekarang berisi Daily Production Report — Biaya Tenaga Kerja (rate/jam × jam kerja) & Master Rate Karyawan. Rate hanya terlihat Finance & Admin.",
+    icon: Coins,
+    href: "/finance",
+    accent: "from-emerald-500 via-green-500 to-teal-500",
+    accentSolid: "bg-emerald-600",
+    accentText: "text-emerald-600",
+    accentBorder: "border-emerald-300",
+    stats: "Biaya Tenaga Kerja · Rate",
+    roles: ["admin", "super_admin", "finance"],
   },
 ];
 

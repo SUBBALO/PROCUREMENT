@@ -1,18 +1,18 @@
 [
   {
-    "content": "Backend: perbaiki _calc_overtime sesuai PDF (potong istirahat jendela jam, libur biasa flat x2, libur-Sabtu 5x2/6x3/7x4) + day_type baru + rule fields",
+    "content": "Backend: router finance.py (rate + daily-production biaya) - PASS 100%",
     "status": "completed"
   },
   {
-    "content": "Frontend: update editor Master Aturan Lembur + badge holiday_saturday",
+    "content": "Portal khusus Departemen Finance (kartu di landing -> /finance) berisi kartu kecil Daily Production Report",
     "status": "completed"
   },
   {
-    "content": "Unit test 4 contoh PDF (3.5/7.5/14/17) - PASS",
+    "content": "Halaman daily: hapus Qty OK/NG, tonjolkan Jam Kerja",
     "status": "completed"
   },
   {
-    "content": "Test API overtime end-to-end - PASS (21/21)",
+    "content": "Verifikasi visual portal + daily",
     "status": "completed"
   }
 ]

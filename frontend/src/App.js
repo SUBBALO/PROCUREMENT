@@ -60,6 +60,8 @@ import ProductionJobProgressPage from "./pages/ProductionJobProgressPage";
 import ProductionHolidayPage from "./pages/ProductionHolidayPage";
 import ProductionAttendancePage from "./pages/ProductionAttendancePage";
 import ProductionOvertimePage from "./pages/ProductionOvertimePage";
+import FinanceDailyProductionPage from "./pages/FinanceDailyProductionPage";
+import FinancePortalPage from "./pages/FinancePortalPage";
 import MaterialCostingPage from "./pages/MaterialCostingPage";
 import MasterDrawingPage from "./pages/MasterDrawingPage";import EngineeringMasterListPage from "./pages/EngineeringMasterListPage";
 import BomEntryGridPage from "./pages/BomEntryGridPage";
@@ -253,6 +255,8 @@ function AppRoutes() {
       <Route path="/produksi/holidays" element={<ProtectedRoute><ProductionHolidayPage /></ProtectedRoute>} />
       <Route path="/produksi/attendance" element={<ProtectedRoute><ProductionAttendancePage /></ProtectedRoute>} />
       <Route path="/produksi/overtime" element={<ProtectedRoute><ProductionOvertimePage /></ProtectedRoute>} />
+      <Route path="/finance" element={<ProtectedRoute><FinancePortalPage /></ProtectedRoute>} />
+      <Route path="/finance/daily-production" element={<ProtectedRoute><FinanceDailyProductionPage /></ProtectedRoute>} />
       <Route path="/qc/mii" element={<ProtectedRoute><QCPage /></ProtectedRoute>} />
       <Route path="/qc/inspections/:id" element={<ProtectedRoute><QCPage /></ProtectedRoute>} />
       <Route path="/engineering/material-costing" element={<ProtectedRoute><MaterialCostingPage /></ProtectedRoute>} />
