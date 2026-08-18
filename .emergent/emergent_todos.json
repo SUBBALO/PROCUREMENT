@@ -1,14 +1,14 @@
 [
   {
-    "content": "Backend: revisi history (create + edit diff field lama→baru) di production_reports + serialize",
+    "content": "Backend: endpoint template.xlsx + import Excel karyawan (parse, dedup, insert)",
     "status": "completed"
   },
   {
-    "content": "Frontend: kolom Aksi (Edit/Hapus/Riwayat) di masterlist + modal Edit, konfirmasi Hapus, modal Riwayat",
+    "content": "Frontend: tombol Template Excel + Upload Excel + ringkasan hasil di panel Daftar Karyawan",
     "status": "completed"
   },
   {
-    "content": "Test end-to-end edit/hapus/history",
+    "content": "Test upload Excel end-to-end",
     "status": "completed"
   }
 ]

@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
 from db import db
@@ -1679,6 +1679,124 @@ async def delete_employee(emp_id: str, current: dict = Depends(get_current_user)
         raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa menghapus")
     await db.production_employees.update_one({"id": emp_id}, {"$set": {"active": False}})
     return {"ok": True}
+
+
+@router.get("/employees/template.xlsx")
+async def employees_template_xlsx(current: dict = Depends(get_current_user)):
+    """Template Excel untuk upload data karyawan produksi."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa mengakses")
+    import io
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Karyawan"
+    headers = ["Nama", "Jabatan"]
+    ws.append(headers)
+    head_fill = PatternFill("solid", fgColor="1E293B")
+    for col, _ in enumerate(headers, start=1):
+        c = ws.cell(row=1, column=col)
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = head_fill
+        c.alignment = Alignment(horizontal="center")
+    # Contoh baris
+    ws.append(["Budi Santoso", "Operator Bubut"])
+    ws.append(["Andi Wijaya", "Operator Milling"])
+    ws.column_dimensions["A"].width = 30
+    ws.column_dimensions["B"].width = 28
+    # Sheet petunjuk
+    ws2 = wb.create_sheet("Petunjuk")
+    ws2.append(["Cara pakai:"])
+    ws2.append(["1. Isi kolom Nama (wajib) dan Jabatan (opsional) pada sheet 'Karyawan'."])
+    ws2.append(["2. Hapus 2 baris contoh sebelum upload."])
+    ws2.append(["3. Nama yang sudah ada (huruf besar/kecil dianggap sama) akan dilewati."])
+    ws2.column_dimensions["A"].width = 80
+
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=template_karyawan_produksi.xlsx"},
+    )
+
+
+@router.post("/employees/import")
+async def import_employees(file: UploadFile = File(...), current: dict = Depends(get_current_user)):
+    """Import massal data karyawan dari file Excel (.xlsx). Kolom: Nama, Jabatan."""
+    if not _can_view(current):
+        raise HTTPException(status_code=403, detail="Hanya Produksi/Admin yang bisa import")
+    fname = (file.filename or "").lower()
+    if not (fname.endswith(".xlsx") or fname.endswith(".xlsm")):
+        raise HTTPException(status_code=400, detail="File harus berformat .xlsx")
+    import io
+    from openpyxl import load_workbook
+    try:
+        content = await file.read()
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="File Excel tidak bisa dibaca / rusak")
+    # Pilih sheet 'Karyawan' bila ada, jika tidak pakai sheet pertama
+    ws = wb["Karyawan"] if "Karyawan" in wb.sheetnames else wb.worksheets[0]
+
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        raise HTTPException(status_code=400, detail="File kosong")
+
+    # Deteksi baris header (cari kolom yang mengandung 'nama')
+    header = [str(c).strip().lower() if c is not None else "" for c in rows[0]]
+    name_idx, desig_idx = 0, 1
+    if any("nama" in h for h in header):
+        for i, h in enumerate(header):
+            if "nama" in h: name_idx = i
+            if "jabatan" in h or "designation" in h or "posisi" in h: desig_idx = i
+        data_rows = rows[1:]
+    else:
+        data_rows = rows  # tidak ada header
+
+    # Nama existing (aktif) untuk cek duplikat
+    existing = await db.production_employees.find({"active": {"$ne": False}}, {"_id": 0, "name": 1}).to_list(length=10000)
+    existing_names = {(e.get("name") or "").strip().lower() for e in existing}
+
+    created, skipped, errors = 0, 0, []
+    seen_in_file = set()
+    to_insert = []
+    for ridx, row in enumerate(data_rows, start=2):
+        if row is None:
+            continue
+        name = ""
+        desig = ""
+        try:
+            if name_idx < len(row) and row[name_idx] is not None:
+                name = str(row[name_idx]).strip()
+            if desig_idx < len(row) and row[desig_idx] is not None:
+                desig = str(row[desig_idx]).strip()
+        except Exception:
+            pass
+        if not name:
+            continue  # baris kosong dilewati diam-diam
+        key = name.lower()
+        if key in existing_names or key in seen_in_file:
+            skipped += 1
+            continue
+        # Lewati baris contoh bawaan template
+        if key in ("budi santoso", "andi wijaya"):
+            skipped += 1
+            continue
+        seen_in_file.add(key)
+        to_insert.append({
+            "id": str(uuid.uuid4()), "name": name, "designation": desig,
+            "active": True, "created_at": _now_iso(),
+        })
+        created += 1
+
+    if to_insert:
+        await db.production_employees.insert_many(to_insert)
+    await log_action(current, "import_production_employees", "production_employee", "-", {"created": created, "skipped": skipped})
+
+    return {"created": created, "skipped": skipped, "errors": errors, "total_rows": len(data_rows)}
 
 
 def _serialize_att(a: dict) -> dict:

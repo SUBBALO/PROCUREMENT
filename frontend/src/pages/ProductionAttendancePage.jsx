@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import BackLink from "../components/BackLink";
 import api from "../lib/api";
-import { UsersThree, Plus, Trash, FloppyDisk, CalendarBlank, UserPlus, X, PencilSimple, DownloadSimple } from "@phosphor-icons/react";
+import { UsersThree, Plus, Trash, FloppyDisk, CalendarBlank, UserPlus, X, PencilSimple, DownloadSimple, UploadSimple, MicrosoftExcelLogo } from "@phosphor-icons/react";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -27,6 +27,8 @@ export default function ProductionAttendancePage() {
   const [emps, setEmps] = useState([]);
   const [newName, setNewName] = useState("");
   const [newDesg, setNewDesg] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalDate, setModalDate] = useState(todayStr());
@@ -110,6 +112,33 @@ export default function ProductionAttendancePage() {
   };
   const setEmpField = (id, f, v) => setEmps((prev) => prev.map((x) => (x.id === id ? { ...x, [f]: v } : x)));
 
+  const downloadTemplate = async () => {
+    try {
+      const res = await api.get("/production/employees/template.xlsx", { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url; a.download = "template_karyawan_produksi.xlsx";
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch { toast.error("Gagal mengunduh template"); }
+  };
+
+  const importExcel = async (file) => {
+    if (!file) return;
+    if (!/\.(xlsx|xlsm)$/i.test(file.name)) { toast.error("File harus .xlsx"); return; }
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post("/production/employees/import", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success(`Import selesai: ${data.created} ditambah, ${data.skipped} dilewati`);
+      setImportResult(data);
+      loadEmps(); loadGrid();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal import Excel");
+    } finally { setImporting(false); }
+  };
+
   const TimeField = ({ label, v, on, tid }) => (
     <div className="flex flex-col"><span className="text-[9px] font-bold text-slate-500 uppercase">{label}</span>
       <input type="time" value={v || ""} onChange={(e) => on(e.target.value)} data-testid={tid} className={tCls} /></div>
@@ -152,7 +181,26 @@ export default function ProductionAttendancePage() {
             <div className="flex flex-col"><label className="text-[11px] font-bold text-slate-600">Nama Karyawan</label><input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nama" data-testid="emp-name-input" className={inputCls} /></div>
             <div className="flex flex-col"><label className="text-[11px] font-bold text-slate-600">Bagian</label><input value={newDesg} onChange={(e) => setNewDesg(e.target.value)} placeholder="mis. WELDER" data-testid="emp-desg-input" className={inputCls} /></div>
             <button onClick={addEmp} data-testid="emp-add-btn" className="inline-flex items-center gap-1.5 h-9 px-3 bg-indigo-600 text-white text-sm font-bold rounded hover:bg-indigo-700"><Plus size={15} weight="bold" /> Tambah</button>
+            <div className="flex-1" />
+            <button onClick={downloadTemplate} data-testid="emp-template-btn" className="inline-flex items-center gap-1.5 h-9 px-3 border border-slate-300 bg-white text-sm font-bold text-slate-700 rounded hover:bg-slate-50"><DownloadSimple size={15} weight="bold" /> Template Excel</button>
+            <label className={`inline-flex items-center gap-1.5 h-9 px-3 rounded text-sm font-bold cursor-pointer transition-colors ${importing ? "bg-emerald-300 text-white cursor-wait" : "bg-emerald-600 text-white hover:bg-emerald-700"}`} data-testid="emp-upload-label">
+              {importing ? <UploadSimple size={15} weight="bold" className="animate-pulse" /> : <MicrosoftExcelLogo size={15} weight="bold" />}
+              {importing ? "Mengunggah…" : "Upload Excel"}
+              <input type="file" accept=".xlsx,.xlsm" className="hidden" disabled={importing} data-testid="emp-upload-input"
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; importExcel(f); }} />
+            </label>
           </div>
+
+          {importResult && (
+            <div className="mb-3 flex items-start gap-2 text-xs bg-emerald-50 border border-emerald-200 rounded px-3 py-2" data-testid="import-result">
+              <MicrosoftExcelLogo size={16} weight="fill" className="text-emerald-600 mt-0.5 shrink-0" />
+              <div className="text-emerald-800">
+                <b>{importResult.created}</b> karyawan ditambahkan · <b>{importResult.skipped}</b> dilewati (duplikat/kosong) dari {importResult.total_rows} baris.
+              </div>
+              <button onClick={() => setImportResult(null)} className="ml-auto text-emerald-500 hover:text-emerald-700"><X size={14} weight="bold" /></button>
+            </div>
+          )}
+          <div className="text-[11px] text-slate-400 mb-2">Kolom Excel: <b>Nama</b> (wajib) & <b>Jabatan</b> (opsional). Unduh <b>Template Excel</b> agar formatnya benar. Nama yang sudah ada akan dilewati otomatis.</div>
           <div className="max-h-64 overflow-y-auto border border-slate-100 rounded">
             <table className="w-full text-sm">
               <thead><tr className="bg-slate-50 text-[10px] uppercase text-slate-500"><th className="px-2 py-1 text-left">Nama</th><th className="px-2 py-1 text-left">Bagian</th><th className="px-2 py-1 w-24 text-center">Aksi</th></tr></thead>
