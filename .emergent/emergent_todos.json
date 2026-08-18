@@ -1,14 +1,18 @@
 [
   {
-    "content": "Backend: endpoint template.xlsx + import Excel karyawan (parse, dedup, insert)",
+    "content": "Backend: perbaiki _calc_overtime sesuai PDF (potong istirahat jendela jam, libur biasa flat x2, libur-Sabtu 5x2/6x3/7x4) + day_type baru + rule fields",
     "status": "completed"
   },
   {
-    "content": "Frontend: tombol Template Excel + Upload Excel + ringkasan hasil di panel Daftar Karyawan",
+    "content": "Frontend: update editor Master Aturan Lembur + badge holiday_saturday",
     "status": "completed"
   },
   {
-    "content": "Test upload Excel end-to-end",
+    "content": "Unit test 4 contoh PDF (3.5/7.5/14/17) - PASS",
+    "status": "completed"
+  },
+  {
+    "content": "Test API overtime end-to-end - PASS (21/21)",
     "status": "completed"
   }
 ]

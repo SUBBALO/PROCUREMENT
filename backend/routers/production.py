@@ -2013,13 +2013,19 @@ class OvertimeRulesIn(BaseModel):
     rounding: str = "floor"          # floor | half | round
     wd_first_mult: float = 1.5       # hari kerja/Sabtu jam ke-1
     wd_rest_mult: float = 2.0        # hari kerja/Sabtu jam ke-2 dst
-    hol_normal_hours: int = 7        # Minggu/libur jam ke-1..N
-    hol_normal_mult: float = 2.0
-    hol_8th_mult: float = 3.0        # jam ke-(N+1)
-    hol_extra_mult: float = 4.0      # jam berikutnya
+    hol_normal_hours: int = 7        # (legacy, tidak lagi dipakai utk libur biasa)
+    hol_normal_mult: float = 2.0     # libur biasa: semua jam; libur-Sabtu: tier-1
+    hol_8th_mult: float = 3.0        # libur-Sabtu: jam ke-6
+    hol_extra_mult: float = 4.0      # libur-Sabtu: jam ke-7 dst
+    # Jendela istirahat (dipotong bila lembur melewati jendela ini)
+    weekday_break_start: str = "18:00"
+    weekday_break_end: str = "19:00"
+    holiday_break_start: str = "12:00"
+    holiday_break_end: str = "13:00"
+    sat_hol_tier1_hours: int = 5     # libur-Sabtu: jumlah jam pertama pada tier-1 (x2)
 
 
-# Aturan lembur default (dari referensi Gaji Trial.xlsx / Depnaker 6-hari kerja)
+# Aturan lembur default (sesuai referensi HRD / PDF aturan lembur produksi)
 DEFAULT_OT_RULES = {
     "weekday_start": "16:00",
     "saturday_start": "15:00",
@@ -2033,6 +2039,11 @@ DEFAULT_OT_RULES = {
     "hol_normal_mult": 2.0,
     "hol_8th_mult": 3.0,
     "hol_extra_mult": 4.0,
+    "weekday_break_start": "18:00",
+    "weekday_break_end": "19:00",
+    "holiday_break_start": "12:00",
+    "holiday_break_end": "13:00",
+    "sat_hol_tier1_hours": 5,
 }
 
 
@@ -2070,36 +2081,67 @@ def _ot_day_type(ot_date: str, holidays: set) -> str:
         wd = datetime.fromisoformat(iso).weekday()   # Sen=0 .. Sab=5, Min=6
     except Exception:
         wd = 0
-    if iso in holidays or wd == 6:
-        return "holiday"
+    is_hol = iso in holidays
+    if is_hol and wd == 5:
+        return "holiday_saturday"   # hari libur nasional yang jatuh pada Sabtu
+    if is_hol or wd == 6:
+        return "holiday"            # Minggu atau hari libur (bukan Sabtu)
     if wd == 5:
-        return "saturday"
+        return "saturday"          # Sabtu biasa (hari kerja) -> diperlakukan spt hari kerja
     return "weekday"
 
 
+def _overlap_min(s: int, e: int, bs: int, be: int) -> int:
+    """Menit irisan antara interval [s,e] dan jendela istirahat [bs,be]."""
+    lo = max(s, bs)
+    hi = min(e, be)
+    return max(0, hi - lo)
+
+
 def _calc_overtime(ot_date: str, start: str, end: str, rules: dict, holidays: set, manual_hours=None) -> dict:
-    """Hitung jam lembur + rincian pengali (1.5x/2x/3x/4x) + jam tertimbang.
-    - manual_hours: jika diisi, dipakai langsung sbg jumlah jam lembur (spt entri manual di Excel).
-    - Untuk Minggu/libur, jam istirahat otomatis dikurangi (mis. 08:00-16:00 = 8 jam - 1 = 7 jam)
-      HANYA bila jam dihitung dari jam mulai/selesai (bukan input manual).
+    """Hitung jam lembur + rincian pengali (1.5x/2x/3x/4x) + jam tertimbang, sesuai aturan HRD.
+
+    - Hari Kerja / Sabtu biasa: jam ke-1 x1.5, sisanya x2. Istirahat 18:00-19:00 dipotong
+      bila lembur melewati jendela tsb.
+    - Minggu / Libur biasa: SEMUA jam x2 (flat). Istirahat 12:00-13:00 dipotong.
+    - Libur nasional yang jatuh di Sabtu: 5 jam pertama x2, jam ke-6 x3, jam ke-7 dst x4.
+      Istirahat 12:00-13:00 dipotong.
+    - manual_hours: bila diisi, dipakai langsung sebagai jam lembur bersih (tanpa potong istirahat).
     """
     day_type = _ot_day_type(ot_date, holidays)
+    is_hol_group = day_type in ("holiday", "holiday_saturday")
     manual = manual_hours is not None and str(manual_hours) != "" and float(manual_hours) > 0
+    break_hours = 0.0
     if manual:
         ot_hours = float(manual_hours)
         raw_hours = ot_hours
     else:
-        mins = _time_to_min(end) - _time_to_min(start)
-        if mins < 0:
-            mins += 24 * 60  # lewat tengah malam
+        s = _time_to_min(start)
+        e = _time_to_min(end)
+        if e < s:
+            e += 24 * 60  # lewat tengah malam
+        mins = e - s
         raw_hours = round(mins / 60.0, 2)
-        ot_hours = _round_hours(mins, rules.get("rounding") or "floor")
-        if day_type == "holiday":
-            ot_hours = max(0.0, ot_hours - float(rules.get("holiday_break_hours", 1) or 0))
+        # Potong istirahat sesuai jendela jam
+        if is_hol_group:
+            bs = _time_to_min(rules.get("holiday_break_start", "12:00"))
+            be = _time_to_min(rules.get("holiday_break_end", "13:00"))
+        else:
+            bs = _time_to_min(rules.get("weekday_break_start", "18:00"))
+            be = _time_to_min(rules.get("weekday_break_end", "19:00"))
+        brk = _overlap_min(s, e, bs, be)
+        break_hours = round(brk / 60.0, 2)
+        ot_hours = _round_hours(max(0, mins - brk), rules.get("rounding") or "floor")
+
     x15 = x2 = x3 = x4 = 0.0
     if day_type == "holiday":
-        n = int(rules.get("hol_normal_hours", 7))
-        x2 = min(ot_hours, float(n))
+        # Libur biasa / Minggu: semua jam x2 (flat)
+        x2 = ot_hours
+        weighted = x2 * float(rules.get("hol_normal_mult", 2.0))
+    elif day_type == "holiday_saturday":
+        # Libur di Sabtu: tier1 (5 jam) x2, jam berikut x3, sisanya x4
+        t1 = float(rules.get("sat_hol_tier1_hours", 5))
+        x2 = min(ot_hours, t1)
         rem = ot_hours - x2
         x3 = 1.0 if rem >= 1 else rem
         rem = max(0.0, rem - 1)
@@ -2108,15 +2150,18 @@ def _calc_overtime(ot_date: str, start: str, end: str, rules: dict, holidays: se
                     + x3 * float(rules.get("hol_8th_mult", 3.0))
                     + x4 * float(rules.get("hol_extra_mult", 4.0)))
     else:
+        # Hari kerja / Sabtu biasa: jam ke-1 x1.5, sisanya x2
         x15 = 1.0 if ot_hours >= 1 else ot_hours
         x2 = max(0.0, ot_hours - 1)
         weighted = (x15 * float(rules.get("wd_first_mult", 1.5))
                     + x2 * float(rules.get("wd_rest_mult", 2.0)))
-    label = {"holiday": "Minggu/Libur", "saturday": "Sabtu", "weekday": "Hari Kerja"}[day_type]
+    label = {"holiday": "Minggu/Libur", "holiday_saturday": "Libur (Sabtu)",
+             "saturday": "Sabtu", "weekday": "Hari Kerja"}[day_type]
     return {
         "day_type": day_type,
         "day_label": label,
         "raw_hours": round(raw_hours, 2),
+        "break_hours": round(break_hours, 2),
         "ot_hours": round(ot_hours, 2),
         "manual": manual,
         "x15": round(x15, 2), "x2": round(x2, 2), "x3": round(x3, 2), "x4": round(x4, 2),

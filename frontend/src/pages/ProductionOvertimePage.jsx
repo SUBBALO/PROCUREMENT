@@ -16,6 +16,7 @@ const DAY_BADGE = {
   weekday: "bg-sky-50 border-sky-200 text-sky-700",
   saturday: "bg-violet-50 border-violet-200 text-violet-700",
   holiday: "bg-rose-50 border-rose-200 text-rose-700",
+  holiday_saturday: "bg-orange-50 border-orange-300 text-orange-700",
 };
 
 export default function ProductionOvertimePage() {
@@ -158,6 +159,7 @@ export default function ProductionOvertimePage() {
       const payload = { ...rules };
       ["holiday_break_hours", "wd_first_mult", "wd_rest_mult", "hol_normal_mult", "hol_8th_mult", "hol_extra_mult"].forEach((k) => { payload[k] = Number(payload[k]); });
       payload.hol_normal_hours = parseInt(payload.hol_normal_hours, 10) || 0;
+      payload.sat_hol_tier1_hours = parseInt(payload.sat_hol_tier1_hours, 10) || 5;
       const { data } = await api.put("/production/overtime-rules", payload);
       setRules(data.rules); toast.success("Master lembur tersimpan"); setRulesOpen(false); load();
     } catch (e) { toast.error(e.response?.data?.detail || "Gagal simpan master"); }
@@ -338,7 +340,7 @@ export default function ProductionOvertimePage() {
                 </tbody>
               </table>
               <button onClick={addRow} data-testid="ot-add-row" className="mt-2 inline-flex items-center gap-1.5 h-8 px-3 text-xs font-bold text-amber-700 border border-amber-300 bg-amber-50 rounded hover:bg-amber-100"><Plus size={14} weight="bold" /> Tambah Baris</button>
-              <p className="text-[11px] text-slate-400 mt-2">Untuk Minggu/libur, jam istirahat otomatis dikurangi (mis. 08:00–16:00 = 7 jam). Pengali dihitung otomatis di rekap.</p>
+              <p className="text-[11px] text-slate-400 mt-2">Istirahat otomatis dipotong bila lembur melewatinya (hari kerja 18:00–19:00; Minggu/libur &amp; libur-Sabtu 12:00–13:00). Hari kerja/Sabtu: jam ke-1 ×1.5, sisanya ×2. Minggu/libur: semua ×2. Libur di Sabtu: 5 jam ×2, jam ke-6 ×3, jam ke-7 dst ×4. Pengali dihitung otomatis di rekap.</p>
             </div>
             <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200 bg-slate-50 shrink-0">
               <button onClick={() => setModalOpen(false)} className="h-9 px-4 text-sm font-bold text-slate-600 border border-slate-300 bg-white rounded hover:bg-slate-100">Batal</button>
@@ -373,30 +375,39 @@ export default function ProductionOvertimePage() {
             <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200"><h2 className="text-base font-bold text-slate-900 flex items-center gap-2"><Gear size={18} weight="bold" className="text-amber-600" /> Master Aturan Lembur</h2><button onClick={() => setRulesOpen(false)} data-testid="ot-rules-close" className="p-1.5 rounded text-slate-400 hover:bg-slate-100"><X size={18} weight="bold" /></button></div>
             <div className="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
               <div>
-                <div className="text-[11px] font-bold text-slate-600 uppercase mb-2">Jam Kerja / Referensi</div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div><label className="text-xs font-bold text-slate-600">OT Mulai (Sen–Jum)</label><input type="time" value={rules.weekday_start} onChange={(e) => setRule("weekday_start", e.target.value)} data-testid="rule-weekday-start" className={inputCls} /></div>
-                  <div><label className="text-xs font-bold text-slate-600">OT Mulai (Sabtu)</label><input type="time" value={rules.saturday_start} onChange={(e) => setRule("saturday_start", e.target.value)} data-testid="rule-saturday-start" className={inputCls} /></div>
-                  <div><label className="text-xs font-bold text-slate-600">Potong Istirahat (jam)</label><input type="number" min="0" step="0.5" value={rules.holiday_break_hours} onChange={(e) => setRule("holiday_break_hours", e.target.value)} data-testid="rule-break" className={inputCls} /></div>
-                  <div className="col-span-3"><p className="text-[11px] text-slate-400">Minggu/libur: kerja {rules.holiday_work_start}–{rules.holiday_work_end}, dikurangi istirahat {rules.holiday_break_hours} jam → jam lembur bersih.</p></div>
+                <div className="text-[11px] font-bold text-slate-600 uppercase mb-2">Jendela Istirahat (dipotong bila lembur melewatinya)</div>
+                <div className="grid grid-cols-4 gap-3">
+                  <div><label className="text-xs font-bold text-slate-600">Hari Kerja — Mulai</label><input type="time" value={rules.weekday_break_start} onChange={(e) => setRule("weekday_break_start", e.target.value)} data-testid="rule-wd-break-start" className={inputCls} /></div>
+                  <div><label className="text-xs font-bold text-slate-600">Hari Kerja — Selesai</label><input type="time" value={rules.weekday_break_end} onChange={(e) => setRule("weekday_break_end", e.target.value)} data-testid="rule-wd-break-end" className={inputCls} /></div>
+                  <div><label className="text-xs font-bold text-slate-600">Libur — Mulai</label><input type="time" value={rules.holiday_break_start} onChange={(e) => setRule("holiday_break_start", e.target.value)} data-testid="rule-hol-break-start" className={inputCls} /></div>
+                  <div><label className="text-xs font-bold text-slate-600">Libur — Selesai</label><input type="time" value={rules.holiday_break_end} onChange={(e) => setRule("holiday_break_end", e.target.value)} data-testid="rule-hol-break-end" className={inputCls} /></div>
+                  <div className="col-span-4"><p className="text-[11px] text-slate-400">Hari kerja/Sabtu: istirahat {rules.weekday_break_start}–{rules.weekday_break_end}. Minggu/Libur &amp; Libur-Sabtu: istirahat {rules.holiday_break_start}–{rules.holiday_break_end}. Hanya dipotong jika jam lembur melewati jendela ini.</p></div>
                 </div>
               </div>
               <div>
-                <div className="text-[11px] font-bold text-slate-600 uppercase mb-2">Pengali · Hari Kerja &amp; Sabtu</div>
+                <div className="text-[11px] font-bold text-slate-600 uppercase mb-2">Pengali · Hari Kerja &amp; Sabtu Biasa</div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="text-xs font-bold text-slate-600">Jam ke-1</label><input type="number" step="0.1" value={rules.wd_first_mult} onChange={(e) => setRule("wd_first_mult", e.target.value)} data-testid="rule-wd-first" className={inputCls} /></div>
                   <div><label className="text-xs font-bold text-slate-600">Jam ke-2 dst</label><input type="number" step="0.1" value={rules.wd_rest_mult} onChange={(e) => setRule("wd_rest_mult", e.target.value)} data-testid="rule-wd-rest" className={inputCls} /></div>
                 </div>
+                <p className="text-[11px] text-slate-400 mt-1">Contoh 16:00–21:00 = 4 jam bersih (18–19 istirahat) → 1×{rules.wd_first_mult} + 3×{rules.wd_rest_mult} = {(Number(rules.wd_first_mult) + 3 * Number(rules.wd_rest_mult)).toFixed(1)}.</p>
               </div>
               <div>
-                <div className="text-[11px] font-bold text-slate-600 uppercase mb-2">Pengali · Minggu / Libur Nasional</div>
-                <div className="grid grid-cols-4 gap-3">
-                  <div><label className="text-xs font-bold text-slate-600">Jam normal (N)</label><input type="number" step="1" value={rules.hol_normal_hours} onChange={(e) => setRule("hol_normal_hours", e.target.value)} data-testid="rule-hol-n" className={inputCls} /></div>
-                  <div><label className="text-xs font-bold text-slate-600">Pengali 1..N</label><input type="number" step="0.1" value={rules.hol_normal_mult} onChange={(e) => setRule("hol_normal_mult", e.target.value)} data-testid="rule-hol-normal" className={inputCls} /></div>
-                  <div><label className="text-xs font-bold text-slate-600">Jam ke-(N+1)</label><input type="number" step="0.1" value={rules.hol_8th_mult} onChange={(e) => setRule("hol_8th_mult", e.target.value)} data-testid="rule-hol-8th" className={inputCls} /></div>
-                  <div><label className="text-xs font-bold text-slate-600">Jam berikutnya</label><input type="number" step="0.1" value={rules.hol_extra_mult} onChange={(e) => setRule("hol_extra_mult", e.target.value)} data-testid="rule-hol-extra" className={inputCls} /></div>
+                <div className="text-[11px] font-bold text-slate-600 uppercase mb-2">Pengali · Minggu / Libur Biasa (flat)</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-bold text-slate-600">Semua jam ×</label><input type="number" step="0.1" value={rules.hol_normal_mult} onChange={(e) => setRule("hol_normal_mult", e.target.value)} data-testid="rule-hol-normal" className={inputCls} /></div>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">Contoh (N=7): jam 1–7 = {rules.hol_normal_mult}x, jam ke-8 = {rules.hol_8th_mult}x, jam 9 dst = {rules.hol_extra_mult}x.</p>
+                <p className="text-[11px] text-slate-400 mt-1">Semua jam lembur di Minggu/libur nasional dikali {rules.hol_normal_mult}. Contoh 7 jam → {(7 * Number(rules.hol_normal_mult)).toFixed(0)}.</p>
+              </div>
+              <div>
+                <div className="text-[11px] font-bold text-slate-600 uppercase mb-2">Pengali · Libur Nasional yang Jatuh di Sabtu</div>
+                <div className="grid grid-cols-4 gap-3">
+                  <div><label className="text-xs font-bold text-slate-600">Jam tier-1</label><input type="number" step="1" value={rules.sat_hol_tier1_hours} onChange={(e) => setRule("sat_hol_tier1_hours", e.target.value)} data-testid="rule-sat-tier1" className={inputCls} /></div>
+                  <div><label className="text-xs font-bold text-slate-600">Tier-1 ×</label><input type="number" step="0.1" value={rules.hol_normal_mult} onChange={(e) => setRule("hol_normal_mult", e.target.value)} data-testid="rule-sat-t1mult" className={inputCls} /></div>
+                  <div><label className="text-xs font-bold text-slate-600">Jam berikut ×</label><input type="number" step="0.1" value={rules.hol_8th_mult} onChange={(e) => setRule("hol_8th_mult", e.target.value)} data-testid="rule-hol-8th" className={inputCls} /></div>
+                  <div><label className="text-xs font-bold text-slate-600">Sisanya ×</label><input type="number" step="0.1" value={rules.hol_extra_mult} onChange={(e) => setRule("hol_extra_mult", e.target.value)} data-testid="rule-hol-extra" className={inputCls} /></div>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">{rules.sat_hol_tier1_hours} jam pertama ×{rules.hol_normal_mult}, jam ke-{Number(rules.sat_hol_tier1_hours) + 1} ×{rules.hol_8th_mult}, sisanya ×{rules.hol_extra_mult}. Contoh 7 jam → {(Number(rules.sat_hol_tier1_hours) * Number(rules.hol_normal_mult) + 1 * Number(rules.hol_8th_mult) + 1 * Number(rules.hol_extra_mult)).toFixed(0)}.</p>
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-600">Pembulatan jam (dari jam mulai–selesai)</label>
