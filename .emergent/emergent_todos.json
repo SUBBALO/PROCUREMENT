@@ -1,46 +1,26 @@
 [
   {
-    "content": "Eksplorasi: panel Item & Qty Drawing, endpoint save item drawing, logika stamp qty",
+    "content": "Backend: tambah filter so_no di GET /drawing-requests agar SO detail bisa ambil DR-nya",
     "status": "completed"
   },
   {
-    "content": "Backend: multi-item per drawing (items array + total qty utk stamp)",
+    "content": "SO Form & Detail: ganti label 'Tanggal SO' -> 'Tanggal PO'",
     "status": "completed"
   },
   {
-    "content": "Frontend: UI baris item + tombol Tambah Item di Work Order",
+    "content": "DR form: auto-isi Tanggal Terima PO (dari Tanggal PO SO) & Deadline Pengiriman (dari Due Date SO)",
     "status": "completed"
   },
   {
-    "content": "Backend: priority di accept-assign + sort my-queue",
+    "content": "SO detail: tampilkan DR terkait + lampiran (PO dll) + tombol Edit(draft)/Lihat, dan sembunyikan 'Ajukan DR' bila DR sudah ada",
     "status": "completed"
   },
   {
-    "content": "Frontend: selector priority di EngineeringQueuePanel + DrfDetailModal + badge High di MyJobQueuePanel",
+    "content": "Modal SO detail scroll fix (tidak kepotong)",
     "status": "completed"
   },
   {
-    "content": "Backend: endpoint statistik pribadi bulanan staff (my-stats)",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: kartu Statistik Pribadi Mini di Tugas Saya",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: Checklist Deliverable 4 kotak upload di SubmitToLeaderPanel",
-    "status": "completed"
-  },
-  {
-    "content": "Fix flow Inquiry: assign tanpa auto-start, Terima/Kerjakan, status label aktual di semua tampilan",
-    "status": "completed"
-  },
-  {
-    "content": "Panel Butuh Approval Anda utk Direktur di halaman utama (di atas Progress SO)",
-    "status": "completed"
-  },
-  {
-    "content": "Compile check + smoke test backend + verifikasi visual testing agent + cleanup data test",
+    "content": "Verify compile + test flow",
     "status": "completed"
   }
 ]

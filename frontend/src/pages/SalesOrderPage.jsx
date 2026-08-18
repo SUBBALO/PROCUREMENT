@@ -9,7 +9,7 @@ import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import {
   Plus, PencilSimple, Trash, MagnifyingGlass, ClipboardText, Upload, FileText,
-  PaperPlaneTilt, CircleNotch, X, Eye, Lock, CheckCircle, Gear,
+  PaperPlaneTilt, CircleNotch, X, Eye, Lock, CheckCircle, Gear, Paperclip,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { SortDropdown, sortItems, cmpStr, cmpDateStr } from "../components/SortDropdown";
@@ -54,6 +54,7 @@ export default function SalesOrderPage() {
   const [del, setDel] = useState(null);
   const [detail, setDetail] = useState(null); // view detail
   const [drTarget, setDrTarget] = useState(null); // SO -> ajukan drawing request
+  const [drfOpen, setDrfOpen] = useState(null);   // buka DR yang sudah ada (edit draft / lihat)
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -179,7 +180,7 @@ export default function SalesOrderPage() {
                     />
                   </th>
                 )}
-                <th className="text-left px-2 py-1.5">Tanggal</th>
+                <th className="text-left px-2 py-1.5">Tanggal PO</th>
                 <th className="text-left px-2 py-1.5">Nomor SO</th>
                 <th className="text-left px-2 py-1.5">Customer</th>
                 <th className="text-left px-2 py-1.5">PO Customer</th>
@@ -286,6 +287,7 @@ export default function SalesOrderPage() {
           canDelete={canDelete}
           onEdit={() => { const s = detail; setDetail(null); setDlg({ mode: "edit", so: s }); }}
           onAjukanDR={() => { const s = detail; setDetail(null); setDrTarget(s); }}
+          onOpenDR={(drf) => { setDetail(null); setDrfOpen(drf); }}
           onDelete={() => { const s = detail; setDetail(null); setDel(s); }}
           onClose={() => setDetail(null)}
         />
@@ -299,10 +301,20 @@ export default function SalesOrderPage() {
             project_name: drTarget.description || "",
             customer_name: drTarget.customer || "",
             po_customer_no: drTarget.po_customer_no || "",
+            po_received_date: drTarget.so_date || "",
+            delivery_due_date: drTarget.due_date || "",
             items: (drTarget.items || []).map((it) => ({ name: it.name || "", qty: it.qty ?? 1, unit: it.unit || "pcs", material: "TBA" })),
           }}
           onClose={() => setDrTarget(null)}
-          onSaved={() => { setDrTarget(null); toast.success("Drawing Request diajukan ke Engineering"); load(); }}
+          onSaved={() => { setDrTarget(null); load(); }}
+        />
+      )}
+
+      {drfOpen && (
+        <DrawingRequestFormDialog
+          initial={drfOpen}
+          onClose={() => setDrfOpen(null)}
+          onSaved={() => { setDrfOpen(null); load(); }}
         />
       )}
 
@@ -456,8 +468,8 @@ function SalesOrderFormDialog({ mode, so, fromQuotation, canSeePrice, currentUse
               {soNo && !soNoValid && <div className="text-[10px] text-red-500 mt-0.5">Harus 6 digit diawali "00"</div>}
             </div>
             <div>
-              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Tanggal SO</Label>
-              <Input type="date" className={inputCls} value={soDate} onChange={(e) => setSoDate(e.target.value)} />
+              <Label className="text-xs font-semibold text-slate-600 mb-1 block">Tanggal PO</Label>
+              <Input type="date" className={inputCls} value={soDate} onChange={(e) => setSoDate(e.target.value)} data-testid="so-input-date" />
             </div>
             <div>
               <Label className="text-xs font-semibold text-slate-600 mb-1 block">Due Date (Delivery)</Label>
@@ -679,23 +691,52 @@ function SalesNamePicker({ value, onChange, options }) {
 }
 
 
-/* SO detail view (respects price visibility) + aksi (Edit / Ajukan DR / Hapus) */
-function SoDetailModal({ so, canSeePrice, canCreate, canDelete, onEdit, onAjukanDR, onDelete, onClose }) {
+/* Label status DR (level DRF) */
+const DRF_STATUS_LABEL = {
+  draft: { label: "Draft (belum dikirim)", cls: "bg-slate-100 text-slate-700 border-slate-300" },
+  submitted: { label: "Terkirim ke Engineering", cls: "bg-amber-100 text-amber-800 border-amber-400" },
+  accepted: { label: "Diterima Engineering", cls: "bg-sky-100 text-sky-800 border-sky-400" },
+  received: { label: "Diterima Engineering", cls: "bg-sky-100 text-sky-800 border-sky-400" },
+  in_progress: { label: "Dikerjakan Engineering", cls: "bg-violet-100 text-violet-800 border-violet-400" },
+  completed: { label: "Selesai Engineering", cls: "bg-emerald-100 text-emerald-800 border-emerald-500" },
+  revision_requested: { label: "Menunggu Approval Revisi", cls: "bg-orange-100 text-orange-800 border-orange-400" },
+};
+
+/* SO detail view (respects price visibility) + aksi (Edit / Ajukan DR / Hapus) + daftar DR & lampiran */
+function SoDetailModal({ so, canSeePrice, canCreate, canDelete, onEdit, onAjukanDR, onOpenDR, onDelete, onClose }) {
   const st = DR_STATUS[so.drawing_request_status] || DR_STATUS.belum_drawing_request;
-  const canAjukan = so.drawing_request_status === "belum_drawing_request" && canCreate;
   const canEdit = canCreate && (so.items || []).length > 0;
+  const apiUrl = process.env.REACT_APP_BACKEND_URL;
+
+  const [drfs, setDrfs] = useState([]);
+  const [drfLoading, setDrfLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setDrfLoading(true);
+    api.get("/drawing-requests", { params: { so_no: so.so_no } })
+      .then(({ data }) => { if (alive) setDrfs(data?.items || []); })
+      .catch(() => { if (alive) setDrfs([]); })
+      .finally(() => { if (alive) setDrfLoading(false); });
+    return () => { alive = false; };
+  }, [so.so_no]);
+
+  // "Ajukan DR baru" hanya bila belum ada DR sama sekali untuk SO ini
+  const hasDrf = drfs.length > 0;
+  const canAjukan = canCreate && !drfLoading && !hasDrf;
+
   return (
-    <div className="fixed inset-0 z-[70] bg-black/60 flex items-start justify-center p-4 overflow-y-auto" data-testid="so-detail-modal">
-      <div className="bg-white w-full max-w-2xl my-6 border border-slate-300">
-        <div className="flex items-center justify-between px-4 py-3 bg-slate-800 text-white">
+    <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4" data-testid="so-detail-modal">
+      <div className="bg-white w-full max-w-2xl border border-slate-300 flex flex-col max-h-[92vh]">
+        <div className="flex items-center justify-between px-4 py-3 bg-slate-800 text-white shrink-0">
           <div><div className="text-[10px] uppercase tracking-widest opacity-70">Detail Sales Order</div><div className="font-mono font-bold text-lg">{so.so_no}</div></div>
           <button onClick={onClose} className="p-1 hover:bg-white/20"><X size={18} /></button>
         </div>
-        <div className="p-4 space-y-3 text-sm">
+        <div className="p-4 space-y-3 text-sm overflow-y-auto flex-1 min-h-0">
           <div className="grid grid-cols-2 gap-3">
             <Info label="Customer" value={so.customer} />
             <Info label="No. PO Customer" value={so.po_customer_no} />
-            <Info label="Tanggal SO" value={formatDateID(so.so_date)} />
+            <Info label="Tanggal PO" value={formatDateID(so.so_date)} />
             <Info label="Ref Quotation" value={so.source_quotation_no || "-"} />
             <Info label="Nama Sales" value={so.sales_name} />
           </div>
@@ -703,6 +744,74 @@ function SoDetailModal({ so, canSeePrice, canCreate, canDelete, onEdit, onAjukan
             <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Status Proses Engineering</div>
             <span className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider border ${st.cls}`}>{st.label}</span>
           </div>
+
+          {/* Daftar Drawing Request untuk SO ini + lampiran */}
+          <div data-testid="so-detail-drf-section">
+            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Drawing Request</div>
+            {drfLoading ? (
+              <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><CircleNotch size={14} className="animate-spin" /> Memuat data DR…</div>
+            ) : !hasDrf ? (
+              <div className="text-xs text-slate-400 italic border border-dashed border-slate-200 p-3">Belum ada Drawing Request untuk SO ini.</div>
+            ) : (
+              <div className="space-y-2">
+                {drfs.map((drf) => {
+                  const ds = DRF_STATUS_LABEL[drf.status] || DRF_STATUS_LABEL.draft;
+                  const files = drf.attached_files || [];
+                  const isDraft = drf.status === "draft";
+                  return (
+                    <div key={drf.id} className="border border-slate-200" data-testid={`so-drf-card-${drf.form_no || drf.id}`}>
+                      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200 flex-wrap">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs font-bold text-slate-800">{drf.form_no || "(draft)"}</span>
+                          <span className={`inline-flex items-center px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${ds.cls}`}>{ds.label}</span>
+                        </div>
+                        {canCreate && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => onOpenDR(drf)}
+                            className={`rounded-none h-7 text-[11px] uppercase font-bold ${isDraft ? "border-amber-400 text-amber-700 hover:bg-amber-50" : "border-sky-300 text-sky-700 hover:bg-sky-50"}`}
+                            data-testid={`so-drf-open-${drf.form_no || drf.id}`}
+                          >
+                            {isDraft ? (<><PencilSimple size={13} weight="bold" className="mr-1" /> Lanjutkan / Kirim</>) : (<><Eye size={13} weight="bold" className="mr-1" /> Lihat</>)}
+                          </Button>
+                        )}
+                      </div>
+                      <div className="p-2">
+                        <div className="text-[9px] uppercase tracking-wider text-slate-400 mb-1">Lampiran ({files.length})</div>
+                        {files.length === 0 ? (
+                          <div className="text-[11px] text-slate-400 italic">Tidak ada lampiran.</div>
+                        ) : (
+                          <div className="space-y-1">
+                            {files.map((f) => (
+                              <div key={f.file_id} className="flex items-center gap-2 border border-slate-200 px-2 py-1 hover:bg-slate-50">
+                                <Paperclip size={12} className="text-slate-400 shrink-0" />
+                                <span className="flex-1 text-[11px] truncate">{f.filename}</span>
+                                <span className="text-[9px] px-1 py-0.5 bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-wider">
+                                  {(f.category || "other") === "po_customer" ? "PO" : "Lain"}
+                                </span>
+                                <a
+                                  href={`${apiUrl}/api/drawing-requests/${drf.id}/attachments/${f.file_id}/download`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="p-1 hover:bg-slate-200 text-slate-600"
+                                  title="Buka / lihat file"
+                                  data-testid={`so-drf-file-${f.file_id}`}
+                                >
+                                  <Eye size={13} />
+                                </a>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <div>
             <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Item ({(so.items || []).length})</div>
             <div className="border border-slate-200">
@@ -728,11 +837,11 @@ function SoDetailModal({ so, canSeePrice, canCreate, canDelete, onEdit, onAjukan
             {!canSeePrice && <div className="mt-1 text-[11px] text-slate-400 flex items-center gap-1"><Lock size={12} /> Harga hanya untuk Super Admin, Admin & Finance.</div>}
           </div>
         </div>
-        <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2 flex-wrap">
+        <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2 flex-wrap shrink-0">
           <div className="flex items-center gap-2 flex-wrap">
             {canAjukan && (
-              <Button onClick={onAjukanDR} className="rounded-none bg-amber-600 hover:bg-amber-700 text-white text-xs uppercase font-bold" data-testid={`so-detail-ajukan-dr-${so.so_no}`}>
-                <PaperPlaneTilt size={14} weight="bold" className="mr-1" /> Ajukan DR
+              <Button onClick={onAjukanDR} className="rounded-none bg-amber-600 hover:bg-amber-700 text-white text-xs uppercase font-bold" data-testid={`so-detail-ajukan-dr-${so.so_no}`} title="Kirim permintaan gambar kerja ke Engineering">
+                <PaperPlaneTilt size={14} weight="bold" className="mr-1" /> Ajukan Drawing Request
               </Button>
             )}
             {canEdit && (

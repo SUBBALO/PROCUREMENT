@@ -591,11 +591,13 @@ async def create_drawing_request(
 async def list_drawing_requests(
     status: Optional[str] = None,
     scope: Optional[str] = None,  # "mine" | "for_engineering" | "for_sales_ttd"
+    so_no: Optional[str] = None,  # filter DRF milik satu SO (dipakai di detail Sales Order)
     current: dict = Depends(get_current_user),
 ):
     """List DRF dengan filter."""
     filt: dict = {"deleted_at": {"$exists": False}}
     if status: filt["status"] = status
+    if so_no: filt["so_no"] = so_no.strip()
     if scope == "mine":
         filt["created_by"] = current["id"]
     elif scope == "for_engineering":
