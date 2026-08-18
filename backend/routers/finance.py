@@ -101,20 +101,8 @@ async def set_employee_rate(employee_id: str, payload: RateIn, current: dict = D
 # ---------------------------------------------------------------------------
 # Daily Production Report (Finance view) — salinan produksi + biaya
 # ---------------------------------------------------------------------------
-@router.get("/daily-production")
-async def finance_daily_production(
-    month: Optional[str] = None,
-    date: Optional[str] = None,
-    operator: Optional[str] = None,
-    so_no: Optional[str] = None,
-    current: dict = Depends(get_current_user),
-):
-    """Salinan read-only laporan produksi harian + kolom biaya (rate/jam x jam kerja).
-    Total per operator & per tanggal. Finance/Admin only."""
-    if not _can_finance(current):
-        raise HTTPException(status_code=403, detail="Hanya Finance/Admin yang bisa mengakses")
-
-    # Peta rate: berdasarkan employee_id dan nama (untuk mencocokkan operator_name)
+async def _compute_finance_daily(month, date, operator, so_no):
+    """Ambil baris laporan produksi + hitung biaya (rate/jam x jam kerja) + rekap."""
     emps = await db.production_employees.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(length=10000)
     id_by_name = {(e.get("name") or "").strip().lower(): e.get("id") for e in emps}
     rates = await db.employee_rates.find({}, {"_id": 0}).to_list(length=10000)
@@ -164,3 +152,116 @@ async def finance_daily_production(
         "summary_operator": summary_operator,
         "summary_date": summary_date,
     }
+
+
+@router.get("/daily-production")
+async def finance_daily_production(
+    month: Optional[str] = None,
+    date: Optional[str] = None,
+    operator: Optional[str] = None,
+    so_no: Optional[str] = None,
+    current: dict = Depends(get_current_user),
+):
+    """Salinan read-only laporan produksi harian + kolom biaya (rate/jam x jam kerja).
+    Total per operator & per tanggal. Finance/Admin only."""
+    if not _can_finance(current):
+        raise HTTPException(status_code=403, detail="Hanya Finance/Admin yang bisa mengakses")
+    return await _compute_finance_daily(month, date, operator, so_no)
+
+
+@router.get("/daily-production/export.xlsx")
+async def finance_daily_export(
+    month: Optional[str] = None,
+    date: Optional[str] = None,
+    operator: Optional[str] = None,
+    so_no: Optional[str] = None,
+    current: dict = Depends(get_current_user),
+):
+    """Export rekap biaya tenaga kerja ke Excel (Detail + Rekap per Operator) untuk payroll."""
+    if not _can_finance(current):
+        raise HTTPException(status_code=403, detail="Hanya Finance/Admin yang bisa export")
+    import io
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    data = await _compute_finance_daily(month, date, operator, so_no)
+
+    head_fill = PatternFill("solid", fgColor="1E293B")
+    head_font = Font(bold=True, color="FFFFFF")
+    money_fill = PatternFill("solid", fgColor="ECFDF5")
+    bold = Font(bold=True)
+    center = Alignment(horizontal="center")
+    thin = Side(style="thin", color="E2E8F0")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def style_header(ws, ncol):
+        for c in range(1, ncol + 1):
+            cell = ws.cell(row=1, column=c)
+            cell.font = head_font
+            cell.fill = head_fill
+            cell.alignment = center
+            cell.border = border
+
+    wb = Workbook()
+
+    # --- Sheet 1: Detail ---
+    ws = wb.active
+    ws.title = "Detail"
+    headers = ["Tanggal", "Operator", "SO", "Customer", "Process", "Jam Mulai", "Jam Selesai", "Total Jam Kerja", "Rate/Jam (Rp)", "Biaya (Rp)"]
+    ws.append(headers)
+    style_header(ws, len(headers))
+    for it in data["items"]:
+        ws.append([
+            it.get("report_date") or "",
+            it.get("operator_name") or "",
+            it.get("so_no") or "",
+            it.get("customer") or "",
+            it.get("process") or "",
+            it.get("work_start") or "",
+            it.get("work_end") or "",
+            _f(it.get("work_hours")),
+            _f(it.get("rate_per_hour")),
+            _f(it.get("cost")),
+        ])
+    # baris total
+    total_row = ["TOTAL", "", "", "", "", "", "", data["total_hours"], "", data["total_cost"]]
+    ws.append(total_row)
+    trow = ws.max_row
+    for c in range(1, len(headers) + 1):
+        ws.cell(row=trow, column=c).font = bold
+        ws.cell(row=trow, column=c).fill = money_fill
+    for col, w in zip("ABCDEFGHIJ", [12, 20, 12, 22, 22, 11, 12, 11, 15, 16]):
+        ws.column_dimensions[col].width = w
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=9, max_col=10):
+        for cell in row:
+            cell.number_format = "#,##0"
+    ws.freeze_panes = "A2"
+
+    # --- Sheet 2: Rekap per Operator ---
+    ws2 = wb.create_sheet("Rekap per Operator")
+    h2 = ["Operator", "Total Jam", "Jumlah Baris", "Total Biaya (Rp)"]
+    ws2.append(h2)
+    style_header(ws2, len(h2))
+    for s in data["summary_operator"]:
+        ws2.append([s["name"], s["total_hours"], s["rows"], s["total_cost"]])
+    ws2.append(["TOTAL", data["total_hours"], data["count"], data["total_cost"]])
+    trow2 = ws2.max_row
+    for c in range(1, len(h2) + 1):
+        ws2.cell(row=trow2, column=c).font = bold
+        ws2.cell(row=trow2, column=c).fill = money_fill
+    for col, w in zip("ABCD", [24, 12, 14, 18]):
+        ws2.column_dimensions[col].width = w
+    for row in ws2.iter_rows(min_row=2, max_row=ws2.max_row, min_col=4, max_col=4):
+        for cell in row:
+            cell.number_format = "#,##0"
+    ws2.freeze_panes = "A2"
+
+    period = date or month or "semua"
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    fname = f"biaya_tenaga_kerja_{period}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
+    )

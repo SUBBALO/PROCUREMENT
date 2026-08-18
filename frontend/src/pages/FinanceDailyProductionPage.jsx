@@ -5,7 +5,7 @@ import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import {
   Coins, CurrencyDollar, ClockCounterClockwise, Table as TableIcon, UsersThree,
-  FloppyDisk, CalendarBlank, User, Kanban, ArrowClockwise, Lock, WarningCircle,
+  FloppyDisk, CalendarBlank, User, Kanban, ArrowClockwise, Lock, WarningCircle, MicrosoftExcelLogo,
 } from "@phosphor-icons/react";
 
 const FIN_ROLES = ["finance", "admin", "super_admin"];
@@ -99,6 +99,25 @@ function DailyPanel() {
 
   useEffect(() => { load(); }, [load]);
 
+  const [exporting, setExporting] = useState(false);
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const params = {};
+      if (date) params.date = date; else if (month) params.month = month;
+      if (operator) params.operator = operator;
+      if (soNo) params.so_no = soNo;
+      const res = await api.get("/finance/daily-production/export.xlsx", { params, responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url; a.download = `biaya_tenaga_kerja_${date || month || "semua"}.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal export Excel");
+    } finally { setExporting(false); }
+  };
+
   const inputCls = "h-9 px-2 text-sm border border-slate-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400";
 
   return (
@@ -117,6 +136,11 @@ function DailyPanel() {
         <div className="flex flex-col"><label className="text-[11px] font-bold text-slate-500 mb-0.5 flex items-center gap-1"><User size={12} /> Operator</label><input value={operator} onChange={(e) => setOperator(e.target.value)} placeholder="nama…" className={inputCls} data-testid="filter-operator" /></div>
         <div className="flex flex-col"><label className="text-[11px] font-bold text-slate-500 mb-0.5 flex items-center gap-1"><Kanban size={12} /> SO No</label><input value={soNo} onChange={(e) => setSoNo(e.target.value)} placeholder="SO…" className={inputCls} data-testid="filter-so" /></div>
         <button onClick={() => { setDate(""); setOperator(""); setSoNo(""); setMonth(thisMonth()); }} className="inline-flex items-center gap-1.5 h-9 px-3 border border-slate-300 bg-white text-sm font-bold text-slate-600 rounded hover:bg-slate-50"><ArrowClockwise size={15} weight="bold" /> Reset</button>
+        <div className="flex-1" />
+        <button onClick={exportExcel} disabled={exporting || loading} data-testid="finance-export-btn"
+          className="inline-flex items-center gap-1.5 h-9 px-4 bg-emerald-600 text-white text-sm font-bold rounded hover:bg-emerald-700 disabled:opacity-60">
+          <MicrosoftExcelLogo size={16} weight="bold" /> {exporting ? "Menyiapkan…" : "Export Excel"}
+        </button>
       </div>
 
       {/* Table */}
@@ -130,16 +154,17 @@ function DailyPanel() {
                 <th className="px-3 py-2 text-left font-bold">SO</th>
                 <th className="px-3 py-2 text-left font-bold">Customer</th>
                 <th className="px-3 py-2 text-left font-bold">Process</th>
-                <th className="px-3 py-2 text-right font-bold">Jam Kerja</th>
+                <th className="px-3 py-2 text-center font-bold">Jam (Mulai–Selesai)</th>
+                <th className="px-3 py-2 text-right font-bold">Total Jam Kerja</th>
                 <th className="px-3 py-2 text-right font-bold">Rate/Jam</th>
                 <th className="px-3 py-2 text-right font-bold">Biaya</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-400">Memuat…</td></tr>
+                <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400">Memuat…</td></tr>
               ) : data.items.length === 0 ? (
-                <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-400" data-testid="daily-empty">Tidak ada data untuk filter ini.</td></tr>
+                <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400" data-testid="daily-empty">Tidak ada data untuk filter ini.</td></tr>
               ) : data.items.map((r) => (
                 <tr key={r.id} className="hover:bg-slate-50" data-testid={`fin-row-${r.id}`}>
                   <td className="px-3 py-2 whitespace-nowrap">{fmtDate(r.report_date)}</td>
@@ -147,6 +172,7 @@ function DailyPanel() {
                   <td className="px-3 py-2 font-mono">{r.so_no || "—"}</td>
                   <td className="px-3 py-2 text-slate-600 max-w-[160px] truncate" title={r.customer}>{r.customer || "—"}</td>
                   <td className="px-3 py-2 text-slate-600 max-w-[160px] truncate" title={r.process}>{r.process || "—"}</td>
+                  <td className="px-3 py-2 text-center whitespace-nowrap font-mono text-slate-600">{(r.work_start || "—") + " – " + (r.work_end || "—")}</td>
                   <td className="px-3 py-2 text-right tabular-nums font-semibold text-sky-700">{r.work_hours} jam</td>
                   <td className="px-3 py-2 text-right tabular-nums text-slate-500">{r.rate_per_hour ? rp(r.rate_per_hour) : <span className="text-amber-500" title="Rate belum diisi">belum diisi</span>}</td>
                   <td className="px-3 py-2 text-right tabular-nums font-bold text-emerald-700">{rp(r.cost)}</td>
@@ -156,7 +182,7 @@ function DailyPanel() {
             {!loading && data.items.length > 0 && (
               <tfoot>
                 <tr className="bg-emerald-50 border-t-2 border-emerald-200 font-bold text-slate-800">
-                  <td className="px-3 py-2" colSpan={5}>TOTAL</td>
+                  <td className="px-3 py-2" colSpan={6}>TOTAL</td>
                   <td className="px-3 py-2 text-right tabular-nums text-sky-700">{data.total_hours} jam</td>
                   <td className="px-3 py-2"></td>
                   <td className="px-3 py-2 text-right tabular-nums text-emerald-700" data-testid="daily-total-cost">{rp(data.total_cost)}</td>
