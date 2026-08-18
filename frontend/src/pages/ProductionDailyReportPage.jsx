@@ -304,16 +304,17 @@ export default function ProductionDailyReportPage() {
         <p className="text-xs text-slate-500 mt-1">Klik <b>Input Report</b> → pilih tanggal → isi tabel (auto-simpan). Hasil langsung masuk masterlist di bawah.</p>
       </div>
 
-      {/* Tombol Input */}
-      <div className="flex items-center justify-end">
-        <button onClick={openInput} data-testid="open-input-btn"
-          className="inline-flex items-center gap-1.5 h-9 px-4 bg-amber-600 text-white text-sm font-bold rounded hover:bg-amber-700 transition-colors">
-          <Plus size={16} weight="bold" /> Input Report
-        </button>
-      </div>
-
-      {/* Masterlist (filter + export) sebagai satu-satunya list */}
-      <ProductionMasterlistPage embedded refreshSignal={refreshSignal} />
+      {/* Masterlist (filter + Input Report + Export sejajar) */}
+      <ProductionMasterlistPage
+        embedded
+        refreshSignal={refreshSignal}
+        headerActions={
+          <button onClick={openInput} data-testid="open-input-btn"
+            className="inline-flex items-center gap-1.5 h-9 px-4 bg-amber-600 text-white text-sm font-bold rounded hover:bg-amber-700 transition-colors">
+            <Plus size={16} weight="bold" /> Input Report
+          </button>
+        }
+      />
 
       {/* Datalists (dipakai oleh editor di popup) */}
       <datalist id="dl-operators">{(opts.operators || []).map((o) => <option key={o} value={o} />)}</datalist>

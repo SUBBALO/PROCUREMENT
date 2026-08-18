@@ -19,7 +19,7 @@ const fmtDate = (d) => {
   catch { return d; }
 };
 
-export default function ProductionMasterlistPage({ embedded = false, refreshSignal = 0 }) {
+export default function ProductionMasterlistPage({ embedded = false, refreshSignal = 0, headerActions = null }) {
   const navigate = useNavigate();
   const [month, setMonth] = useState(thisMonth());
   const [date, setDate] = useState("");
@@ -109,6 +109,7 @@ export default function ProductionMasterlistPage({ embedded = false, refreshSign
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {headerActions}
           {!embedded && (
           <button onClick={() => navigate("/produksi/daily-report")} data-testid="open-daily-btn"
             className="inline-flex items-center gap-1.5 h-9 px-3 border border-slate-300 bg-white text-sm font-bold text-slate-700 rounded hover:bg-slate-50 transition-colors">
