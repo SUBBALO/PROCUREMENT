@@ -48,6 +48,77 @@ const STATUS_META = {
   closed: { label: "Ditutup", cls: "bg-slate-200 text-slate-600 border-slate-400" },
 };
 
+// ── Pipeline Strip — pengganti 12 kartu status: 1 bar alur proses, klik segmen = filter ──
+const PIPELINE_GROUPS = [
+  { key: "grp_draft", label: "Draft", statuses: ["draft"],
+    bar: "bg-slate-500", active: "ring-slate-700" },
+  { key: "grp_approval", label: "Approval", statuses: ["pending_boss_review", "pending_head_review", "awaiting_review"],
+    sub: { pending_boss_review: "Bos", pending_head_review: "Head", awaiting_review: "Sales" },
+    bar: "bg-violet-600", active: "ring-violet-800" },
+  { key: "grp_engineering", label: "Engineering", statuses: ["submitted", "in_progress"],
+    sub: { submitted: "Antri", in_progress: "Dikerjakan" },
+    bar: "bg-sky-600", active: "ring-sky-800" },
+  { key: "grp_selesai", label: "Selesai", statuses: ["accepted"],
+    bar: "bg-emerald-600", active: "ring-emerald-800" },
+  { key: "grp_bermasalah", label: "Bermasalah", statuses: ["revision_requested", "head_revision", "rejected"],
+    sub: { revision_requested: "Revisi", head_revision: "Rev. Head", rejected: "Ditolak" },
+    bar: "bg-rose-600", active: "ring-rose-800" },
+  { key: "grp_closed", label: "Closed", statuses: ["closed"],
+    bar: "bg-slate-700", active: "ring-slate-900" },
+];
+
+// Label filter aktif: bisa group key atau status tunggal (deep-link ?status=...)
+function filterDisplayLabel(statusFilter) {
+  const g = PIPELINE_GROUPS.find((p) => p.key === statusFilter);
+  if (g) return g.label;
+  return STATUS_META[statusFilter]?.label || statusFilter;
+}
+
+function PipelineStrip({ byStatus, total, statusFilter, onPick }) {
+  const count = (g) => g.statuses.reduce((s, st) => s + (byStatus?.[st] || 0), 0);
+  return (
+    <div className="flex items-stretch w-full border border-slate-300 bg-white select-none" data-testid="pipeline-strip">
+      {/* Anchor TOTAL — klik = hapus filter */}
+      <button
+        onClick={() => onPick("")}
+        className={`shrink-0 px-4 py-2 text-left bg-slate-900 text-white hover:bg-slate-800 transition-colors ${statusFilter === "" ? "" : "opacity-90"}`}
+        data-testid="pipeline-total"
+        title="Tampilkan semua"
+      >
+        <div className="text-[9px] uppercase tracking-[0.15em] font-bold text-slate-400">Total</div>
+        <div className="text-xl font-bold leading-tight">{total ?? 0}</div>
+      </button>
+      {PIPELINE_GROUPS.map((g, i) => {
+        const n = count(g);
+        const isActive = statusFilter === g.key;
+        const subTxt = g.sub
+          ? g.statuses.map((st) => (byStatus?.[st] ? `${g.sub[st]} ${byStatus[st]}` : null)).filter(Boolean).join(" · ")
+          : "";
+        return (
+          <React.Fragment key={g.key}>
+            <div className="shrink-0 flex items-center text-slate-300 text-lg font-light px-0.5" aria-hidden>›</div>
+            <button
+              onClick={() => onPick(isActive ? "" : g.key)}
+              style={{ flexGrow: Math.max(n, 0.6), flexBasis: 0 }}
+              className={`relative min-w-[92px] px-3 py-2 text-left transition-opacity ${g.bar} text-white hover:opacity-95
+                ${isActive ? `ring-2 ring-inset ${g.active}` : ""} ${n === 0 && !isActive ? "opacity-45" : ""}`}
+              data-testid={`pipeline-seg-${g.key}`}
+              title={`${g.label}: ${n} inquiry — klik untuk filter`}
+            >
+              <div className="flex items-baseline gap-2">
+                <span className="text-xl font-bold leading-tight" data-testid={`pipeline-count-${g.key}`}>{n}</span>
+                <span className="text-[10px] uppercase tracking-[0.12em] font-bold opacity-90">{g.label}</span>
+              </div>
+              <div className="text-[9px] opacity-80 truncate h-3.5">{subTxt || "\u00A0"}</div>
+              {isActive && <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/90" />}
+            </button>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
 function StatusBadge({ status, item }) {
   // Kolom status IKUT KEADAAN AKTUAL (pola DRF), bukan status mentah DB:
   // - ditugaskan tapi belum diterima  → Antri — Belum Diterima
@@ -237,7 +308,13 @@ export default function SalesPage() {
 
   // Client-side filter by status (from clickable stat cards) + sort + deadline reminder count
   const filteredItems = useMemo(() => {
-    let base = statusFilter ? items.filter((it) => it.status === statusFilter) : items;
+    // statusFilter bisa berupa group pipeline (grp_*) atau status tunggal (deep-link ?status=...)
+    let base = items;
+    if (statusFilter) {
+      const grp = PIPELINE_GROUPS.find((p) => p.key === statusFilter);
+      const allow = grp ? grp.statuses : [statusFilter];
+      base = items.filter((it) => allow.includes(it.status));
+    }
     if (customerFilter) {
       const q = customerFilter.toLowerCase();
       base = base.filter((it) => (it.customer_name || "").toLowerCase().includes(q));
@@ -323,22 +400,14 @@ export default function SalesPage() {
         )}
       </div>
 
-      {/* Stats Dashboard — CLICKABLE FILTER */}
+      {/* Pipeline Strip — alur proses, klik segmen utk filter */}
       {stats && (
-        <div className="flex flex-wrap gap-2" data-testid="sales-stats-grid">
-          <StatCard label="Total Inquiry" value={stats.inquiries?.total} accent="rose" testid="stat-inq-total" active={statusFilter === ""} onClick={() => setStatusFilter("")} />
-          <StatCard label="Draft" value={stats.inquiries?.by_status?.draft} accent="slate" testid="stat-inq-draft" active={statusFilter === "draft"} onClick={() => setStatusFilter(statusFilter === "draft" ? "" : "draft")} />
-          <StatCard label="Menunggu Review Bos" value={stats.inquiries?.by_status?.pending_boss_review} accent="violet" testid="stat-inq-pending-boss" active={statusFilter === "pending_boss_review"} onClick={() => setStatusFilter(statusFilter === "pending_boss_review" ? "" : "pending_boss_review")} />
-          <StatCard label="Terkirim" value={stats.inquiries?.by_status?.submitted} accent="amber" testid="stat-inq-submitted" active={statusFilter === "submitted"} onClick={() => setStatusFilter(statusFilter === "submitted" ? "" : "submitted")} />
-          <StatCard label="Dikerjakan" value={stats.inquiries?.by_status?.in_progress} accent="sky" testid="stat-inq-in-progress" active={statusFilter === "in_progress"} onClick={() => setStatusFilter(statusFilter === "in_progress" ? "" : "in_progress")} />
-          <StatCard label="Menunggu Review Head" value={stats.inquiries?.by_status?.pending_head_review} accent="amber" testid="stat-inq-pending-head" active={statusFilter === "pending_head_review"} onClick={() => setStatusFilter(statusFilter === "pending_head_review" ? "" : "pending_head_review")} />
-          <StatCard label="Revisi dari Head" value={stats.inquiries?.by_status?.head_revision} accent="orange" testid="stat-inq-head-revision" active={statusFilter === "head_revision"} onClick={() => setStatusFilter(statusFilter === "head_revision" ? "" : "head_revision")} />
-          <StatCard label="Menunggu Review Sales" value={stats.inquiries?.by_status?.awaiting_review} accent="violet" testid="stat-inq-awaiting" active={statusFilter === "awaiting_review"} onClick={() => setStatusFilter(statusFilter === "awaiting_review" ? "" : "awaiting_review")} />
-          <StatCard label="Accepted" value={stats.inquiries?.by_status?.accepted} accent="emerald" testid="stat-inq-accepted" active={statusFilter === "accepted"} onClick={() => setStatusFilter(statusFilter === "accepted" ? "" : "accepted")} />
-          <StatCard label="Minta Revisi" value={stats.inquiries?.by_status?.revision_requested} accent="red" testid="stat-inq-revision" active={statusFilter === "revision_requested"} onClick={() => setStatusFilter(statusFilter === "revision_requested" ? "" : "revision_requested")} />
-          <StatCard label="Ditolak Bos" value={stats.inquiries?.by_status?.rejected} accent="red" testid="stat-inq-rejected" active={statusFilter === "rejected"} onClick={() => setStatusFilter(statusFilter === "rejected" ? "" : "rejected")} />
-          <StatCard label="Closed" value={stats.inquiries?.by_status?.closed} accent="slate" testid="stat-inq-closed" active={statusFilter === "closed"} onClick={() => setStatusFilter(statusFilter === "closed" ? "" : "closed")} />
-        </div>
+        <PipelineStrip
+          byStatus={stats.inquiries?.by_status}
+          total={stats.inquiries?.total}
+          statusFilter={statusFilter}
+          onPick={setStatusFilter}
+        />
       )}
 
       {/* Filter indicator */}
@@ -346,7 +415,7 @@ export default function SalesPage() {
         <div className="flex items-center gap-2 text-xs">
           <span className="text-slate-500">Filter aktif:</span>
           <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-900 text-white uppercase tracking-[0.05em] font-bold">
-            {STATUS_META[statusFilter]?.label || statusFilter}
+            {filterDisplayLabel(statusFilter)}
             <button onClick={() => setStatusFilter("")} className="ml-1 hover:text-red-300" data-testid="clear-status-filter"><X size={11} weight="bold" /></button>
           </span>
           <span className="text-slate-500">— {filteredItems.length} entri</span>
@@ -463,7 +532,7 @@ export default function SalesPage() {
       {/* List */}
       <Card className="rounded-none border-slate-200 overflow-hidden">
         <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 text-[10px] uppercase tracking-[0.15em] font-bold text-slate-500">
-          Daftar Inquiry Costing — {filteredItems.length} entri{statusFilter ? ` (filter: ${STATUS_META[statusFilter]?.label})` : ""}
+          Daftar Inquiry Costing — {filteredItems.length} entri{statusFilter ? ` (filter: ${filterDisplayLabel(statusFilter)})` : ""}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" data-testid="inquiries-table">
@@ -1624,36 +1693,7 @@ function Meta({ label, value, highlight = false }) {
   );
 }
 
-const STAT_DOT = {
-  slate:   "bg-slate-400",
-  rose:    "bg-rose-500",
-  amber:   "bg-amber-500",
-  sky:     "bg-sky-500",
-  violet:  "bg-violet-500",
-  emerald: "bg-emerald-500",
-  red:     "bg-red-500",
-  orange:  "bg-orange-500",
-};
-
-function StatCard({ label, value, accent = "slate", testid, active = false, onClick }) {
-  const dot = STAT_DOT[accent] || STAT_DOT.slate;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 border px-2 py-1 cursor-pointer transition-colors ${
-        active
-          ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900"
-          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
-      }`}
-      data-testid={testid}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full ${dot} shrink-0`} />
-      <span className="text-base font-bold tabular-nums leading-none text-slate-800" style={{ fontFamily: "Chivo, sans-serif" }}>{value ?? 0}</span>
-      <span className="text-[10px] uppercase tracking-[0.06em] font-semibold text-slate-500 leading-tight whitespace-nowrap">{label}</span>
-    </button>
-  );
-}
+// STAT_DOT & StatCard lama dihapus — digantikan PipelineStrip (lihat atas file).
 
 
 function DeadlineDisplay({ iso, status }) {

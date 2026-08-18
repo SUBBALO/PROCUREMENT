@@ -68,21 +68,10 @@ export default function SalesPortalPage() {
       accent: "from-amber-500 via-orange-500 to-red-500", accentText: "text-amber-400",
     },
     {
-      key: "create-so", label: "Create Sales Order", stats: "Dari Quotation · Ajukan Drawing Request",
-      description: "Buat Sales Order dari quotation (atau manual), isi No. SO 6 digit (00xxxx) + No. PO Customer + item & harga. Setelah simpan, ajukan Drawing Request ke Engineering dan pantau statusnya (Submit → Terima → Kerjakan → Selesai).",
+      key: "create-so", label: "Sales Order + Drawing Request", stats: "Dari Quotation · DRF ke Engineering · MKS-F-ENG-001",
+      description: "Buat Sales Order dari quotation (atau manual), isi No. SO 6 digit (00xxxx) + No. PO Customer + item & harga. Dari SO langsung ajukan Drawing Request (New/Repeat Order) ke Engineering, pantau statusnya (Submit → Terima → Kerjakan → Selesai), dan TTD drawing MKS setelah selesai.",
       icon: ClipboardText, href: "/sales/sales-orders",
       accent: "from-emerald-600 via-teal-500 to-green-500", accentText: "text-emerald-400",
-    },
-    {
-      key: "drawing-requests",
-      label: "Drawing Request Form",
-      stats: "MKS-F-ENG-001",
-      description:
-        "Buat request drawing ke Engineering (New Order / Repeat Order). Track status request, dan TTD drawing MKS setelah selesai.",
-      icon: ClipboardText,
-      href: "/sales/drawing-requests",
-      accent: "from-emerald-500 via-green-500 to-teal-500",
-      accentText: "text-emerald-400",
       badgeCount: pendingDrawings,
     },
     {

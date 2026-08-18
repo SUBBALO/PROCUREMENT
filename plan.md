@@ -324,12 +324,77 @@ User request: saat login Direktur/Boss (Asiong), di halaman utama tampil panel k
 
 ---
 
+## Phase 26 — Sales Cards Revamp (Status: COMPLETED — shipped, agent-tested 100%; pending user confirmation)
+Goal: simplify/beautify Sales cards and make status overview more actionable.
+
+### 26.A — SalesPage (/sales/inquiries): Replace 12 status cards with Pipeline Strip (Status: COMPLETED)
+**Change summary (implemented)**
+- Removed the 12 `StatCard` status cards section (`sales-stats-grid`).
+- Added a single **PipelineStrip** (CRM-like funnel strip) `data-testid="pipeline-strip"`:
+  - Left block **TOTAL** `data-testid="pipeline-total"` (click → clear filter).
+  - 6 group segments with proportional widths (based on counts):
+    - `grp_draft` (slate)
+    - `grp_approval` (violet) with subcounts: Bos / Head / Sales
+    - `grp_engineering` (sky) with subcounts: Antri (submitted) / Dikerjakan (in_progress)
+    - `grp_selesai` (emerald) (accepted)
+    - `grp_bermasalah` (rose) with subcounts: Revisi / Rev.Head / Ditolak
+    - `grp_closed` (slate-700)
+  - Empty segments are dimmed (`opacity-45`).
+  - Active segment shows `ring-2 ring-inset` + a small white underline.
+  - Clicking a segment toggles group-filter on/off.
+
+**Filter logic (implemented)**
+- `statusFilter` now supports:
+  - group keys (`grp_*`) OR
+  - single status strings (deep-link `?status=pending_boss_review` remains supported).
+- `filteredItems` logic updated to map group → list of allowed statuses.
+- `filterDisplayLabel()` used for filter indicator + table header text.
+- Legacy `StatCard`/`STAT_DOT` code removed (dead code).
+
+**Verification**
+- esbuild compile clean ✅
+- Testing Agent iteration_57: 100% pass ✅
+  - pipeline renders, old cards not present
+  - click filter on/off works
+  - TOTAL clears filter
+  - deep-link `?status=pending_boss_review` works
+  - STATUS column regression check passed
+
+### 26.B — SalesPortalPage (/sales): Merge overlapping portal cards (Status: COMPLETED)
+**Decision (user-confirmed)**
+- Merge "Create Sales Order" + "Drawing Request Form" into a single portal card.
+
+**Implementation (done)**
+- `SalesPortalPage.jsx`:
+  - New merged card: **"Sales Order + Drawing Request"**
+  - `href`: `/sales/sales-orders`
+  - `badgeCount`: `pendingDrawings` moved onto merged card
+  - Separate "Drawing Request Form" card removed from portal grid
+  - Route `/sales/drawing-requests` NOT removed (old links still work)
+
+**Verification**
+- Testing Agent iteration_57: portal shows 6 cards, merged card present, old separate card absent ✅
+
+### 26.C — Deferred decisions (NOT IMPLEMENTED)
+User explicitly deferred/skipped:
+- Shorten portal card descriptions (nanti)
+- Add live badge counts to all portal cards
+- Differentiate icons/colors (some cards share icons/colors)
+
+### 26.D — Data hygiene note (OPEN)
+- There are non-`ZZ` test-like inquiry records visible in Sales inquiry list (e.g., “Test Inquiry for 3-Stage Flow”, “Test Inquiry from Asiong 2026-08-15”).
+- Not auto-deleted due to data-protection rules (only safe-delete `ZZ*` test data).
+- Action: if user wants, provide a targeted cleanup procedure (manual confirm of IDs) to remove those artifacts.
+
+---
+
 ## Notes / Current GitHub Safety
-- `BossApprovalPanel.jsx` is a new tracked file; ensure it is committed.
-- `test_reports/iteration_54.json`, `iteration_55.json`, `iteration_56.json` exist (testing artifacts). Keep or remove per repo policy.
+- `frontend/src/components/BossApprovalPanel.jsx` is a new tracked file; ensure it is committed.
+- Test artifacts exist in `/app/test_reports/iteration_54.json` .. `iteration_57.json` (keep/remove per repo policy).
 
 ---
 
 ## Open Items (not requested yet)
 - **Category threshold gap** around 70–71% (business rule): decide if boundary should be inclusive at 70 or 71.
 - **Export KPI Engineering to Excel** (similar format to recap export).
+- (Optional Sales follow-ups) Due-date alert strip already exists; next could be “Perlu Aksi Saya” widget, global badges, icon/color simplification, and/or short descriptions.

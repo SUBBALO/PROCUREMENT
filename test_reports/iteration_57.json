@@ -1,0 +1,53 @@
+{
+  "summary": "Completed frontend testing for Sales UI changes: Pipeline Strip on /sales/inquiries page and merged Sales Order + Drawing Request card on /sales portal. All core features working correctly.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Login with admin/admin123 successful",
+    "Pipeline Strip renders correctly on /sales/inquiries with data-testid='pipeline-strip'",
+    "Old sales-stats-grid correctly removed (not present)",
+    "TOTAL block present with data-testid='pipeline-total' showing correct count (9 inquiries)",
+    "All 6 segments present with correct data-testids: grp_draft (1), grp_approval (0), grp_engineering (8), grp_selesai (0), grp_bermasalah (0), grp_closed (0)",
+    "Engineering segment shows sub-detail 'Dikerjakan 8' correctly",
+    "Clicking Engineering segment filters table to 8 entries",
+    "Filter indicator appears with 'Engineering' label and X button to clear",
+    "Table header updates to show 'DAFTAR INQUIRY COSTING — 8 ENTRI (FILTER: ENGINEERING)'",
+    "Clicking Engineering segment again removes filter and shows all 9 entries",
+    "Clicking TOTAL block clears any active filter",
+    "Deep-link with ?status=pending_boss_review works correctly",
+    "Filter applied from query param shows 'Menunggu Review Bos' label",
+    "No JavaScript errors on deep-link page",
+    "Sales portal (/sales) displays merged card 'Sales Order + Drawing Request'",
+    "Old separate 'Drawing Request Form' card correctly removed",
+    "Total 6 cards visible on Sales portal (verified from screenshot)",
+    "Inquiries table renders correctly with data-testid='inquiries-table'",
+    "STATUS column header present in table",
+    "Status badges display correct labels: 'DITERIMA — BELUM DIKERJAKAN', 'DIKERJAKAN', 'ANTRI — BELUM DITERIMA'",
+    "Segment widths are proportional to inquiry counts (visual verification)",
+    "Empty segments (Approval, Selesai, Bermasalah, Closed) appear dimmed with opacity-45",
+    "Active filter segment shows ring-2 ring-inset styling",
+    "Filter indicator includes count of filtered entries"
+  ],
+  "test_report_links": [
+    ".screenshots/inquiries_page_pipeline.png",
+    ".screenshots/engineering_filter_active.png",
+    ".screenshots/deeplink_filter.png",
+    ".screenshots/sales_portal_cards.png",
+    ".screenshots/table_regression.png"
+  ],
+  "success_percentage": {
+    "frontend": "100%",
+    "backend": "N/A (frontend-only testing)"
+  },
+  "updated_files": [],
+  "action_item_for_main_agent": "",
+  "should_call_test_agent_after_fix": "false",
+  "should_main_agent_test_itself": "false"
+}
