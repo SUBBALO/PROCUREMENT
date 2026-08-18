@@ -247,8 +247,8 @@ export default function ProductionOvertimePage() {
               ) : grid.items.map((r) => (
                 <tr key={r.name} className="group" data-testid={`ot-grid-row-${r.name}`}>
                   <td className="px-2 py-1 font-semibold text-slate-800 border border-slate-200 sticky left-0 bg-white group-hover:bg-amber-50/40 z-10 min-w-[160px]">{r.name}</td>
-                  {grid.days.map((d) => { const v = r.per_date[d]; return (
-                    <td key={d} className={`text-center border border-slate-200 ${v ? "font-bold text-amber-700 bg-amber-50/60" : "text-slate-200"}`}>{v || "·"}</td>
+                  {grid.days.map((d) => { const v = r.per_date[d]; const sun = new Date(d + "T00:00:00").getDay() === 0; return (
+                    <td key={d} className={`text-center border border-slate-200 ${sun ? "border-l-2 border-l-rose-300" : ""} ${v ? "font-bold text-amber-700 bg-amber-50/60" : (sun ? "text-rose-200 bg-rose-50/50" : "text-slate-200")}`}>{v || "·"}</td>
                   ); })}
                   <td className="px-2 py-1 text-center font-bold text-amber-700 border border-slate-200 sticky right-0 bg-amber-50 group-hover:bg-amber-100 z-10">{r.total_hours}</td>
                   <td className="px-2 py-1 text-center font-semibold text-slate-600 border border-slate-200">{r.total_days}x</td>

@@ -2232,7 +2232,15 @@ async def overtime_grid(month: Optional[str] = None, current: dict = Depends(get
     hol_docs = await db.holidays.find({}, {"_id": 0, "date": 1}).to_list(length=5000)
     holidays = {_date_only(h.get("date") or "") for h in hol_docs if h.get("date")}
     rows = await db.production_overtime.find({"ot_date": {"$regex": f"^{m}"}}, {"_id": 0}).to_list(length=50000)
+    # Seed semua karyawan produksi aktif dulu supaya tetap muncul walau tanpa lembur (mirip absensi)
+    emps = await db.production_employees.find(
+        {"active": {"$ne": False}}, {"_id": 0, "name": 1}
+    ).to_list(length=10000)
     grid = {}
+    for e in emps:
+        nm = (e.get("name") or "").strip()
+        if nm:
+            grid.setdefault(nm, {})
     for r in rows:
         calc = _calc_overtime(r.get("ot_date") or "", r.get("ot_start") or "", r.get("ot_end") or "", rules, holidays, r.get("ot_hours"))
         nm = (r.get("name") or "-").strip() or "-"
