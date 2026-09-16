@@ -384,6 +384,7 @@ async def startup():
     except Exception:
         pass
     await db.users.create_index("username", unique=True, sparse=True)
+    await db.users.create_index("id")
     await db.transactions.create_index("invoice_date")
     await db.transactions.create_index("vendor_name")
     await db.transactions.create_index("item_name")

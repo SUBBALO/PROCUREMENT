@@ -63,7 +63,7 @@ export default function LoginPage() {
                 <img src="/assets/logo-mks.png" alt="MKS" className="w-10 h-10 object-contain" />
                 <div>
                   <div className="font-bold text-lg tracking-tight leading-none" style={{ fontFamily: "Chivo, sans-serif" }}>
-                    Purchasing Department
+                    ERP
                   </div>
                   <div className="text-[10px] uppercase tracking-[0.15em] text-slate-500 mt-1">PT. Mitra Karya Sarana</div>
                 </div>

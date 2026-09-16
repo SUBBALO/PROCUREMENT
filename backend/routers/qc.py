@@ -5,6 +5,7 @@ where any item has add_to_stock=False. QC users fill IQC data per item and
 generate the MII PDF (ISO-registered form, fixed layout).
 """
 from __future__ import annotations
+import asyncio
 
 import uuid
 from datetime import datetime, timezone
@@ -334,7 +335,7 @@ async def _build_inspection_pdf_bytes(inspection_id: str, current: dict):
         from routers.excel_templates import get_active_xlsx_bytes, render_excel_template
         xlsx_bytes = await get_active_xlsx_bytes("MII")
         if xlsx_bytes:
-            pdf_bytes = render_excel_template(xlsx_bytes, data, as_pdf=True)
+            pdf_bytes = await asyncio.to_thread(render_excel_template, xlsx_bytes, data, as_pdf=True)
             used_engine = "excel"
     except Exception as e:
         import logging
@@ -348,7 +349,7 @@ async def _build_inspection_pdf_bytes(inspection_id: str, current: dict):
         if tpl:
             try:
                 from routers.form_templates import _render_pdf
-                pdf_bytes = _render_pdf(tpl, data)
+                pdf_bytes = await asyncio.to_thread(_render_pdf, tpl, data)
                 used_engine = "visual"
             except Exception as e:
                 import logging
@@ -356,7 +357,7 @@ async def _build_inspection_pdf_bytes(inspection_id: str, current: dict):
 
     if not pdf_bytes:
         from services.mii_pdf import build_mii_pdf
-        pdf_bytes = build_mii_pdf(doc)
+        pdf_bytes = await asyncio.to_thread(build_mii_pdf, doc)
         used_engine = "hardcode"
 
     fname = f"MII_{(doc.get('do_no') or doc.get('id'))[:20]}.pdf"
@@ -379,7 +380,7 @@ async def inspection_page_meta(inspection_id: str, current: dict = Depends(requi
     """Metadata halaman MII untuk viewer image-based."""
     from utils.pdf_render import pdf_page_meta
     pdf_bytes, _, _ = await _build_inspection_pdf_bytes(inspection_id, current)
-    return pdf_page_meta(pdf_bytes)
+    return await asyncio.to_thread(pdf_page_meta, pdf_bytes)
 
 
 @router.get("/qc/inspections/{inspection_id}/page-image")
@@ -389,7 +390,7 @@ async def inspection_page_image(inspection_id: str, page: int = 0, scale: float 
     from utils.pdf_render import pdf_page_png
     pdf_bytes, _, _ = await _build_inspection_pdf_bytes(inspection_id, current)
     try:
-        png = pdf_page_png(pdf_bytes, page, scale)
+        png = await asyncio.to_thread(pdf_page_png, pdf_bytes, page, scale)
     except IndexError:
         raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
     import io as _io

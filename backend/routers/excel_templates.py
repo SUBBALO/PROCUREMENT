@@ -12,6 +12,7 @@ Placeholder syntax (case-sensitive):
 MCL "items" comes from grouping sibling store_receipts.
 """
 import base64
+import asyncio
 import hashlib
 import io
 import logging
@@ -985,7 +986,7 @@ async def preview_raw_excel_template(tid: str, current: dict = Depends(get_curre
     if not doc:
         raise HTTPException(status_code=404, detail="Template tidak ditemukan")
     xlsx_bytes = base64.b64decode(doc["xlsx_base64"])
-    pdf = _xlsx_to_pdf(xlsx_bytes)
+    pdf = await asyncio.to_thread(_xlsx_to_pdf, xlsx_bytes)
     fname = f"preview_RAW_{doc.get('code','MCL')}.pdf"
     return StreamingResponse(
         io.BytesIO(pdf),
@@ -1002,7 +1003,7 @@ async def preview_xlsx_substituted(tid: str, current: dict = Depends(get_current
         raise HTTPException(status_code=404, detail="Template tidak ditemukan")
     xlsx_bytes = base64.b64decode(doc["xlsx_base64"])
     sample = _sample_data(current)
-    xlsx_sub = render_excel_template(xlsx_bytes, sample, as_pdf=False)
+    xlsx_sub = await asyncio.to_thread(render_excel_template, xlsx_bytes, sample, as_pdf=False)
     code = doc.get("code", "MCL")
     fname = f"preview_DATA_{code}.xlsx"
     return StreamingResponse(
@@ -1038,7 +1039,7 @@ async def preview_excel_template(tid: str, current: dict = Depends(get_current_u
         raise HTTPException(status_code=404, detail="Template tidak ditemukan")
     xlsx_bytes = base64.b64decode(doc["xlsx_base64"])
     sample = _sample_data(current)
-    pdf = render_excel_template(xlsx_bytes, sample, as_pdf=True)
+    pdf = await asyncio.to_thread(render_excel_template, xlsx_bytes, sample, as_pdf=True)
     fname = f"preview_{doc.get('code','MCL')}.pdf"
     return StreamingResponse(
         io.BytesIO(pdf),
@@ -1052,7 +1053,7 @@ async def _excel_preview_pdf(tid: str, current: dict) -> bytes:
     if not doc:
         raise HTTPException(status_code=404, detail="Template tidak ditemukan")
     xlsx_bytes = base64.b64decode(doc["xlsx_base64"])
-    return render_excel_template(xlsx_bytes, _sample_data(current), as_pdf=True)
+    return await asyncio.to_thread(render_excel_template, xlsx_bytes, _sample_data(current), as_pdf=True)
 
 
 @router.get("/excel-templates/{tid}/preview-page-meta")
@@ -1060,7 +1061,7 @@ async def excel_preview_page_meta(tid: str, current: dict = Depends(get_current_
     """Metadata halaman preview Excel template untuk viewer image-based."""
     from utils.pdf_render import pdf_page_meta
     pdf = await _excel_preview_pdf(tid, current)
-    return pdf_page_meta(pdf)
+    return await asyncio.to_thread(pdf_page_meta, pdf)
 
 
 @router.get("/excel-templates/{tid}/preview-page-image")
@@ -1070,7 +1071,7 @@ async def excel_preview_page_image(tid: str, page: int = 0, scale: float = 2.0,
     from utils.pdf_render import pdf_page_png
     pdf = await _excel_preview_pdf(tid, current)
     try:
-        png = pdf_page_png(pdf, page, scale)
+        png = await asyncio.to_thread(pdf_page_png, pdf, page, scale)
     except IndexError:
         raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
     return StreamingResponse(io.BytesIO(png), media_type="image/png",

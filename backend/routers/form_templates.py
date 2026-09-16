@@ -25,6 +25,7 @@ Element shape:
 }
 """
 import io
+import asyncio
 import uuid
 from typing import Optional
 from pathlib import Path
@@ -383,7 +384,7 @@ async def render_template(tid: str, payload: dict, current: dict = Depends(get_c
     data.setdefault("company_name", "PT. MITRA KARYA SARANA")
     data.setdefault("print_date", _now_iso()[:10])
     data.setdefault("printed_by", current.get("username", ""))
-    pdf = _render_pdf(doc, data)
+    pdf = await asyncio.to_thread(_render_pdf, doc, data)
     fname = payload.get("filename") or f"{doc.get('code','FORM')}_{_now_iso()[:10]}.pdf"
     return StreamingResponse(
         io.BytesIO(pdf),
@@ -421,7 +422,7 @@ async def preview_template(tid: str, current: dict = Depends(get_current_user)):
     doc = await db.form_templates.find_one(merged({"id": tid}, NOT_DELETED_FILTER), {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Template tidak ditemukan")
-    pdf = _render_pdf(doc, _preview_sample(current))
+    pdf = await asyncio.to_thread(_render_pdf, doc, _preview_sample(current))
     fname = f"preview_{doc.get('code','form')}.pdf"
     return StreamingResponse(
         io.BytesIO(pdf),
@@ -437,8 +438,8 @@ async def preview_template_page_meta(tid: str, current: dict = Depends(get_curre
     doc = await db.form_templates.find_one(merged({"id": tid}, NOT_DELETED_FILTER), {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Template tidak ditemukan")
-    pdf = _render_pdf(doc, _preview_sample(current))
-    return pdf_page_meta(pdf)
+    pdf = await asyncio.to_thread(_render_pdf, doc, _preview_sample(current))
+    return await asyncio.to_thread(pdf_page_meta, pdf)
 
 
 @router.get("/form-templates/{tid}/preview-page-image")
@@ -449,9 +450,9 @@ async def preview_template_page_image(tid: str, page: int = 0, scale: float = 2.
     doc = await db.form_templates.find_one(merged({"id": tid}, NOT_DELETED_FILTER), {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Template tidak ditemukan")
-    pdf = _render_pdf(doc, _preview_sample(current))
+    pdf = await asyncio.to_thread(_render_pdf, doc, _preview_sample(current))
     try:
-        png = pdf_page_png(pdf, page, scale)
+        png = await asyncio.to_thread(pdf_page_png, pdf, page, scale)
     except IndexError:
         raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
     return StreamingResponse(io.BytesIO(png), media_type="image/png",

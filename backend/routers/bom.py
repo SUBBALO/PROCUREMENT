@@ -5,6 +5,7 @@ Search by SO No. History of all revisions kept indefinitely. Admin can annotate 
 with Available Stock, Qty Purchase, Purchase Due Date, and Remark.
 """
 import io
+import asyncio
 import re
 import uuid
 from datetime import datetime, date, timezone
@@ -2215,7 +2216,7 @@ async def export_bom_xlsx(bom_id: str, current: dict = Depends(get_current_user)
         xlsx_bytes = None
 
     if xlsx_bytes:
-        rendered = render_excel_template(xlsx_bytes, data, as_pdf=False)
+        rendered = await asyncio.to_thread(render_excel_template, xlsx_bytes, data, as_pdf=False)
         await log_action(current, "export_bom_xlsx", "bom", bom_id,
                          {"filename": filename, "engine": "user-template"})
         return StreamingResponse(

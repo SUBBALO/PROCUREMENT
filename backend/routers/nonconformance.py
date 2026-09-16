@@ -14,6 +14,7 @@ Catatan penting:
   - Auditability: semua perubahan status dicatat di `timeline` + activity_logs.
 """
 from __future__ import annotations
+import asyncio
 
 import io
 import os
@@ -720,7 +721,7 @@ async def car_template_preview_meta(tid: str, current: dict = Depends(get_curren
     _require_tpl_admin(current)
     from utils.pdf_render import pdf_page_meta
     raw = await _car_template_preview_pdf(tid)
-    return pdf_page_meta(raw)
+    return await asyncio.to_thread(pdf_page_meta, raw)
 
 
 @router.get("/nonconformance/car-template/{tid}/preview-page-image")
@@ -730,7 +731,7 @@ async def car_template_preview_image(tid: str, page: int = 0, scale: float = 2.0
     from utils.pdf_render import pdf_page_png
     raw = await _car_template_preview_pdf(tid)
     try:
-        png = pdf_page_png(raw, page, scale)
+        png = await asyncio.to_thread(pdf_page_png, raw, page, scale)
     except IndexError:
         raise HTTPException(status_code=404, detail="Halaman tidak ditemukan")
     return StreamingResponse(io.BytesIO(png), media_type="image/png",
@@ -757,12 +758,13 @@ async def car_pdf(nc_id: str, attachments: bool = True, current: dict = Depends(
     if tpl:
         try:
             from utils.car_word import render_car_pdf_from_docx
-            pdf = render_car_pdf_from_docx(
-                tpl, doc, printed_by=current.get("name") or current.get("username"))
+            pdf = await asyncio.to_thread(
+                render_car_pdf_from_docx,
+                tpl, doc, current.get("name") or current.get("username"))
         except Exception:
             pdf = None  # fallback ke reportlab bila konversi gagal
     if pdf is None:
-        pdf = build_car_pdf(doc)
+        pdf = await asyncio.to_thread(build_car_pdf, doc)
 
     if attachments:
         atts = await db.nc_attachments.find(
