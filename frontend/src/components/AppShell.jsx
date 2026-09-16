@@ -14,7 +14,7 @@ import PdfPreviewModal from "./PdfPreviewModal";
 import {
   ChartBar, Plus, MagnifyingGlass, SignOut, Package, ChartLineUp, ShieldStar, Warehouse, ArrowDown, ArrowUp, Camera,
   ClipboardText, CaretDown, ShoppingCart, Storefront, Truck, ClockCounterClockwise, Bell, HardDrives, UploadSimple,
-  Lightning, LightningSlash, Rows, Wrench, FileText, Gauge,
+  Lightning, LightningSlash, Wrench, FileText, Gauge,
 } from "@phosphor-icons/react";
 
 /* Mode Cepat sekarang PERMANEN — tombol dihapus atas permintaan user.
@@ -33,7 +33,7 @@ function FastModeToggle() {
    Menyetel class `density-compact` pada <body> sehingga berlaku untuk konten
    halaman DAN dialog/popover (portal). Preferensi disimpan di localStorage. */
 function DensityToggle() {
-  const [compact, setCompact] = useState(() => {
+  const [compact] = useState(() => {
     try {
       const v = localStorage.getItem("mks_density_compact");
       return v === null ? true : v === "1";
@@ -47,25 +47,8 @@ function DensityToggle() {
     } catch { /* noop */ }
   }, [compact]);
 
-  const toggle = () => {
-    const n = !compact;
-    setCompact(n);
-    toast.success(n ? "Tampilan Padat aktif" : "Tampilan Lega aktif");
-  };
-
-  return (
-    <button
-      onClick={toggle}
-      title={compact ? "Tampilan PADAT — klik untuk Lega" : "Tampilan LEGA — klik untuk Padat"}
-      className={`flex items-center gap-1 px-2 h-8 text-[10px] uppercase tracking-[0.1em] font-bold border transition-colors ${
-        compact ? "border-sky-500 text-sky-700 bg-sky-50 hover:bg-sky-100" : "border-slate-300 text-slate-600 hover:bg-slate-50"
-      }`}
-      data-testid="density-toggle"
-    >
-      <Rows size={14} weight="bold" />
-      {compact ? "Padat" : "Lega"}
-    </button>
-  );
+  // Button hidden per request — density preference is still applied to <body> above.
+  return null;
 }
 
 // ─── PURCHASING ─────────────────────────────────────────
@@ -571,8 +554,9 @@ export default function AppShell({ children }) {
               </div>
               <div className="text-[10px] uppercase tracking-[0.15em] text-slate-400">{roleLabel(user?.role)}</div>
             </div>
-            <DensityToggle />
             <FastModeToggle />
+            {/* Density preference still applied on body; toggle button hidden per request */}
+            <DensityToggle />
             <NavLink
               to="/profile/signature"
               data-testid="nav-my-signature"
