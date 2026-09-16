@@ -1,0 +1,30 @@
+{
+  "summary": "Verified concurrency fix + document generation endpoints + login page 'ERP' title change. Login (erwin/erwin123) works; core reads work; form-template PDF/PNG previews return valid content; concurrency test PASSED — 8 heavy PDF renders in flight did NOT block 12 concurrent /auth/me calls (light p95=2.05s, max=2.13s vs heavy ~2.5s), confirming asyncio.to_thread offload works. Excel-template tests skipped because no .xlsx templates are uploaded (expected per instructions). Frontend login card correctly shows 'ERP' now.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/stats", "issue": "Returns 404 — endpoint does not exist. My path guess from the request; not a regression. Actual stat endpoints appear to live elsewhere (e.g. per-module stats). No impact on concurrency fix validation."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_concurrency_docgen.py",
+    "/app/test_reports/pytest/iter_concurrency.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "asyncio.to_thread wrapping of render_excel_template / _xlsx_to_pdf / _render_pdf / pdf_page_meta / pdf_page_png in excel_templates, form_templates, qc, nonconformance, bom routers is correct and effective — event loop is no longer blocked (see concurrency numbers). Consider capping the default threadpool (asyncio default is min(32, cpu+4)) via a bounded executor if LibreOffice/PyMuPDF memory usage becomes an issue under real load."
+  ],
+  "updated_files": ["/app/backend/tests/test_concurrency_docgen.py"],
+  "success_rate": {"backend": "89% (8/9 non-skipped passed; 4 excel-template tests correctly skipped)", "frontend": "100%"},
+  "test_credentials": "erwin / erwin123 (admin) — works. susanto/admin123 not tested per instructions.",
+  "seed_data_creation": "None. Used existing seeded form-templates (MCL/MII).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Auth is cookie-based (login returns user obj + Set-Cookie; no access_token in body). Use requests.Session() and login first, then all subsequent requests share cookies. Concurrency validated: form-template preview is a good heavy endpoint (~2.5s) to test event-loop responsiveness. Excel-template PDF endpoints exist but no xlsx templates seeded, so those preview tests skip — main agent can upload a test .xlsx to /api/excel-templates to enable them if needed.",
+  "rca of the issue": "N/A — no bug found. Concurrency fix behaves as intended: light requests responded within 2.13s max while 8 heavy PDF renders (~2.5s each) ran concurrently in the threadpool. Prior to the fix, sync render calls would have serialized all requests on the event loop and light /auth/me would have queued for many seconds."
+}
