@@ -1,0 +1,98 @@
+import React, { useEffect, useState } from "react";
+import DeptPortal from "../components/DeptPortal";
+import api from "../lib/api";
+import { Storefront, FileText, Users, ClipboardText, PenNib, WarningCircle, SealCheck } from "@phosphor-icons/react";
+import { useNotifCount } from "../lib/useNotifCount";
+import { useAuth } from "../lib/auth";
+
+export default function SalesPortalPage() {
+  const { user } = useAuth();
+  const isDirektur = user?.role === "sales_head"; // Asiong — approval yang dia butuh hanya Inquiry
+  // Badge "Review & TTD" = drawing yang masih menunggu TTD Sales (approval_status = pending_sales).
+  const pendingDrawings = useNotifCount("drawing_pending_approval");
+  const [pendingApproval, setPendingApproval] = useState(0);
+  const [pendingInquiry, setPendingInquiry] = useState(0);
+
+  useEffect(() => {
+    const fetch = () => {
+      if (isDirektur) {
+        api.get("/inquiries/pending-count")
+          .then(({ data }) => setPendingInquiry(data?.count || 0)).catch(() => {});
+      } else {
+        api.get("/drawings/pending-my-approval")
+          .then(({ data }) => setPendingApproval(data?.total || 0)).catch(() => {});
+      }
+    };
+    fetch();
+    const t = setInterval(fetch, 45000);
+    return () => clearInterval(t);
+  }, [isDirektur]);
+
+  // Kartu approval utama — untuk Direktur: approval Inquiry; untuk Sales: TTD Drawing.
+  const approvalCard = isDirektur
+    ? {
+        key: "inquiry-approval",
+        label: "Menunggu Approval Inquiry",
+        stats: "Setujui / Tolak · Sebelum ke Engineering",
+        description: "Inquiry costing dari Sales yang menunggu persetujuan Anda (Direktur). Buka untuk review lalu Setuju (teruskan ke Engineering) atau Tolak. Inquiry yang Anda setujui langsung masuk alur Engineering.",
+        icon: SealCheck,
+        href: "/sales/inquiries?status=pending_boss_review",
+        accent: "from-fuchsia-500 via-purple-500 to-violet-500",
+        accentText: "text-fuchsia-400",
+        badgeCount: pendingInquiry,
+      }
+    : {
+        key: "pending-approval",
+        label: "Review & TTD Drawing (Sales Approval)",
+        stats: "Cek final · Isi SO Data · TTD",
+        description: "Drawing sudah di-approve Engineering & QC — Anda review terakhir sebagai Sales. Preview drawing (baca-saja), klik TTD & Approve → isi SO/PO/Qty/Customer untuk SO Stamp Produksi. Tab 'Riwayat TTD Saya' berisi semua drawing yang pernah Anda tanda tangani (bukti audit).",
+        icon: PenNib,
+        href: "/drawings/pending-my-approval",
+        accent: "from-orange-500 via-amber-500 to-yellow-500",
+        accentText: "text-orange-400",
+        badgeCount: pendingApproval,
+      };
+
+  const CARDS = [
+    approvalCard,
+    {
+      key: "inquiry", label: "Inquiry Costing", stats: "Ke Engineering",
+      description: "Kirim permintaan costing harga ke Engineering, upload drawing & dokumen, review hasilnya.",
+      icon: Storefront, href: "/sales/inquiries",
+      accent: "from-rose-500 via-red-500 to-orange-500", accentText: "text-rose-400",
+    },
+    {
+      key: "quotation", label: "Quotation", stats: "Ke Customer",
+      description: "Buat quotation resmi dengan kop surat A4, format nomor 001/MKS/Q/VII/2026.",
+      icon: FileText, href: "/sales/quotations",
+      accent: "from-amber-500 via-orange-500 to-red-500", accentText: "text-amber-400",
+    },
+    {
+      key: "create-so", label: "Sales Order + Drawing Request", stats: "Dari Quotation · DRF ke Engineering · MKS-F-ENG-001",
+      description: "Buat Sales Order dari quotation (atau manual), isi No. SO 6 digit (00xxxx) + No. PO Customer + item & harga. Dari SO langsung ajukan Drawing Request (New/Repeat Order) ke Engineering, pantau statusnya (Submit → Terima → Kerjakan → Selesai), dan TTD drawing MKS setelah selesai.",
+      icon: ClipboardText, href: "/sales/sales-orders",
+      accent: "from-emerald-600 via-teal-500 to-green-500", accentText: "text-emerald-400",
+      badgeCount: pendingDrawings,
+    },
+    {
+      key: "bom-view", label: "BOM (View Only)", stats: "Bahan Baku · Reference",
+      description: "Lihat BOM yang sudah di-approve Engineering — sebagai referensi untuk quotation & follow-up produksi. Sales HANYA VIEW, tidak bisa edit isi BOM.",
+      icon: ClipboardText, href: "/bom",
+      accent: "from-emerald-500 via-teal-500 to-cyan-500", accentText: "text-emerald-400",
+    },
+    {
+      key: "drf-masterlist", label: "Masterlist Drawing Request", stats: "Semua DR · Status Engineering",
+      description: "Lihat semua Drawing Request dari tiap SO beserta statusnya (Terkirim / Dikerjakan / Selesai / Revisi) dan engineer yang menangani. Untuk memantau progres gambar.",
+      icon: ClipboardText, href: "/engineering/drawing-request-masterlist",
+      accent: "from-indigo-500 via-blue-500 to-sky-500", accentText: "text-indigo-400",
+    },
+    {
+      key: "customers", label: "Master List Customer", stats: "Data Customer",
+      description: "Kelola master data customer: nama, alamat, PIC. Autocomplete saat buat quotation.",
+      icon: Users, href: "/sales/customers",
+      accent: "from-sky-500 via-blue-500 to-indigo-500", accentText: "text-sky-400",
+    },
+  ];
+
+  return <DeptPortal deptLabel="Sales Department" deptTagline="Drawing Request · Inquiry · Quotation · Order" accentColor="amber" cards={CARDS} />;
+}

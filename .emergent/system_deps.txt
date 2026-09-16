@@ -1,0 +1,1 @@
+libreoffice-calc=4:7.4.7-1+deb12u14

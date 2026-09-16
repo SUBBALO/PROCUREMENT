@@ -1,0 +1,294 @@
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import api from "../lib/api";
+import { X, MagnifyingGlassPlus, MagnifyingGlassMinus, DownloadSimple, Printer, ArrowClockwise } from "@phosphor-icons/react";
+
+/** Ganti/atur parameter `scale` pada URL page-image (untuk resolusi progresif). */
+function withScale(url, scale) {
+  try {
+    const u = new URL(url, window.location.origin);
+    u.searchParams.set("scale", String(scale));
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * PdfPreviewModal — viewer PDF baca berbasis GAMBAR (render server-side page-image).
+ * Menggantikan "buka tab baru" yang sering kena blokir popup / dicegat IDM.
+ *
+ * Fitur: scroll semua halaman, zoom, PRINT (cetak halaman gambar), dan DOWNLOAD (file asli).
+ * Print & Download bisa disembunyikan per-role via prop `noPrint` / `noDownload`
+ * (mis. QC = view-only tanpa download & tanpa print demi keamanan dokumen).
+ *
+ * MODE A (drawing): beri `drawingId` + `target`/`targets`.
+ * MODE B (generik): beri `metaUrl` (path relatif ke /api) + `pageUrlBuilder(page)` +
+ *   opsional `downloadUrl`. Dipakai untuk lampiran BOM, MII, template, dll.
+ *
+ * Props:
+ *   - drawingId, target ("mks"|"customer_ref"|"extra"), targets [{key,label,extraId?}], extraId
+ *   - metaUrl (string, generic), pageUrlBuilder (fn(page)->string, generic)
+ *   - stamped (bool, default true untuk drawing)
+ *   - title, subtitle
+ *   - downloadUrl (string) — file asli untuk di-download
+ *   - onClose
+ */
+export default function PdfPreviewModal({
+  drawingId,
+  target = "mks",
+  targets = null,
+  extraId = "",
+  metaUrl = "",
+  pageUrlBuilder = null,
+  pdfUrl = "",
+  stamped = true,
+  hideSo = false,
+  title = "Preview Dokumen",
+  subtitle = "",
+  downloadUrl = "",
+  noDownload = false,
+  noPrint = false,
+  autoPrint = false,
+  onClose,
+}) {
+  const apiUrl = process.env.REACT_APP_BACKEND_URL;
+  const generic = !!metaUrl;
+  const tabList = generic
+    ? [{ key: "__generic__", label: "Dokumen" }]
+    : ((targets && targets.length) ? targets : [{ key: target, label: "Dokumen", extraId }]);
+  const [activeKey, setActiveKey] = useState(tabList[0].key);
+  const active = tabList.find((t) => t.key === activeKey) || tabList[0];
+  const [meta, setMeta] = useState(null);
+  const [err, setErr] = useState("");
+  const [zoom, setZoom] = useState(1);
+  const [printing, setPrinting] = useState(false);
+
+  // Default download URL untuk mode drawing bila tidak diberikan.
+  // noDownload=true (mis. role QC/Store/Produksi/DocControl) → paksa sembunyikan tombol download.
+  const effectiveDownloadUrl = noDownload ? "" : (downloadUrl || (!generic && drawingId
+    ? (active.key === "customer_ref"
+        ? `${apiUrl}/api/drawings/${drawingId}/customer-ref/download`
+        : `${apiUrl}/api/drawings/${drawingId}/pdf-stamped`)
+    : ""));
+
+  // ── FAST PDF: tampilkan PDF ASLI (render di browser, cepat) untuk SEMUA preview drawing.
+  // PDF diambil via axios (blob) → blob URL same-origin (tak terblokir X-Frame-Options
+  // walau frontend & backend beda port; auth cookie/header tetap terkirim).
+  // View-only (noDownload) → toolbar unduh/print browser disembunyikan (#toolbar=0).
+  // autoPrint tetap mode gambar (butuh print-root untuk cetak halaman gambar).
+  const pdfPath = generic
+    ? (pdfUrl || "")
+    : active.key === "customer_ref"
+      ? `/drawings/${drawingId}/customer-ref/preview`
+      : (active.key === "extra" && active.extraId)
+        ? `/drawings/${drawingId}/extra-file/${active.extraId}/preview`
+        : `/drawings/${drawingId}/pdf-stamped`;
+  const useFastPdf = !autoPrint && !!pdfPath;
+
+  const [pdfBlobUrl, setPdfBlobUrl] = useState("");
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfErr, setPdfErr] = useState("");
+  useEffect(() => {
+    if (!useFastPdf) return;
+    let revoked = false;
+    let objUrl = "";
+    setPdfLoading(true); setPdfErr(""); setPdfBlobUrl("");
+    api.get(pdfPath, { responseType: "blob" })
+      .then((res) => {
+        if (revoked) return;
+        objUrl = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+        setPdfBlobUrl(objUrl);
+      })
+      .catch((e) => { if (!revoked) setPdfErr(e.response?.data?.detail || "Dokumen tidak tersedia."); })
+      .finally(() => { if (!revoked) setPdfLoading(false); });
+    return () => { revoked = true; if (objUrl) URL.revokeObjectURL(objUrl); };
+  }, [useFastPdf, pdfPath]);
+  // View-only → sembunyikan toolbar (download/print) & panel navigasi PDF bawaan browser.
+  const iframeSrc = pdfBlobUrl ? (noDownload ? `${pdfBlobUrl}#toolbar=0&navpanes=0` : pdfBlobUrl) : "";
+
+  const load = useCallback(async () => {
+    setMeta(null); setErr("");
+    try {
+      if (generic) {
+        const { data } = await api.get(metaUrl);
+        setMeta(data);
+      } else {
+        const params = { target: active.key };
+        if (active.extraId) params.extra_id = active.extraId;
+        const { data } = await api.get(`/drawings/${drawingId}/page-meta`, { params });
+        setMeta(data);
+      }
+    } catch (e) {
+      setErr(e.response?.data?.detail || "Dokumen tidak tersedia untuk preview");
+    }
+  }, [drawingId, active.key, active.extraId, generic, metaUrl]);
+
+  useEffect(() => { if (!useFastPdf) load(); }, [load, useFastPdf]);
+
+  // autoPrint — begitu metadata siap, langsung picu dialog cetak (dipakai tombol Print di Master List).
+  const _printedOnce = React.useRef(false);
+  useEffect(() => {
+    if (autoPrint && meta && !_printedOnce.current) {
+      _printedOnce.current = true;
+      setPrinting(true);
+      const t = setTimeout(() => {
+        window.print();
+        setTimeout(() => setPrinting(false), 500);
+      }, 800);
+      return () => clearTimeout(t);
+    }
+  }, [autoPrint, meta]);
+
+  const imgUrl = (n, scale = 2) => {
+    if (generic && pageUrlBuilder) return withScale(pageUrlBuilder(n), scale);
+    const p = new URLSearchParams({ target: active.key, page: String(n), scale: String(scale) });
+    if (active.extraId) p.set("extra_id", active.extraId);
+    if (stamped) p.set("stamped", "1");
+    if (hideSo) p.set("hide_so", "1");
+    return `${apiUrl}/api/drawings/${drawingId}/page-image?${p.toString()}`;
+  };
+  // Resolusi progresif: muat skala rendah dulu (cepat), pertajam saat di-zoom.
+  const serverScale = zoom <= 1.05 ? 1.25 : zoom <= 1.7 ? 2 : 3;
+
+  const doPrint = () => {
+    setPrinting(true);
+    // beri waktu gambar (yang sudah ter-cache) untuk render di print-root
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => setPrinting(false), 500);
+    }, 600);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[75] bg-black/80 flex flex-col" data-testid="pdf-preview-modal">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 p-3 bg-slate-900 text-white shrink-0">
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-widest text-slate-400">Preview Dokumen</div>
+          <div className="font-mono font-bold truncate">{title}</div>
+          {subtitle && <div className="text-[11px] text-slate-300 truncate">{subtitle}</div>}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {!useFastPdf && (
+            <>
+              <button onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.15).toFixed(2)))} className="p-2 bg-slate-700 hover:bg-slate-600 rounded" title="Perkecil" data-testid="pdf-zoom-out"><MagnifyingGlassMinus size={16} weight="bold" /></button>
+              <span className="text-xs w-12 text-center tabular-nums" data-testid="pdf-zoom-level">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.15).toFixed(2)))} className="p-2 bg-slate-700 hover:bg-slate-600 rounded" title="Perbesar" data-testid="pdf-zoom-in"><MagnifyingGlassPlus size={16} weight="bold" /></button>
+            </>
+          )}
+          {!noPrint && !useFastPdf && (
+            <button onClick={doPrint} disabled={!meta} className="ml-2 inline-flex items-center gap-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs font-bold uppercase tracking-widest disabled:opacity-40" title="Cetak" data-testid="pdf-print">
+              <Printer size={15} weight="bold" /> Print
+            </button>
+          )}
+          {effectiveDownloadUrl && (
+            <a href={effectiveDownloadUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded text-xs font-bold uppercase tracking-widest" data-testid="pdf-download">
+              <DownloadSimple size={15} weight="bold" /> Download
+            </a>
+          )}
+          <button onClick={onClose} className="ml-1 p-2 bg-rose-600 hover:bg-rose-500 rounded" title="Tutup" data-testid="pdf-preview-close" aria-label="Tutup"><X size={16} weight="bold" /></button>
+        </div>
+      </div>
+
+      {/* Doc tabs */}
+      {tabList.length > 1 && (
+        <div className="flex bg-slate-800 border-b border-slate-700 shrink-0">
+          {tabList.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => { setActiveKey(t.key); setZoom(1); }}
+              className={`px-4 py-2 text-xs font-bold uppercase tracking-widest border-b-2 -mb-px ${activeKey === t.key ? "border-emerald-400 text-emerald-300" : "border-transparent text-slate-400 hover:text-slate-200"}`}
+              data-testid={`pdf-tab-${t.key}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Body */}
+      {useFastPdf ? (
+        <div className="flex-1 bg-slate-800 min-h-0 relative" data-testid="pdf-preview-fast">
+          {pdfLoading && (
+            <div className="absolute inset-0 flex items-center justify-center text-slate-200 text-sm animate-pulse" data-testid="pdf-preview-loading">Memuat dokumen…</div>
+          )}
+          {pdfErr && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-6">
+              <div className="text-rose-300 text-sm bg-rose-900/50 p-4 rounded" data-testid="pdf-preview-error">{pdfErr}</div>
+            </div>
+          )}
+          {pdfBlobUrl && (
+            <iframe
+              key={iframeSrc}
+              src={iframeSrc}
+              title={title}
+              className="w-full h-full border-0"
+              data-testid="pdf-preview-iframe"
+            />
+          )}
+        </div>
+      ) : (
+      <div className="flex-1 overflow-auto p-4 bg-slate-950">
+        {err && (
+          <div className="max-w-md mx-auto mt-10 text-center">
+            <div className="text-rose-300 text-sm bg-rose-900/50 p-4 rounded" data-testid="pdf-preview-error">{err}</div>
+            <button onClick={load} className="mt-3 inline-flex items-center gap-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded"><ArrowClockwise size={14} /> Coba lagi</button>
+          </div>
+        )}
+        {!err && !meta && (
+          <div className="text-slate-300 text-sm p-10 text-center animate-pulse" data-testid="pdf-preview-loading">Memuat halaman dokumen…</div>
+        )}
+        {meta && (
+          <div className="flex flex-col items-center gap-5 pb-10">
+            {Array.from({ length: meta.pages }).map((_, n) => {
+              const size = (meta.sizes && meta.sizes[n]) || { w: 210, h: 297 };
+              return (
+                <div key={`${active.key}-${n}`} className="flex flex-col items-center">
+                  <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Halaman {n + 1} / {meta.pages}</div>
+                  <div className="bg-white shadow-2xl" style={{ width: `min(${1000 * zoom}px, ${95 * zoom}vw)`, aspectRatio: `${size.w} / ${size.h}` }}>
+                    <LazyPreviewImg src={imgUrl(n, serverScale)} index={n} testId={`pdf-preview-page-${n}`} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      )}
+
+      {/* Print area (tersembunyi di layar; muncul saat window.print) */}
+      {printing && meta && (
+        <div id="pdf-print-root">
+          {Array.from({ length: meta.pages }).map((_, n) => (
+            <img key={`print-${n}`} src={imgUrl(n)} alt={`Halaman ${n + 1}`} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** LazyPreviewImg — muat gambar halaman hanya saat mendekati viewport (hemat render server). */
+function LazyPreviewImg({ src, index, testId }) {
+  const ref = useRef(null);
+  const [visible, setVisible] = useState(index === 0);
+  useEffect(() => {
+    if (visible) return;
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") { setVisible(true); return; }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { setVisible(true); io.disconnect(); }
+    }, { rootMargin: "500px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [visible]);
+  return (
+    <div ref={ref} className="w-full h-full flex items-center justify-center">
+      {visible ? (
+        <img src={src} alt={`Halaman ${index + 1}`} loading="lazy" className="w-full h-full object-contain select-none" draggable={false} data-testid={testId} />
+      ) : (
+        <div className="text-slate-300 text-xs animate-pulse" data-testid={`${testId}-placeholder`}>Memuat…</div>
+      )}
+    </div>
+  );
+}

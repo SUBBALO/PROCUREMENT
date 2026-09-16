@@ -1,0 +1,63 @@
+import React from "react";
+import DeptPortal from "../components/DeptPortal";
+import { Plus, ListDashes, Package, ChartBar, ChartLineUp, Lightning, Camera, Storefront } from "@phosphor-icons/react";
+import { useNotifCount } from "../lib/useNotifCount";
+
+export default function PurchasingPortalPage() {
+  // Badge: BOM baru yang butuh dibeli (belum lengkap pembeliannya)
+  const bomToBuy = useNotifCount("bom_new_unpurchased");
+
+  const CARDS = [
+    {
+      key: "input-tx", label: "Input Transaksi Pembelian", stats: "Purchase Entry",
+      description: "Input transaksi baru, tarik PO via AI, multi-currency. Perlu persetujuan Store untuk masuk stok.",
+      icon: Plus, href: "/input",
+      accent: "from-sky-500 via-blue-500 to-indigo-500", accentText: "text-sky-400",
+      badgeCount: bomToBuy,
+    },
+    {
+      key: "bulk-tx", label: "Bulk Transaksi (Langsung)", stats: "Fast Entry · Auto Incoming",
+      description: "Tabel spreadsheet cepat. Tanggal nota = tanggal terima. Centang Masuk Stok = langsung masuk FIFO tanpa persetujuan Store.",
+      icon: Lightning, href: "/purchasing/bulk",
+      accent: "from-amber-500 via-orange-500 to-red-500", accentText: "text-amber-400",
+    },
+    {
+      key: "temp-tx", label: "Transaksi Sementara (Foto Nota)", stats: "Upload HP · AI Baca Nota",
+      description: "Foto nota belanja cash dari HP, AI baca otomatis. Cek & koreksi dulu, baru masuk sistem — tidak ada yang auto masuk.",
+      icon: Camera, href: "/purchasing/temp-transactions",
+      accent: "from-teal-500 via-emerald-500 to-green-500", accentText: "text-teal-400",
+    },
+    {
+      key: "master-list", label: "Master List Transaksi", stats: "History · Filter",
+      description: "Daftar lengkap transaksi pembelian, filter, edit, export Excel.",
+      icon: ListDashes, href: "/master",
+      accent: "from-emerald-500 via-teal-500 to-cyan-500", accentText: "text-emerald-400",
+    },
+    {
+      key: "vendor-report", label: "Belanja per Vendor (Bulanan)", stats: "Total per PT · Rincian",
+      description: "Lihat total belanja tiap PT/supplier dalam 1 bulan, lalu klik untuk buka rincian lengkap pesanannya.",
+      icon: Storefront, href: "/purchasing/vendor-report",
+      accent: "from-cyan-500 via-sky-500 to-blue-500", accentText: "text-cyan-400",
+    },
+    {
+      key: "master-items", label: "Master Items (Harga)", stats: "Item · Vendor · Price",
+      description: "Rekap item, harga terakhir, vendor, unit standar.",
+      icon: Package, href: "/items",
+      accent: "from-amber-500 via-orange-500 to-red-500", accentText: "text-amber-400",
+    },
+    {
+      key: "dashboard", label: "Dashboard", stats: "Statistik · Metrik",
+      description: "Ringkasan pembelian per periode, top vendor, expose FX.",
+      icon: ChartBar, href: "/dashboard",
+      accent: "from-violet-500 via-purple-500 to-fuchsia-500", accentText: "text-violet-400",
+    },
+    {
+      key: "kpi", label: "KPI Purchasing", stats: "OTD · Compliance · Completion",
+      description: "Laporan KPI Purchasing: On-Time Delivery, Quality, PO Completion Rate — bisa print.",
+      icon: ChartLineUp, href: "/kpi",
+      accent: "from-rose-500 via-pink-500 to-fuchsia-500", accentText: "text-rose-400",
+    },
+  ];
+
+  return <DeptPortal deptLabel="Purchasing Department" deptTagline="Input Transaksi · Foto Nota · Master · Dashboard" accentColor="sky" cards={CARDS} />;
+}

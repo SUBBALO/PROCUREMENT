@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>MKS Management System — Overview</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #f8fafc;
+    color: #0f172a;
+    line-height: 1.6;
+    padding: 32px 16px;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+  header {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: white; padding: 40px; margin-bottom: 32px;
+    border-left: 8px solid #f97316;
+  }
+  header h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px; }
+  header .sub { color: #cbd5e1; font-size: 14px; letter-spacing: 0.15em; text-transform: uppercase; }
+  header .tagline { color: #f97316; margin-top: 16px; font-size: 15px; font-weight: 600; }
+  h2 {
+    font-size: 22px; margin-top: 40px; margin-bottom: 20px;
+    padding-bottom: 8px; border-bottom: 3px solid #1e293b;
+    color: #0f172a; font-weight: 700;
+  }
+  h2 .num { color: #f97316; margin-right: 12px; font-weight: 900; }
+  h3 { font-size: 16px; margin-top: 20px; margin-bottom: 10px; color: #1e293b; font-weight: 700; }
+  p, li { font-size: 14px; margin-bottom: 6px; }
+  .card {
+    background: white; border: 1px solid #e2e8f0;
+    padding: 20px; margin-bottom: 16px;
+    border-left: 4px solid #0f172a;
+  }
+  .card.sales { border-left-color: #3b82f6; }
+  .card.eng { border-left-color: #f59e0b; }
+  .card.purch { border-left-color: #8b5cf6; }
+  .card.store { border-left-color: #10b981; }
+  .card.qc { border-left-color: #a855f7; }
+  .card.fin { border-left-color: #0ea5e9; }
+
+  .card-title {
+    font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.12em; color: #64748b; margin-bottom: 8px;
+  }
+  .flow {
+    background: #0f172a; color: #f1f5f9;
+    font-family: 'Consolas', 'Monaco', monospace;
+    padding: 20px; margin: 16px 0;
+    overflow-x: auto; font-size: 13px; line-height: 1.7;
+    white-space: pre;
+  }
+  .flow .box { background: #1e293b; padding: 4px 10px; border-radius: 2px; color: #fef3c7; }
+  .arrow { color: #f97316; font-weight: bold; }
+  .actor { color: #7dd3fc; font-weight: bold; }
+  .comment { color: #94a3b8; font-style: italic; }
+
+  ul.check { list-style: none; margin-left: 0; }
+  ul.check li {
+    padding-left: 28px; position: relative;
+    margin-bottom: 6px; font-size: 14px;
+  }
+  ul.check li::before {
+    content: "✓"; position: absolute; left: 0;
+    color: #10b981; font-weight: 900; font-size: 16px;
+  }
+  ul.dot { list-style: none; margin-left: 0; }
+  ul.dot li {
+    padding-left: 20px; position: relative; margin-bottom: 6px; font-size: 14px;
+  }
+  ul.dot li::before {
+    content: "▸"; position: absolute; left: 0; color: #f97316;
+  }
+  table {
+    width: 100%; border-collapse: collapse; margin: 16px 0;
+    font-size: 13px; background: white;
+  }
+  th { background: #0f172a; color: white; padding: 10px; text-align: left; text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; }
+  td { padding: 10px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  .badge {
+    display: inline-block; padding: 2px 8px; font-size: 10px;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .badge.done { background: #dcfce7; color: #14532d; }
+  .badge.wip { background: #fef3c7; color: #78350f; }
+  .badge.plan { background: #dbeafe; color: #1e3a8a; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+  .metric {
+    background: #0f172a; color: white; padding: 20px;
+    text-align: center; margin: 8px 0;
+  }
+  .metric .num { font-size: 32px; font-weight: 900; color: #f97316; display: block; }
+  .metric .lbl { font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; opacity: 0.8; }
+  footer { margin-top: 60px; padding: 20px; text-align: center; color: #64748b; font-size: 12px; border-top: 1px solid #e2e8f0; }
+  .print-btn {
+    position: fixed; top: 20px; right: 20px;
+    background: #f97316; color: white; border: 0;
+    padding: 10px 20px; font-weight: 700; cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  @media print {
+    .print-btn { display: none; }
+    body { background: white; padding: 0; }
+    header { break-inside: avoid; }
+    h2 { page-break-before: auto; }
+    .flow { color: #0f172a; background: #f1f5f9; }
+  }
+</style>
+</head>
+<body>
+<button class="print-btn" onclick="window.print()">🖨️ Print / Save PDF</button>
+
+<div class="container">
+
+<header>
+  <div class="sub">Executive Overview · Feb 2026</div>
+  <h1>MKS Management System</h1>
+  <div class="tagline">PT. MITRA KARYA SARANA · End-to-End ERP untuk Steel Fabrication & Marine Contractor</div>
+</header>
+
+<!-- ==================== SUMMARY ==================== -->
+<h2><span class="num">01</span>Ringkasan Sistem</h2>
+<p>
+  MKS Management System adalah aplikasi manajemen procurement + produksi + kualitas terintegrasi,
+  dibangun spesifik untuk operasional PT Mitra Karya Sarana. Sistem menghubungkan alur bisnis dari
+  <b>Sales Inquiry → Engineering → Purchasing → Store → Quality Control → Finance</b> dalam satu platform,
+  dengan form ISO terdaftar (MCL, MIF, MII) auto-generate PDF.
+</p>
+
+<div class="grid2" style="margin-top: 24px;">
+  <div class="metric"><span class="num">10</span><span class="lbl">User Roles</span></div>
+  <div class="metric"><span class="num">6</span><span class="lbl">Core Modules</span></div>
+  <div class="metric"><span class="num">3</span><span class="lbl">ISO Forms Auto-PDF</span></div>
+  <div class="metric"><span class="num">1</span><span class="lbl">Universal Search</span></div>
+</div>
+
+<!-- ==================== ROLE MATRIX ==================== -->
+<h2><span class="num">02</span>Struktur Peran & Akses</h2>
+<table>
+  <thead>
+    <tr><th>Role</th><th>Akses Utama</th><th>Yang Bisa Dilakukan</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><b>Super Admin</b></td><td>Semua modul</td><td>Manage user, backup/restore, form template</td></tr>
+    <tr><td><b>Admin / Supervisor</b></td><td>Semua modul (kecuali super-admin action)</td><td>Approve, edit master data, monitoring dashboard</td></tr>
+    <tr><td><b>Sales</b></td><td>Sales Portal (/sales)</td><td>Input Inquiry, Quotation, Sales Order, PO Customer</td></tr>
+    <tr><td><b>Eng. Head</b></td><td>Engineering Portal</td><td>Review BOM staff, approve/reject, upload BOM</td></tr>
+    <tr><td><b>Eng. Staff</b></td><td>Engineering Portal</td><td>Buat BOM per SO, submit ke Head</td></tr>
+    <tr><td><b>Purchasing</b></td><td>Purchasing Portal</td><td>Buat PO dari BOM approved, kelola vendor</td></tr>
+    <tr><td><b>Store</b></td><td>Store Portal</td><td>Terima barang, MCL/MIF, stock in-out, consumable</td></tr>
+    <tr><td><b>QC</b> <span class="badge done">NEW</span></td><td>Quality Control (/qc)</td><td>Isi MII form ISO, verify inspection, cetak PDF</td></tr>
+    <tr><td><b>Finance</b></td><td>Read-only cross-module</td><td>View laporan, cost, invoice, incoming report</td></tr>
+  </tbody>
+</table>
+
+<!-- ==================== FLOW 1 : END TO END ==================== -->
+<h2><span class="num">03</span>Alur Utama: End-to-End Procurement</h2>
+
+<div class="card sales">
+  <div class="card-title">Fase 1 · Sales & Quotation</div>
+  <div class="flow"><span class="actor">CUSTOMER</span> kirim RFQ
+   <span class="arrow">↓</span>
+<span class="actor">SALES</span> input <span class="box">Inquiry</span> (dgn Customer Master autocomplete)
+   <span class="arrow">↓</span>
+<span class="actor">SALES</span> buat <span class="box">Quotation</span> → preview WYSIWYG → cetak PDF letterhead
+   <span class="arrow">↓</span>
+<span class="actor">CUSTOMER</span> approve → <span class="actor">SALES</span> upload PO Customer
+   <span class="arrow">↓</span>
+<span class="box">Sales Order (SO)</span> ter-generate, dikirim ke Engineering
+<span class="comment">→ Notifikasi otomatis ke Eng. Head & Staff</span></div>
+</div>
+
+<div class="card eng">
+  <div class="card-title">Fase 2 · Engineering (BOM)</div>
+  <div class="flow"><span class="actor">ENG. STAFF</span> buka SO → buat <span class="box">BOM</span> (line items + qty + material)
+   <span class="arrow">↓</span>
+Submit ke <span class="actor">ENG. HEAD</span> untuk review
+   <span class="arrow">↓</span>
+<span class="actor">ENG. HEAD</span> review:
+  → Approve  → <span class="box">BOM Approved</span>, notif ke Purchasing
+  → Revise   → kembali ke Staff dgn catatan
+<span class="comment">Shortcut: Eng. Head bisa buat BOM sendiri (skip review Staff)</span>
+<span class="comment">Multi-file upload BOM (drag-drop Excel)</span></div>
+</div>
+
+<div class="card purch">
+  <div class="card-title">Fase 3 · Purchasing</div>
+  <div class="flow"><span class="actor">PURCHASING</span> lihat BOM approved queue
+   <span class="arrow">↓</span>
+Split BOM ke <span class="box">PO per Vendor</span> (bisa 1 BOM → banyak PO)
+   <span class="arrow">↓</span>
+Cetak PO PDF letterhead → kirim vendor
+   <span class="arrow">↓</span>
+Set flag <b>should_stock</b> per item:
+  → true  = barang untuk stok gudang (masuk MCL, tidak ke QC)
+  → false = barang untuk produksi customer (masuk MCL + MIF + QC MII)
+<span class="comment">→ Notifikasi ke Store saat barang diperkirakan tiba</span></div>
+</div>
+
+<div class="card store">
+  <div class="card-title">Fase 4 · Store (Barang Masuk & Keluar)</div>
+  <div class="flow"><span class="actor">STORE</span> terima barang dari vendor / customer
+   <span class="arrow">↓</span>
+Input <span class="box">Incoming Goods</span> (manual atau dari PO):
+  • Pilih Sumber (Supplier / Customer combobox)
+  • Input DO/Invoice + item + qty + so_no
+  • Toggle add_to_stock per item
+   <span class="arrow">↓</span>
+Auto-generate:
+  • <span class="box">MCL</span> (Material Control Label) PDF — kartu label barang
+  • <span class="box">MIF</span> (Material Issue Form) PDF — form terima
+  • <span class="box">QC Task</span> pending (khusus item non-stok) ⟶ ke QC
+   <span class="arrow">↓</span>
+<span class="actor">STORE</span> keluarkan barang:
+  • Bulk Transaction (batch dari SO)
+  • Consumable Request (dgn approval workflow untuk edit/delete)
+   <span class="arrow">↓</span>
+<span class="box">Stock Live History</span> per item — FIFO avg cost, IN/OUT ledger, print/export</div>
+</div>
+
+<div class="card qc">
+  <div class="card-title">Fase 5 · Quality Control <span class="badge done">NEW</span></div>
+  <div class="flow"><span class="actor">STORE</span> input Incoming (item add_to_stock=false)
+   <span class="arrow">↓</span>
+<b>Auto-buat</b> <span class="box">QC Inspection</span> (status: pending)
+   <span class="arrow">↓</span>
+<span class="actor">QC INSPECTOR</span> buka menu QC → Material Incoming Inspection
+   <span class="arrow">↓</span>
+Isi form <span class="box">MII (MKS-F-QAD-002 REV 03)</span>:
+  • Batch/Grade/Heat No · Mill Cert · Dimention SPEC/ACTUAL
+  • Visual check · Result OK/NG · Remark
+   <span class="arrow">↓</span>
+Save → status <b>inspected</b>
+   <span class="arrow">↓</span>
+<span class="actor">QC LEADER</span> verify → status <b>verified</b>
+   <span class="arrow">↓</span>
+Cetak <span class="box">MII PDF</span> (Excel template atau visual editor)
+<span class="comment">NG items ter-track otomatis di dashboard QC (laporan internal)</span></div>
+</div>
+
+<div class="card fin">
+  <div class="card-title">Fase 6 · Finance & Reporting</div>
+  <div class="flow"><span class="actor">FINANCE</span> akses read-only cross-module:
+  • Sales Report (per periode, per sales, per customer)
+  • BOM Cost vs Actual (upcoming)
+  • Incoming Goods Report (semua PO diterima)
+  • Stock Value Report (FIFO)
+  • Backup/Restore (via admin)</div>
+</div>
+
+<!-- ==================== KEY ADVANTAGES ==================== -->
+<h2><span class="num">04</span>Kelebihan Utama Sistem</h2>
+
+<h3 style="color: #f97316;">A. Business & Operasional</h3>
+<ul class="check">
+  <li><b>End-to-end integration</b> — 1 sistem dari inquiry sampai delivery, tidak ada re-entry data</li>
+  <li><b>Auto-link antar-modul</b> — SO → BOM → PO → Receive → QC → Stock, semua tersambung by reference</li>
+  <li><b>ISO Compliance</b> — MCL, MIF, MII generate PDF sesuai form ISO registered (MKS-F-QAD-002)</li>
+  <li><b>Multi-tier approval</b> — Engineering staff → head, Consumable Request edit/delete via admin</li>
+  <li><b>Master data terpusat</b> — Customer, SO, User, semua modul share master yang sama (no typo, no dup)</li>
+  <li><b>Event-based notifications</b> — Bel notif per role saat ada action penting</li>
+  <li><b>Global search</b> — 1 kotak cari cross-modul (SO, PO, item, customer, quotation)</li>
+</ul>
+
+<h3 style="color: #f97316;">B. Kualitas Data & Traceability</h3>
+<ul class="check">
+  <li><b>Live Stock History</b> per item — FIFO cost, ledger IN/OUT kronologis, opening/closing balance, filter periode</li>
+  <li><b>Audit log</b> — Setiap action (create, edit, delete, approve) tercatat dgn user + timestamp</li>
+  <li><b>Soft-delete</b> — Data dihapus masih bisa di-restore via Trash (tidak hilang permanen)</li>
+  <li><b>NG tracking</b> — Item yang gagal QC ter-log dgn remark & inspector, siap untuk laporan supplier</li>
+  <li><b>MCL/MIF/MII</b> tercetak dgn nomor register per receipt (tidak double)</li>
+</ul>
+
+<h3 style="color: #f97316;">C. Fleksibilitas & Customization</h3>
+<ul class="check">
+  <li><b>Form Template Engine</b> — Admin bisa edit layout MCL/MIF/MII via <b>visual editor</b> (drag element) atau <b>Excel template</b> (download starter → edit di Excel → upload)</li>
+  <li><b>Sales roster configurable</b> — Filter Sales Name dropdown (Asiong/Nicholas/Kiki/Riska/Feggie/Fiana)</li>
+  <li><b>Customer autocomplete inline create</b> — Ketik nama → langsung tambah customer baru tanpa buka menu lain</li>
+  <li><b>Multi-file BOM upload</b> — Drag-drop banyak Excel BOM sekaligus</li>
+  <li><b>Windows Server 2012 R2 compatible</b> — LibreOffice PDF conversion cross-platform</li>
+</ul>
+
+<h3 style="color: #f97316;">D. Teknis & Skalabilitas</h3>
+<ul class="check">
+  <li><b>Modern stack</b> — React 19 + FastAPI + MongoDB (industry standard, mudah cari developer)</li>
+  <li><b>No vendor lock-in</b> — MongoDB self-hosted, tidak butuh cloud database</li>
+  <li><b>Backup/Restore built-in</b> — 1-klik backup seluruh database (JSON) ke local disk</li>
+  <li><b>Hot-reload development</b> — Update kode langsung terlihat tanpa restart</li>
+  <li><b>Offline-ready</b> — Bisa jalan di local network tanpa internet (server + client di LAN)</li>
+  <li><b>Universal LLM Key ready</b> — Siap integrasi AI (auto-read PO PDF, generate quotation draft, dll)</li>
+</ul>
+
+<h3 style="color: #f97316;">E. UX & Adopsi User</h3>
+<ul class="check">
+  <li><b>Portal per department</b> — Sales/Store/Eng/Purchasing/QC punya landing page sendiri (tidak overwhelm)</li>
+  <li><b>Bahasa Indonesia</b> — Semua label & message dalam bahasa lokal</li>
+  <li><b>WYSIWYG Preview</b> — Preview PDF Quotation & MII persis sama dgn hasil download</li>
+  <li><b>Responsive</b> — Bisa akses dari desktop, laptop, tablet</li>
+  <li><b>Keyboard shortcut</b> — Cari global (⌘K), Enter untuk submit, Escape untuk close</li>
+</ul>
+
+<!-- ==================== ROI ==================== -->
+<h2><span class="num">05</span>Estimasi Impact</h2>
+<table>
+  <thead><tr><th>Area</th><th>Sebelum (Manual/Excel)</th><th>Sekarang (MKS System)</th><th>Improvement</th></tr></thead>
+  <tbody>
+    <tr><td>Cetak MCL/MIF per receipt</td><td>15-20 menit (input manual di Excel)</td><td>&lt; 1 menit (auto-generate)</td><td><b>~20x lebih cepat</b></td></tr>
+    <tr><td>Trace history item</td><td>Cari di banyak file Excel</td><td>1 klik "Riwayat" di stock page</td><td><b>Instant</b></td></tr>
+    <tr><td>Approval BOM</td><td>Kirim file via email/chat</td><td>Otomatis notif ke Head</td><td><b>0 delay</b></td></tr>
+    <tr><td>Ganti nama customer typo</td><td>Cari-ganti di banyak sheet</td><td>Edit di Master Customer, semua ter-update</td><td><b>DRY (single source)</b></td></tr>
+    <tr><td>QC Inspection tracking</td><td>Form kertas + arsip fisik</td><td>Digital + auto-linked ke incoming</td><td><b>Full audit trail</b></td></tr>
+    <tr><td>Backup data</td><td>Copy manual folder Excel</td><td>1 klik backup + restore</td><td><b>Zero data loss risk</b></td></tr>
+  </tbody>
+</table>
+
+<!-- ==================== ROADMAP ==================== -->
+<h2><span class="num">06</span>Roadmap Selanjutnya</h2>
+
+<h3>Prioritas Tinggi (P0-P1)</h3>
+<ul class="dot">
+  <li><span class="badge plan">P0</span> <b>Telegram Bot Notification</b> — notif SO baru, PO tiba, QC NG langsung ke HP tim</li>
+  <li><span class="badge plan">P1</span> <b>Admin Approval Queue UI</b> untuk Consumable Requests</li>
+  <li><span class="badge plan">P1</span> <b>Cost Margin Analysis per SO</b> — real-time margin per project</li>
+  <li><span class="badge plan">P1</span> <b>AI PO Reader</b> — Upload PDF PO customer → auto-extract items ke SO</li>
+</ul>
+
+<h3>Future Backlog (P2-P3)</h3>
+<ul class="dot">
+  <li><span class="badge plan">P2</span> Payment Tracking / Invoice Status</li>
+  <li><span class="badge plan">P2</span> Vendor Management + Rating</li>
+  <li><span class="badge plan">P2</span> Budget vs Actual monitoring per SO</li>
+  <li><span class="badge plan">P2</span> Store Barcode/QR Scanner (mobile)</li>
+  <li><span class="badge plan">P2</span> Document Control Module (SALMA role)</li>
+  <li><span class="badge plan">P2</span> Production Module (Work Order, Kanban WIP, Time-tracking)</li>
+  <li><span class="badge plan">P3</span> QC — Outgoing Inspection card, Non-Conformance Report card</li>
+</ul>
+
+<!-- ==================== TECH STACK ==================== -->
+<h2><span class="num">07</span>Stack Teknologi</h2>
+<table>
+  <thead><tr><th>Layer</th><th>Teknologi</th><th>Fungsi</th></tr></thead>
+  <tbody>
+    <tr><td>Frontend</td><td>React 19 + TailwindCSS + Shadcn UI</td><td>UI modern, responsive, cepat</td></tr>
+    <tr><td>Backend</td><td>FastAPI (Python 3.11) + Motor (async MongoDB)</td><td>API REST cepat, auto-docs</td></tr>
+    <tr><td>Database</td><td>MongoDB 6+</td><td>Flexible schema, no migration pain</td></tr>
+    <tr><td>PDF Engine</td><td>ReportLab + openpyxl + LibreOffice (soffice)</td><td>PDF letterhead, Excel-to-PDF</td></tr>
+    <tr><td>Deployment</td><td>Windows Server 2012 R2 (local) + Kubernetes (preview)</td><td>Offline-ready, cloud-optional</td></tr>
+    <tr><td>Auth</td><td>JWT + role-based access control</td><td>Secure, session-based</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  <b>MKS Management System</b> · Dokumen ini di-generate otomatis dari kode aplikasi<br>
+  Versi build: Feb 2026 · Iterasi 30
+</footer>
+
+</div>
+</body>
+</html>
