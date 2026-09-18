@@ -109,25 +109,21 @@ export default function EngineeringPortalPage() {
     },
   ];
 
-  // Susun kartu ke dalam 4 grup menu
+  // Susun kartu ke dalam 4 grup menu (urutan mengikuti alur kerja Engineering)
   const GROUP_OF = {
     "work-orders": "masuk",
-    "inquiry-masterlist": "masuk",
-    "leader-verify": "approval",
     "ecn": "approval",
     "bom": "approval",
+    "monitor": "monitor",
+    "drf-masterlist": "monitor",
     "drawings": "data",
     "material-costing": "data",
     "eng-process": "data",
-    "so-tracker": "monitor",
-    "workload": "monitor",
-    "kpi": "monitor",
-    "monitor": "monitor",
   };
   const GROUP_DEFS = [
     { key: "masuk", label: "Pekerjaan Masuk" },
-    { key: "monitor", label: "Monitor" },
     { key: "approval", label: "Proses & Approval" },
+    { key: "monitor", label: "Monitor" },
     { key: "data", label: "Master & Data" },
   ];
   const groups = GROUP_DEFS.map((g) => ({
@@ -138,7 +134,7 @@ export default function EngineeringPortalPage() {
   return (
     <DeptPortal
       deptLabel="Engineering Department"
-      deptTagline="Menu dikelompokkan: Pekerjaan Masuk · Monitor · Proses & Approval · Master & Data"
+      deptTagline="Menu dikelompokkan: Pekerjaan Masuk · Proses & Approval · Monitor · Master & Data"
       accentColor="amber"
       groups={groups}
       compactCards

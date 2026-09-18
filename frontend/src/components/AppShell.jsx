@@ -282,6 +282,16 @@ export default function AppShell({ children }) {
     { to: "/engineering/inquiries", label: "Inquiry Costing", icon: ClipboardText, testid: "dir-eng-inquiries" },
   ];
 
+  // Navbar Engineering digabung jadi 1 dropdown agar tidak ramai saat bekerja.
+  const engNavItems = [
+    { to: "/engineering", label: "Portal Engineering", icon: Wrench, testid: "nav-eng-portal" },
+    { to: "/engineering/inquiries", label: "Inquiries (Costing)", icon: ClipboardText, testid: "nav-inquiries-top" },
+    { to: "/bom", label: "Bill of Material (BOM)", icon: Package, testid: "nav-bom-top" },
+    ...(["engineering", "eng_leader", "eng_head"].includes(role)
+      ? [{ to: "/admin/legacy-import", label: "Import Data Lama", icon: UploadSimple, testid: "nav-legacy-import-eng" }]
+      : []),
+  ];
+
   // Purchasing items per role
   const purchasingItems = () => {
     if (isFinanceOnly) {
@@ -357,7 +367,16 @@ export default function AppShell({ children }) {
                   activePath={location.pathname}
                 />
               )}
-              {showBom && (
+              {!isLanding && isEngineering && (
+                <DeptDropdown
+                  label="Engineering"
+                  icon={Wrench}
+                  testid="dept-engineering"
+                  items={engNavItems}
+                  activePath={location.pathname}
+                />
+              )}
+              {showBom && !isEngineering && (
                 <NavLink
                   to="/bom"
                   data-testid="nav-bom-top"
@@ -368,33 +387,6 @@ export default function AppShell({ children }) {
                   }
                 >
                   <Package size={14} weight="duotone" /> BOM
-                </NavLink>
-              )}
-              {!isLanding && isEngineering && (
-                <NavLink
-                  to="/engineering/inquiries"
-                  data-testid="nav-inquiries-top"
-                  className={({ isActive }) =>
-                    `text-xs uppercase tracking-[0.05em] font-semibold px-3 h-9 flex items-center gap-2 border-b-2 transition-colors ${
-                      isActive ? "border-rose-600 text-rose-700" : "border-transparent text-slate-600 hover:text-slate-900"
-                    }`
-                  }
-                >
-                  <ClipboardText size={14} weight="duotone" /> Inquiries
-                </NavLink>
-              )}
-              {!isLanding && ["engineering", "eng_leader", "eng_head"].includes(role) && (
-                <NavLink
-                  to="/admin/legacy-import"
-                  data-testid="nav-legacy-import-eng"
-                  className={({ isActive }) =>
-                    `text-xs uppercase tracking-[0.05em] font-semibold px-3 h-9 flex items-center gap-2 border-b-2 transition-colors ${
-                      isActive ? "border-rose-600 text-rose-700" : "border-transparent text-slate-600 hover:text-slate-900"
-                    }`
-                  }
-                  title="Import Data Lama ke Drawing Master List"
-                >
-                  <UploadSimple size={14} weight="duotone" /> Import Data Lama
                 </NavLink>
               )}
               {/* Material Costing shortcut — visible for purchasing (Fiana) & finance so they can maintain Master List Harga */}
