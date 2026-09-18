@@ -1,0 +1,32 @@
+{
+  "summary": "Verified Engineering top-nav consolidation via Playwright for three roles (riski/eng_leader, madian/eng_staff, erwin/admin). Single 'Engineering' dropdown (data-testid=dept-engineering) is rendered for engineering roles when NOT on landing page, contains the correct items per role, and old standalone top-level nav buttons (BOM/Inquiries/Import Data Lama) are no longer rendered outside the dropdown. Navigation for Portal Engineering, Inquiries (Costing), and BOM works. Admin (erwin) does NOT see the Engineering dropdown and header renders normally. One issue found: 'Import Data Lama' item inside the Engineering dropdown for eng_leader/eng_head/engineering points to /admin/legacy-import but ProtectedRoute in App.js redirects engineering roles away from any /admin path, so the link is effectively broken — clicking it (or navigating directly) redirects riski back to /engineering.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AppShell.jsx > Engineering DeptDropdown > Import Data Lama",
+        "issue": "Clicking 'Import Data Lama' (data-testid=nav-legacy-import-eng) for engineering leader/head does NOT navigate to /admin/legacy-import. ProtectedRoute in frontend/src/App.js (lines 148-153) only whitelists /bom, /sales, /engineering (and universal pages) for ENG_ROLES, so /admin/legacy-import is redirected back to /engineering. The dropdown item is rendered but the destination is unreachable.",
+        "selector": "[data-testid=nav-legacy-import-eng]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix Import Data Lama route access for engineering roles: in frontend/src/App.js ProtectedRoute, add an exception so ENG_ROLES with role in ['engineering','eng_leader','eng_head'] can access /admin/legacy-import (e.g., extend the allowed prefix check to include location.pathname === '/admin/legacy-import' for those roles). LegacyImportPage's own ALLOWED_ROLES already permits these roles, so the fix is only in the ProtectedRoute redirect logic."
+  ],
+  "critical_code_review_comments": [
+    "AppShell.jsx is 600 lines — should be split into smaller modules (DeptDropdown into its own file, role/nav config into a constants file).",
+    "Route-level access control lives in App.js ProtectedRoute using hardcoded prefix lists; adding new nav items for a role requires updating both AppShell and ProtectedRoute in sync (as this bug demonstrates). Consider a single source of truth (per-role allowed routes map)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "83% (5/6 checks passed; legacy-import navigation blocked)"},
+  "test_credentials": "riski/eng123 (eng_leader), madian/eng123 (eng_staff), erwin/erwin123 (admin) — all working via data-testid login inputs",
+  "seed_data_creation": "",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Focus retest on: (1) navigating to /admin/legacy-import as riski (eng_leader) after ProtectedRoute fix — should load LegacyImportPage, not redirect. (2) confirm madian (eng_staff) still cannot see 'Import Data Lama' in dropdown and still gets redirected if manually navigating to /admin/legacy-import. Dropdown structure, role filtering, and standalone-link removal are already verified working.",
+  "rca of the issue": "The engineering nav consolidation added an 'Import Data Lama' item pointing to /admin/legacy-import inside the new Engineering dropdown for eng_leader/eng_head/engineering roles. However, App.js:148-153 ProtectedRoute restricts ENG_ROLES to paths starting with /bom, /sales, or /engineering (plus universal pages). Any /admin path is redirected to /engineering. Reproduction: login as riski, navigate directly to /admin/legacy-import or click the dropdown item — URL ends up at /engineering. Mitigation: extend the ENG_ROLES branch to whitelist /admin/legacy-import for the appropriate sub-roles (engineering, eng_leader, eng_head; NOT eng_staff)."
+}

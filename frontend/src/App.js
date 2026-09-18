@@ -146,7 +146,11 @@ function ProtectedRoute({ children, storeRoleTo = "/store/stock", blockStore = f
     location.pathname.startsWith("/document-control");
 
   if (ENG_ROLES.includes(user.role)) {
-    if (!isUniversalPage && !location.pathname.startsWith("/bom") && !location.pathname.startsWith("/sales") && !location.pathname.startsWith("/engineering")) {
+    // Import Data Lama (/admin/legacy-import) khusus Engineering Leader/Head (bukan eng_staff)
+    const allowLegacyImport =
+      ["engineering", "eng_leader", "eng_head"].includes(user.role) &&
+      location.pathname.startsWith("/admin/legacy-import");
+    if (!isUniversalPage && !allowLegacyImport && !location.pathname.startsWith("/bom") && !location.pathname.startsWith("/sales") && !location.pathname.startsWith("/engineering")) {
       return <Navigate to="/engineering" replace />;
     }
     return <AppShell>{children}</AppShell>;
