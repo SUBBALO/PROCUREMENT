@@ -68,6 +68,12 @@ def _gemini():
     return _gemini_client
 
 
+def reset_gemini_client():
+    """Reset cache client Gemini (dipanggil saat API key diubah lewat menu Setting)."""
+    global _gemini_client
+    _gemini_client = None
+
+
 RECEIPT_PROMPT_BASE = """Baca foto nota/kwitansi belanja (Indonesia) ini dan ekstrak HANYA yang terlihat jelas.
 Keluarkan satu objek JSON sesuai skema. Jangan mengarang nilai yang tidak ada — pakai null.
 Aturan:

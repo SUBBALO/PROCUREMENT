@@ -42,6 +42,7 @@ from routers import ecn as ecn_router
 from routers import transfer_requests as transfer_requests_router
 from routers import stock_opname as stock_opname_router
 from routers import temp_transactions as temp_transactions_router
+from routers import settings as settings_router
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -77,6 +78,7 @@ api_router.include_router(ecn_router.router)
 api_router.include_router(transfer_requests_router.router)
 api_router.include_router(stock_opname_router.router)
 api_router.include_router(temp_transactions_router.router)
+api_router.include_router(settings_router.router)
 
 
 # SO Requests — Engineering asks Sales/Admin to create SO
@@ -390,6 +392,11 @@ async def startup():
     await db.transactions.create_index("item_name")
     await db.transactions.create_index("invoice_no")
     await db.activity_logs.create_index("timestamp")
+    # Muat API key tersimpan dari DB (menimpa .env bila ada) — tanpa perlu restart manual
+    try:
+        await settings_router.load_persisted_settings()
+    except Exception as e:
+        logger.warning(f"load_persisted_settings failed: {e}")
     await db.activity_logs.create_index("user_id")
     # Login log & sesi aktif + trash snapshot (Feb 2026)
     try:
