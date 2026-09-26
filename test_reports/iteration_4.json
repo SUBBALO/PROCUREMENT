@@ -1,0 +1,32 @@
+{
+  "summary": "Verified Gemini retry/fallback resilience in backend/routers/temp_transactions.py via unit tests with monkeypatched _gemini() (no real API key needed) plus a live endpoint smoke test. All 5 tests pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_temp_tx_retry.py",
+    "/app/test_reports/pytest/temp_tx_retry.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backoff sleep uses blocking time.sleep inside a sync function called via asyncio.to_thread — acceptable since it runs off the event loop; fine as-is.",
+    "_FALLBACK_MODELS length is 4 and each attempts 3 retries → worst-case up to 12 API calls with 1.5s+3s sleeps per model (~13.5s of blocking sleep). Consider reducing retries per fallback model, or only retrying on the PRIMARY and single-attempting fallbacks, to keep worst-case latency lower.",
+    "_is_transient() substring-matches '500' which will also match strings like '5000' or '500ms' — very small risk of false-positive classification. Consider regex word-boundary matching.",
+    "Non-transient errors raise immediately (good), but if the FIRST model returns non-transient (e.g. schema issue), fallback models are never tried — this is intended per spec and confirmed by Case C."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_temp_tx_retry.py"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "N/A"},
+  "test_credentials": "erwin / erwin123 (admin, from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Tests cover: (A) transient-then-success recovers within 3 retries on primary model, (B) persistent 503 exhausts all fallback models and raises friendly RuntimeError containing 'sibuk'/'503', (C) non-transient ValueError propagates after exactly 1 call (no retry, no fallback), plus (D) /api/temp-transactions/upload returns HTTP 400 with detail containing 'GEMINI_API_KEY' when key is empty and (E) backend still healthy afterwards. Login uses cookie-based session (POST /api/auth/login sets HTTPOnly cookie; no bearer token in response body). Tests monkeypatch temp_transactions.time.sleep to no-op for speed.",
+  "test_results_detail": {
+    "test_case_a_transient_then_success": "PASSED — vendor='PT Contoh', line_items populated after 2 transient 503s + 1 success on primary model.",
+    "test_case_b_all_transient_uses_fallback_and_friendly_error": "PASSED — 4 distinct models attempted, 12 total calls, RuntimeError message contains 'sibuk' and '503'.",
+    "test_case_c_non_transient_raises_immediately": "PASSED — ValueError('invalid schema') raised after exactly 1 generate_content call; no retry/fallback.",
+    "test_upload_endpoint_400_when_no_api_key": "PASSED — HTTP 400, detail='GEMINI_API_KEY belum dikonfigurasi di server'.",
+    "test_backend_healthy_after_tests": "PASSED — GET /api/ returns 200."
+  }
+}

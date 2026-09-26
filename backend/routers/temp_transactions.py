@@ -102,7 +102,7 @@ def _is_transient(err: str) -> bool:
     s = (err or "").lower()
     return any(t in s for t in [
         "503", "unavailable", "overloaded", "high demand",
-        "429", "resource_exhausted", "rate limit", "500", "internal error", "deadline",
+        "429", "resource_exhausted", "rate limit", "internal error", "deadline",
     ])
 
 
@@ -137,8 +137,9 @@ def _extract_receipt_sync(image_bytes: bytes, mime_type: str, known_categories: 
 
     last_err: Optional[Exception] = None
     saw_transient = False
-    for model in _candidate_models():
-        for attempt in range(3):  # 3x per model
+    for idx, model in enumerate(_candidate_models()):
+        max_attempts = 3 if idx == 0 else 1  # primary di-retry; model cadangan cukup 1x
+        for attempt in range(max_attempts):
             try:
                 resp = _gemini().models.generate_content(model=model, contents=[part, prompt], config=cfg)
                 if not resp.text:
@@ -148,7 +149,7 @@ def _extract_receipt_sync(image_bytes: bytes, mime_type: str, known_categories: 
                 last_err = e
                 if _is_transient(str(e)):
                     saw_transient = True
-                    if attempt < 2:
+                    if attempt < max_attempts - 1:
                         time.sleep(1.5 * (attempt + 1))  # backoff: 1.5s, 3s
                         continue
                     break  # habis retry model ini → coba model cadangan
