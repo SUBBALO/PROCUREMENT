@@ -16,6 +16,7 @@ import asyncio
 import json
 import os
 import re
+import time
 import uuid
 from typing import List, Optional
 
@@ -32,7 +33,9 @@ router = APIRouter(tags=["temp-transactions"])
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+# Model cadangan dicoba berurutan bila model utama sedang overload (503) / tidak tersedia.
+_FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest", "gemini-1.5-flash"]
 
 _bucket: Optional[AsyncIOMotorGridFSBucket] = None
 
@@ -88,8 +91,27 @@ def _build_prompt(known_categories: list) -> str:
     return RECEIPT_PROMPT_BASE.format(category_hint=hint)
 
 
+def _candidate_models() -> list:
+    """Model utama (dari env) lalu model cadangan, tanpa duplikat."""
+    models = [GEMINI_MODEL] + [m for m in _FALLBACK_MODELS if m != GEMINI_MODEL]
+    return models
+
+
+def _is_transient(err: str) -> bool:
+    """Deteksi error sementara Gemini (overload/rate-limit/server) yang layak di-retry."""
+    s = (err or "").lower()
+    return any(t in s for t in [
+        "503", "unavailable", "overloaded", "high demand",
+        "429", "resource_exhausted", "rate limit", "500", "internal error", "deadline",
+    ])
+
+
 def _extract_receipt_sync(image_bytes: bytes, mime_type: str, known_categories: list) -> dict:
-    """Panggil Gemini vision (sync — dijalankan via asyncio.to_thread)."""
+    """Panggil Gemini vision (sync — dijalankan via asyncio.to_thread).
+
+    Tahan-banting: retry dengan backoff saat 503/overload, lalu fallback ke model
+    cadangan bila model utama tetap tidak tersedia.
+    """
     from google.genai import types
 
     class LineItem(BaseModel):
@@ -106,18 +128,38 @@ def _extract_receipt_sync(image_bytes: bytes, mime_type: str, known_categories: 
         line_items: List[LineItem] = Field(default_factory=list)
 
     part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
-    resp = _gemini().models.generate_content(
-        model=GEMINI_MODEL,
-        contents=[part, _build_prompt(known_categories)],
-        config=types.GenerateContentConfig(
-            temperature=0,
-            response_mime_type="application/json",
-            response_schema=Receipt,
-        ),
+    cfg = types.GenerateContentConfig(
+        temperature=0,
+        response_mime_type="application/json",
+        response_schema=Receipt,
     )
-    if not resp.text:
-        raise ValueError("AI tidak mengembalikan hasil")
-    return Receipt.model_validate(json.loads(resp.text)).model_dump()
+    prompt = _build_prompt(known_categories)
+
+    last_err: Optional[Exception] = None
+    saw_transient = False
+    for model in _candidate_models():
+        for attempt in range(3):  # 3x per model
+            try:
+                resp = _gemini().models.generate_content(model=model, contents=[part, prompt], config=cfg)
+                if not resp.text:
+                    raise ValueError("AI tidak mengembalikan hasil")
+                return Receipt.model_validate(json.loads(resp.text)).model_dump()
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                if _is_transient(str(e)):
+                    saw_transient = True
+                    if attempt < 2:
+                        time.sleep(1.5 * (attempt + 1))  # backoff: 1.5s, 3s
+                        continue
+                    break  # habis retry model ini → coba model cadangan
+                raise  # error non-transient (mis. skema/kunci) → langsung lempar
+
+    if saw_transient:
+        raise RuntimeError(
+            "AI Gemini sedang sibuk/tidak tersedia (503). Sudah dicoba ulang beberapa kali "
+            "dan dengan model cadangan. Silakan klik 'Ulangi' beberapa saat lagi."
+        )
+    raise last_err or RuntimeError("AI gagal membaca foto")
 
 
 UNIT_MAP = {
